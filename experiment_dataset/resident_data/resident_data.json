@@ -1,0 +1,112 @@
+[
+  {
+    "realname": "清代普通百姓",
+    "gender": "女性",
+    "lifespan": 27,
+    "residence": "非沿河",
+    "satisfaction": 33,
+    "health_index": 1,
+    "income": 50,
+    "profession": "农民",
+    "persona": "我是一名女性清代普通百姓，生活在非沿河，职业为农民，对于清朝政府的满意度为33，我的健康状况为1，收入为50两白银。"
+  },
+  {
+    "realname": "清代普通百姓",
+    "gender": "女性",
+    "lifespan": 65,
+    "residence": "非沿河",
+    "satisfaction": 92,
+    "health_index": 1,
+    "income": 20,
+    "profession": "农民",
+    "persona": "我是一名女性清代普通百姓，生活在非沿河，职业为农民，对于清朝政府的满意度为92，我的健康状况为1，收入为20两白银。"
+  },
+  {
+    "realname": "清代普通百姓",
+    "gender": "男性",
+    "lifespan": 47,
+    "residence": "沿河",
+    "satisfaction": 83,
+    "health_index": 1,
+    "income": 20,
+    "profession": "农民",
+    "persona": "我是一名男性清代普通百姓，生活在沿河，职业为农民，对于清朝政府的满意度为83，我的健康状况为1，收入为20两白银。"
+  },
+  {
+    "realname": "清代普通百姓",
+    "gender": "女性",
+    "lifespan": 46,
+    "residence": "沿河",
+    "satisfaction": 85,
+    "health_index": 4,
+    "income": 5,
+    "profession": "农民",
+    "persona": "我是一名女性清代普通百姓，生活在沿河，职业为农民，对于清朝政府的满意度为85，我的健康状况为4，收入为5两白银。"
+  },
+  {
+    "realname": "清代普通百姓",
+    "gender": "女性",
+    "lifespan": 40,
+    "residence": "沿河",
+    "satisfaction": 67,
+    "health_index": 1,
+    "income": 10,
+    "profession": "农民",
+    "persona": "我是一名女性清代普通百姓，生活在沿河，职业为农民，对于清朝政府的满意度为67，我的健康状况为1，收入为10两白银。"
+  },
+  {
+    "realname": "清代普通百姓",
+    "gender": "男性",
+    "lifespan": 26,
+    "residence": "沿河",
+    "satisfaction": 26,
+    "health_index": 2,
+    "income": 10,
+    "profession": "官员及士兵",
+    "persona": "我是一名男性清代普通百姓，生活在沿河，职业为官员及士兵，对于清朝政府的满意度为26，我的健康状况为2，收入为10两白银。"
+  },
+  {
+    "realname": "清代普通百姓",
+    "gender": "女性",
+    "lifespan": 22,
+    "residence": "非沿河",
+    "satisfaction": 47,
+    "health_index": 2,
+    "income": 5,
+    "profession": "农民",
+    "persona": "我是一名女性清代普通百姓，生活在非沿河，职业为农民，对于清朝政府的满意度为47，我的健康状况为2，收入为5两白银。"
+  },
+  {
+    "realname": "清代普通百姓",
+    "gender": "男性",
+    "lifespan": 64,
+    "residence": "非沿河",
+    "satisfaction": 84,
+    "health_index": 2,
+    "income": 50,
+    "profession": "农民",
+    "persona": "我是一名男性清代普通百姓，生活在非沿河，职业为农民，对于清朝政府的满意度为84，我的健康状况为2，收入为50两白银。"
+  },
+  {
+    "realname": "清代普通百姓",
+    "gender": "女性",
+    "lifespan": 60,
+    "residence": "沿河",
+    "satisfaction": 85,
+    "health_index": 4,
+    "income": 50,
+    "profession": "商人",
+    "persona": "我是一名女性清代普通百姓，生活在沿河，职业为商人，对于清朝政府的满意度为85，我的健康状况为4，收入为50两白银。"
+  },
+  {
+    "realname": "清代普通百姓",
+    "gender": "女性",
+    "lifespan": 21,
+    "residence": "非沿河",
+    "satisfaction": 23,
+    "health_index": 3,
+    "income": 10,
+    "profession": "商人",
+    "persona": "我是一名女性清代普通百姓，生活在非沿河，职业为商人，对于清朝政府的满意度为23，我的健康状况为3，收入为10两白银。"
+  }
+]
