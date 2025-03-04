@@ -60,10 +60,7 @@ async def generate_government_agents(
             raise ValueError(f"未知的官员类型：{official_data['rank']}")
 
         # 设置官员的初始属性
-        official.age = official_data["age"]  # 年龄
-        official.political_style = official_data["political_style"]  # 政治风格
-        official.preferences_and_views = official_data["preferences_and_views"]  # 偏好与观点
-        official.background = official_data["background"]  # 背景
+        official.function = official_data["function"]  # 职能
         official.persona = official_data["persona"]  # 人物性格
 
         # 将官员添加到官员图
@@ -73,7 +70,7 @@ async def generate_government_agents(
         official_id_mapping[official_id] = official_id
 
         # 记录官员生成日志
-        official.logger.info(f"政府官员 {official_id} 生成成功。姓名：{official_data['realname']}, 年龄：{official.age}, 政治风格：{official.political_style}, 职位：{official_data['rank']}")
+        official.logger.info(f"{official_data['rank']} {official_id} 生成成功。")
 
     # 创建并执行官员生成任务
     tasks = [process_official(i, official_data) for i, official_data in enumerate(government_info)]
