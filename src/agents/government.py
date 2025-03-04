@@ -20,10 +20,7 @@ class OrdinaryGovernmentAgent:
         self.time = 0  # 当前时间（年）
 
         # 初始化官员属性
-        self.age = None  # 年龄
-        self.political_style = None  # 政治风格
-        self.preferences_and_views = None  # 偏好与观点
-        self.background = None  # 背景
+        self.function = None  # 职能
         self.persona = None  # 人物性格
 
         # 初始化 CAMEL 框架组件
@@ -45,19 +42,13 @@ class OrdinaryGovernmentAgent:
         handler.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
         self.logger.addHandler(handler)
 
-    def set_attributes(self, age, political_style, preferences_and_views, background, persona):
+    def set_attributes(self, function, persona):
         """
         设置官员的属性
-        :param age: 年龄
-        :param political_style: 政治风格
-        :param preferences_and_views: 偏好与观点
-        :param background: 背景
+        :param function: 职能
         :param persona: 人物性格
         """
-        self.age = age
-        self.political_style = political_style
-        self.preferences_and_views = preferences_and_views
-        self.background = background
+        self.function = function
         self.persona = persona
 
     def generate_opinion(self):
@@ -76,22 +67,12 @@ class OrdinaryGovernmentAgent:
         # 构建提示信息
         prompt = (
             f"你是一位普通政府官员，以下是你的个人属性：\n"
-            f"年龄: {self.age}\n"
-            f"政治风格: {self.political_style}\n"
-            f"偏好与观点: {self.preferences_and_views}\n"
+            f"职能: {self.function}\n"
+            f"人物性格: {self.persona}\n"
             f"{government_status}\n"
             f"请根据你的个人属性和当前政府状态，提出一句关于大运河运营的政治决策的意见。"
         )
-        # prompt = (
-        #     f"你是一位普通政府官员，以下是你的个人属性：\n"
-        #     f"年龄: {self.age}\n"
-        #     f"政治风格: {self.political_style}\n"
-        #     f"偏好与观点: {self.preferences_and_views}\n"
-        #     f"背景: {self.background}\n"
-        #     f"人物性格: {self.persona}\n"
-        #     f"{government_status}\n"
-        #     f"请根据你的个人属性和当前政府状态，提出一句关于政治决策的意见。"
-        # )
+
         # 使用 CAMEL 框架生成意见
         user_message = BaseMessage.make_user_message(
             role_name="普通政府官员",
@@ -190,10 +171,7 @@ class HighRankingGovernmentAgent:
         self.time = 0  # 当前时间（年）
         
         # 初始化官员属性
-        self.age = None  # 年龄
-        self.political_style = None  # 政治风格
-        self.preferences_and_views = None  # 偏好与观点
-        self.background = None  # 背景
+        self.function = None  # 职能
         self.persona = None  # 人物性格
 
         # 初始化 CAMEL 框架组件
@@ -215,19 +193,13 @@ class HighRankingGovernmentAgent:
         handler.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
         self.logger.addHandler(handler)
 
-    def set_attributes(self, age, political_style, preferences_and_views, background, persona):
+    def set_attributes(self,function, persona):
         """
         设置官员的属性
-        :param age: 年龄
-        :param political_style: 政治风格
-        :param preferences_and_views: 偏好与观点
-        :param background: 背景
+        :param function: 职能
         :param persona: 人物性格
         """
-        self.age = age
-        self.political_style = political_style
-        self.preferences_and_views = preferences_and_views
-        self.background = background
+        self.function = function
         self.persona = persona
 
     def make_decision(self, discussion_report):
@@ -280,10 +252,7 @@ class HighRankingGovernmentAgent:
         """
         self.logger.info(f"高级政府官员 {self.agent_id} 的状态：")
         self.logger.info(f"  当前时间：{self.time}年")
-        self.logger.info(f"  年龄：{self.age}")
-        self.logger.info(f"  政治风格：{self.political_style}")
-        self.logger.info(f"  偏好与观点：{self.preferences_and_views}")
-        self.logger.info(f"  背景：{self.background}")
+        self.logger.info(f"  职能：{self.function}")
         self.logger.info(f"  人物性格：{self.persona}")
 
 class Government:

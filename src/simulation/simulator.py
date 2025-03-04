@@ -68,14 +68,14 @@ class Simulator:
                 print(f"{len(new_residents)} 名新居民已出生")
 
             # 政府行为
-            # 基于LLM的决策--测试时暂时注释
-            # self.government_decision_process()
+            # 基于LLM的决策--测试时建议暂时注释
+            self.government_decision_process()
 
             # 居民行为
             rebellions = 0
             for resident_name in list(self.residents.keys()):  # 使用 list() 确保在遍历时不会出错
                 resident = self.residents[resident_name]
-                await resident.decide_action_by_llm()  # 基于LLM的决策--测试时暂时注释
+                await resident.decide_action_by_llm()  # 基于LLM的决策--测试时建议暂时注释
                 # 更新居民寿命（次/年）
                 print(f"居民{resident_name}健康值: {resident.health_index}")
                 if self.time.get_current_quarter() == 1:
