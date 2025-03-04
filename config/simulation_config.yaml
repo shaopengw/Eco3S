@@ -1,0 +1,11 @@
+simulation:
+  start_year: 1650
+  end_year: 1651
+  time_step: "quarter"  # 时间步长为季度
+  map_size: 100         # 地图大小为100x100
+  initial_population: 3
+  government_budget: 1000000
+
+data:
+  resident_info_path: "experiment_dataset/resident_data/resident_data.json"  # 居民信息文件路径
+  government_info_path: "experiment_dataset/government_data/official_data.json"  # 政府官员信息文件路径
