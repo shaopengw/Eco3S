@@ -131,7 +131,7 @@ class OrdinaryGovernmentAgent:
         """
         return self.opinions
 
-    async def discuss_with_other_officials(self, other_agents):
+    def discuss_with_other_officials(self, other_agents):
         """
         与其他普通政府官员讨论
         :param other_agents: 其他政府官员列表
@@ -211,12 +211,24 @@ class HighRankingGovernmentAgent:
         # 使用 CAMEL 框架来做决策
         decision_message = BaseMessage.make_user_message(
             role_name="高级政府官员",
-            content=(f"普通政府官员们的讨论报告：\n{discussion_report}\n"
-                     f"当前政府状态：\n"
-                     f"预算: {self.government.get_budget()}\n"
-                     f"军事力量: {self.government.get_military_strength()}\n"
-                     f"运河维护政策支持: {self.government.policy_support_canal}\n"
-                     f"请根据这些意见和状态作出最终决策。")
+            content=(
+                f"你是一个高级政府官员，负责根据下属官员的讨论和当前政府状态做出最终决策。\n"
+                f"请从以下动作中选择一个，并提供一个参数：\n"
+                f"- 增加就业: 参数为 `预算分配`（整数）\n"
+                f"- 维护运河: 参数为 `预算分配`（整数）\n"
+                f"- 提供公共服务: 参数为 `预算分配`（整数）\n"
+                f"- 军需拨款: 参数为 `预算分配`（整数）\n"
+                f"\n"
+                f"当前政府状态：\n"
+                f"预算: {self.government.get_budget()}\n"
+                f"军事力量: {self.government.get_military_strength()}\n"
+                f"运河维护政策支持: {self.government.policy_support_canal}\n"
+                f"\n"
+                f"普通政府官员们的讨论报告：\n{discussion_report}\n"
+                f"\n"
+                f"请根据以上信息和状态作出最终决策，输出格式为 JSON，例如：\n"
+                f'{{"action": "维护运河", "params": 2000000}}'
+            )
         )
         
         # 将讨论内容写入记忆系统
@@ -270,28 +282,40 @@ class Government:
         self.policy_support_canal = True  # 是否支持运河维护
         self.time = time
 
-    def provide_jobs(self):
+    def provide_jobs(self,budget_allocation):
         """
         提供就业机会
         """
-        if self.budget >= 1000:
+        if self.budget >= budget_allocation:
             self.job_market.add_job("Canal Maintenance")
-            self.budget -= 1000
+            self.budget -= budget_allocation
             print("政府提供运河维护工作。")
         else:
             print("政府预算不足以提供工作。")
 
-    def maintain_canal(self):
+    def maintain_canals(self, budget_allocation):
         """
         维护运河
         """
-        if self.policy_support_canal and self.budget >= 500:
+        if self.policy_support_canal and self.budget >= budget_allocation:
             self.map.update_river_condition(year=self.time.get_current_year())
-            self.budget -= 500
+            self.budget -= budget_allocation
             print("政府维护运河。")
         else:
             print("政府因政策或预算限制未维护运河。")
 
+    def support_military(self, budget_allocation):
+        """
+        军需拨款
+        :param budget_allocation: 分配给军事力量的预算
+        """
+        if self.budget >= budget_allocation:
+            self.military_strength += budget_allocation * 0.1  # 假设每投入1单位预算，军事力量增加0.1
+            self.budget -= budget_allocation
+            print(f"政府支持军事力量，军事力量增加了 {budget_allocation * 0.1}。")
+        else:
+            print("政府因预算限制未支持军事力量。")
+        
     def suppress_rebellion(self, rebellion_strength):
         """
         镇压叛乱
@@ -305,13 +329,12 @@ class Government:
         else:
             print(f"政府未能压制强度为 {rebellion_strength} 的叛乱。")
             return False
-
-    def provide_public_services(self):
+    def provide_public_services(self, budget_allocation):
         """
         提供公共服务（如粮食救济）
         """
-        if self.budget >= 300:
-            self.budget -= 300
+        if self.budget >= budget_allocation:
+            self.budget -= budget_allocation
             print("政府提供公共服务（如粮食救济）。")
         else:
             print("政府预算不足以提供公共服务。")
