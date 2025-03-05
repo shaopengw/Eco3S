@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta
+import json
 from colorama import Back
 from src.agents.resident_agent_generator import (generate_canal_agents)
 from src.agents.government import OrdinaryGovernmentAgent, HighRankingGovernmentAgent
@@ -75,7 +76,7 @@ class Simulator:
             rebellions = 0
             for resident_name in list(self.residents.keys()):  # 使用 list() 确保在遍历时不会出错
                 resident = self.residents[resident_name]
-                await resident.decide_action_by_llm()  # 基于LLM的决策--测试时建议暂时注释
+                # await resident.decide_action_by_llm()  # 基于LLM的决策--测试时建议暂时注释
                 # 更新居民寿命（次/年）
                 print(f"居民{resident_name}健康值: {resident.health_index}")
                 if self.time.get_current_quarter() == 1:
@@ -105,16 +106,12 @@ class Simulator:
         4. 执行决策
         """
         # 1. 普通官员发表意见
-        print(f"所有政府官员列表: {self.government_officials}")  # 查看所有政府官员列表
         ordinary_officials = [official for official in self.government_officials.values() if isinstance(official, OrdinaryGovernmentAgent)]
-
         print(f"找到 {len(ordinary_officials)} 位普通官员")  # 输出普通官员的数量
-
         
         for official in ordinary_officials:
             opinion = official.generate_opinion()
             official.express_opinion(opinion)
-
 
         # 2. 普通官员互相讨论
         discussion_report = ""
@@ -125,7 +122,6 @@ class Simulator:
         high_ranking_officials = [official for official in self.government_officials.values() if isinstance(official, HighRankingGovernmentAgent)]
         if high_ranking_officials:
             decision = high_ranking_officials[0].make_decision(discussion_report)
-            print(f"高级官员的决策：{decision}")
 
             # 4. 执行决策
             self.execute_government_decision(decision)
@@ -133,17 +129,65 @@ class Simulator:
     def execute_government_decision(self, decision):
         """
         执行高级官员的决策
-        :param decision: 高级官员的决策内容
+        :param decision: 高级官员的决策内容，格式为 JSON，例如：{"action": "维护运河", "参数": 2000000}
         """
-        if "增加就业" in decision:
-            self.government.provide_jobs()
-        if "维护运河" in decision:
-            self.government.maintain_canal()
-        if "提供公共服务" in decision:
-            self.government.provide_public_services()
-        if "镇压叛乱" in decision:
-            rebellion_strength = 50  # 假设叛乱的强度
-            self.government.suppress_rebellion(rebellion_strength)
+        try:
+            # 解析决策内容
+            decision_data = json.loads(decision)  # 将 JSON 字符串解析为字典
+            action = decision_data.get("action")
+            param = decision_data.get("params")
+
+            if action == "增加就业":
+                self.government.provide_jobs(budget_allocation=param)
+            elif action == "维护运河":
+                self.government.maintain_canals(budget_allocation=param)
+            elif action == "提供公共服务":
+                self.government.provide_public_services(budget_allocation=param)
+            elif action == "军需拨款":
+                self.government.support_military(budget_allocation=param)
+            else:
+                print(f"未知的决策动作：{action}")
+        except json.JSONDecodeError:
+            print("决策内容格式错误，无法解析 JSON。")
+        except Exception as e:
+            print(f"执行决策时出错：{e}")
+
+    # def execute_government_decision(decision, government):
+    #     """
+    #     执行高级官员的决策
+    #     :param decision: 高级官员的决策内容，格式为 JSON 列表，例如：
+    #         [
+    #             {"action": "维护运河", "params": 2000000},
+    #             {"action": "增加就业", "params": 1000000}
+    #         ]
+    #     :param government: Government 类的实例，用于执行具体动作
+    #     """
+    #     try:
+    #         # 打印传入的 JSON 字符串，检查格式
+    #         print(f"传入的决策内容：{decision}")
+            
+    #         # 解析决策内容
+    #         decision_data = json.loads(decision)  # 将 JSON 字符串解析为列表
+
+    #         # 遍历每个动作并执行
+    #         for action_item in decision_data:
+    #             action = action_item.get("action")
+    #             param = action_item.get("params")
+
+    #             if action == "增加就业":
+    #                 government.provide_jobs(budget_allocation=param)
+    #             elif action == "维护运河":
+    #                 government.maintain_canals(budget_allocation=param)
+    #             elif action == "提供公共服务":
+    #                 government.provide_public_services(budget_allocation=param)
+    #             elif action == "军需拨款":
+    #                 government.support_military(budget_allocation=param)
+    #             else:
+    #                 print(f"未知的决策动作：{action}")
+    #     except json.JSONDecodeError:
+    #         print("决策内容格式错误，无法解析 JSON。")
+    #     except Exception as e:
+    #         print(f"执行决策时出错：{e}")
 
     def save_results(self, filename="data/simulation_results.csv"):
         """
