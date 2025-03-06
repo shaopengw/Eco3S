@@ -46,8 +46,12 @@ class OrdinaryGovernmentAgent:
         )
         self.token_counter = OpenAITokenCounter(self.model_type)
         self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
-        self.memory = ChatHistoryMemory(self.context_creator, window_size=5)
-
+        self.memory = ChatHistoryMemory(self.context_creator, window_size=3)
+        # 系统消息
+        self.system_message = BaseMessage.make_assistant_message(
+            role_name="system",
+            content="你是一位普通政府官员，负责根据个人属性和政府状态提出意见。"
+        )
         # self.logger = logging.getLogger(name=f"ordinary_government_agent_{agent_id}")
         # self.logger.setLevel(logging.DEBUG)
         # handler = logging.StreamHandler()
@@ -78,7 +82,7 @@ class OrdinaryGovernmentAgent:
 
         # 构建提示信息
         prompt = (
-            f"你是一位普通政府官员，以下是你的个人属性：\n"
+            f"你是一位普通清代政府官员，以下是你的个人属性：\n"
             f"职能: {self.function}\n"
             f"人物性格: {self.persona}\n"
             f"{government_status}\n"
@@ -96,12 +100,13 @@ class OrdinaryGovernmentAgent:
                 role_at_backend=OpenAIBackendRole.USER,
             )
         )
-
+        
+        # 获取历史信息
         openai_messages, _ = self.memory.get_context()
         if not openai_messages:
             openai_messages = [{
-                "role": "system",
-                "content": "你是一位普通政府官员，负责根据个人属性和政府状态提出意见。"
+                "role": self.system_message.role_name,
+                "content": self.system_message.content,
             }] + [user_message.to_openai_user_message()]
 
         government_log.info(f"普通政府官员 {self.agent_id} 正在生成意见，提示信息：{openai_messages}")
@@ -110,6 +115,16 @@ class OrdinaryGovernmentAgent:
             # 调用模型生成意见
             response = self.model_backend.run(openai_messages)
             opinion = response.choices[0].message.content
+            # # 只保存模型的回复内容到记忆
+            # self.memory.write_record(
+            #     MemoryRecord(
+            #         message=BaseMessage.make_assistant_message(
+            #             role_name="普通政府官员",
+            #             content=opinion,
+            #         ),
+            #         role_at_backend=OpenAIBackendRole.ASSISTANT,
+            #     )
+            # )
             government_log.info(f"普通政府官员 {self.agent_id} 生成的意见：{opinion}")
             return opinion
         except Exception as e:
