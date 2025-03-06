@@ -12,17 +12,18 @@ from src.environment.job_market import JobMarket
 from src.environment.population import Population
 from src.environment.information_spread import InformationSpread
 from src.agents.government import Government
+from src.agents.rebellion import Rebellion
 from src.simulation.simulator import Simulator
 from src.visualization.plot_results import plot_all_results
-from src.agents.resident_agent_generator import (generate_canal_agents)
-from src.agents.government_agent_generator import (generate_government_agents)
+from src.agents.resident_agent_generator import generate_canal_agents
+from src.agents.government_agent_generator import generate_government_agents
+from src.agents.rebellion_agent_generator import generate_rebellion_agents
 from src.generator.resident_generate import generate_resident_data, save_resident_data
 
 # 确保 log 目录存在
 log_dir = "./log"
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
-
 
 # 参数解析
 parser = argparse.ArgumentParser(description="Arguments for simulation.")
@@ -66,12 +67,27 @@ async def run_simulation(config: dict[str, Any]) -> None:
         initial_budget=config["simulation"]["government_budget"],
         time=time,
     )
+
     # 初始化政府官员
-    government_info_path = config["data"]["government_info_path"]  # 居民信息文件路径
+    government_info_path = config["data"]["government_info_path"]  # 政府官员信息文件路径
     government_officials = await generate_government_agents(
         government_info_path=government_info_path,
         government=government,
         job_market=job_market,
+    )
+
+    # 初始化叛军
+    rebellion = Rebellion(
+        initial_strength=config["simulation"]["rebellion_initial_strength"],
+        initial_resources=config["simulation"]["rebellion_initial_resources"],
+        initial_support=config["simulation"]["rebellion_initial_support"],
+    )
+
+    # 初始化叛军成员
+    rebellion_info_path = config["data"]["rebellion_info_path"]  # 叛军信息文件路径
+    rebellion_agents = await generate_rebellion_agents(
+        rebellion_info_path=rebellion_info_path,
+        rebellion=rebellion,
     )
 
     # 初始化人口
@@ -95,6 +111,8 @@ async def run_simulation(config: dict[str, Any]) -> None:
         job_market=job_market,
         government=government,
         government_officials=government_officials,
+        rebellion=rebellion,
+        rebellion_agents=rebellion_agents,
         population=population,
         information_spread=information_spread,
         residents=residents,
@@ -112,6 +130,7 @@ async def run_simulation(config: dict[str, Any]) -> None:
         unemployment_rate=simulator.results["unemployment_rate"],
         population=simulator.results["population"],
         government_budget=simulator.results["government_budget"],
+        rebellion_strength=simulator.results["rebellion_strength"],
     )
 
     # 保存结果

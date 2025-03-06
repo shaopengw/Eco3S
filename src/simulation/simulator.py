@@ -4,10 +4,11 @@ import json
 from colorama import Back
 from src.agents.resident_agent_generator import (generate_canal_agents)
 from src.agents.government import OrdinaryGovernmentAgent, HighRankingGovernmentAgent
+from src.agents.rebellion import OrdinaryRebel, RebelLeader
 from src.generator.resident_generate import generate_resident_data, save_resident_data
 
 class Simulator:
-    def __init__(self, map, time, job_market, government, government_officials, population, information_spread, residents):
+    def __init__(self, map, time, job_market, government, government_officials, rebellion, rebellion_agents, population, information_spread, residents):
         """
         初始化模拟器类
         :param map: 地图对象
@@ -15,6 +16,8 @@ class Simulator:
         :param job_market: 就业市场对象
         :param government: 政府对象
         :param government_officials: 政府官员列表
+        :param rebellion: 叛军对象
+        :param rebellion_agents: 叛军列表
         :param population: 人口对象
         :param information_spread: 信息传播对象
         :param residents: 居民列表
@@ -24,6 +27,8 @@ class Simulator:
         self.job_market = job_market
         self.government = government
         self.government_officials = government_officials
+        self.rebellion = rebellion
+        self.rebellion_agents = rebellion_agents
         self.population = population
         self.information_spread = information_spread
         self.residents = residents
@@ -33,6 +38,7 @@ class Simulator:
             "unemployment_rate": [],
             "population": [],
             "government_budget": [],
+            "rebellion_strength": [],
         }
 
     async def run(self):
@@ -72,6 +78,9 @@ class Simulator:
             # 基于LLM的决策--测试时建议暂时注释
             self.government_decision_process()
 
+            # 叛军行为
+            self.rebellion_decision_process()
+
             # 居民行为
             rebellions = 0
             for resident_name in list(self.residents.keys()):  # 使用 list() 确保在遍历时不会出错
@@ -90,6 +99,7 @@ class Simulator:
             self.results["unemployment_rate"].append(self.job_market.get_unemployment_rate(len(self.residents)))
             self.results["population"].append(self.population.get_population())
             self.results["government_budget"].append(self.government.get_budget())
+            self.results["rebellion_strength"].append(self.rebellion.get_strength())
 
             # 打印当前状态
             print(f"年份: {self.time.get_current_time()}, 叛乱次数: {rebellions}, 人口数量: {self.population.get_population()}")
@@ -151,6 +161,62 @@ class Simulator:
             print("决策内容格式错误，无法解析 JSON。")
         except Exception as e:
             print(f"执行决策时出错：{e}")
+            
+    def rebellion_decision_process(self):
+        """
+        叛军决策流程：
+        1. 普通叛军发表意见
+        2. 普通叛军互相讨论
+        3. 叛军头子做出决策
+        4. 执行决策
+        """
+        # 1. 普通叛军发表意见
+        ordinary_rebels = [rebel for rebel in self.rebellion_agents.values() if isinstance(rebel, OrdinaryRebel)]
+        print(f"找到 {len(ordinary_rebels)} 位普通叛军")  # 输出普通叛军的数量
+        
+        for rebel in ordinary_rebels:
+            opinion = rebel.generate_opinion()
+            rebel.express_opinion(opinion)
+
+        # 2. 普通叛军互相讨论
+        discussion_report = ""
+        if len(ordinary_rebels) > 1:
+            discussion_report = ordinary_rebels[0].discuss_with_other_rebels(ordinary_rebels[1:])
+
+        # 3. 叛军头子做出决策
+        rebel_leaders = [rebel for rebel in self.rebellion_agents.values() if isinstance(rebel, RebelLeader)]
+        if rebel_leaders:
+            decision = rebel_leaders[0].make_decision(discussion_report)
+
+            # 4. 执行决策
+            self.execute_rebellion_decision(decision)
+
+    def execute_rebellion_decision(self, decision):
+        """
+        执行叛军头子的决策
+        :param decision: 叛军头子的决策内容，格式为 JSON，例如：{"action": "袭击政府设施", "params": 1000}
+        """
+        try:
+            # 解析决策内容
+            decision_data = json.loads(decision)  # 将 JSON 字符串解析为字典
+            action = decision_data.get("action")
+            param = decision_data.get("params")
+
+            if action == "袭击政府设施":
+                self.rebellion.attack_government_facility(strength_investment=param)
+            elif action == "招募新成员":
+                self.rebellion.recruit_new_members(resource_investment=param)
+            elif action == "争取民众支持":
+                self.rebellion.gain_public_support(resource_investment=param)
+            elif action == "撤退":
+                self.rebellion.retreat()
+            else:
+                print(f"未知的决策动作：{action}")
+        except json.JSONDecodeError:
+            print("决策内容格式错误，无法解析 JSON。")
+        except Exception as e:
+            print(f"执行决策时出错：{e}")
+
 
     # def execute_government_decision(decision, government):
     #     """

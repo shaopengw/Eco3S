@@ -1,30 +1,30 @@
-import unittest
+import asyncio
 from src.environment.map import Map
 from src.environment.job_market import JobMarket
+from src.agents.government_agent_generator import (generate_government_agents)
 from src.agents.government import Government
-from src.environment.time import Time
 
-class TestGovernment(unittest.TestCase):
-    def setUp(self):
-        self.map = Map(size=10)
-        self.job_market = JobMarket()
-        self.time = Time(start_year=1650, end_year=1700)
-        self.government = Government(map=self.map, job_market=self.job_market, initial_budget=10000, time=self.time)
+async def main():
+    # 创建地图对象
+    my_map = Map(size=100)
 
-    def test_provide_jobs(self):
-        self.government.provide_jobs()
-        self.assertIn("Canal Maintenance", self.job_market.get_available_jobs())  # 检查是否提供工作机会
-        self.assertEqual(self.government.get_budget(), 9000)  # 检查预算是否正确减少
+    # 创建就业市场对象
+    job_market = JobMarket()
 
-    def test_maintain_canal(self):
-        self.map.initialize_river()
-        self.government.maintain_canal()
-        self.assertEqual(self.government.get_budget(), 9500)  # 检查预算是否正确减少
-        self.assertLess(self.map.river_grid[0, 5], 1)  # 检查运河损坏程度是否更新
+    # 创建政府对象
+    government = Government(map=my_map, job_market=job_market, initial_budget=10000, time=1650)
 
-    def test_suppress_rebellion(self):
-        self.assertTrue(self.government.suppress_rebellion(rebellion_strength=50))  # 检查是否成功镇压叛乱
-        self.assertEqual(self.government.get_military_strength(), 95)  # 检查军事力量是否正确减少
+    # 生成政府官员
+    agent_graph = await generate_government_agents(
+        government_info_path="experiment_dataset/government_data/official_data.json",
+        job_market=job_market,
+        government=government,
+        model_type="gpt-3.5-turbo"
+    )
+
+    # 打印生成的官员图
+    for official_id, official in agent_graph.items():
+        print(f"官员 ID: {official_id}, 类型: {official.__class__.__name__}")
 
 if __name__ == "__main__":
-    unittest.main()
+    asyncio.run(main())

@@ -1,11 +1,15 @@
 simulation:
   start_year: 1650
-  end_year: 1651
+  end_year: 1650
   time_step: "quarter"  # 时间步长为季度
   map_size: 100         # 地图大小为100x100
   initial_population: 3
   government_budget: 1000000
+  rebellion_initial_strength: 100
+  rebellion_initial_resources: 500
+  rebellion_initial_support: 50
 
 data:
   resident_info_path: "experiment_dataset/resident_data/resident_data.json"  # 居民信息文件路径
   government_info_path: "experiment_dataset/government_data/official_data.json"  # 政府官员信息文件路径
+  rebellion_info_path: "experiment_dataset/rebellion_data/rebellion_data.json"  # 叛乱信息文件路径
