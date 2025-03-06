@@ -4,7 +4,20 @@ from camel.messages import BaseMessage
 from camel.models import ModelFactory
 from camel.types import ModelPlatformType, ModelType, OpenAIBackendRole
 from camel.utils import OpenAITokenCounter
+from datetime import datetime
+import sys
 import logging
+
+if "sphinx" not in sys.modules:
+    government_log = logging.getLogger(name="government.agent")
+    government_log.setLevel("DEBUG")
+    now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    file_handler = logging.FileHandler(f"./log/government.agent-{str(now)}.log")
+    file_handler.setLevel("DEBUG")
+    file_handler.setFormatter(
+        logging.Formatter(
+            "%(levelname)s - %(asctime)s - %(name)s - %(message)s"))
+    government_log.addHandler(file_handler)
 
 class OrdinaryGovernmentAgent:
     def __init__(self, agent_id, government, model_type="gpt-3.5-turbo"):
@@ -35,12 +48,11 @@ class OrdinaryGovernmentAgent:
         self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
         self.memory = ChatHistoryMemory(self.context_creator, window_size=5)
 
-        # 初始化日志
-        self.logger = logging.getLogger(name=f"ordinary_government_agent_{agent_id}")
-        self.logger.setLevel(logging.DEBUG)
-        handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
-        self.logger.addHandler(handler)
+        # self.logger = logging.getLogger(name=f"ordinary_government_agent_{agent_id}")
+        # self.logger.setLevel(logging.DEBUG)
+        # handler = logging.StreamHandler()
+        # handler.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
+        # self.logger.addHandler(handler)
 
     def set_attributes(self, function, persona):
         """
@@ -92,16 +104,16 @@ class OrdinaryGovernmentAgent:
                 "content": "你是一位普通政府官员，负责根据个人属性和政府状态提出意见。"
             }] + [user_message.to_openai_user_message()]
 
-        self.logger.info(f"普通政府官员 {self.agent_id} 正在生成意见，提示信息：{openai_messages}")
+        government_log.info(f"普通政府官员 {self.agent_id} 正在生成意见，提示信息：{openai_messages}")
 
         try:
             # 调用模型生成意见
             response = self.model_backend.run(openai_messages)
             opinion = response.choices[0].message.content
-            self.logger.info(f"普通政府官员 {self.agent_id} 生成的意见：{opinion}")
+            government_log.info(f"普通政府官员 {self.agent_id} 生成的意见：{opinion}")
             return opinion
         except Exception as e:
-            self.logger.error(f"普通政府官员 {self.agent_id} 在生成意见时出错：{e}")
+            government_log.error(f"普通政府官员 {self.agent_id} 在生成意见时出错：{e}")
             return "无法生成意见"
 
     def express_opinion(self, message_content):
@@ -110,7 +122,7 @@ class OrdinaryGovernmentAgent:
         :param message_content: 意见内容
         """
         self.opinions.append(message_content)
-        self.logger.info(f"普通政府官员 {self.agent_id} 表达了意见：{message_content}")
+        # government_log.info(f"普通政府官员 {self.agent_id} 表达了意见：{message_content}")
 
         # 使用 CAMEL 框架处理信息
         user_message = BaseMessage.make_user_message(
@@ -186,12 +198,12 @@ class HighRankingGovernmentAgent:
         self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
         self.memory = ChatHistoryMemory(self.context_creator, window_size=5)
 
-        # 初始化日志
-        self.logger = logging.getLogger(name=f"high_ranking_government_agent_{agent_id}")
-        self.logger.setLevel(logging.DEBUG)
-        handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
-        self.logger.addHandler(handler)
+        # # 初始化日志
+        # self.logger = logging.getLogger(name=f"high_ranking_government_agent_{agent_id}")
+        # self.logger.setLevel(logging.DEBUG)
+        # handler = logging.StreamHandler()
+        # handler.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
+        # self.logger.addHandler(handler)
 
     def set_attributes(self,function, persona):
         """
@@ -246,26 +258,26 @@ class HighRankingGovernmentAgent:
                 "content": "你是一个高级政府官员，负责根据下属官员的讨论和当前政府状态做出最终决策。"
             }] + [decision_message.to_openai_user_message()]
 
-        self.logger.info(f"高级政府官员 {self.agent_id} 正在处理决策，提示信息：{openai_messages}")
+        government_log.info(f"高级政府官员 {self.agent_id} 正在处理决策，提示信息：{openai_messages}")
         
         try:
             # 调用模型做出最终决策
             response = self.model_backend.run(openai_messages)
             decision = response.choices[0].message.content
-            self.logger.info(f"高级政府官员 {self.agent_id} 的决策：{decision}")
+            government_log.info(f"高级政府官员 {self.agent_id} 的决策：{decision}")
             return decision
         except Exception as e:
-            self.logger.error(f"高级政府官员 {self.agent_id} 在做出决策时出错：{e}")
+            government_log.error(f"高级政府官员 {self.agent_id} 在做出决策时出错：{e}")
             return "无法做出决策"
 
     def print_agent_status(self):
         """
         打印高级政府官员的状态
         """
-        self.logger.info(f"高级政府官员 {self.agent_id} 的状态：")
-        self.logger.info(f"  当前时间：{self.time}年")
-        self.logger.info(f"  职能：{self.function}")
-        self.logger.info(f"  人物性格：{self.persona}")
+        government_log.info(f"高级政府官员 {self.agent_id} 的状态：")
+        government_log.info(f"  当前时间：{self.time}年")
+        government_log.info(f"  职能：{self.function}")
+        government_log.info(f"  人物性格：{self.persona}")
 
 class Government:
     def __init__(self, map, job_market, initial_budget, time):

@@ -4,7 +4,21 @@ from camel.messages import BaseMessage
 from camel.models import ModelFactory
 from camel.types import ModelPlatformType, ModelType, OpenAIBackendRole
 from camel.utils import OpenAITokenCounter
+from datetime import datetime
+import sys
 import logging
+import json
+
+if "sphinx" not in sys.modules:
+    resident_log = logging.getLogger(name="resident.agent")
+    resident_log.setLevel("DEBUG")
+    now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    file_handler = logging.FileHandler(f"./log/resident.agent-{str(now)}.log")
+    file_handler.setLevel("DEBUG")
+    file_handler.setFormatter(
+        logging.Formatter(
+            "%(levelname)s - %(asctime)s - %(name)s - %(message)s"))
+    resident_log.addHandler(file_handler)
 
 class Resident:
     def __init__(self, resident_id, location, job_market, model_type="gpt-3.5-turbo"):
@@ -38,12 +52,12 @@ class Resident:
         self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
         self.memory = ChatHistoryMemory(self.context_creator, window_size=5)
 
-        # 初始化日志
-        self.logger = logging.getLogger(name=f"resident_{resident_id}")
-        self.logger.setLevel(logging.DEBUG)
-        handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
-        self.logger.addHandler(handler)
+        # # 初始化日志
+        # self.logger = logging.getLogger(name=f"resident_{resident_id}")
+        # self.logger.setLevel(logging.DEBUG)
+        # handler = logging.StreamHandler()
+        # handler.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
+        # self.logger.addHandler(handler)
 
     def employ(self, job):
         """
@@ -54,7 +68,7 @@ class Resident:
         self.job = job
         self.income = 10  # 假设每份工作的收入为10
         self.satisfaction += 10  # 就业增加满意度
-        self.logger.info(f"居民 {self.resident_id} 在 {self.location} 找到了工作：{job}。")
+        resident_log.info(f"居民 {self.resident_id} 在 {self.location} 找到了工作：{job}。")
 
     def unemploy(self):
         """
@@ -64,7 +78,7 @@ class Resident:
         self.job = None
         self.income = 0
         self.satisfaction -= 20  # 失业降低满意度
-        self.logger.info(f"居民 {self.resident_id} 在 {self.location} 失业了。")
+        resident_log.info(f"居民 {self.resident_id} 在 {self.location} 失业了。")
 
     def migrate(self, new_location):
         """
@@ -72,7 +86,7 @@ class Resident:
         :param new_location: 新位置的坐标 (x, y)
         """
         self.location = new_location
-        self.logger.info(f"居民 {self.resident_id} 迁徙到了 {new_location}。")
+        resident_log.info(f"居民 {self.resident_id} 迁徙到了 {new_location}。")
 
     def evaluate_rebellion_risk(self):
         """
@@ -84,7 +98,7 @@ class Resident:
             self.rebellion_risk += 20  # 低收入增加叛乱风险
         if self.satisfaction < 50:
             self.rebellion_risk += 50  # 低满意度增加叛乱风险
-        self.logger.info(f"居民 {self.resident_id} 的叛乱风险更新为 {self.rebellion_risk}。")
+        resident_log.info(f"居民 {self.resident_id} 的叛乱风险更新为 {self.rebellion_risk}。")
 
     def decide_rebellion(self):
         """
@@ -93,7 +107,7 @@ class Resident:
         """
         self.evaluate_rebellion_risk()
         if self.rebellion_risk > 70:  # 叛乱风险超过70时参与叛乱
-            self.logger.warning(f"居民 {self.resident_id} 在 {self.location} 决定参与叛乱。")
+            resident_log.warning(f"居民 {self.resident_id} 在 {self.location} 决定参与叛乱。")
             return True
         return False
 
@@ -103,7 +117,7 @@ class Resident:
         :param message_content: 信息内容
         """
         self.satisfaction += 5  # 接收信息增加满意度
-        self.logger.info(f"居民 {self.resident_id} 在 {self.location} 收到了信息：{message_content}。")
+        resident_log.info(f"居民 {self.resident_id} 在 {self.location} 收到了信息：{message_content}。")
 
         # 使用 CAMEL 框架处理信息
         user_message = BaseMessage.make_user_message(
@@ -129,7 +143,7 @@ class Resident:
             }]
 
         response = await self.model_backend.run(openai_messages)
-        self.logger.info(f"居民 {self.resident_id} 的回应：{response.choices[0].message.content}")
+        resident_log.info(f"居民 {self.resident_id} 的回应：{response.choices[0].message.content}")
 
         # 将响应记录到记忆中
         assistant_message = BaseMessage.make_assistant_message(
@@ -158,7 +172,8 @@ class Resident:
                 f"1. 参加叛乱\n"
                 f"2. 继续目前的工作\n"
                 f"3. 迁徙到其他位置\n"
-                f"请做出选择并解释原因。"
+                f"请返回选择的数字（1、2 或 3），并解释原因，输出格式为 JSON，例如：\n"
+                f'{{"select": "1", "reason": "叛乱风险已达210，环境极其危险。农民收入微薄（10），高风险工作不明智。健康极差（1），寿命仅剩22年，生存优先。迁徙是最紧急合理的选择，可逃离危险，改善生活与健康。"}}'
             ),
         )
         # 将用户消息写入记忆系统
@@ -177,27 +192,31 @@ class Resident:
                 "content": "你是一个模拟中的居民。请根据当前状态决定下一步行动。",
             }] + [user_msg.to_openai_user_message()]
 
-        self.logger.info(f"居民 {self.resident_id} 正在决定行动，提示信息：{openai_messages}")
+        resident_log.info(f"居民 {self.resident_id} 正在决定行动，提示信息：{openai_messages}")
 
         # 调用模型进行推理
         try:
             response = self.model_backend.run(openai_messages)  # 运行模型
-            self.logger.info(f"居民 {self.resident_id} 的响应：{response}")
             content = response.choices[0].message.content  # 获取响应内容
+            
+            decision_data = json.loads(content)  # 将 JSON 字符串解析为字典
+            select = decision_data.get("select")
+            reason = decision_data.get("reason")
+            resident_log.info(f"居民 {self.resident_id} 的思考：{reason},选择：{select}")
 
             # 解析响应内容并执行相应的行动
-            if "参加叛乱" in content:
-                self.logger.warning(f"居民 {self.resident_id} 决定参加叛乱。")
+            if select =="1":
+                resident_log.warning(f"居民 {self.resident_id} 决定参加叛乱。")
                 self.decide_rebellion()
-            elif "继续目前的工作" in content:
-                self.logger.info(f"居民 {self.resident_id} 决定继续目前的工作。")
+            elif select =="2":
+                resident_log.info(f"居民 {self.resident_id} 决定继续目前的工作。")
                 # 继续工作，无需额外操作
-            elif "迁徙到其他位置" in content:
+            elif select =="3":
                 # 假设迁徙到随机位置
                 new_location = (self.location[0] + 1, self.location[1] + 1)  # 示例：简单的位置更新
                 self.migrate(new_location)
             else:
-                self.logger.info(f"居民 {self.resident_id} 未做出明确行动决定。")
+                resident_log.info(f"居民 {self.resident_id} 未做出明确行动决定。")
 
             # 将响应记录到记忆中
             assistant_message = BaseMessage.make_assistant_message(
@@ -212,7 +231,7 @@ class Resident:
             )
 
         except Exception as e:
-            self.logger.error(f"居民 {self.resident_id} 在决定行动时出错：{e}")
+            resident_log.error(f"居民 {self.resident_id} 在决定行动时出错：{e}")
             content = "无法决定行动。"
 
     def get_status_prompt(self):
@@ -237,14 +256,14 @@ class Resident:
         """
         打印居民状态（用于调试）
         """
-        self.logger.info(f"居民 {self.resident_id} 在 {self.location} 的状态：")
-        self.logger.info(f"  是否就业：{self.employed}")
-        self.logger.info(f"  工作：{self.job}")
-        self.logger.info(f"  收入：{self.income}")
-        self.logger.info(f"  满意度：{self.satisfaction}")
-        self.logger.info(f"  叛乱风险：{self.rebellion_risk}")
-        self.logger.info(f"  健康状况：{self.health_index}")
-        self.logger.info(f"  寿命：{self.lifespan}")
+        resident_log.info(f"居民 {self.resident_id} 在 {self.location} 的状态：")
+        resident_log.info(f"  是否就业：{self.employed}")
+        resident_log.info(f"  工作：{self.job}")
+        resident_log.info(f"  收入：{self.income}")
+        resident_log.info(f"  满意度：{self.satisfaction}")
+        resident_log.info(f"  叛乱风险：{self.rebellion_risk}")
+        resident_log.info(f"  健康状况：{self.health_index}")
+        resident_log.info(f"  寿命：{self.lifespan}")
 
     def update_lifespan(self):
         """
@@ -257,8 +276,8 @@ class Resident:
             self.lifespan -= 1
         
         if self.lifespan <= 0:
-            self.logger.info(f"居民 {self.resident_id} 的健康状况为 {self.health_index}，寿命更新为 {self.lifespan}，该居民已死亡。")
+            resident_log.info(f"居民 {self.resident_id} 的健康状况为 {self.health_index}，寿命更新为 {self.lifespan}，该居民已死亡。")
             return False
         else:
-            self.logger.info(f"居民 {self.resident_id} 的健康状况为 {self.health_index}，寿命更新为 {self.lifespan}。")
+            resident_log.info(f"居民 {self.resident_id} 的健康状况为 {self.health_index}，寿命更新为 {self.lifespan}。")
 

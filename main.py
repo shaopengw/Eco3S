@@ -23,16 +23,6 @@ log_dir = "./log"
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 
-# 日志设置
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(levelname)s - %(asctime)s - %(name)s - %(message)s",
-    handlers=[
-        logging.FileHandler("./log/simulation.log", encoding="utf-8"),
-        logging.StreamHandler(),
-    ],
-)
-logger = logging.getLogger("simulation")
 
 # 参数解析
 parser = argparse.ArgumentParser(description="Arguments for simulation.")
@@ -113,11 +103,9 @@ async def run_simulation(config: dict[str, Any]) -> None:
 
     # 运行模拟
     print("开始模拟......")
-    logger.info("开始模拟...")
     await simulator.run()
 
     # 可视化结果
-    logger.info("模拟结束，生成结果...")
     plot_all_results(
         years=simulator.results["years"],
         rebellions=simulator.results["rebellions"],
@@ -127,8 +115,8 @@ async def run_simulation(config: dict[str, Any]) -> None:
     )
 
     # 保存结果
+    print("模拟结束")
     simulator.save_results()
-    logger.info("结果已保存在 data/simulation_results.csv")
 
 if __name__ == "__main__":
     # 解析命令行参数

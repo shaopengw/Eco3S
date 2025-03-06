@@ -75,7 +75,7 @@ async def generate_canal_agents(
         resident_id_mapping[resident_id] = resident_id
 
         # 记录居民生成日志
-        resident.logger.info(f"居民 {resident_id} 在 {location} 生成成功。姓名：{resident_data['realname']}, 性别：{resident_data['gender']}, 职业：{resident_data['profession']}, 收入：{resident.income} 两白银, 满意度：{resident.satisfaction}, 健康状况：{resident.health_index}")
+        # resident.logger.info(f"居民 {resident_id} 在 {location} 生成成功。姓名：{resident_data['realname']}, 性别：{resident_data['gender']}, 职业：{resident_data['profession']}, 收入：{resident.income} 两白银, 满意度：{resident.satisfaction}, 健康状况：{resident.health_index}")
 
     # 创建并执行居民生成任务
     tasks = [process_resident(i, resident_data) for i, resident_data in enumerate(resident_info)]
