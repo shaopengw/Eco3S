@@ -70,7 +70,7 @@ async def generate_government_agents(
         official_id_mapping[official_id] = official_id
 
         # 记录官员生成日志
-        official.logger.info(f"{official_data['rank']} {official_id} 生成成功。")
+        # official.logger.info(f"{official_data['rank']} {official_id} 生成成功。")
 
     # 创建并执行官员生成任务
     tasks = [process_official(i, official_data) for i, official_data in enumerate(government_info)]
