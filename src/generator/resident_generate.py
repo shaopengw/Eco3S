@@ -2,6 +2,13 @@ import json
 import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from openai import OpenAI
+
+# 后期需要修改
+client = OpenAI(
+    api_key="sk-ag6xyYytuTV1aMLx0dspYKh1oQacGmiK6lOGqEYNvHQofYJl",
+    base_url="https://api.chatanywhere.tech"  
+)
 
 # 性别比例
 gender_ratio = [0.351, 0.636]  # 女：男
@@ -90,8 +97,30 @@ def get_random_profession(residence):
 
     return profession_choice
 
+# 随机生成性格特征
+def generate_persona(gender, lifespan, residence, satisfaction, health_index, income, profession):
+    prompt = f"""
+    请生成一位中国清代普通居民的详细档案，仅描述其人格化特征（persona），用一句话概括该居民的性格和行为特点。
+
+    该居民的背景信息如下：
+    - 性别：{gender}
+    - 年龄：{lifespan}
+    - 居住地：{residence}
+    - 生活满意度：{satisfaction}
+    - 健康指数：{health_index}
+    - 收入：{income} 两白银
+    - 职业：{profession}
+
+    **示例输出**：
+    李文远是一个典型的“外圆内方”之人，表面随和谦逊，内心却极有主见，善于在复杂的环境中游刃有余，既保全自身，又兼顾他人利益。
+    """
+    response = client.chat.completions.create(model="gpt-3.5-turbo", messages=[{"role": "system", "content": prompt}])
+    persona = response.choices[0].message.content.strip()
+    return persona
+
 # 生成清代民众的个人信息
 def generate_resident_profile():
+    failure_count = 0
     while True:
         try:
             gender = get_random_gender()
@@ -111,7 +140,7 @@ def generate_resident_profile():
                 "health_index": health_index,
                 "income": income,
                 "profession": profession,
-                "persona": f"我是一名{gender}清代普通百姓，生活在{residence}，职业为{profession}，对于清朝政府的满意度为{satisfaction}，我的健康状况为{health_index}，收入为{income}两白银。"
+                "persona": generate_persona(gender, lifespan, residence, satisfaction, health_index, income, profession)
             }
             print(f"Generated profile: {profile}")
             return profile
@@ -125,7 +154,6 @@ def generate_resident_profile():
                 print("Failed to generate profile after 3 attempts. Terminating...")
                 break  # 终止循环
 
-
 # 批量生成清代民众数据
 def generate_resident_data(n):
     resident_data = []
@@ -137,7 +165,7 @@ def generate_resident_data(n):
             profile = future.result()
             resident_data.append(profile)
             elapsed_time = datetime.now() - start_time
-            print(f"Generated {i+1}/{n} resident profiles. Time elapsed: {elapsed_time}")
+            print(f"已生成 {i+1}/{n} 个数据，用时：{elapsed_time}")
     return resident_data
 
 # 保存数据到文件
@@ -150,4 +178,4 @@ if __name__ == "__main__":
     resident_data = generate_resident_data(N)
     output_path = 'experiment_dataset/resident_data/resident_data.json'
     save_resident_data(resident_data, output_path)
-    print(f"Generated {N} resident profiles and saved to {output_path}")
+    print(f"生成 {N} 个清代普通百姓的个人信息并保存到 {output_path}")

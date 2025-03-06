@@ -2,34 +2,23 @@
   {
     "realname": "清代普通百姓",
     "gender": "女性",
-    "lifespan": 27,
+    "lifespan": 20,
     "residence": "非沿河",
-    "satisfaction": 33,
-    "health_index": 1,
-    "income": 50,
+    "satisfaction": 39,
+    "health_index": 2,
+    "income": 20,
     "profession": "农民",
-    "persona": "我是一名女性清代普通百姓，生活在非沿河，职业为农民，对于清朝政府的满意度为33，我的健康状况为1，收入为50两白银。"
+    "persona": "王小兰是一个性格内向、情感脆弱的农村女性，面对生活的困境总是感到无奈与不安，虽渴望改善生活却缺乏行动力，常常展现出对未来的迷茫与无助。"
   },
   {
     "realname": "清代普通百姓",
     "gender": "女性",
-    "lifespan": 65,
-    "residence": "非沿河",
-    "satisfaction": 92,
-    "health_index": 1,
-    "income": 20,
-    "profession": "农民",
-    "persona": "我是一名女性清代普通百姓，生活在非沿河，职业为农民，对于清朝政府的满意度为92，我的健康状况为1，收入为20两白银。"
-  },
-  {
-    "realname": "清代普通百姓",
-    "gender": "男性",
-    "lifespan": 47,
+    "lifespan": 42,
     "residence": "沿河",
-    "satisfaction": 83,
-    "health_index": 1,
+    "satisfaction": 26,
+    "health_index": 3,
     "income": 20,
-    "profession": "农民",
-    "persona": "我是一名男性清代普通百姓，生活在沿河，职业为农民，对于清朝政府的满意度为83，我的健康状况为1，收入为20两白银。"
+    "profession": "其他",
+    "persona": "李秀兰是一位内心孤独却善良体贴的女性，尽管生活艰辛，她依然保持着同情心，尽力照顾身边的人，以平淡的方式面对生活的苦楚。"
   }
 ]
