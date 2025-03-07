@@ -7,6 +7,7 @@ from camel.utils import OpenAITokenCounter
 from datetime import datetime
 import sys
 import logging
+import asyncio
 
 if "sphinx" not in sys.modules:
     government_log = logging.getLogger(name="government.agent")
@@ -67,7 +68,7 @@ class OrdinaryGovernmentAgent:
         self.function = function
         self.persona = persona
 
-    def generate_opinion(self):
+    async def generate_opinion(self):
         """
         利用 AI 生成一句关于政治决策的意见
         :return: 生成的意见内容
@@ -113,7 +114,8 @@ class OrdinaryGovernmentAgent:
 
         try:
             # 调用模型生成意见
-            response = self.model_backend.run(openai_messages)
+            response = await asyncio.to_thread(self.model_backend.run, openai_messages)  # 异步运行模型
+            # response = self.model_backend.run(openai_messages)
             opinion = response.choices[0].message.content
             # # 只保存模型的回复内容到记忆
             # self.memory.write_record(
