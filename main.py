@@ -130,7 +130,7 @@ async def run_simulation(config: dict[str, Any]) -> None:
         unemployment_rate=simulator.results["unemployment_rate"],
         population=simulator.results["population"],
         government_budget=simulator.results["government_budget"],
-        rebellion_strength=simulator.results["rebellion_strength"],
+        # rebellion_strength=simulator.results["rebellion_strength"],
     )
 
     # 保存结果

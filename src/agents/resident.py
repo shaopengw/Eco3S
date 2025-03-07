@@ -8,6 +8,7 @@ from datetime import datetime
 import sys
 import logging
 import json
+import asyncio
 
 if "sphinx" not in sys.modules:
     resident_log = logging.getLogger(name="resident.agent")
@@ -196,7 +197,9 @@ class Resident:
 
         # 调用模型进行推理
         try:
-            response = self.model_backend.run(openai_messages)  # 运行模型
+            # response = self.model_backend.run(openai_messages)  # 运行模型
+            # 假设 self.model_backend.run 是同步的，使用 asyncio.to_thread 来避免阻塞事件循环
+            response = await asyncio.to_thread(self.model_backend.run, openai_messages)  # 异步运行模型
             content = response.choices[0].message.content  # 获取响应内容
             
             decision_data = json.loads(content)  # 将 JSON 字符串解析为字典

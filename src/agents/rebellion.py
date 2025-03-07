@@ -8,6 +8,7 @@ from datetime import datetime
 import sys
 import logging
 import json
+import asyncio
 
 if "sphinx" not in sys.modules:
     rebellion_log = logging.getLogger(name="rebellion.agent")
@@ -63,7 +64,7 @@ class OrdinaryRebel:
         self.role = role
         self.persona = persona
 
-    def generate_opinion(self):
+    async def generate_opinion(self):
         """
         利用 AI 生成一句关于叛军行动的意见
         :return: 生成的意见内容
@@ -109,7 +110,8 @@ class OrdinaryRebel:
 
         try:
             # 调用模型生成意见
-            response = self.model_backend.run(openai_messages)
+            # response = self.model_backend.run(openai_messages)
+            response = await asyncio.to_thread(self.model_backend.run, openai_messages)  # 异步运行模型
             opinion = response.choices[0].message.content
             rebellion_log.info(f"普通叛军 {self.rebel_id} 生成的意见：{opinion}")
             return opinion

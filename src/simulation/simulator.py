@@ -40,11 +40,14 @@ class Simulator:
             "government_budget": [],
             "rebellion_strength": [],
         }
+        self.start_time = None  # 用于记录模拟开始时间
+        self.end_time = None    # 用于记录模拟结束时间
 
     async def run(self):
         """
         运行模拟
         """
+        self.start_time = datetime.now()  # 记录模拟开始时间
         while not self.time.is_end():
             # 打印当前时间步信息
             print(Back.GREEN + f"年份:{self.time.get_current_time()}" + Back.RESET)
@@ -73,13 +76,12 @@ class Simulator:
                     self.residents[new_resident_id].resident_id = new_resident_id  # 给居民编号
                 self.population.birth(new_residents_count)
                 print(f"{len(new_residents)} 名新居民已出生")
-
-            # 政府行为
+            
             # 基于LLM的决策--测试时建议暂时注释
-            self.government_decision_process()
-
+            # 政府行为
+            await self.government_decision_process()
             # 叛军行为
-            self.rebellion_decision_process()
+            await self.rebellion_decision_process()
 
             # 居民行为
             rebellions = 0
@@ -107,7 +109,18 @@ class Simulator:
             # 模拟时间步延迟（可选）
             await asyncio.sleep(1)  # 模拟每秒推进一个时间步
 
-    def government_decision_process(self):
+        self.end_time = datetime.now()  # 记录模拟结束时间
+        self.display_total_simulation_time()
+
+    def display_total_simulation_time(self):
+        """
+        显示总模拟时间
+        """
+        if self.start_time and self.end_time:
+            total_time = self.end_time - self.start_time
+            print(f"总模拟时间: {total_time}")
+
+    async def government_decision_process(self):
         """
         政府决策流程：
         1. 普通官员发表意见
@@ -120,7 +133,7 @@ class Simulator:
         print(f"找到 {len(ordinary_officials)} 位普通官员")  # 输出普通官员的数量
         
         for official in ordinary_officials:
-            opinion = official.generate_opinion()
+            opinion = await official.generate_opinion()
             official.express_opinion(opinion)
 
         # 2. 普通官员互相讨论
@@ -161,8 +174,8 @@ class Simulator:
             print("决策内容格式错误，无法解析 JSON。")
         except Exception as e:
             print(f"执行决策时出错：{e}")
-            
-    def rebellion_decision_process(self):
+
+    async def rebellion_decision_process(self):
         """
         叛军决策流程：
         1. 普通叛军发表意见
@@ -175,7 +188,7 @@ class Simulator:
         print(f"找到 {len(ordinary_rebels)} 位普通叛军")  # 输出普通叛军的数量
         
         for rebel in ordinary_rebels:
-            opinion = rebel.generate_opinion()
+            opinion = await rebel.generate_opinion()
             rebel.express_opinion(opinion)
 
         # 2. 普通叛军互相讨论
@@ -217,6 +230,15 @@ class Simulator:
         except Exception as e:
             print(f"执行决策时出错：{e}")
 
+    def save_results(self, filename="data/simulation_results.csv"):
+        """
+        保存模拟结果到CSV文件
+        :param filename: 文件名
+        """
+        import pandas as pd
+        df = pd.DataFrame(self.results)
+        df.to_csv(filename, index=False)
+        print(f"模拟结果已保存至 {filename}")
 
     # def execute_government_decision(decision, government):
     #     """
@@ -254,13 +276,3 @@ class Simulator:
     #         print("决策内容格式错误，无法解析 JSON。")
     #     except Exception as e:
     #         print(f"执行决策时出错：{e}")
-
-    def save_results(self, filename="data/simulation_results.csv"):
-        """
-        保存模拟结果到CSV文件
-        :param filename: 文件名
-        """
-        import pandas as pd
-        df = pd.DataFrame(self.results)
-        df.to_csv(filename, index=False)
-        print(f"模拟结果已保存至 {filename}")
