@@ -1,7 +1,7 @@
 import json
 import asyncio
 from typing import Dict, Optional
-from src.agents.government import OrdinaryGovernmentAgent, HighRankingGovernmentAgent
+from src.agents.government import OrdinaryGovernmentAgent, HighRankingGovernmentAgent, government_SharedInformationPool
 from src.environment.job_market import JobMarket
 from src.agents.government import Government
 
@@ -12,6 +12,7 @@ async def generate_government_agents(
     agent_graph: Optional[Dict[int, OrdinaryGovernmentAgent]] = None,  # 官员图，默认为空
     official_id_mapping: Optional[Dict[int, int]] = None,  # 官员 ID 与 Agent ID 的映射关系，默认为空
     model_type: str = "gpt-3.5-turbo",  # 模型类型，默认为 GPT-3.5-turbo
+    shared_pool: Optional[government_SharedInformationPool] = None, # 共享资源池，默认为空
 ) -> Dict[int, OrdinaryGovernmentAgent]:
     """
     生成并返回政府官员的官员图。
@@ -31,6 +32,8 @@ async def generate_government_agents(
         official_id_mapping = {}  # 初始化官员 ID 与 Agent ID 的映射字典
     if agent_graph is None:
         agent_graph = {}  # 初始化官员图
+    if shared_pool is None:
+        shared_pool = government_SharedInformationPool()  # 初始化共享资源池
 
     # 读取政府官员信息文件
     with open(government_info_path, "r", encoding="utf-8", errors='ignore') as file:
@@ -49,12 +52,14 @@ async def generate_government_agents(
                 agent_id=official_id,
                 government=government,
                 model_type=model_type,
+                shared_pool=shared_pool,
             )
         elif official_data["rank"] == "高级官员":
             official = HighRankingGovernmentAgent(
                 agent_id=official_id,
                 government=government,
                 model_type=model_type,
+                shared_pool=shared_pool,
             )
         else:
             raise ValueError(f"未知的官员类型：{official_data['rank']}")
