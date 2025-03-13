@@ -55,15 +55,6 @@ class OrdinaryRebel:
             content="你是一位普通叛军，负责根据个人属性和叛军状态提出意见。"
         )
 
-    def set_attributes(self, role, mbti):
-        """
-        设置叛军的属性
-        :param role: 角色
-        :param mbti: 人物性格
-        """
-        self.role = role
-        self.mbti = mbti
-
     async def generate_opinion(self):
         """
         利用 AI 生成一句关于叛军行动的意见
@@ -199,15 +190,6 @@ class RebelLeader:
         self.token_counter = OpenAITokenCounter(self.model_type)
         self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
         self.memory = ChatHistoryMemory(self.context_creator, window_size=5)
-
-    def set_attributes(self, role, mbti):
-        """
-        设置叛军头子的属性
-        :param role: 角色
-        :param mbti: 人物性格
-        """
-        self.role = role
-        self.mbti = mbti
 
     def make_decision(self, discussion_report):
         """
