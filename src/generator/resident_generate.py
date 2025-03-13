@@ -42,6 +42,16 @@ professions = {
     "其他": {"沿河": [0.1, 0.2], "非沿河": [0.1, 0.15]}
 }
 
+# MBT及其分布比例
+p_mbti = [
+    0.12625, 0.11625, 0.02125, 0.03125, 0.05125, 0.07125, 0.04625, 0.04125,
+    0.04625, 0.06625, 0.07125, 0.03625, 0.10125, 0.11125, 0.03125, 0.03125
+]
+mbti_types = [
+    "ISTJ", "ISFJ", "INFJ", "INTJ", "ISTP", "ISFP", "INFP", "INTP", "ESTP",
+    "ESFP", "ENFP", "ENTP", "ESTJ", "ESFJ", "ENFJ", "ENTJ"
+]
+
 # 获取随机的性别
 def get_random_gender():
     return random.choices(genders, gender_ratio)[0]
@@ -98,25 +108,8 @@ def get_random_profession(residence):
     return profession_choice
 
 # 随机生成性格特征
-def generate_persona(gender, lifespan, residence, satisfaction, health_index, income, profession):
-    prompt = f"""
-    请生成一位中国清代普通居民的详细档案，仅描述其人格化特征（persona），用一句话概括该居民的性格和行为特点。
-
-    该居民的背景信息如下：
-    - 性别：{gender}
-    - 年龄：{lifespan}
-    - 居住地：{residence}
-    - 生活满意度：{satisfaction}
-    - 健康指数：{health_index}
-    - 收入：{income} 两白银
-    - 职业：{profession}
-
-    **示例输出**：
-    李文远是一个典型的“外圆内方”之人，表面随和谦逊，内心却极有主见，善于在复杂的环境中游刃有余，既保全自身，又兼顾他人利益。
-    """
-    response = client.chat.completions.create(model="gpt-3.5-turbo", messages=[{"role": "system", "content": prompt}])
-    persona = response.choices[0].message.content.strip()
-    return persona
+def get_random_mbti():
+    return random.choices(mbti_types, p_mbti)[0]
 
 # 生成清代民众的个人信息
 def generate_resident_profile():
@@ -130,6 +123,7 @@ def generate_resident_profile():
             health_index = get_random_health_index()
             income = get_random_income()
             profession = get_random_profession(residence)
+            mbti = get_random_mbti()
 
             profile = {
                 "realname": "清代普通百姓",
@@ -140,7 +134,7 @@ def generate_resident_profile():
                 "health_index": health_index,
                 "income": income,
                 "profession": profession,
-                "persona": generate_persona(gender, lifespan, residence, satisfaction, health_index, income, profession)
+                "mbti": mbti,
             }
             print(f"Generated profile: {profile}")
             return profile

@@ -12,4 +12,4 @@ simulation:
 data:
   resident_info_path: "experiment_dataset/resident_data/resident_data.json"  # 居民信息文件路径
   government_info_path: "experiment_dataset/government_data/official_data.json"  # 政府官员信息文件路径
-  rebellion_info_path: "experiment_dataset/rebellion_data/rebellion_data.json"  # 叛乱信息文件路径
+  rebellion_info_path: "experiment_dataset/rebellion_data/rebels_data.json"  # 叛乱信息文件路径

@@ -1,24 +1,24 @@
 [
   {
     "realname": "清代普通百姓",
-    "gender": "女性",
-    "lifespan": 20,
+    "gender": "男性",
+    "lifespan": 40,
     "residence": "非沿河",
-    "satisfaction": 39,
+    "satisfaction": 41,
     "health_index": 2,
-    "income": 20,
-    "profession": "农民",
-    "persona": "王小兰是一个性格内向、情感脆弱的农村女性，面对生活的困境总是感到无奈与不安，虽渴望改善生活却缺乏行动力，常常展现出对未来的迷茫与无助。"
+    "income": 10,
+    "profession": "其他",
+    "mbti": "ENFP"
   },
   {
     "realname": "清代普通百姓",
     "gender": "女性",
-    "lifespan": 42,
+    "lifespan": 71,
     "residence": "沿河",
-    "satisfaction": 26,
-    "health_index": 3,
-    "income": 20,
-    "profession": "其他",
-    "persona": "李秀兰是一位内心孤独却善良体贴的女性，尽管生活艰辛，她依然保持着同情心，尽力照顾身边的人，以平淡的方式面对生活的苦楚。"
+    "satisfaction": 63,
+    "health_index": 4,
+    "income": 50,
+    "profession": "农民",
+    "mbti": "ENTP"
   }
 ]

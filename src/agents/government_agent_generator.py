@@ -61,7 +61,7 @@ async def generate_government_agents(
 
         # 设置官员的初始属性
         official.function = official_data["function"]  # 职能
-        official.persona = official_data["persona"]  # 人物性格
+        official.mbti = official_data["mbti"]  # 人物性格
 
         # 将官员添加到官员图
         agent_graph[official_id] = official

@@ -12,12 +12,12 @@ from src.environment.job_market import JobMarket
 from src.environment.population import Population
 from src.environment.information_spread import InformationSpread
 from src.agents.government import Government
-from src.agents.rebellion import Rebellion
+from src.agents.rebels import Rebellion
 from src.simulation.simulator import Simulator
 from src.visualization.plot_results import plot_all_results
 from src.agents.resident_agent_generator import generate_canal_agents
 from src.agents.government_agent_generator import generate_government_agents
-from src.agents.rebellion_agent_generator import generate_rebellion_agents
+from src.agents.rebels_agent_generator import generate_rebels_agents
 from src.generator.resident_generate import generate_resident_data, save_resident_data
 
 # 确保 log 目录存在
@@ -85,7 +85,7 @@ async def run_simulation(config: dict[str, Any]) -> None:
 
     # 初始化叛军成员
     rebellion_info_path = config["data"]["rebellion_info_path"]  # 叛军信息文件路径
-    rebellion_agents = await generate_rebellion_agents(
+    rebels_agents = await generate_rebels_agents(
         rebellion_info_path=rebellion_info_path,
         rebellion=rebellion,
     )
@@ -112,7 +112,7 @@ async def run_simulation(config: dict[str, Any]) -> None:
         government=government,
         government_officials=government_officials,
         rebellion=rebellion,
-        rebellion_agents=rebellion_agents,
+        rebels_agents=rebels_agents,
         population=population,
         information_spread=information_spread,
         residents=residents,

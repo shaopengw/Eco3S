@@ -2,7 +2,7 @@ import asyncio
 from src.environment.map import Map
 from src.environment.job_market import JobMarket
 from src.agents.rebellion_agent_generator import (generate_rebellion_agents)
-from src.agents.rebellion import Rebellion
+from src.agents.rebels import Rebellion
 
 async def main():
 
