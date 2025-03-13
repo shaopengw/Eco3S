@@ -80,9 +80,9 @@ class Simulator:
             
             # 基于LLM的决策--测试时建议暂时注释
             # 政府行为
-            # await self.government_decision_process()
+            await self.government_decision_process()
             # 叛军行为
-            # await self.rebellion_decision_process()
+            await self.rebellion_decision_process()
 
             rebellions = 0
 
@@ -91,14 +91,12 @@ class Simulator:
             for resident_name in list(self.residents.keys()):  # 使用 list() 确保在遍历时不会出错
                 resident = self.residents[resident_name]
                 tasks.append(resident.decide_action_by_llm())  # 基于LLM的决策--测试时建议暂时注释
-                # await resident.decide_action_by_llm()  
             # 并发执行所有居民的行为
             await asyncio.gather(*tasks)
 
             # 更新居民寿命（次/年）
             for resident_name in list(self.residents.keys()):
                 resident = self.residents[resident_name]
-                print(f"居民{resident_name}健康值: {resident.health_index}")
                 if self.time.get_current_quarter() == 1:
                     if resident.update_lifespan() == 0:
                         del self.residents[resident_name]  # 从居民列表中删除逝世的居民
@@ -147,8 +145,6 @@ class Simulator:
         for official in ordinary_officials:
             if random.random() < activate_prob:
                 await official.generate_and_share_opinion()
-
-
 
         # 2. 高级官员做出决策
         high_ranking_officials = [
@@ -251,40 +247,3 @@ class Simulator:
         df = pd.DataFrame(self.results)
         df.to_csv(filename, index=False)
         print(f"模拟结果已保存至 {filename}")
-
-    # def execute_government_decision(decision, government):
-    #     """
-    #     执行高级官员的决策
-    #     :param decision: 高级官员的决策内容，格式为 JSON 列表，例如：
-    #         [
-    #             {"action": "维护运河", "params": 2000000},
-    #             {"action": "增加就业", "params": 1000000}
-    #         ]
-    #     :param government: Government 类的实例，用于执行具体动作
-    #     """
-    #     try:
-    #         # 打印传入的 JSON 字符串，检查格式
-    #         print(f"传入的决策内容：{decision}")
-            
-    #         # 解析决策内容
-    #         decision_data = json.loads(decision)  # 将 JSON 字符串解析为列表
-
-    #         # 遍历每个动作并执行
-    #         for action_item in decision_data:
-    #             action = action_item.get("action")
-    #             param = action_item.get("params")
-
-    #             if action == "增加就业":
-    #                 government.provide_jobs(budget_allocation=param)
-    #             elif action == "维护运河":
-    #                 government.maintain_canals(budget_allocation=param)
-    #             elif action == "提供公共服务":
-    #                 government.provide_public_services(budget_allocation=param)
-    #             elif action == "军需拨款":
-    #                 government.support_military(budget_allocation=param)
-    #             else:
-    #                 print(f"未知的决策动作：{action}")
-    #     except json.JSONDecodeError:
-    #         print("决策内容格式错误，无法解析 JSON。")
-    #     except Exception as e:
-    #         print(f"执行决策时出错：{e}")

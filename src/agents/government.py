@@ -26,7 +26,6 @@ class OrdinaryGovernmentAgent:
         self.agent_id = agent_id
         self.government = government
         self.shared_pool = shared_pool 
-        self.opinions = []  # 收集意见
         self.time = 0  # 当前时间（年）
 
         # 初始化官员属性
@@ -49,20 +48,6 @@ class OrdinaryGovernmentAgent:
             role_name="system",
             content="你是一位普通政府官员，负责根据个人属性和政府状态提出意见。"
         )
-        # self.logger = logging.getLogger(name=f"ordinary_government_agent_{agent_id}")
-        # self.logger.setLevel(logging.DEBUG)
-        # handler = logging.StreamHandler()
-        # handler.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
-        # self.logger.addHandler(handler)
-
-    def set_attributes(self, function, mbti):
-        """
-        设置官员的属性
-        :param function: 职能
-        :param mbti: 人物性格
-        """
-        self.function = function
-        self.mbti = mbti
 
     async def generate_opinion(self):
         """
@@ -80,9 +65,9 @@ class OrdinaryGovernmentAgent:
         # 从共享信息池中获取最新的讨论内容
         latest_discussion = await self.shared_pool.get_latest_discussion()
         if latest_discussion:
-            discussion_context = f"最新的讨论内容：\n{latest_discussion}\n"
+            discussion_context = f"讨论内容：\n{latest_discussion}\n"
         else:
-            discussion_context = ""
+            discussion_context = f"讨论内容：\n"
 
         # 构建提示信息
         prompt = (
@@ -91,7 +76,7 @@ class OrdinaryGovernmentAgent:
             f"人物性格: {self.mbti}\n"
             f"{government_status}\n"
             f"{discussion_context}\n"
-            f"请根据你的个人属性、当前政府状态和最新的讨论内容，提出一句关于大运河运营的政治决策的意见。尽可能简洁，不必说明理由。"
+            f"请根据你的个人属性、当前政府状态和讨论内容，提出一句关于大运河运营的政治决策的意见。尽可能简洁，不必说明理由。"
         )
 
         # 使用 CAMEL 框架生成意见
@@ -137,45 +122,12 @@ class OrdinaryGovernmentAgent:
             government_log.error(f"普通政府官员 {self.agent_id} 在生成意见时出错：{e}")
             return "无法生成意见"
 
-    def express_opinion(self, message_content):
-        """
-        表达意见
-        :param message_content: 意见内容
-        """
-        self.opinions.append(message_content)
-        # government_log.info(f"普通政府官员 {self.agent_id} 表达了意见：{message_content}")
-
-        # 使用 CAMEL 框架处理信息
-        user_message = BaseMessage.make_user_message(
-            role_name="普通政府官员",
-            content=message_content,
-        )
-        self.memory.write_record(
-            MemoryRecord(
-                message=user_message,
-                role_at_backend=OpenAIBackendRole.USER,
-            )
-        )
-
-    def get_opinions(self):
-        """
-        获取当前官员的所有意见
-        :return: 官员的意见列表
-        """
-        return self.opinions
-
     async def generate_and_share_opinion(self):
         """
         从共享信息池中获取信息并发表看法，将看法放入共享信息池
         """
-        # 从共享信息池中获取最新讨论内容
-        latest_discussion = await self.shared_pool.get_latest_discussion()
-        if latest_discussion:
-            government_log.info(f"普通官员 {self.agent_id} 正在听取讨论内容：{latest_discussion}")
-
         # 生成意见
         opinion = await self.generate_opinion()
-        self.express_opinion(opinion)
 
         # 将意见写入共享信息池
         await self.shared_pool.add_discussion(opinion)
@@ -209,22 +161,6 @@ class HighRankingGovernmentAgent:
         self.token_counter = OpenAITokenCounter(self.model_type)
         self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
         self.memory = ChatHistoryMemory(self.context_creator, window_size=5)
-
-        # # 初始化日志
-        # self.logger = logging.getLogger(name=f"high_ranking_government_agent_{agent_id}")
-        # self.logger.setLevel(logging.DEBUG)
-        # handler = logging.StreamHandler()
-        # handler.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
-        # self.logger.addHandler(handler)
-
-    def set_attributes(self,function, mbti):
-        """
-        设置官员的属性
-        :param function: 职能
-        :param mbti: 人物性格
-        """
-        self.function = function
-        self.mbti = mbti
 
     async def make_decision(self):
         """
@@ -280,6 +216,8 @@ class HighRankingGovernmentAgent:
             response = self.model_backend.run(openai_messages)
             decision = response.choices[0].message.content
             government_log.info(f"高级政府官员 {self.agent_id} 的决策：{decision}")
+            # 清空共享信息池
+            await self.shared_pool.clear_discussions()
             return decision
         except Exception as e:
             government_log.error(f"高级政府官员 {self.agent_id} 在做出决策时出错：{e}")
@@ -434,3 +372,9 @@ class government_SharedInformationPool:
                 return self.discussions
             else:
                 return []
+    async def clear_discussions(self):
+        """
+        清空所有讨论内容
+        """
+        async with self.lock:
+            self.discussions.clear()
