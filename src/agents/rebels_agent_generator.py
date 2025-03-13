@@ -1,10 +1,10 @@
 import json
 import asyncio
 from typing import Dict, Optional
-from src.agents.rebellion import OrdinaryRebel, RebelLeader
-from src.agents.rebellion import Rebellion
+from src.agents.rebels import OrdinaryRebel, RebelLeader
+from src.agents.rebels import Rebellion
 
-async def generate_rebellion_agents(
+async def generate_rebels_agents(
     rebellion_info_path: str,  # 叛军信息文件的路径
     rebellion: Rebellion,  # 叛军对象，用于关联叛军
     agent_graph: Optional[Dict[int, OrdinaryRebel]] = None,  # 叛军图，默认为空
@@ -58,7 +58,7 @@ async def generate_rebellion_agents(
 
         # 设置叛军的初始属性
         rebel.role = rebel_data["role"]  # 角色
-        rebel.persona = rebel_data["persona"]  # 人物性格
+        rebel.mbti = rebel_data["mbti"]  # 人物性格
 
         # 将叛军添加到叛军图
         agent_graph[rebel_id] = rebel

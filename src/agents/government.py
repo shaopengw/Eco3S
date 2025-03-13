@@ -35,7 +35,7 @@ class OrdinaryGovernmentAgent:
 
         # 初始化官员属性
         self.function = None  # 职能
-        self.persona = None  # 人物性格
+        self.mbti = None  # 人物性格
 
         # 初始化 CAMEL 框架组件
         self.model_type = ModelType(model_type)
@@ -59,14 +59,14 @@ class OrdinaryGovernmentAgent:
         # handler.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
         # self.logger.addHandler(handler)
 
-    def set_attributes(self, function, persona):
+    def set_attributes(self, function, mbti):
         """
         设置官员的属性
         :param function: 职能
-        :param persona: 人物性格
+        :param mbti: 人物性格
         """
         self.function = function
-        self.persona = persona
+        self.mbti = mbti
 
     async def generate_opinion(self):
         """
@@ -85,7 +85,7 @@ class OrdinaryGovernmentAgent:
         prompt = (
             f"你是一位普通清代政府官员，以下是你的个人属性：\n"
             f"职能: {self.function}\n"
-            f"人物性格: {self.persona}\n"
+            f"人物性格: {self.mbti}\n"
             f"{government_status}\n"
             f"请根据你的个人属性和当前政府状态，提出一句关于大运河运营的政治决策的意见。"
         )
@@ -201,7 +201,7 @@ class HighRankingGovernmentAgent:
         
         # 初始化官员属性
         self.function = None  # 职能
-        self.persona = None  # 人物性格
+        self.mbti = None  # 人物性格
 
         # 初始化 CAMEL 框架组件
         self.model_type = ModelType(model_type)
@@ -222,14 +222,14 @@ class HighRankingGovernmentAgent:
         # handler.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
         # self.logger.addHandler(handler)
 
-    def set_attributes(self,function, persona):
+    def set_attributes(self,function, mbti):
         """
         设置官员的属性
         :param function: 职能
-        :param persona: 人物性格
+        :param mbti: 人物性格
         """
         self.function = function
-        self.persona = persona
+        self.mbti = mbti
 
     def make_decision(self, discussion_report):
         """

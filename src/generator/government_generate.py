@@ -14,35 +14,43 @@ client = OpenAI(
 function_ratio = [0.02, 0.65, 0.22, 0.07]  # 漕运、行政、军事、经济管理
 functions = ['漕运', '行政', '军事', '经济管理']
 
+# MBT及其分布比例
+p_mbti = [
+    0.12625, 0.11625, 0.02125, 0.03125, 0.05125, 0.07125, 0.04625, 0.04125,
+    0.04625, 0.06625, 0.07125, 0.03625, 0.10125, 0.11125, 0.03125, 0.03125
+]
+mbti_types = [
+    "ISTJ", "ISFJ", "INFJ", "INTJ", "ISTP", "ISFP", "INFP", "INTP", "ESTP",
+    "ESFP", "ENFP", "ENTP", "ESTJ", "ESFJ", "ENFJ", "ENTJ"
+]
+
 # 随机生成职能
 def get_random_function():
     return random.choices(functions, function_ratio)[0]
 
+# # 随机生成性格特征
+# persona_gen_prompt = """
+# 请生成一位中国清代政府官员的详细档案，仅描述其人格化特征（persona），用一句话概括该官员的性格和行为特点。
+
+# **示例输出**：
+#     "张显为人冷静沉稳，处事不惊，常以深思熟虑的态度处理政务。他在朝廷中以务实著称，常常偏向于现实的解决方案而非理想化的改革。"
+# """
+
 # 随机生成性格特征
-persona_gen_prompt = """
-请生成一位中国清代政府官员的详细档案，仅描述其人格化特征（persona），用一句话概括该官员的性格和行为特点。
-
-**示例输出**：
-    "张显为人冷静沉稳，处事不惊，常以深思熟虑的态度处理政务。他在朝廷中以务实著称，常常偏向于现实的解决方案而非理想化的改革。"
-"""
-
-def generate_persona():
-    prompt = persona_gen_prompt
-    response = client.chat.completions.create(model="gpt-3.5-turbo", messages=[{"role": "system", "content": prompt}])
-    persona = response.choices[0].message.content.strip()
-    return json.loads(persona)
+def get_random_mbti():
+    return random.choices(mbti_types, p_mbti)[0]
 
 def generate_official_profile(is_high_rank=False):
     rank = '高级官员' if is_high_rank else '普通官员'
     for attempt in range(3):
         try:
-            persona = generate_persona()
+            mbti = get_random_mbti()
             function = get_random_function()
             # 构建官员属性
             official_data = {
                 "rank": rank,
                 "function": function,
-                "persona": persona
+                "mbti": mbti,
             }
             print(f"生成的官员信息: {official_data}")
             return official_data

@@ -11,10 +11,10 @@ import json
 import asyncio
 
 if "sphinx" not in sys.modules:
-    rebellion_log = logging.getLogger(name="rebellion.agent")
+    rebellion_log = logging.getLogger(name="rebels.agent")
     rebellion_log.setLevel("DEBUG")
     now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    file_handler = logging.FileHandler(f"./log/rebellion.agent-{str(now)}.log")
+    file_handler = logging.FileHandler(f"./log/rebels.agent-{str(now)}.log")
     file_handler.setLevel("DEBUG")
     file_handler.setFormatter(
         logging.Formatter(
@@ -36,7 +36,7 @@ class OrdinaryRebel:
 
         # 初始化叛军属性
         self.role = None  # 角色
-        self.persona = None  # 人物性格
+        self.mbti = None  # 人物性格
 
         # 初始化 CAMEL 框架组件
         self.model_type = ModelType(model_type)
@@ -55,14 +55,14 @@ class OrdinaryRebel:
             content="你是一位普通叛军，负责根据个人属性和叛军状态提出意见。"
         )
 
-    def set_attributes(self, role, persona):
+    def set_attributes(self, role, mbti):
         """
         设置叛军的属性
         :param role: 角色
-        :param persona: 人物性格
+        :param mbti: 人物性格
         """
         self.role = role
-        self.persona = persona
+        self.mbti = mbti
 
     async def generate_opinion(self):
         """
@@ -81,7 +81,7 @@ class OrdinaryRebel:
         prompt = (
             f"你是一位普通叛军，以下是你的个人属性：\n"
             f"角色: {self.role}\n"
-            f"人物性格: {self.persona}\n"
+            f"人物性格: {self.mbti}\n"
             f"{rebellion_status}\n"
             f"请根据你的个人属性和当前叛军状态，提出一句关于叛军行动的意见。"
         )
@@ -186,7 +186,7 @@ class RebelLeader:
         
         # 初始化叛军头子属性
         self.role = None  # 角色
-        self.persona = None  # 人物性格
+        self.mbti = None  # 人物性格
 
         # 初始化 CAMEL 框架组件
         self.model_type = ModelType(model_type)
@@ -200,14 +200,14 @@ class RebelLeader:
         self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
         self.memory = ChatHistoryMemory(self.context_creator, window_size=5)
 
-    def set_attributes(self, role, persona):
+    def set_attributes(self, role, mbti):
         """
         设置叛军头子的属性
         :param role: 角色
-        :param persona: 人物性格
+        :param mbti: 人物性格
         """
         self.role = role
-        self.persona = persona
+        self.mbti = mbti
 
     def make_decision(self, discussion_report):
         """
@@ -272,7 +272,7 @@ class RebelLeader:
         rebellion_log.info(f"叛军头子 {self.leader_id} 的状态：")
         rebellion_log.info(f"  当前时间：{self.time}年")
         rebellion_log.info(f"  角色：{self.role}")
-        rebellion_log.info(f"  人物性格：{self.persona}")
+        rebellion_log.info(f"  人物性格：{self.mbti}")
 
 class Rebellion:
     def __init__(self, initial_strength, initial_resources, initial_support):

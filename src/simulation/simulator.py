@@ -4,11 +4,11 @@ import json
 from colorama import Back
 from src.agents.resident_agent_generator import (generate_canal_agents)
 from src.agents.government import OrdinaryGovernmentAgent, HighRankingGovernmentAgent
-from src.agents.rebellion import OrdinaryRebel, RebelLeader
+from src.agents.rebels import OrdinaryRebel, RebelLeader
 from src.generator.resident_generate import generate_resident_data, save_resident_data
 
 class Simulator:
-    def __init__(self, map, time, job_market, government, government_officials, rebellion, rebellion_agents, population, information_spread, residents):
+    def __init__(self, map, time, job_market, government, government_officials, rebellion, rebels_agents, population, information_spread, residents):
         """
         初始化模拟器类
         :param map: 地图对象
@@ -17,7 +17,7 @@ class Simulator:
         :param government: 政府对象
         :param government_officials: 政府官员列表
         :param rebellion: 叛军对象
-        :param rebellion_agents: 叛军列表
+        :param rebels_agents: 叛军列表
         :param population: 人口对象
         :param information_spread: 信息传播对象
         :param residents: 居民列表
@@ -28,7 +28,7 @@ class Simulator:
         self.government = government
         self.government_officials = government_officials
         self.rebellion = rebellion
-        self.rebellion_agents = rebellion_agents
+        self.rebels_agents = rebels_agents
         self.population = population
         self.information_spread = information_spread
         self.residents = residents
@@ -184,7 +184,7 @@ class Simulator:
         4. 执行决策
         """
         # 1. 普通叛军发表意见
-        ordinary_rebels = [rebel for rebel in self.rebellion_agents.values() if isinstance(rebel, OrdinaryRebel)]
+        ordinary_rebels = [rebel for rebel in self.rebels_agents.values() if isinstance(rebel, OrdinaryRebel)]
         print(f"找到 {len(ordinary_rebels)} 位普通叛军")  # 输出普通叛军的数量
         
         for rebel in ordinary_rebels:
@@ -197,7 +197,7 @@ class Simulator:
             discussion_report = ordinary_rebels[0].discuss_with_other_rebels(ordinary_rebels[1:])
 
         # 3. 叛军头子做出决策
-        rebel_leaders = [rebel for rebel in self.rebellion_agents.values() if isinstance(rebel, RebelLeader)]
+        rebel_leaders = [rebel for rebel in self.rebels_agents.values() if isinstance(rebel, RebelLeader)]
         if rebel_leaders:
             decision = rebel_leaders[0].make_decision(discussion_report)
 
