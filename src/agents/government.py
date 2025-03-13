@@ -21,15 +21,11 @@ if "sphinx" not in sys.modules:
     government_log.addHandler(file_handler)
 
 class OrdinaryGovernmentAgent:
-    def __init__(self, agent_id, government, model_type="gpt-3.5-turbo"):
-        """
-        初始化普通政府官员类
-        :param agent_id: 政府官员的唯一标识符
-        :param government: 政府对象，用于获取政府状态
-        :param model_type: 使用的模型类型（默认使用 GPT-3.5-turbo）
-        """
+    def __init__(self, agent_id, government,shared_pool, model_type="gpt-3.5-turbo"):
+
         self.agent_id = agent_id
         self.government = government
+        self.shared_pool = shared_pool 
         self.opinions = []  # 收集意见
         self.time = 0  # 当前时间（年）
 
@@ -81,13 +77,21 @@ class OrdinaryGovernmentAgent:
             f"运河维护政策支持: {self.government.policy_support_canal}\n"
         )
 
+        # 从共享信息池中获取最新的讨论内容
+        latest_discussion = await self.shared_pool.get_latest_discussion()
+        if latest_discussion:
+            discussion_context = f"最新的讨论内容：\n{latest_discussion}\n"
+        else:
+            discussion_context = ""
+
         # 构建提示信息
         prompt = (
             f"你是一位普通清代政府官员，以下是你的个人属性：\n"
             f"职能: {self.function}\n"
             f"人物性格: {self.mbti}\n"
             f"{government_status}\n"
-            f"请根据你的个人属性和当前政府状态，提出一句关于大运河运营的政治决策的意见。"
+            f"{discussion_context}\n"
+            f"请根据你的个人属性、当前政府状态和最新的讨论内容，提出一句关于大运河运营的政治决策的意见。尽可能简洁，不必说明理由。"
         )
 
         # 使用 CAMEL 框架生成意见
@@ -160,35 +164,25 @@ class OrdinaryGovernmentAgent:
         """
         return self.opinions
 
-    def discuss_with_other_officials(self, other_agents):
+    async def generate_and_share_opinion(self):
         """
-        与其他普通政府官员讨论
-        :param other_agents: 其他政府官员列表
+        从共享信息池中获取信息并发表看法，将看法放入共享信息池
         """
-        opinions = []
-        for agent in other_agents:
-            opinions += agent.get_opinions()
-        
-        # 讨论意见并生成报告
-        discussion_report = "\n".join(opinions)
-        user_msg = BaseMessage.make_user_message(
-            role_name="普通政府官员",
-            content=f"我们讨论了以下意见：\n{discussion_report}\n请提出您的看法。",
-        )
+        # 从共享信息池中获取最新讨论内容
+        latest_discussion = await self.shared_pool.get_latest_discussion()
+        if latest_discussion:
+            government_log.info(f"普通官员 {self.agent_id} 正在听取讨论内容：{latest_discussion}")
 
-        # 将讨论内容写入记忆系统
-        self.memory.write_record(
-            MemoryRecord(
-                message=user_msg,
-                role_at_backend=OpenAIBackendRole.USER,
-            )
-        )
-        
-        # 更新并返回讨论报告
-        return discussion_report
+        # 生成意见
+        opinion = await self.generate_opinion()
+        self.express_opinion(opinion)
+
+        # 将意见写入共享信息池
+        await self.shared_pool.add_discussion(opinion)
+        government_log.info(f"普通官员 {self.agent_id} 已将意见写入共享信息池：{opinion}")
     
 class HighRankingGovernmentAgent:
-    def __init__(self, agent_id, government, model_type="gpt-3.5-turbo"):
+    def __init__(self, agent_id, government,shared_pool, model_type="gpt-3.5-turbo"):
         """
         初始化高级政府官员类（决策者）
         :param agent_id: 政府官员的唯一标识符
@@ -197,6 +191,7 @@ class HighRankingGovernmentAgent:
         """
         self.agent_id = agent_id
         self.government = government
+        self.shared_pool = shared_pool
         self.time = 0  # 当前时间（年）
         
         # 初始化官员属性
@@ -231,12 +226,15 @@ class HighRankingGovernmentAgent:
         self.function = function
         self.mbti = mbti
 
-    def make_decision(self, discussion_report):
+    async def make_decision(self):
         """
         根据普通政府官员的讨论作出决策
         :param discussion_report: 普通政府官员的讨论报告
         :return: 决策结果
         """
+        # 从共享信息池中获取最新讨论内容
+        discussion_report = await self.shared_pool.get_latest_discussion()
+        
         # 使用 CAMEL 框架来做决策
         decision_message = BaseMessage.make_user_message(
             role_name="高级政府官员",
@@ -294,7 +292,7 @@ class HighRankingGovernmentAgent:
         government_log.info(f"高级政府官员 {self.agent_id} 的状态：")
         government_log.info(f"  当前时间：{self.time}年")
         government_log.info(f"  职能：{self.function}")
-        government_log.info(f"  人物性格：{self.persona}")
+        government_log.info(f"  人物性格：{self.mbti}")
 
 class Government:
     def __init__(self, map, job_market, initial_budget, time):
@@ -397,3 +395,42 @@ class Government:
         print(f"政府预算: {self.budget}")
         print(f"军事力量: {self.military_strength}")
         print(f"运河维护政策支持: {self.policy_support_canal}")
+
+class government_SharedInformationPool:
+    def __init__(self):
+        """
+        初始化共享信息池
+        """
+        self.discussions = []  # 存储所有讨论内容
+        self.lock = asyncio.Lock()  # 用于异步操作的锁
+
+    async def add_discussion(self, discussion):
+        """
+        添加讨论内容到共享信息池
+        :param discussion: 讨论内容
+        """
+        async with self.lock:
+            self.discussions.append(discussion)
+
+    async def get_latest_discussion(self):
+        """
+        获取最新的讨论内容
+        :return: 最新的讨论内容
+        """
+        async with self.lock:
+            if self.discussions:
+                latest_discussion = self.discussions[-1]
+                return latest_discussion
+            else:
+                return None
+
+    async def get_all_discussions(self):
+        """
+        获取所有讨论内容
+        :return: 所有讨论内容的列表
+        """
+        async with self.lock:
+            if self.discussions:
+                return self.discussions
+            else:
+                return []

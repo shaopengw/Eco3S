@@ -1,6 +1,7 @@
 import asyncio
-from datetime import datetime, timedelta
 import json
+import random
+from datetime import datetime, timedelta
 from colorama import Back
 from src.agents.resident_agent_generator import (generate_canal_agents)
 from src.agents.government import OrdinaryGovernmentAgent, HighRankingGovernmentAgent
@@ -81,13 +82,13 @@ class Simulator:
             # 政府行为
             await self.government_decision_process()
             # 叛军行为
-            await self.rebellion_decision_process()
+            # await self.rebellion_decision_process()
 
             # 居民行为
             rebellions = 0
             for resident_name in list(self.residents.keys()):  # 使用 list() 确保在遍历时不会出错
                 resident = self.residents[resident_name]
-                await resident.decide_action_by_llm()  # 基于LLM的决策--测试时建议暂时注释
+                # await resident.decide_action_by_llm()  # 基于LLM的决策--测试时建议暂时注释
                 # 更新居民寿命（次/年）
                 print(f"居民{resident_name}健康值: {resident.health_index}")
                 if self.time.get_current_quarter() == 1:
@@ -120,33 +121,36 @@ class Simulator:
             total_time = self.end_time - self.start_time
             print(f"总模拟时间: {total_time}")
 
-    async def government_decision_process(self):
+    async def government_decision_process(self, activate_prob=0.8):
         """
         政府决策流程：
-        1. 普通官员发表意见
-        2. 普通官员互相讨论
-        3. 高级官员做出决策
-        4. 执行决策
+        1. 随机触发普通官员从共享信息池中获取信息并发表看法
+        2. 高级官员做出决策
+        3. 执行决策
+        :param activate_prob: 触发官员发表看法的概率（默认 80%）
         """
-        # 1. 普通官员发表意见
-        ordinary_officials = [official for official in self.government_officials.values() if isinstance(official, OrdinaryGovernmentAgent)]
-        print(f"找到 {len(ordinary_officials)} 位普通官员")  # 输出普通官员的数量
-        
+        # 1. 随机触发普通官员从共享信息池中获取信息并发表看法
+        ordinary_officials = [
+            official for official in self.government_officials.values()
+            if isinstance(official, OrdinaryGovernmentAgent)
+        ]
+        # print(f"找到 {len(ordinary_officials)} 位普通官员")
+
         for official in ordinary_officials:
-            opinion = await official.generate_opinion()
-            official.express_opinion(opinion)
+            if random.random() < activate_prob:
+                await official.generate_and_share_opinion()
 
-        # 2. 普通官员互相讨论
-        discussion_report = ""
-        if len(ordinary_officials) > 1:
-            discussion_report = ordinary_officials[0].discuss_with_other_officials(ordinary_officials[1:])
 
-        # 3. 高级官员做出决策
-        high_ranking_officials = [official for official in self.government_officials.values() if isinstance(official, HighRankingGovernmentAgent)]
+
+        # 2. 高级官员做出决策
+        high_ranking_officials = [
+            official for official in self.government_officials.values()
+            if isinstance(official, HighRankingGovernmentAgent)
+        ]
         if high_ranking_officials:
-            decision = high_ranking_officials[0].make_decision(discussion_report)
+            decision = await high_ranking_officials[0].make_decision()
 
-            # 4. 执行决策
+            # 3. 执行决策
             self.execute_government_decision(decision)
 
     def execute_government_decision(self, decision):
