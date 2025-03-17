@@ -2,13 +2,6 @@ import json
 import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from openai import OpenAI
-
-# 后期需要修改
-client = OpenAI(
-    api_key="sk-ag6xyYytuTV1aMLx0dspYKh1oQacGmiK6lOGqEYNvHQofYJl",
-    base_url="https://api.chatanywhere.tech"  
-)
 
 # 性别比例
 gender_ratio = [0.351, 0.636]  # 女：男
@@ -168,7 +161,7 @@ def save_resident_data(resident_data, filename):
         json.dump(resident_data, f, ensure_ascii=False, indent=2)
 
 if __name__ == "__main__":
-    N = 2 # 目标数据量
+    N = 10 # 目标数据量
     resident_data = generate_resident_data(N)
     output_path = 'experiment_dataset/resident_data/resident_data.json'
     save_resident_data(resident_data, output_path)
