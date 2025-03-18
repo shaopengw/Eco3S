@@ -10,7 +10,8 @@ from src.environment.map import Map
 from src.environment.time import Time
 from src.environment.job_market import JobMarket
 from src.environment.population import Population
-from src.environment.information_spread import InformationSpread
+# from src.environment.information_spread import InformationSpread
+from src.environment.social_network import SocialNetwork
 from src.agents.government import Government
 from src.agents.rebels import Rebellion
 from src.simulation.simulator import Simulator
@@ -93,9 +94,6 @@ async def run_simulation(config: dict[str, Any]) -> None:
     # 初始化人口
     population = Population(initial_population=config["simulation"]["initial_population"])
 
-    # 初始化信息传播
-    information_spread = InformationSpread(map=map)
-
     # 初始化居民
     resident_info_path = config["data"]["resident_info_path"]  # 居民信息文件路径
     residents = await generate_canal_agents(
@@ -103,6 +101,13 @@ async def run_simulation(config: dict[str, Any]) -> None:
         map=map,
         job_market=job_market,
     )
+
+    # 初始化社交网络
+    social_network = initialize_social_network(residents)
+
+    # 可视化社交网络
+    social_network.visualize()
+
 
     # 初始化模拟器
     simulator = Simulator(
@@ -114,7 +119,7 @@ async def run_simulation(config: dict[str, Any]) -> None:
         rebellion=rebellion,
         rebels_agents=rebels_agents,
         population=population,
-        information_spread=information_spread,
+        social_network=social_network,
         residents=residents,
     )
     print("初始化完成")
@@ -136,6 +141,32 @@ async def run_simulation(config: dict[str, Any]) -> None:
     # 保存结果
     print("模拟结束")
     simulator.save_results()
+
+def initialize_social_network(residents: dict) -> SocialNetwork:
+    social_network = SocialNetwork()
+
+    # 将居民添加到社交网络
+    for resident_id, resident in residents.items():
+        social_network.add_resident(resident_id, "resident")
+
+    # 随机生成朋友关系
+    resident_ids = list(residents.keys())
+    for i in range(len(resident_ids)):
+        for j in range(i + 1, len(resident_ids)):
+            if random.random() < 0.2:  # 20% 的概率成为朋友
+                social_network.add_relation(resident_ids[i], resident_ids[j], "friend")
+                print(f"居民 {resident_ids[i]} 和居民 {resident_ids[j]} 成为朋友")
+
+    # 随机生成家庭群体
+    families = []
+    for i in range(0, len(resident_ids), 4):  # 每 4 个居民组成一个家庭
+        family_members = [resident_ids[j] for j in range(i, min(i + 4, len(resident_ids)))]
+        families.append((f"family_{i//4}", family_members))
+        print(families)
+    for group_id, members in families:
+        social_network.add_group(group_id, members)
+
+    return social_network
 
 if __name__ == "__main__":
     # 解析命令行参数
