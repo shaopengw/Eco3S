@@ -9,6 +9,7 @@ import sys
 import logging
 import json
 import asyncio
+import random
 
 if "sphinx" not in sys.modules:
     resident_log = logging.getLogger(name="resident.agent")
@@ -160,22 +161,41 @@ class Resident:
 
     async def decide_action_by_llm(self):
         """
-        通过LLM决定居民的行动（参加叛乱、继续工作、迁徙等）。
+        通过LLM决定居民的行动，并随机生成对政府的态度发言。
         """
         # 获取当前居民状态的提示信息
         status_prompt = self.get_status_prompt()
+        
+        action_prompt = (
+            f"请根据当前状态决定下一步行动。"
+            f"以下是你的当前状态：{status_prompt}\n"
+            f"你可以选择以下行动之一：\n"
+            f"1. 参加叛乱\n"
+            f"2. 继续目前的工作\n"
+            f"3. 迁徙到其他位置\n"
+            f"请返回选择的数字（1、2 或 3），并解释原因。"
+            f"注意：必须返回单行的JSON字符串，格式如下：\n"
+            f'{{"select": "1", "reason": "叛乱风险已达210，环境极其危险。农民收入微薄。健康极差，生存优先。"}}'
+        )
+
+        speech_prompt = (
+            f"请根据当前状态决定下一步行动。"
+            f"以下是你的当前状态：{status_prompt}\n"
+            f"你可以选择以下行动之一：\n"
+            f"1. 参加叛乱\n"
+            f"2. 继续目前的工作\n"
+            f"3. 迁徙到其他位置\n"
+            f"请返回选择的数字（1、2 或 3），并解释原因。"
+            f"\n同时，请根据当前状态对政府表达一个态度（积极或消极）"
+            f"态度要与满意度（{self.satisfaction}）和叛乱风险（{self.rebellion_risk}）相符。"
+            f"注意：必须返回单行的JSON字符串，格式如下：\n"
+            f'{{"select": "1", "reason": "叛乱风险已达210，环境极其危险。农民收入微薄。健康极差，生存优先。", "speech": "政府的政策让我们的生活越来越艰难。"}}'
+        )
+        # 随机决定是否需要发言（20%的概率）
+        need_speech = random.random() < 0.2
         user_msg = BaseMessage.make_user_message(
-            role_name="居民",  # 居民角色
-            content=(
-                f"请根据当前状态决定下一步行动。"
-                f"以下是你的当前状态：{status_prompt}\n"
-                f"你可以选择以下行动之一：\n"
-                f"1. 参加叛乱\n"
-                f"2. 继续目前的工作\n"
-                f"3. 迁徙到其他位置\n"
-                f"请返回选择的数字（1、2 或 3），并解释原因，输出格式为 JSON，例如：\n"
-                f'{{"select": "1", "reason": "叛乱风险已达210，环境极其危险。农民收入微薄（10），高风险工作不明智。健康极差（1），寿命仅剩22年，生存优先。迁徙是最紧急合理的选择，可逃离危险，改善生活与健康。"}}'
-            ),
+            role_name="居民",
+            content=action_prompt if not need_speech else speech_prompt
         )
         # 将用户消息写入记忆系统
         self.memory.write_record(
@@ -197,17 +217,21 @@ class Resident:
 
         # 调用模型进行推理
         try:
-            # response = self.model_backend.run(openai_messages)  # 运行模型
-            # 假设 self.model_backend.run 是同步的，使用 asyncio.to_thread 来避免阻塞事件循环
-            response = await asyncio.to_thread(self.model_backend.run, openai_messages)  # 异步运行模型
-            content = response.choices[0].message.content  # 获取响应内容
+            response = await asyncio.to_thread(self.model_backend.run, openai_messages)
+            content = response.choices[0].message.content
             
-            decision_data = json.loads(content)  # 将 JSON 字符串解析为字典
+            decision_data = json.loads(content)
             select = decision_data.get("select")
             reason = decision_data.get("reason")
-            resident_log.info(f"居民 {self.resident_id} 的思考：{reason},选择：{select}")
+            speech = decision_data.get("speech", "")
+            
+            resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}")
+            
+            # 这里要加信息传播逻辑
+            if speech:
+                resident_log.info(f"居民 {self.resident_id} 对政府的态度：{speech}")
 
-            # 解析响应内容并执行相应的行动
+            # 执行行动
             if select =="1":
                 resident_log.warning(f"居民 {self.resident_id} 决定参加叛乱。")
                 self.decide_rebellion()
