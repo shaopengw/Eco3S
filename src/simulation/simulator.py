@@ -7,9 +7,10 @@ from src.agents.resident_agent_generator import (generate_canal_agents)
 from src.agents.government import OrdinaryGovernmentAgent, HighRankingGovernmentAgent
 from src.agents.rebels import OrdinaryRebel, RebelLeader
 from src.generator.resident_generate import generate_resident_data, save_resident_data
+from src.environment.social_network import SocialNetwork
 
 class Simulator:
-    def __init__(self, map, time, job_market, government, government_officials, rebellion, rebels_agents, population, information_spread, residents):
+    def __init__(self, map, time, job_market, government, government_officials, rebellion, rebels_agents, population, social_network, residents):
         """
         初始化模拟器类
         :param map: 地图对象
@@ -20,7 +21,7 @@ class Simulator:
         :param rebellion: 叛军对象
         :param rebels_agents: 叛军列表
         :param population: 人口对象
-        :param information_spread: 信息传播对象
+        :param social_network: 社会网络对象
         :param residents: 居民列表
         """
         self.map = map
@@ -31,7 +32,7 @@ class Simulator:
         self.rebellion = rebellion
         self.rebels_agents = rebels_agents
         self.population = population
-        self.information_spread = information_spread
+        self.social_network = social_network
         self.residents = residents
         self.results = {
             "years": [],
@@ -79,10 +80,8 @@ class Simulator:
                 print(f"{len(new_residents)} 名新居民已出生")
             
             # 基于LLM的决策--测试时建议暂时注释
-            # 政府行为
-            await self.government_decision_process()
-            # 叛军行为
-            await self.rebellion_decision_process()
+            await self.government_decision_process() # 政府行为
+            await self.rebellion_decision_process() # 叛军行为
 
             rebellions = 0
 
@@ -101,6 +100,12 @@ class Simulator:
                     if resident.update_lifespan() == 0:
                         del self.residents[resident_name]  # 从居民列表中删除逝世的居民
                         self.population.death()
+
+            # 信息传播测试
+            test_resident_id = 1
+            message = "政府宣布减税政策！"
+            self.social_network.spread_information(test_resident_id, message, "friend")  # 在朋友关系中传播
+            self.social_network.spread_information_in_group("family_0", message)  # 在第一个家庭群体中传播
 
             # 记录数据
             self.results["years"].append(self.time.get_current_time())

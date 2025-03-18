@@ -203,5 +203,21 @@ class SocialNetwork:
 
     def visualize(self):
         """
-        可视化社交网络。
+        可视化社交网络，同时显示异质图和超图的可视化图片，并添加边框和间距。
         """
+        # 创建一个包含两个子图的画布，并调整间距
+        fig, axes = plt.subplots(1, 2, figsize=(12, 6), gridspec_kw={'wspace': 0.3})
+
+        # 可视化异质图
+        ax1 = axes[0]
+        pos = nx.spring_layout(self.hetero_graph.graph)
+        node_colors = [self.hetero_graph.graph.nodes[node]["type"] == "person" and "lightblue" or "lightgreen" for node in self.hetero_graph.graph.nodes]
+        nx.draw(self.hetero_graph.graph, pos, with_labels=True, node_color=node_colors, node_size=500, font_size=10, ax=ax1)
+        ax1.set_title("Heterogeneous Graph", pad=20)  # 增加标题与图的间距
+
+        # 可视化超图
+        ax2 = axes[1]
+        hnx.draw(self.hyper_graph.hypergraph, ax=ax2)
+        ax2.set_title("Hypergraph", pad=20)  # 增加标题与图的间距
+
+        plt.show()
