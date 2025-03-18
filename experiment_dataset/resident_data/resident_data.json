@@ -2,23 +2,111 @@
   {
     "realname": "清代普通百姓",
     "gender": "男性",
-    "lifespan": 40,
-    "residence": "非沿河",
-    "satisfaction": 41,
-    "health_index": 2,
+    "lifespan": 45,
+    "residence": "沿河",
+    "satisfaction": 45,
+    "health_index": 3,
     "income": 10,
-    "profession": "其他",
-    "mbti": "ENFP"
+    "profession": "农民",
+    "mbti": "ISTP"
+  },
+  {
+    "realname": "清代普通百姓",
+    "gender": "男性",
+    "lifespan": 49,
+    "residence": "沿河",
+    "satisfaction": 11,
+    "health_index": 4,
+    "income": 50,
+    "profession": "农民",
+    "mbti": "ESTJ"
+  },
+  {
+    "realname": "清代普通百姓",
+    "gender": "男性",
+    "lifespan": 31,
+    "residence": "非沿河",
+    "satisfaction": 85,
+    "health_index": 4,
+    "income": 0,
+    "profession": "农民",
+    "mbti": "ENTP"
   },
   {
     "realname": "清代普通百姓",
     "gender": "女性",
-    "lifespan": 71,
+    "lifespan": 59,
     "residence": "沿河",
-    "satisfaction": 63,
-    "health_index": 4,
+    "satisfaction": 26,
+    "health_index": 1,
+    "income": 10,
+    "profession": "农民",
+    "mbti": "ISFJ"
+  },
+  {
+    "realname": "清代普通百姓",
+    "gender": "女性",
+    "lifespan": 48,
+    "residence": "沿河",
+    "satisfaction": 24,
+    "health_index": 1,
+    "income": 10,
+    "profession": "农民",
+    "mbti": "ISTJ"
+  },
+  {
+    "realname": "清代普通百姓",
+    "gender": "女性",
+    "lifespan": 35,
+    "residence": "沿河",
+    "satisfaction": 40,
+    "health_index": 2,
+    "income": 10,
+    "profession": "官员及士兵",
+    "mbti": "ESFJ"
+  },
+  {
+    "realname": "清代普通百姓",
+    "gender": "女性",
+    "lifespan": 34,
+    "residence": "非沿河",
+    "satisfaction": 41,
+    "health_index": 2,
     "income": 50,
     "profession": "农民",
-    "mbti": "ENTP"
+    "mbti": "ESFP"
+  },
+  {
+    "realname": "清代普通百姓",
+    "gender": "男性",
+    "lifespan": 26,
+    "residence": "非沿河",
+    "satisfaction": 76,
+    "health_index": 2,
+    "income": 10,
+    "profession": "农民",
+    "mbti": "ENFP"
+  },
+  {
+    "realname": "清代普通百姓",
+    "gender": "男性",
+    "lifespan": 18,
+    "residence": "沿河",
+    "satisfaction": 98,
+    "health_index": 1,
+    "income": 20,
+    "profession": "农民",
+    "mbti": "ISTP"
+  },
+  {
+    "realname": "清代普通百姓",
+    "gender": "女性",
+    "lifespan": 27,
+    "residence": "沿河",
+    "satisfaction": 4,
+    "health_index": 2,
+    "income": 20,
+    "profession": "其他",
+    "mbti": "ESTJ"
   }
 ]

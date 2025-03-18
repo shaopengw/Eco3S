@@ -1,8 +1,10 @@
 import random
+import os
 import hypernetx as hnx
 import networkx as nx
 import matplotlib.pyplot as plt
 from typing import Dict, List, Set, Tuple
+from datetime import datetime
 
 class HeterogeneousGraph:
     """
@@ -49,12 +51,36 @@ class HeterogeneousGraph:
 
     def visualize(self):
         """
-        可视化异质图。
+        可视化异质图，使用不同颜色显示不同类型的边。
         """
         pos = nx.spring_layout(self.graph)
+        
+        # 绘制节点
         node_colors = [self.graph.nodes[node]["type"] == "person" and "lightblue" or "lightgreen" for node in self.graph.nodes]
-        nx.draw(self.graph, pos, with_labels=True, node_color=node_colors, node_size=500, font_size=10)
-        plt.show()
+        nx.draw_networkx_nodes(self.graph, pos, node_color=node_colors, node_size=300)
+        nx.draw_networkx_labels(self.graph, pos, font_size=8)
+        
+        # 为不同类型的边使用不同颜色
+        edge_colors = {
+            "friend": "red",
+            "colleague": "blue",
+        }
+        
+        # 分别绘制不同类型的边
+        for edge_type, color in edge_colors.items():
+            edge_list = [(u, v) for (u, v, d) in self.graph.edges(data=True) if d["type"] == edge_type]
+            if edge_list:  # 只有当存在这种类型的边时才绘制
+                nx.draw_networkx_edges(self.graph, pos, edgelist=edge_list, edge_color=color, width=1.0)
+        
+        # 添加图例
+        from matplotlib.lines import Line2D
+        legend_elements = [
+            Line2D([0], [0], color=color, label=edge_type)
+            for edge_type, color in edge_colors.items()
+        ]
+        plt.legend(handles=legend_elements, loc='upper right')
+        
+        plt.axis('off')
 
 class Hypergraph:
     def __init__(self):
@@ -200,24 +226,38 @@ class SocialNetwork:
         模拟信息在某个群体中的传播。
         """
         self.hyper_graph.spread_information_in_group(group_id, message)
-
     def visualize(self):
         """
         可视化社交网络，同时显示异质图和超图的可视化图片，并添加边框和间距。
+        保存图片到指定目录。
         """
+        # 确保保存目录存在
+        save_dir = "e:/cyf/多智能体/AgentWorld/experiment_dataset/social_network_data"
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+    
         # 创建一个包含两个子图的画布，并调整间距
-        fig, axes = plt.subplots(1, 2, figsize=(12, 6), gridspec_kw={'wspace': 0.3})
-
+        fig, axes = plt.subplots(1, 2, figsize=(15, 7), gridspec_kw={'wspace': 0.3})
+    
         # 可视化异质图
         ax1 = axes[0]
-        pos = nx.spring_layout(self.hetero_graph.graph)
-        node_colors = [self.hetero_graph.graph.nodes[node]["type"] == "person" and "lightblue" or "lightgreen" for node in self.hetero_graph.graph.nodes]
-        nx.draw(self.hetero_graph.graph, pos, with_labels=True, node_color=node_colors, node_size=500, font_size=10, ax=ax1)
-        ax1.set_title("Heterogeneous Graph", pad=20)  # 增加标题与图的间距
-
+        plt.sca(ax1)  # 设置当前坐标轴
+        self.hetero_graph.visualize()
+        ax1.set_title("Heterogeneous Graph", pad=20)
+    
         # 可视化超图
         ax2 = axes[1]
-        hnx.draw(self.hyper_graph.hypergraph, ax=ax2)
-        ax2.set_title("Hypergraph", pad=20)  # 增加标题与图的间距
-
+        plt.sca(ax2)  # 设置当前坐标轴
+        hnx.draw(self.hyper_graph.hypergraph)
+        ax2.set_title("Hypergraph", pad=20)
+    
+        # 生成当前时间作为文件名
+        current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+        save_path = os.path.join(save_dir, f"social_network_{current_time}.png")
+        
+        # 保存图片
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"社交网络图已保存至：{save_path}")
+        
+        # 显示图片
         plt.show()

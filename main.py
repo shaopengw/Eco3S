@@ -144,27 +144,79 @@ async def run_simulation(config: dict[str, Any]) -> None:
 
 def initialize_social_network(residents: dict) -> SocialNetwork:
     social_network = SocialNetwork()
-
+    
     # 将居民添加到社交网络
     for resident_id, resident in residents.items():
         social_network.add_resident(resident_id, "resident")
 
-    # 随机生成朋友关系
     resident_ids = list(residents.keys())
-    for i in range(len(resident_ids)):
-        for j in range(i + 1, len(resident_ids)):
-            if random.random() < 0.2:  # 20% 的概率成为朋友
-                social_network.add_relation(resident_ids[i], resident_ids[j], "friend")
-                print(f"居民 {resident_ids[i]} 和居民 {resident_ids[j]} 成为朋友")
+    num_residents = len(resident_ids)
+    
+    # 为每个居民随机选择1-3个朋友
+    for i in range(num_residents):
+        # 获取当前居民已有的朋友数量
+        current_friends = len([n for n in social_network.hetero_graph.get_neighbors(resident_ids[i]) 
+                             if social_network.hetero_graph.graph[resident_ids[i]][n]["type"] == "friend"])
+        if current_friends >= 3:
+            continue
+            
+        num_friends = random.randint(1, min(3 - current_friends, num_residents - 1))
+        potential_friends = [j for j in range(num_residents) if j != i]
+        selected_friends = random.sample(potential_friends, num_friends)
+        
+        for friend_idx in selected_friends:
+            social_network.add_relation(resident_ids[i], resident_ids[friend_idx], "friend")
+
+    # 为每个居民随机选择1-3个同事
+    for i in range(num_residents):
+        # 获取当前居民已有的同事数量
+        current_colleagues = len([n for n in social_network.hetero_graph.get_neighbors(resident_ids[i]) 
+                                if social_network.hetero_graph.graph[resident_ids[i]][n]["type"] == "colleague"])
+        if current_colleagues >= 3:
+            continue
+            
+        num_colleagues = random.randint(1, min(3 - current_colleagues, num_residents - 1))
+        potential_colleagues = [j for j in range(num_residents) if j != i]
+        selected_colleagues = random.sample(potential_colleagues, num_colleagues)
+        
+        for colleague_idx in selected_colleagues:
+            social_network.add_relation(resident_ids[i], resident_ids[colleague_idx], "colleague")
 
     # 随机生成家庭群体
     families = []
     for i in range(0, len(resident_ids), 4):  # 每 4 个居民组成一个家庭
         family_members = [resident_ids[j] for j in range(i, min(i + 4, len(resident_ids)))]
         families.append((f"family_{i//4}", family_members))
-        print(families)
+        # print(families)
     for group_id, members in families:
         social_network.add_group(group_id, members)
+
+    # 根据地理位置建立同乡关系
+    # 创建位置字典，键为区域坐标，值为该区域内的居民列表
+    location_groups = {}
+    for resident_id, resident in residents.items():
+        # 获取居民位置并计算所属区域
+        x, y = resident.location
+        area_x = x // 10  # 将x坐标划分为10*10的区域
+        area_y = y // 10  # 将y坐标划分为10*10的区域
+        area_key = (area_x, area_y)
+        
+        # 将居民添加到对应的区域组
+        if area_key not in location_groups:
+            location_groups[area_key] = []
+        location_groups[area_key].append(resident_id)
+
+    # 为每个区域创建同乡关系
+    for area_key, members in location_groups.items():
+        if len(members) > 1:  # 只有当区域内有多个居民时才创建关系
+            group_id = f"hometown_{area_key[0]}_{area_key[1]}"
+            social_network.add_group(group_id, members)
+            # print(f"创建同乡群体 {group_id}，成员：{members}")
+            
+            # 在同乡之间建立双向关系
+            for i in range(len(members)):
+                for j in range(i + 1, len(members)):
+                    social_network.add_relation(members[i], members[j], "hometown")
 
     return social_network
 
