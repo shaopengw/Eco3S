@@ -10,6 +10,8 @@ pip install matplotlib
 pip install camel-ai
 pip install pyyaml
 pip install pandas
+pip install hypernetx
+pip install fastjsonschema
 ```
 
 ## 配置环境变量
