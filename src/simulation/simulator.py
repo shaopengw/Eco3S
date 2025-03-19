@@ -101,12 +101,6 @@ class Simulator:
                         del self.residents[resident_name]  # 从居民列表中删除逝世的居民
                         self.population.death()
 
-            # 信息传播测试
-            test_resident_id = 1
-            message = "政府宣布减税政策！"
-            self.social_network.spread_information(test_resident_id, message, "friend")  # 在朋友关系中传播
-            self.social_network.spread_information_in_group("family_0", message)  # 在第一个家庭群体中传播
-
             # 记录数据
             self.results["years"].append(self.time.get_current_time())
             self.results["rebellions"].append(rebellions)
@@ -252,3 +246,11 @@ class Simulator:
         df = pd.DataFrame(self.results)
         df.to_csv(filename, index=False)
         print(f"模拟结果已保存至 {filename}")
+
+    def initialize_resident_social_network(self):
+        """
+        初始化居民的社交网络访问
+        """
+        # 为每个居民设置社交网络引用
+        for resident in self.residents.values():
+            resident.social_network = self.social_network

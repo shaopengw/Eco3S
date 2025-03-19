@@ -215,17 +215,42 @@ class SocialNetwork:
         """
         self.hyper_graph.add_hyperedge(group_id, members)
 
-    def spread_information(self, resident_id, message, relation_type=None):
+    def spread_information(self, resident_id: int, message: str, relation_type: str):
         """
-        模拟信息在某种关系下的传播。
+        在异质图中传播信息
+        :param resident_id: 发送信息的居民ID
+        :param message: 信息内容
+        :param relation_type: 关系类型
         """
-        self.hetero_graph.spread_information(resident_id, message, relation_type)
+        neighbors = self.hetero_graph.get_neighbors(resident_id, relation_type)
+        for neighbor in neighbors:
+            # 这里可以调用每个邻居的receive_information方法
+            if neighbor in self.residents:
+                self.residents[neighbor].receive_information(message)
 
-    def spread_information_in_group(self, group_id, message):
+    def get_resident_groups(self, resident_id: int, group_type: str) -> List[str]:
         """
-        模拟信息在某个群体中的传播。
+        获取居民所属的特定类型群组
+        :param resident_id: 居民ID
+        :param group_type: 群组类型（family或hometown）
+        :return: 群组ID列表
         """
-        self.hyper_graph.spread_information_in_group(group_id, message)
+        groups = []
+        for edge_id in self.hyper_graph.get_node_hyperedges(resident_id):
+            if edge_id.startswith(group_type):
+                groups.append(edge_id)
+        return groups
+
+    def spread_information_in_group(self, group_id: str, message: str):
+        """
+        在超图的群组中传播信息
+        :param group_id: 群组ID
+        :param message: 信息内容
+        """
+        members = self.hyper_graph.get_hyperedge_nodes(group_id)
+        for member in members:
+            if member in self.residents:
+                self.residents[member].receive_information(message)
     def visualize(self):
         """
         可视化社交网络，同时显示异质图和超图的可视化图片，并添加边框和间距。

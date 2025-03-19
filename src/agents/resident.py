@@ -102,36 +102,67 @@ class Resident:
             self.rebellion_risk += 50  # 低满意度增加叛乱风险
         resident_log.info(f"居民 {self.resident_id} 的叛乱风险更新为 {self.rebellion_risk}。")
 
-    def decide_rebellion(self):
-        """
-        决定是否参与叛乱
-        :return: 是否参与叛乱（布尔值）
-        """
-        self.evaluate_rebellion_risk()
-        if self.rebellion_risk > 70:  # 叛乱风险超过70时参与叛乱
-            resident_log.warning(f"居民 {self.resident_id} 在 {self.location} 决定参与叛乱。")
-            return True
-        return False
-
-    def receive_information(self, message_content):
+    async def receive_information(self, message_content):
         """
         接收信息（如政府政策、叛乱信息）
-        :param message_content: 信息内容
         """
+        print("触发receive_information--------------------------------")
         self.satisfaction += 5  # 接收信息增加满意度
-        resident_log.info(f"居民 {self.resident_id} 在 {self.location} 收到了信息：{message_content}。")
-
-        # 使用 CAMEL 框架处理信息
-        user_message = BaseMessage.make_user_message(
-            role_name="政府",
-            content=message_content,
-        )
-        self.memory.write_record(
-            MemoryRecord(
-                message=user_message,
-                role_at_backend=OpenAIBackendRole.USER,
+        resident_log.info(f"居民 {self.resident_id} 收到了信息：{message_content}。")
+    
+        # 30% 的概率生成响应
+        if random.random() < 0.8:
+            # 使用 CAMEL 框架处理信息
+            user_message = BaseMessage.make_user_message(
+                role_name="政府",
+                content=message_content,
             )
-        )
+            self.memory.write_record(
+                MemoryRecord(
+                    message=user_message,
+                    role_at_backend=OpenAIBackendRole.USER,
+                )
+            )
+            
+            # 获取当前的上下文
+            openai_messages, _ = self.memory.get_context()
+            if not openai_messages:
+                openai_messages = [{
+                    "role": "system",
+                    "content": "你是一个清代中国大运河附近的居民。请根据收到的信息做出回应。回应要简短，不超过20个字。",
+                }]
+            
+            # 调用模型生成回应
+            try:
+                response = await asyncio.to_thread(
+                    lambda: self.model_backend.run(openai_messages)
+                )
+                response_content = response.choices[0].message.content
+                
+                # 随机选择一种关系类型进行传播
+                relation_types = ["friend", "colleague", "family", "hometown"]
+                selected_type = random.choice(relation_types)
+                
+                # 使用 asyncio.create_task 来避免阻塞
+                await asyncio.create_task(
+                    self.spread_speech_in_network(response_content, selected_type)
+                )
+                
+                resident_log.info(f"居民 {self.resident_id} 对收到的信息做出回应：{response_content}")
+                
+                # 将响应记录到记忆中
+                assistant_message = BaseMessage.make_assistant_message(
+                    role_name="居民",
+                    content=response_content,
+                )
+                self.memory.write_record(
+                    MemoryRecord(
+                        message=assistant_message,
+                        role_at_backend=OpenAIBackendRole.ASSISTANT,
+                    )
+                )
+            except Exception as e:
+                resident_log.error(f"居民 {self.resident_id} 生成回应时出错：{e}")
 
     async def process_information(self):
         """
@@ -227,39 +258,87 @@ class Resident:
             
             resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}")
             
-            # 这里要加信息传播逻辑
+            # 如果有发言，在社交网络中传播
             if speech:
-                resident_log.info(f"居民 {self.resident_id} 对政府的态度：{speech}")
+                # 获取所有可能的关系类型
+                relation_types = ["friend", "colleague", "family", "hometown"]
+                # 随机选择一种关系类型
+                selected_type = random.choice(relation_types)
+                # 在社交网络中传播信息
+                await self.spread_speech_in_network(speech, selected_type)
 
-            # 执行行动
-            if select =="1":
-                resident_log.warning(f"居民 {self.resident_id} 决定参加叛乱。")
-                self.decide_rebellion()
-            elif select =="2":
-                resident_log.info(f"居民 {self.resident_id} 决定继续目前的工作。")
-                # 继续工作，无需额外操作
-            elif select =="3":
-                # 假设迁徙到随机位置
-                new_location = (self.location[0] + 1, self.location[1] + 1)  # 示例：简单的位置更新
-                self.migrate(new_location)
-            else:
-                resident_log.info(f"居民 {self.resident_id} 未做出明确行动决定。")
-
-            # 将响应记录到记忆中
-            assistant_message = BaseMessage.make_assistant_message(
-                role_name="居民",
-                content=content,
-            )
-            self.memory.write_record(
-                MemoryRecord(
-                    message=assistant_message,
-                    role_at_backend=OpenAIBackendRole.ASSISTANT,
-                )
-            )
-
+            return select, reason
+            
         except Exception as e:
-            resident_log.error(f"居民 {self.resident_id} 在决定行动时出错：{e}")
-            content = "无法决定行动。"
+            resident_log.error(f"居民 {self.resident_id} 决策出错：{e}")
+            return "2", "发生错误，继续当前工作"  # 默认选择继续工作
+    # async def decide_action_by_llm(self):
+    #     """
+    #     模拟 LLM 决策过程（测试用）
+    #     """
+    #     # 模拟决策结果
+    #     actions = [
+    #         ("1", "对现状不满，决定参与叛乱"),
+    #         ("2", "继续当前工作"),
+    #         ("3", "寻找新的机会")
+    #     ]
+    #     select, reason = random.choice(actions)
+        
+    #     # 20% 的概率生成发言
+    #     if random.random() < 0.2:
+    #         # 模拟不同情绪的发言
+    #         speeches = [
+    #             "税收太重了，生活很艰难。",
+    #             "今年的收成不错，日子还算过得去。",
+    #             "官府最近的政策对我们很有帮助。",
+    #             "运河的船只越来越少了，生意不好做。",
+    #             "听说有人在组织抗税活动。"
+    #         ]
+    #         speech = random.choice(speeches)
+            
+    #         # 随机选择一种关系类型进行传播
+    #         relation_types = ["friend", "colleague", "family", "hometown"]
+    #         selected_type = random.choice(relation_types)
+    #         self.spread_speech_in_network(speech, selected_type)
+            
+    #         resident_log.info(f"居民 {self.resident_id} 通过 {selected_type} 关系发表言论：{speech}")
+        
+    #     return select, reason
+
+    async def spread_speech_in_network(self, speech: str, relation_type: str):
+        """
+        在社交网络中传播发言
+        """
+        try:
+            if hasattr(self, 'social_network'):
+                if relation_type in ["friend", "colleague"]:
+                    # 在异质图中传播
+                    neighbors = self.social_network.hetero_graph.get_neighbors(self.resident_id)
+                    for neighbor_id in neighbors:
+                        if self.social_network.hetero_graph.graph[self.resident_id][neighbor_id]["type"] == relation_type:
+                            resident_log.info(f"居民 {self.resident_id} 向邻居 {neighbor_id} 传播信息：{speech}")
+                            # 获取邻居居民对象并调用其receive_information方法
+                            neighbor = self.social_network.residents.get(neighbor_id)
+                            if neighbor:
+                                await neighbor.receive_information(speech)
+                            
+                elif relation_type in ["family", "hometown"]:
+                    # 在超图中传播
+                    groups = [edge_id for edge_id in self.social_network.hyper_graph.get_node_hyperedges(self.resident_id)
+                            if edge_id.startswith(relation_type)]
+                    if groups:
+                        selected_group = random.choice(groups)
+                        resident_log.info(f"居民 {self.resident_id} 在群组 {selected_group} 中传播信息：{speech}")
+                        members = self.social_network.hyper_graph.get_hyperedge_nodes(selected_group)
+                        for member_id in members:
+                            if member_id != self.resident_id:
+                                # 获取群组成员对象并调用其receive_information方法
+                                member = self.social_network.residents.get(member_id)
+                                if member:
+                                    await member.receive_information(speech)
+                
+        except Exception as e:
+            resident_log.error(f"居民 {self.resident_id} 传播信息时出错：{e}")
 
     def get_status_prompt(self):
         """
