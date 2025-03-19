@@ -42,7 +42,7 @@ async def run_simulation(config: dict[str, Any]) -> None:
     运行模拟
     :param config: 配置字典
     """
-
+    print("开始初始化......")
     # # 角色生成-测试时注销
     # N = config["simulation"]["initial_population"]
     # resident_data = generate_resident_data(N)
@@ -106,8 +106,11 @@ async def run_simulation(config: dict[str, Any]) -> None:
     social_network = initialize_social_network(residents)
 
     # 可视化社交网络
-    social_network.visualize()
-
+    # 将可视化移到主线程中执行
+    try:
+        social_network.visualize()
+    except Exception as e:
+        print(f"社交网络可视化失败：{e}")
 
     # 初始化模拟器
     simulator = Simulator(
@@ -122,6 +125,8 @@ async def run_simulation(config: dict[str, Any]) -> None:
         social_network=social_network,
         residents=residents,
     )
+    # 添加这一行
+    simulator.initialize_resident_social_network()
     print("初始化完成")
 
     # 运行模拟
@@ -145,78 +150,113 @@ async def run_simulation(config: dict[str, Any]) -> None:
 def initialize_social_network(residents: dict) -> SocialNetwork:
     social_network = SocialNetwork()
     
-    # 将居民添加到社交网络
-    for resident_id, resident in residents.items():
+    # 将居民字典添加到社交网络
+    social_network.residents = residents
+    
+    # 将居民添加到社交网络 - O(n)
+    resident_ids = list(residents.keys())
+    for resident_id in resident_ids:
         social_network.add_resident(resident_id, "resident")
 
-    resident_ids = list(residents.keys())
     num_residents = len(resident_ids)
     
-    # 为每个居民随机选择1-3个朋友
-    for i in range(num_residents):
-        # 获取当前居民已有的朋友数量
-        current_friends = len([n for n in social_network.hetero_graph.get_neighbors(resident_ids[i]) 
-                             if social_network.hetero_graph.graph[resident_ids[i]][n]["type"] == "friend"])
-        if current_friends >= 3:
-            continue
+    # 使用字典存储每个居民的关系数量
+    relation_counts = {
+        resident_id: {"friend": 0, "colleague": 0} 
+        for resident_id in resident_ids
+    }
+    
+    # 批量建立朋友和同事关系 - O(n)
+    for resident_id in resident_ids:
+        if relation_counts[resident_id]["friend"] < 3:
+            # 随机选择未达到上限的居民作为朋友
+            potential_friends = [
+                rid for rid in resident_ids 
+                if rid != resident_id 
+                and relation_counts[rid]["friend"] < 3
+            ][:10]  # 限制候选池大小
             
-        num_friends = random.randint(1, min(3 - current_friends, num_residents - 1))
-        potential_friends = [j for j in range(num_residents) if j != i]
-        selected_friends = random.sample(potential_friends, num_friends)
-        
-        for friend_idx in selected_friends:
-            social_network.add_relation(resident_ids[i], resident_ids[friend_idx], "friend")
+            if potential_friends:
+                num_to_add = min(
+                    3 - relation_counts[resident_id]["friend"],
+                    len(potential_friends)
+                )
+                new_friends = random.sample(potential_friends, num_to_add)
+                
+                for friend_id in new_friends:
+                    social_network.add_relation(resident_id, friend_id, "friend")
+                    relation_counts[resident_id]["friend"] += 1
+                    relation_counts[friend_id]["friend"] += 1
 
-    # 为每个居民随机选择1-3个同事
-    for i in range(num_residents):
-        # 获取当前居民已有的同事数量
-        current_colleagues = len([n for n in social_network.hetero_graph.get_neighbors(resident_ids[i]) 
-                                if social_network.hetero_graph.graph[resident_ids[i]][n]["type"] == "colleague"])
-        if current_colleagues >= 3:
-            continue
+        # 类似地建立同事关系
+        if relation_counts[resident_id]["colleague"] < 3:
+            potential_colleagues = [
+                rid for rid in resident_ids 
+                if rid != resident_id 
+                and relation_counts[rid]["colleague"] < 3
+            ][:10]
             
-        num_colleagues = random.randint(1, min(3 - current_colleagues, num_residents - 1))
-        potential_colleagues = [j for j in range(num_residents) if j != i]
-        selected_colleagues = random.sample(potential_colleagues, num_colleagues)
-        
-        for colleague_idx in selected_colleagues:
-            social_network.add_relation(resident_ids[i], resident_ids[colleague_idx], "colleague")
+            if potential_colleagues:
+                num_to_add = min(
+                    3 - relation_counts[resident_id]["colleague"],
+                    len(potential_colleagues)
+                )
+                new_colleagues = random.sample(potential_colleagues, num_to_add)
+                
+                for colleague_id in new_colleagues:
+                    social_network.add_relation(resident_id, colleague_id, "colleague")
+                    relation_counts[resident_id]["colleague"] += 1
+                    relation_counts[colleague_id]["colleague"] += 1
 
-    # 随机生成家庭群体
+    # 优化家族分配 - O(n)
+    # 随机生成家族群体
     families = []
-    for i in range(0, len(resident_ids), 4):  # 每 4 个居民组成一个家庭
-        family_members = [resident_ids[j] for j in range(i, min(i + 4, len(resident_ids)))]
-        families.append((f"family_{i//4}", family_members))
-        # print(families)
-    for group_id, members in families:
-        social_network.add_group(group_id, members)
+    remaining_residents = set(resident_ids)  # 使用集合提高性能
+    family_id = 0
+    
+    while remaining_residents:
+        # 如果剩余居民少于最小家族规模，直接作为最后一个家族
+        if len(remaining_residents) < 5:
+            family_members = remaining_residents
+            remaining_residents = set()  # 清空剩余居民
+        else:
+            # 随机确定家族规模(5-15人)
+            family_size = random.randint(5, min(15, len(remaining_residents)))
+            family_members = set(random.sample(list(remaining_residents), family_size))
+            remaining_residents -= family_members
+        
+        families.append((f"family_{family_id}", list(family_members)))
+        family_id += 1
+        
+        # 创建家族关系
+        social_network.add_group(f"family_{family_id}", list(family_members))
+        member_list = list(family_members)
+        for i, member1 in enumerate(member_list):
+            for member2 in member_list[i+1:]:
+                social_network.add_relation(member1, member2, "family")
 
-    # 根据地理位置建立同乡关系
-    # 创建位置字典，键为区域坐标，值为该区域内的居民列表
+    # 优化同乡关系建立 - O(n)
     location_groups = {}
     for resident_id, resident in residents.items():
-        # 获取居民位置并计算所属区域
         x, y = resident.location
-        area_x = x // 10  # 将x坐标划分为10*10的区域
-        area_y = y // 10  # 将y坐标划分为10*10的区域
-        area_key = (area_x, area_y)
-        
-        # 将居民添加到对应的区域组
-        if area_key not in location_groups:
-            location_groups[area_key] = []
-        location_groups[area_key].append(resident_id)
+        area_key = (x // 20, y // 20)  # 增大区域大小，减少分组数量
+        location_groups.setdefault(area_key, set()).add(resident_id)
 
-    # 为每个区域创建同乡关系
+    # 批量建立同乡关系
     for area_key, members in location_groups.items():
-        if len(members) > 1:  # 只有当区域内有多个居民时才创建关系
+        if len(members) > 1:
             group_id = f"hometown_{area_key[0]}_{area_key[1]}"
-            social_network.add_group(group_id, members)
-            # print(f"创建同乡群体 {group_id}，成员：{members}")
+            member_list = list(members)
+            social_network.add_group(group_id, member_list)
             
-            # 在同乡之间建立双向关系
-            for i in range(len(members)):
-                for j in range(i + 1, len(members)):
-                    social_network.add_relation(members[i], members[j], "hometown")
+            # 随机选择部分同乡建立关系，而不是全部建立
+            for member in member_list:
+                potential_neighbors = random.sample(
+                    [m for m in member_list if m != member],
+                    min(5, len(members) - 1)  # 限制每个人的同乡关系数量
+                )
+                for neighbor in potential_neighbors:
+                    social_network.add_relation(member, neighbor, "hometown")
 
     return social_network
 
