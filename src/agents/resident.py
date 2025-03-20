@@ -106,7 +106,7 @@ class Resident:
         """
         接收信息（如政府政策、叛乱信息）
         """
-        print("触发receive_information--------------------------------")
+        # print("触发receive_information--------------------------------")
         self.satisfaction += 5  # 接收信息增加满意度
         resident_log.info(f"居民 {self.resident_id} 收到了信息：{message_content}。")
     
@@ -272,38 +272,6 @@ class Resident:
         except Exception as e:
             resident_log.error(f"居民 {self.resident_id} 决策出错：{e}")
             return "2", "发生错误，继续当前工作"  # 默认选择继续工作
-    # async def decide_action_by_llm(self):
-    #     """
-    #     模拟 LLM 决策过程（测试用）
-    #     """
-    #     # 模拟决策结果
-    #     actions = [
-    #         ("1", "对现状不满，决定参与叛乱"),
-    #         ("2", "继续当前工作"),
-    #         ("3", "寻找新的机会")
-    #     ]
-    #     select, reason = random.choice(actions)
-        
-    #     # 20% 的概率生成发言
-    #     if random.random() < 0.2:
-    #         # 模拟不同情绪的发言
-    #         speeches = [
-    #             "税收太重了，生活很艰难。",
-    #             "今年的收成不错，日子还算过得去。",
-    #             "官府最近的政策对我们很有帮助。",
-    #             "运河的船只越来越少了，生意不好做。",
-    #             "听说有人在组织抗税活动。"
-    #         ]
-    #         speech = random.choice(speeches)
-            
-    #         # 随机选择一种关系类型进行传播
-    #         relation_types = ["friend", "colleague", "family", "hometown"]
-    #         selected_type = random.choice(relation_types)
-    #         self.spread_speech_in_network(speech, selected_type)
-            
-    #         resident_log.info(f"居民 {self.resident_id} 通过 {selected_type} 关系发表言论：{speech}")
-        
-    #     return select, reason
 
     async def spread_speech_in_network(self, speech: str, relation_type: str):
         """
