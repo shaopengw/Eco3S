@@ -71,17 +71,29 @@ class Simulator:
                     map=self.map,
                     job_market=self.job_market,
                 )
-                offset = len(self.residents)  # 第一次生成的居民数量
-                for resident_id, resident in new_residents.items():
-                    new_resident_id = resident_id + offset
-                    self.residents[new_resident_id] = resident
-                    self.residents[new_resident_id].resident_id = new_resident_id  # 给居民编号
+                
+                # 修改新居民的编号，确保不重复
+                offset = max(self.residents.keys()) + 1 if self.residents else 1
+                new_residents_with_new_ids = {}
+                for i, (_, resident) in enumerate(new_residents.items()):
+                    new_id = offset + i
+                    resident.resident_id = new_id  # 更新居民的ID
+                    new_residents_with_new_ids[new_id] = resident
+                
+                # 更新居民字典
+                self.residents.update(new_residents_with_new_ids)
                 self.population.birth(new_residents_count)
                 print(f"{len(new_residents)} 名新居民已出生")
+                
+                # 生成新居民后添加到社交网络
+                if new_residents_with_new_ids:
+                    self.social_network.add_new_residents(new_residents_with_new_ids)
+                    print(f"{len(new_residents_with_new_ids)} 名新居民已加入社交网络")
+                    self.social_network.visualize()
             
             # 基于LLM的决策--测试时建议暂时注释
-            await self.government_decision_process() # 政府行为
-            await self.rebellion_decision_process() # 叛军行为
+            # await self.government_decision_process() # 政府行为
+            # await self.rebellion_decision_process() # 叛军行为
 
             rebellions = 0
 
@@ -89,7 +101,7 @@ class Simulator:
             tasks = []
             for resident_name in list(self.residents.keys()):  # 使用 list() 确保在遍历时不会出错
                 resident = self.residents[resident_name]
-                tasks.append(resident.decide_action_by_llm())  # 基于LLM的决策--测试时建议暂时注释
+                # tasks.append(resident.decide_action_by_llm())  # 基于LLM的决策--测试时建议暂时注释
             # 并发执行所有居民的行为
             await asyncio.gather(*tasks)
 
