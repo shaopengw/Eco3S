@@ -5,11 +5,10 @@ from src.agents.rebels import OrdinaryRebel, RebelLeader
 from src.agents.rebels import Rebellion
 
 async def generate_rebels_agents(
-    rebellion_info_path: str,  # 叛军信息文件的路径
-    rebellion: Rebellion,  # 叛军对象，用于关联叛军
-    agent_graph: Optional[Dict[int, OrdinaryRebel]] = None,  # 叛军图，默认为空
-    rebel_id_mapping: Optional[Dict[int, int]] = None,  # 叛军 ID 与 Agent ID 的映射关系，默认为空
-    model_type: str = "gpt-3.5-turbo",  # 模型类型，默认为 GPT-3.5-turbo
+    rebellion_info_path: str,
+    rebellion: Rebellion,
+    agent_graph: Optional[Dict[int, OrdinaryRebel]] = None,
+    rebel_id_mapping: Optional[Dict[int, int]] = None,
 ) -> Dict[int, OrdinaryRebel]:
     """
     生成并返回叛军的叛军图。
@@ -45,13 +44,11 @@ async def generate_rebels_agents(
             rebel = OrdinaryRebel(
                 rebel_id=rebel_id,
                 rebellion=rebellion,
-                model_type=model_type,
             )
         elif rebel_data["rank"] == "叛军头子":
             rebel = RebelLeader(
                 leader_id=rebel_id,
                 rebellion=rebellion,
-                model_type=model_type,
             )
         else:
             raise ValueError(f"未知的叛军类型：{rebel_data['rank']}")

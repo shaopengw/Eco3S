@@ -1,0 +1,9 @@
+numpy
+matplotlib
+camel-ai
+pyyaml
+pandas
+python-dotenv
+requests
+hypernetx
+fastjsonschema

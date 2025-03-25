@@ -1,19 +1,11 @@
-from camel.configs import ChatGPTConfig
-from camel.memories import ChatHistoryMemory, MemoryRecord, ScoreBasedContextCreator
-from camel.messages import BaseMessage
-from camel.models import ModelFactory
-from camel.types import ModelPlatformType, ModelType, OpenAIBackendRole
-from camel.utils import OpenAITokenCounter
-from datetime import datetime
-import sys
-import logging
-import asyncio
+from .shared_imports import *
+load_dotenv()
 from typing import List
-
 if "sphinx" not in sys.modules:
     government_log = logging.getLogger(name="government.agent")
     government_log.setLevel("DEBUG")
     now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    os.makedirs("./log", exist_ok=True)
     file_handler = logging.FileHandler(f"./log/government.agent-{str(now)}.log")
     file_handler.setLevel("DEBUG")
     file_handler.setFormatter(
@@ -22,7 +14,7 @@ if "sphinx" not in sys.modules:
     government_log.addHandler(file_handler)
 
 class OrdinaryGovernmentAgent:
-    def __init__(self, agent_id, government,shared_pool, model_type="gpt-3.5-turbo"):
+    def __init__(self, agent_id, government, shared_pool):
 
         self.agent_id = agent_id
         self.government = government
@@ -34,7 +26,10 @@ class OrdinaryGovernmentAgent:
         self.mbti = None  # 人物性格
 
         # 初始化 CAMEL 框架组件
-        self.model_type = ModelType(model_type)
+        # 根据API类型获取模型类型
+        api_type = os.getenv("API_TYPE", "OPENAI")
+        model_type_env = os.getenv(f"{api_type}_MODEL_TYPE", "gpt-3.5-turbo")
+        self.model_type = ModelType(model_type_env)
         self.model_config = ChatGPTConfig(temperature=0.7)
         self.model_backend = ModelFactory.create(
             model_platform=ModelPlatformType.OPENAI,
@@ -72,7 +67,7 @@ class OrdinaryGovernmentAgent:
 
         # 构建提示信息
         prompt = (
-            f"你是一位普通清代政府官员，以下是你的个人属性：\n"
+            f"你是一位普通代会政府官员，以下是你的个人属性：\n"
             f"职能: {self.function}\n"
             f"人物性格: {self.mbti}\n"
             f"{government_status}\n"
@@ -167,7 +162,7 @@ class OrdinaryGovernmentAgent:
             government_log.info(f"普通官员 {self.agent_id} 发起了新讨论：{opinion}")
     
 class HighRankingGovernmentAgent:
-    def __init__(self, agent_id, government,shared_pool, model_type="gpt-3.5-turbo"):
+    def __init__(self, agent_id, government, shared_pool):
         """
         初始化高级政府官员类（决策者）
         :param agent_id: 政府官员的唯一标识符
@@ -184,7 +179,10 @@ class HighRankingGovernmentAgent:
         self.mbti = None  # 人物性格
 
         # 初始化 CAMEL 框架组件
-        self.model_type = ModelType(model_type)
+        # 根据API类型获取模型类型
+        api_type = os.getenv("API_TYPE", "OPENAI")
+        model_type_env = os.getenv(f"{api_type}_MODEL_TYPE", "gpt-3.5-turbo")
+        self.model_type = ModelType(model_type_env)
         self.model_config = ChatGPTConfig(temperature=0.7)
         self.model_backend = ModelFactory.create(
             model_platform=ModelPlatformType.OPENAI,

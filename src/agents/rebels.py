@@ -1,14 +1,5 @@
-from camel.configs import ChatGPTConfig
-from camel.memories import ChatHistoryMemory, MemoryRecord, ScoreBasedContextCreator
-from camel.messages import BaseMessage
-from camel.models import ModelFactory
-from camel.types import ModelPlatformType, ModelType, OpenAIBackendRole
-from camel.utils import OpenAITokenCounter
-from datetime import datetime
-import sys
-import logging
-import json
-import asyncio
+from .shared_imports import *
+load_dotenv()
 
 if "sphinx" not in sys.modules:
     rebellion_log = logging.getLogger(name="rebels.agent")
@@ -22,7 +13,7 @@ if "sphinx" not in sys.modules:
     rebellion_log.addHandler(file_handler)
 
 class OrdinaryRebel:
-    def __init__(self, rebel_id, rebellion, model_type="gpt-3.5-turbo"):
+    def __init__(self, rebel_id, rebellion):
         """
         初始化普通叛军类
         :param rebel_id: 叛军的唯一标识符
@@ -39,7 +30,10 @@ class OrdinaryRebel:
         self.mbti = None  # 人物性格
 
         # 初始化 CAMEL 框架组件
-        self.model_type = ModelType(model_type)
+        # 根据API类型获取模型类型
+        api_type = os.getenv("API_TYPE", "OPENAI")
+        model_type_env = os.getenv(f"{api_type}_MODEL_TYPE", "gpt-3.5-turbo")
+        self.model_type = ModelType(model_type_env)
         self.model_config = ChatGPTConfig(temperature=0.7)
         self.model_backend = ModelFactory.create(
             model_platform=ModelPlatformType.OPENAI,
@@ -180,7 +174,10 @@ class RebelLeader:
         self.mbti = None  # 人物性格
 
         # 初始化 CAMEL 框架组件
-        self.model_type = ModelType(model_type)
+        # 根据API类型获取模型类型
+        api_type = os.getenv("API_TYPE", "OPENAI")
+        model_type_env = os.getenv(f"{api_type}_MODEL_TYPE", "gpt-3.5-turbo")
+        self.model_type = ModelType(model_type_env)
         self.model_config = ChatGPTConfig(temperature=0.7)
         self.model_backend = ModelFactory.create(
             model_platform=ModelPlatformType.OPENAI,
