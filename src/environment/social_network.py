@@ -261,29 +261,40 @@ class SocialNetwork:
         save_dir = "e:/cyf/多智能体/AgentWorld/experiment_dataset/social_network_data"
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
-    
-        # 创建一个包含两个子图的画布，并调整间距
-        fig, axes = plt.subplots(1, 2, figsize=(15, 7), gridspec_kw={'wspace': 0.3})
-    
-        # 可视化异质图
-        ax1 = axes[0]
-        plt.sca(ax1)  # 设置当前坐标轴
-        self.hetero_graph.visualize()
-        ax1.set_title("Heterogeneous Graph", pad=20)
-    
-        # 可视化超图
-        ax2 = axes[1]
-        plt.sca(ax2)  # 设置当前坐标轴
-        hnx.draw(self.hyper_graph.hypergraph)
-        ax2.set_title("Hypergraph", pad=20)
-    
-        # 生成当前时间作为文件名
-        current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_path = os.path.join(save_dir, f"social_network_{current_time}.png")
         
-        # 保存图片
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"社交网络图已保存至：{save_path}")
+        try:
+            # 使用 Agg 后端，避免使用 tkinter
+            import matplotlib
+            matplotlib.use('Agg')
+            
+            # 创建一个包含两个子图的画布，并调整间距
+            fig, axes = plt.subplots(1, 2, figsize=(15, 7), gridspec_kw={'wspace': 0.3})
+        
+            # 可视化异质图
+            ax1 = axes[0]
+            plt.sca(ax1)  # 设置当前坐标轴
+            self.hetero_graph.visualize()
+            ax1.set_title("Heterogeneous Graph", pad=20)
+        
+            # 可视化超图
+            ax2 = axes[1]
+            plt.sca(ax2)  # 设置当前坐标轴
+            hnx.draw(self.hyper_graph.hypergraph)
+            ax2.set_title("Hypergraph", pad=20)
+        
+            # 生成当前时间作为文件名
+            current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+            save_path = os.path.join(save_dir, f"social_network_{current_time}.png")
+            
+            # 保存图片
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"社交网络图已保存至：{save_path}")
+            
+            # 关闭图形，释放内存
+            plt.close(fig)
+            
+        except Exception as e:
+            print(f"社交网络可视化失败：{e}")
         
         # 显示图片
         plt.show()
