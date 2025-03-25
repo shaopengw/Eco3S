@@ -1,6 +1,6 @@
 from .shared_imports import *
 load_dotenv()
-from typing import List
+
 if "sphinx" not in sys.modules:
     government_log = logging.getLogger(name="government.agent")
     government_log.setLevel("DEBUG")
