@@ -133,7 +133,7 @@ class Simulator:
 
         self.end_time = datetime.now()  # 记录模拟结束时间
         self.display_total_simulation_time()
-        self.social_network.visualize()
+        # self.social_network.visualize()
 
     def display_total_simulation_time(self):
         """
@@ -146,49 +146,49 @@ class Simulator:
     async def government_decision_process(self, activate_prob=0.8):
         """
         政府决策流程：
-        1. 随机触发普通官员从共享信息池中获取信息并发表看法
-        2. 等待讨论结束
-        3. 信息整理官整理讨论内容
-        4. 高级官员做出决策
-        5. 执行决策
-        :param activate_prob: 触发官员发表看法的概率（默认 80%）
+        1. 随机选择一个普通官员发起讨论
+        2. 所有普通官员轮流查看并决定是否回应
+        3. 直到达到最大讨论数或无人回应
+        4. 信息整理官整理讨论内容
+        5. 高级官员做出决策
         """
-        # 1. 随机触发普通官员从共享信息池中获取信息并发表看法
+        # 获取所有普通官员
         ordinary_officials = [
             official for official in self.government_officials.values()
             if isinstance(official, OrdinaryGovernmentAgent) and not isinstance(official, InformationOfficer)
         ]
 
-        for official in ordinary_officials:
-            if random.random() < activate_prob:
-                await official.generate_and_share_opinion()
+        # 随机选择一个官员发起讨论
+        if ordinary_officials and random.random() < activate_prob:
+            initiator = random.choice(ordinary_officials)
+            await initiator.generate_and_share_opinion()
 
-        # 2. 获取信息整理官
+            # 其他官员轮流查看并决定是否回应
+            shared_pool = list(self.government_officials.values())[0].shared_pool
+            while not shared_pool.is_ended():
+                for official in ordinary_officials:
+                    if official != initiator:
+                        await official.generate_and_share_opinion()
+
+        # 获取信息整理官和高级官员
         info_officers = [
             official for official in self.government_officials.values()
             if isinstance(official, InformationOfficer)
         ]
-
-        # 3. 获取高级官员
         high_ranking_officials = [
             official for official in self.government_officials.values()
             if isinstance(official, HighRankingGovernmentAgent)
         ]
 
+        # 处理讨论结果
         if info_officers and high_ranking_officials:
-            # 等待讨论结束或达到最大讨论数
             shared_pool = list(self.government_officials.values())[0].shared_pool
             if shared_pool.is_ended():
-                # 让信息整理官整理讨论内容
                 summary = await info_officers[0].summarize_discussions()
-                # # 将总结写入共享信息池
-                # await shared_pool.add_discussion(f"信息整理总结：{summary}")
-
-                # 高级官员根据整理后的内容做出决策
-                decision = await high_ranking_officials[0].make_decision(summary)
-                if decision:
-                    # 执行决策
-                    self.execute_government_decision(decision)
+                if summary:
+                    decision = await high_ranking_officials[0].make_decision(summary)
+                    if decision:
+                        self.execute_government_decision(decision)
 
     def execute_government_decision(self, decision):
         """

@@ -127,12 +127,44 @@ class OrdinaryGovernmentAgent:
         """
         从共享信息池中获取信息并发表看法，将看法放入共享信息池
         """
-        # 生成意见
-        opinion = await self.generate_opinion()
-
-        # 将意见写入共享信息池
-        await self.shared_pool.add_discussion(opinion)
-        government_log.info(f"普通官员 {self.agent_id} 已将意见写入共享信息池：{opinion}")
+        # 获取最新讨论内容
+        latest_discussion = await self.shared_pool.get_latest_discussion()
+        
+        if latest_discussion:
+            # 构建提示信息，让AI决定是否回应以及如何回应
+            prompt = (
+                f"你是一位普通清代政府官员，以下是你的个人属性：\n"
+                f"职能: {self.function}\n"
+                f"人物性格: {self.mbti}\n"
+                f"\n最新的讨论内容是：{latest_discussion}\n"
+                f"\n请根据你的个人属性和立场，决定是否对这个观点发表看法。"
+                f"如果决定发表看法，可以选择支持、反对或提出新的建议。"
+                f"请用简短的一句话回复，语气要符合清朝官员的特点。"
+                f"如果决定不回复，请返回'不予置评'。"
+            )
+            
+            # 使用CAMEL框架生成回应
+            user_message = BaseMessage.make_user_message(
+                role_name="普通政府官员",
+                content=prompt,
+            )
+            
+            try:
+                response = await asyncio.to_thread(self.model_backend.run, [user_message.to_openai_user_message()])
+                opinion = response.choices[0].message.content
+                
+                # 如果AI决定回复，则添加到共享信息池
+                if opinion and opinion != "不予置评":
+                    await self.shared_pool.add_discussion(opinion)
+                    government_log.info(f"普通官员 {self.agent_id} 回应了讨论：{opinion}")
+                
+            except Exception as e:
+                government_log.error(f"普通官员 {self.agent_id} 在生成回应时出错：{e}")
+        else:
+            # 如果没有讨论内容，生成新话题
+            opinion = await self.generate_opinion()
+            await self.shared_pool.add_discussion(opinion)
+            government_log.info(f"普通官员 {self.agent_id} 发起了新讨论：{opinion}")
     
 class HighRankingGovernmentAgent:
     def __init__(self, agent_id, government,shared_pool, model_type="gpt-3.5-turbo"):
