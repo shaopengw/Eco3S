@@ -1,7 +1,7 @@
 import json
 import asyncio
 from typing import Dict, Optional
-from src.agents.government import OrdinaryGovernmentAgent, HighRankingGovernmentAgent, government_SharedInformationPool
+from src.agents.government import OrdinaryGovernmentAgent, HighRankingGovernmentAgent, government_SharedInformationPool, InformationOfficer
 from src.environment.job_market import JobMarket
 from src.agents.government import Government
 
@@ -56,6 +56,13 @@ async def generate_government_agents(
             )
         elif official_data["rank"] == "高级官员":
             official = HighRankingGovernmentAgent(
+                agent_id=official_id,
+                government=government,
+                model_type=model_type,
+                shared_pool=shared_pool,
+            )
+        elif official_data["rank"] == "信息整理官":  # 添加新的官员类型
+            official = InformationOfficer(
                 agent_id=official_id,
                 government=government,
                 model_type=model_type,
