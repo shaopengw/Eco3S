@@ -2,7 +2,7 @@ import json
 import asyncio
 import random
 from typing import Dict, Optional
-from src.agents.resident import Resident
+from src.agents.resident import Resident, ResidentSharedInformationPool
 from src.environment.job_market import JobMarket
 from src.environment.map import Map
 
@@ -11,6 +11,7 @@ async def generate_canal_agents(
     map: Map,  # 地图对象，用于分配居民的位置
     job_market: JobMarket,  # 就业市场对象，用于居民找工作
     agent_graph: Optional[Dict[int, Resident]] = None,  # 居民图，默认为空
+    shared_pool: Optional[ResidentSharedInformationPool] = None, # 共享资源池，默认为空
     resident_id_mapping: Optional[Dict[int, int]] = None,  # 居民 ID 与 Agent ID 的映射关系，默认为空
     model_type: str = "gpt-3.5-turbo",  # 模型类型，默认为 GPT-3.5-turbo
 ) -> Dict[int, Resident]:
@@ -32,15 +33,14 @@ async def generate_canal_agents(
         resident_id_mapping = {}  # 初始化居民 ID 与 Agent ID 的映射字典
     if agent_graph is None:
         agent_graph = {}  # 初始化居民图
+    if shared_pool is None:
+        shared_pool = ResidentSharedInformationPool()  # 初始化共享资源池
 
     # 读取居民信息文件
     with open(resident_info_path, "r", encoding="utf-8", errors='ignore') as file:
         resident_info = json.load(file)
 
     async def process_resident(i, resident_data):
-        """
-        处理单个居民的生成和注册。
-        """
         # 居民的唯一标识符
         resident_id = i + 1
 
@@ -55,7 +55,7 @@ async def generate_canal_agents(
             resident_id=resident_id,
             location=location,
             job_market=job_market,
-            model_type=model_type,
+            shared_pool=shared_pool,
         )
 
         # 设置居民的初始属性

@@ -20,11 +20,10 @@ from src.agents.resident_agent_generator import generate_canal_agents
 from src.agents.government_agent_generator import generate_government_agents
 from src.agents.rebels_agent_generator import generate_rebels_agents
 from src.generator.resident_generate import generate_resident_data, save_resident_data
+from dotenv import load_dotenv
 
 # 确保 log 目录存在
 log_dir = "./log"
-if not os.path.exists(log_dir):
-    os.makedirs(log_dir)
 
 # 参数解析
 parser = argparse.ArgumentParser(description="Arguments for simulation.")
@@ -169,6 +168,7 @@ def initialize_social_network(residents: dict) -> SocialNetwork:
     return social_network
 
 if __name__ == "__main__":
+    load_dotenv()  # 加载.env环境变量
     # 解析命令行参数
     args = parser.parse_args()
 

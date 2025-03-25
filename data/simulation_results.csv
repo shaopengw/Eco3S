@@ -1,5 +1,5 @@
-years,rebellions,unemployment_rate,population,government_budget
-1650 Q2,0,1.0,3,1000000
-1650 Q3,0,1.0,3,1000000
-1650 Q4,0,1.0,3,1000000
-1651 Q1,0,1.0,3,1000000
+years,rebellions,unemployment_rate,population,government_budget,rebellion_strength
+1650 Q2,0,1.0,3,1000000,100
+1650 Q3,0,1.0,3,1000000,100
+1650 Q4,0,1.0,3,1000000,100
+1651 Q1,0,1.0,3,1000000,100

@@ -1,14 +1,5 @@
-from camel.configs import ChatGPTConfig
-from camel.memories import ChatHistoryMemory, MemoryRecord, ScoreBasedContextCreator
-from camel.messages import BaseMessage
-from camel.models import ModelFactory
-from camel.types import ModelPlatformType, ModelType, OpenAIBackendRole
-from camel.utils import OpenAITokenCounter
-from datetime import datetime
-import sys
-import logging
-import json
-import asyncio
+from .shared_imports import *
+load_dotenv()
 
 if "sphinx" not in sys.modules:
     resident_log = logging.getLogger(name="resident.agent")
@@ -21,8 +12,26 @@ if "sphinx" not in sys.modules:
             "%(levelname)s - %(asctime)s - %(name)s - %(message)s"))
     resident_log.addHandler(file_handler)
 
+class ResidentSharedInformationPool:
+    def __init__(self):
+        self.shared_info = {
+            'economic_status': {},
+            'social_network': {},
+            'environment_awareness': {}
+        }
+
+    def add_shared_info(self, key, value, category):
+        if category not in self.shared_info:
+            self.shared_info[category] = {}
+        self.shared_info[category][key] = value
+
+    def get_shared_info(self, category=None):
+        if category:
+            return self.shared_info.get(category, {})
+        return self.shared_info
+
 class Resident:
-    def __init__(self, resident_id, location, job_market, model_type="gpt-3.5-turbo"):
+    def __init__(self, resident_id, location, job_market, shared_pool):
         """
         初始化居民类
         :param resident_id: 居民的唯一标识符
@@ -33,6 +42,7 @@ class Resident:
         self.resident_id = resident_id
         self.location = location
         self.job_market = job_market
+        self.shared_pool = shared_pool
         self.employed = False  # 是否就业
         self.job = None  # 当前工作
         self.income = 0  # 收入
@@ -42,7 +52,9 @@ class Resident:
         self.lifespan = 100  # 居民的寿命
 
         # 初始化 CAMEL 框架组件
-        self.model_type = ModelType(model_type)
+        api_type = os.getenv("API_TYPE", "OPENAI")
+        model_type_env = os.getenv(f"{api_type}_MODEL_TYPE", "gpt-3.5-turbo")
+        self.model_type = ModelType(model_type_env)
         self.model_config = ChatGPTConfig(temperature=0.7)
         self.model_backend = ModelFactory.create(
             model_platform=ModelPlatformType.OPENAI,
