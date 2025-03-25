@@ -119,7 +119,6 @@ def generate_resident_profile():
             mbti = get_random_mbti()
 
             profile = {
-                "realname": "清代普通百姓",
                 "gender": gender,
                 "lifespan": lifespan,
                 "residence": residence,

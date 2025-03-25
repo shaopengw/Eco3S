@@ -4,7 +4,11 @@ import random
 from datetime import datetime, timedelta
 from colorama import Back
 from src.agents.resident_agent_generator import (generate_canal_agents)
-from src.agents.government import OrdinaryGovernmentAgent, HighRankingGovernmentAgent
+from src.agents.government import (
+    OrdinaryGovernmentAgent, 
+    HighRankingGovernmentAgent,
+    InformationOfficer
+)
 from src.agents.rebels import OrdinaryRebel, RebelLeader
 from src.generator.resident_generate import generate_resident_data, save_resident_data
 from src.environment.social_network import SocialNetwork
@@ -89,10 +93,10 @@ class Simulator:
                 if new_residents_with_new_ids:
                     self.social_network.add_new_residents(new_residents_with_new_ids)
                     print(f"{len(new_residents_with_new_ids)} 名新居民已加入社交网络")
-                    self.social_network.visualize()
+                    # self.social_network.visualize()
             
             # 基于LLM的决策--测试时建议暂时注释
-            # await self.government_decision_process() # 政府行为
+            await self.government_decision_process() # 政府行为
             # await self.rebellion_decision_process() # 叛军行为
 
             rebellions = 0
@@ -129,6 +133,7 @@ class Simulator:
 
         self.end_time = datetime.now()  # 记录模拟结束时间
         self.display_total_simulation_time()
+        self.social_network.visualize()
 
     def display_total_simulation_time(self):
         """
@@ -142,31 +147,48 @@ class Simulator:
         """
         政府决策流程：
         1. 随机触发普通官员从共享信息池中获取信息并发表看法
-        2. 高级官员做出决策
-        3. 执行决策
+        2. 等待讨论结束
+        3. 信息整理官整理讨论内容
+        4. 高级官员做出决策
+        5. 执行决策
         :param activate_prob: 触发官员发表看法的概率（默认 80%）
         """
         # 1. 随机触发普通官员从共享信息池中获取信息并发表看法
         ordinary_officials = [
             official for official in self.government_officials.values()
-            if isinstance(official, OrdinaryGovernmentAgent)
+            if isinstance(official, OrdinaryGovernmentAgent) and not isinstance(official, InformationOfficer)
         ]
-        # print(f"找到 {len(ordinary_officials)} 位普通官员")
 
         for official in ordinary_officials:
             if random.random() < activate_prob:
                 await official.generate_and_share_opinion()
 
-        # 2. 高级官员做出决策
+        # 2. 获取信息整理官
+        info_officers = [
+            official for official in self.government_officials.values()
+            if isinstance(official, InformationOfficer)
+        ]
+
+        # 3. 获取高级官员
         high_ranking_officials = [
             official for official in self.government_officials.values()
             if isinstance(official, HighRankingGovernmentAgent)
         ]
-        if high_ranking_officials:
-            decision = await high_ranking_officials[0].make_decision()
 
-            # 3. 执行决策
-            self.execute_government_decision(decision)
+        if info_officers and high_ranking_officials:
+            # 等待讨论结束或达到最大讨论数
+            shared_pool = list(self.government_officials.values())[0].shared_pool
+            if shared_pool.is_ended():
+                # 让信息整理官整理讨论内容
+                summary = await info_officers[0].summarize_discussions()
+                # # 将总结写入共享信息池
+                # await shared_pool.add_discussion(f"信息整理总结：{summary}")
+
+                # 高级官员根据整理后的内容做出决策
+                decision = await high_ranking_officials[0].make_decision(summary)
+                if decision:
+                    # 执行决策
+                    self.execute_government_decision(decision)
 
     def execute_government_decision(self, decision):
         """

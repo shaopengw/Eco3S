@@ -8,6 +8,7 @@ from datetime import datetime
 import sys
 import logging
 import asyncio
+from typing import List
 
 if "sphinx" not in sys.modules:
     government_log = logging.getLogger(name="government.agent")
@@ -162,14 +163,18 @@ class HighRankingGovernmentAgent:
         self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
         self.memory = ChatHistoryMemory(self.context_creator, window_size=5)
 
-    async def make_decision(self):
+    async def make_decision(self, summary):
         """
         根据普通政府官员的讨论作出决策
         :param discussion_report: 普通政府官员的讨论报告
         :return: 决策结果
         """
-        # 从共享信息池中获取最新讨论内容
-        discussion_report = await self.shared_pool.get_latest_discussion()
+        # 等待讨论结束
+        if not self.shared_pool.is_ended():
+            return None
+        
+        # 获取讨论总结
+        discussion_report = summary
         
         # 使用 CAMEL 框架来做决策
         decision_message = BaseMessage.make_user_message(
@@ -335,20 +340,29 @@ class Government:
         print(f"运河维护政策支持: {self.policy_support_canal}")
 
 class government_SharedInformationPool:
-    def __init__(self):
+    def __init__(self, max_discussions: int = 5):
         """
         初始化共享信息池
+        :param max_discussions: 最大讨论数量
         """
         self.discussions = []  # 存储所有讨论内容
+        self.max_discussions = max_discussions  # 最大讨论数量
+        self.is_discussion_ended = False  # 讨论是否结束
         self.lock = asyncio.Lock()  # 用于异步操作的锁
 
-    async def add_discussion(self, discussion):
+    async def add_discussion(self, discussion) -> bool:
         """
         添加讨论内容到共享信息池
         :param discussion: 讨论内容
+        :return: 是否成功添加（如果讨论已结束则返回False）
         """
         async with self.lock:
+            if self.is_discussion_ended:
+                return False
             self.discussions.append(discussion)
+            if len(self.discussions) >= self.max_discussions:
+                self.is_discussion_ended = True
+            return True
 
     async def get_latest_discussion(self):
         """
@@ -378,3 +392,54 @@ class government_SharedInformationPool:
         """
         async with self.lock:
             self.discussions.clear()
+
+    def is_ended(self) -> bool:
+        """
+        检查讨论是否结束
+        """
+        return self.is_discussion_ended
+
+class InformationOfficer(OrdinaryGovernmentAgent):
+    def __init__(self, agent_id, government, shared_pool, model_type="gpt-3.5-turbo"):
+        super().__init__(agent_id, government, shared_pool, model_type)
+        self.function = "信息整理官"
+        self.system_message = BaseMessage.make_assistant_message(
+            role_name="system",
+            content="你是一位政府信息整理官，负责整理和总结其他官员的讨论内容。"
+        )
+
+    async def summarize_discussions(self) -> str:
+        """
+        整理和总结所有讨论内容
+        :return: 总结后的报告
+        """
+        discussions = await self.shared_pool.get_all_discussions()
+        if not discussions:
+            return "暂无讨论内容"
+
+        # 构建提示信息
+        prompt = (
+            f"作为信息整理官，请你整理以下{len(discussions)}条关于大运河管理的讨论内容，"
+            f"提供一个简明扼要的总结报告。\n\n"
+            f"讨论内容：\n" + "\n".join([f"{i+1}. {d}" for i, d in enumerate(discussions)])
+        )
+
+        # 使用 CAMEL 框架生成总结
+        user_message = BaseMessage.make_user_message(
+            role_name="信息整理官",
+            content=prompt,
+        )
+
+        openai_messages = [{
+            "role": self.system_message.role_name,
+            "content": self.system_message.content,
+        }, user_message.to_openai_user_message()]
+
+        try:
+            response = await asyncio.to_thread(self.model_backend.run, openai_messages)
+            summary = response.choices[0].message.content
+            government_log.info(f"信息整理官 {self.agent_id} 生成的总结报告：{summary}")
+            return summary
+        except Exception as e:
+            government_log.error(f"信息整理官 {self.agent_id} 在生成总结报告时出错：{e}")
+            return "无法生成总结报告"
