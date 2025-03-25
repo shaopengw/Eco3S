@@ -51,14 +51,12 @@ async def generate_government_agents(
             official = OrdinaryGovernmentAgent(
                 agent_id=official_id,
                 government=government,
-                model_type=model_type,
                 shared_pool=shared_pool,
             )
         elif official_data["rank"] == "高级官员":
             official = HighRankingGovernmentAgent(
                 agent_id=official_id,
                 government=government,
-                model_type=model_type,
                 shared_pool=shared_pool,
             )
         else:
