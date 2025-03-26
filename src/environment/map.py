@@ -1,5 +1,7 @@
 import numpy as np
+import os
 import matplotlib.pyplot as plt
+from datetime import datetime
 
 class Map:
     def __init__(self, size):
@@ -69,6 +71,7 @@ class Map:
         """
         # 清空原有的市场城镇
         self.market_towns = []
+        self.town_names = []  # 添加城市名称列表
         
         # 定义主要城市的位置（从北到南）
         town_points = [
@@ -96,6 +99,55 @@ class Map:
             grid_y = int(y * self.size)
             if 0 <= grid_x < self.size and 0 <= grid_y < self.size:
                 self.market_towns.append((grid_x, grid_y))
+                self.town_names.append(name)  # 保存城市名称
+
+    def visualize_map(self):
+        """
+        可视化地图，显示沿河区域、市场城镇和地形崎岖指数
+        """
+        plt.figure(figsize=(12, 12))  # 增加图像大小以适应文字标注
+
+        # 绘制地形崎岖指数
+        plt.imshow(self.terrain_ruggedness, cmap='terrain', alpha=0.6, extent=[0, self.size, 0, self.size])
+
+        # 绘制沿河区域
+        river_x, river_y = np.where(self.river_grid == 1)
+        plt.scatter(river_y, self.size - np.array(river_x), color='blue', label='River', s=10)
+
+        # 绘制市场城镇和城市名称
+        market_x = [town[0] for town in self.market_towns]
+        market_y = [town[1] for town in self.market_towns]
+        plt.scatter(market_y, self.size - np.array(market_x), color='red', label='Market Towns', s=50, marker='s')
+        
+        # 添加城市名称标注
+        for i in range(len(self.market_towns)):
+            x = market_x[i]
+            y = market_y[i]
+            name = self.town_names[i]
+            # 在城市点右侧添加文字标注，设置中文字体
+            plt.annotate(name, 
+                        xy=(y, self.size - x),
+                        xytext=(5, 5), 
+                        textcoords='offset points',
+                        fontsize=8,
+                        fontproperties='SimHei',  # 使用黑体显示中文
+                        bbox=dict(facecolor='white', edgecolor='none', alpha=0.7))
+
+        # 设置地图标题和标签
+        plt.title("京杭大运河沿线地图", fontproperties='SimHei', fontsize=14)
+        plt.xlabel("X 坐标", fontproperties='SimHei')
+        plt.ylabel("Y 坐标", fontproperties='SimHei')
+        plt.legend()
+        plt.show()
+        # # 保存图片
+        # save_dir = "e:/cyf/多智能体/AgentWorld/experiment_dataset/map_data"
+        # if not os.path.exists(save_dir):
+        #     os.makedirs(save_dir)
+        # current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # save_path = os.path.join(save_dir, f"map_{current_time}.png")
+        # plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        # print(f"地图已保存至：{save_path}")
+        # plt.close()
 
     def get_river_damage_level(self, year):
         """
@@ -148,33 +200,6 @@ class Map:
         :return: 地图的大小（size x size）
         """
         return self.size
-
-    def visualize_map(self):
-        """
-        可视化地图，显示沿河区域、市场城镇和地形崎岖指数
-        """
-        plt.figure(figsize=(10, 10))
-
-        # 绘制地形崎岖指数
-        plt.imshow(self.terrain_ruggedness, cmap='terrain', alpha=0.6, extent=[0, self.size, 0, self.size])
-
-        # 绘制沿河区域
-        river_x, river_y = np.where(self.river_grid == 1)
-        plt.scatter(river_y, self.size - np.array(river_x), color='blue', label='River', s=10)
-
-        # 绘制市场城镇
-        market_x = [town[0] for town in self.market_towns]
-        market_y = [town[1] for town in self.market_towns]
-        plt.scatter(market_y, self.size - np.array(market_x), color='red', label='Market Towns', s=50, marker='s')
-
-        # 设置地图标题和标签
-        plt.title("Map Visualization: River, Market Towns, and Terrain Ruggedness")
-        plt.xlabel("X Coordinate")
-        plt.ylabel("Y Coordinate")
-        plt.legend()
-
-        # 显示地图
-        plt.show()
 
     def print_map(self):
         """
