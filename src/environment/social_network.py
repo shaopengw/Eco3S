@@ -338,7 +338,6 @@ class SocialNetwork:
         """
         # 存储居民字典
         self.residents = residents
-        # threshold = 0.5     #随机关系阈值
         
         # 将居民添加到社交网络
         resident_ids = list(residents.keys())
@@ -374,28 +373,7 @@ class SocialNetwork:
         for i, j in zip(*colleague_pairs):
             self.add_relation(resident_ids[i], resident_ids[j], "colleague")
 
-        # # 建立家族关系
-        # families = []
-        # remaining_residents = set(resident_ids)
-        # family_id = 0
-        
-        # while remaining_residents:
-        #     if len(remaining_residents) < 5:
-        #         family_members = remaining_residents
-        #         remaining_residents = set()
-        #     else:
-        #         family_size = random.randint(5, min(15, len(remaining_residents)))
-        #         family_members = set(random.sample(list(remaining_residents), family_size))
-        #         remaining_residents -= family_members
-            
-        #     families.append((f"family_{family_id}", list(family_members)))
-        #     family_id += 1
-            
-        #     self.add_group(f"family_{family_id}", list(family_members))
-        #     member_list = list(family_members)
-
-
-        # 先建立同乡关系
+        # 建立同乡关系
         location_groups = {}
         for resident_id, resident in residents.items():
             x, y = resident.location
@@ -466,7 +444,6 @@ class SocialNetwork:
         
         # 为每个新居民添加节点和关系
         for resident_id in new_resident_ids:
-            # 添加居民节点
             self.add_resident(resident_id, "resident")
             
             # 随机添加朋友关系（1-3个）
@@ -497,13 +474,15 @@ class SocialNetwork:
                     area_families.append(edge)
             
             # 如果同乡中有家族，随机选择一个加入（80%概率）
+            joined_family = False
             if area_families and random.random() < 0.8:
                 chosen_family = random.choice(list(set(area_families)))
                 # 将新居民添加到选中的家族中
-                members = self.hyper_graph.get_hyperedge_nodes(chosen_family)
-                members = list(members) + [resident_id]
-                self.add_group(chosen_family, members)
-                # 添加家族关系
-                for member in members:
-                    if member != resident_id:
-                        self.add_relation(resident_id, member, "family")
+                self.add_group(chosen_family, [resident_id])
+                joined_family = True
+            
+            # 如果没有加入任何家族，创建单人家族
+            if not joined_family:
+                family_id = len([edge for edge in self.hyper_graph.get_hyperedges() if edge.startswith("family_")])
+                family_group_id = f"family_{family_id}"
+                self.add_group(family_group_id, [resident_id])
