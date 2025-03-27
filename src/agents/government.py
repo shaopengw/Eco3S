@@ -14,8 +14,8 @@ if "sphinx" not in sys.modules:
     government_log.addHandler(file_handler)
 
 class OrdinaryGovernmentAgent:
-    def __init__(self, agent_id, government, shared_pool):
-
+    def __init__(self, agent_id, government, shared_pool, model_type=None):
+        self.model_type = model_type
         self.agent_id = agent_id
         self.government = government
         self.shared_pool = shared_pool 

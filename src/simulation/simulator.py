@@ -93,10 +93,10 @@ class Simulator:
                 if new_residents_with_new_ids:
                     self.social_network.add_new_residents(new_residents_with_new_ids)
                     print(f"{len(new_residents_with_new_ids)} 名新居民已加入社交网络")
-                    # self.social_network.visualize()
+                    self.social_network.visualize()
             
             # 基于LLM的决策--测试时建议暂时注释
-            await self.government_decision_process() # 政府行为
+            # await self.government_decision_process() # 政府行为
             # await self.rebellion_decision_process() # 叛军行为
 
             rebellions = 0
