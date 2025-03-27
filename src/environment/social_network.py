@@ -268,37 +268,68 @@ class SocialNetwork:
             import matplotlib
             matplotlib.use('Agg')
             
-            # 创建一个包含两个子图的画布，并调整间距
-            fig, axes = plt.subplots(1, 2, figsize=(15, 7), gridspec_kw={'wspace': 0.3})
-        
+            # 设置中文字体
+            plt.rcParams['font.sans-serif'] = ['SimHei']  # 使用黑体
+            plt.rcParams['axes.unicode_minus'] = False    # 解决负号显示问题
+            
+            # 创建更大的画布
+            fig, axes = plt.subplots(1, 2, figsize=(24, 12), gridspec_kw={'wspace': 0.3})
+            
+            # 计算节点大小
+            num_nodes = len(self.hetero_graph.graph.nodes)
+            node_size = max(50, 1000 / (1 + np.log(num_nodes)))  # 使用对数缩放防止节点过小
+            
             # 可视化异质图
             ax1 = axes[0]
             plt.sca(ax1)  # 设置当前坐标轴
-            self.hetero_graph.visualize()
-            ax1.set_title("Heterogeneous Graph", pad=20)
-        
+            pos = nx.spring_layout(self.hetero_graph.graph, k=1.5)  # 增加节点间距
+            
+            # 绘制节点
+            node_colors = [self.hetero_graph.graph.nodes[node]["type"] == "person" and "lightblue" or "lightgreen" 
+                         for node in self.hetero_graph.graph.nodes]
+            nx.draw_networkx_nodes(self.hetero_graph.graph, pos, node_color=node_colors, 
+                                 node_size=node_size, alpha=0.7)
+            
+            # 根据节点数量调整标签字体大小
+            font_size = max(6, 16 / (1 + np.log(num_nodes)))
+            nx.draw_networkx_labels(self.hetero_graph.graph, pos, font_size=font_size)
+            
+            # 绘制不同类型的边
+            edge_colors = {
+                "friend": "red",
+                "colleague": "blue",
+                "family": "green",
+                "hometown": "purple"
+            }
+            
+            for edge_type, color in edge_colors.items():
+                edge_list = [(u, v) for (u, v, d) in self.hetero_graph.graph.edges(data=True) 
+                            if d["type"] == edge_type]
+                if edge_list:
+                    nx.draw_networkx_edges(self.hetero_graph.graph, pos, edgelist=edge_list, 
+                                         edge_color=color, width=0.8, alpha=0.6)
+            
+            ax1.set_title("异质图", pad=20, fontsize=16, fontfamily='SimHei')
+            
             # 可视化超图
             ax2 = axes[1]
-            plt.sca(ax2)  # 设置当前坐标轴
-            hnx.draw(self.hyper_graph.hypergraph)
-            ax2.set_title("Hypergraph", pad=20)
-        
-            # 生成当前时间作为文件名
+            plt.sca(ax2)
+            hnx.draw(self.hyper_graph.hypergraph, 
+                    with_node_labels=True,
+                    node_labels_kwargs={'fontsize': font_size})
+            ax2.set_title("超图", pad=20, fontsize=16, fontfamily='SimHei')
+            
+            # 保存高清图片
             current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
             save_path = os.path.join(save_dir, f"social_network_{current_time}.png")
-            
-            # 保存图片
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            plt.savefig(save_path, dpi=300, bbox_inches='tight', pad_inches=0.5)
             print(f"社交网络图已保存至：{save_path}")
             
-            # 关闭图形，释放内存
             plt.close(fig)
             
         except Exception as e:
             print(f"社交网络可视化失败：{e}")
         
-        # 显示图片
-        plt.show()
 
     def initialize_network(self, residents: dict) -> None:
         """
@@ -307,7 +338,7 @@ class SocialNetwork:
         """
         # 存储居民字典
         self.residents = residents
-        threshold = 0.5     #随机关系阈值
+        # threshold = 0.5     #随机关系阈值
         
         # 将居民添加到社交网络
         resident_ids = list(residents.keys())
@@ -321,12 +352,14 @@ class SocialNetwork:
         friend_matrix = np.random.random((n, n))
         friend_matrix = (friend_matrix + friend_matrix.T) / 2  # 确保对称
         np.fill_diagonal(friend_matrix, 0)  # 对角线置0
+        threshold = np.percentile(friend_matrix[np.triu_indices(n, 1)], 100 * (1 - 3/n))
         friend_matrix = (friend_matrix > threshold).astype(int)
 
         # 生成同事关系矩阵
         colleague_matrix = np.random.random((n, n))
         colleague_matrix = (colleague_matrix + colleague_matrix.T) / 2
         np.fill_diagonal(colleague_matrix, 0)
+        threshold = np.percentile(colleague_matrix[np.triu_indices(n, 1)], 100 * (1 - 3/n))
         colleague_matrix = (colleague_matrix > threshold).astype(int)
         
         # 将矩阵转换为关系对
@@ -341,28 +374,26 @@ class SocialNetwork:
         for i, j in zip(*colleague_pairs):
             self.add_relation(resident_ids[i], resident_ids[j], "colleague")
 
-        # 建立家族关系
-        families = []
-        remaining_residents = set(resident_ids)
-        family_id = 0
+        # # 建立家族关系
+        # families = []
+        # remaining_residents = set(resident_ids)
+        # family_id = 0
         
-        while remaining_residents:
-            if len(remaining_residents) < 5:
-                family_members = remaining_residents
-                remaining_residents = set()
-            else:
-                family_size = random.randint(5, min(15, len(remaining_residents)))
-                family_members = set(random.sample(list(remaining_residents), family_size))
-                remaining_residents -= family_members
+        # while remaining_residents:
+        #     if len(remaining_residents) < 5:
+        #         family_members = remaining_residents
+        #         remaining_residents = set()
+        #     else:
+        #         family_size = random.randint(5, min(15, len(remaining_residents)))
+        #         family_members = set(random.sample(list(remaining_residents), family_size))
+        #         remaining_residents -= family_members
             
-            families.append((f"family_{family_id}", list(family_members)))
-            family_id += 1
+        #     families.append((f"family_{family_id}", list(family_members)))
+        #     family_id += 1
             
-            self.add_group(f"family_{family_id}", list(family_members))
-            member_list = list(family_members)
-            for i, member1 in enumerate(member_list):
-                for member2 in member_list[i+1:]:
-                    self.add_relation(member1, member2, "family")
+        #     self.add_group(f"family_{family_id}", list(family_members))
+        #     member_list = list(family_members)
+
 
         # 先建立同乡关系
         location_groups = {}
@@ -371,71 +402,55 @@ class SocialNetwork:
             area_key = (x // 20, y // 20)
             location_groups.setdefault(area_key, set()).add(resident_id)
 
-        # 存储每个居民的同乡群组，用于后续建立家族关系
-        resident_hometowns = {}
-        
+        # 在每个地理区域内建立同乡和家庭关系
+        family_id = 0
         for area_key, members in location_groups.items():
             if len(members) > 1:
-                group_id = f"hometown_{area_key[0]}_{area_key[1]}"
+                # 建立同乡群组
+                hometown_group_id = f"hometown_{area_key[0]}_{area_key[1]}"
                 member_list = list(members)
-                self.add_group(group_id, member_list)
+                self.add_group(hometown_group_id, member_list)
                 
-                # 记录每个居民的同乡群组并建立关系
-                for member in member_list:
-                    resident_hometowns[member] = group_id
-                    # 与同区域的所有其他居民建立关系
-                    for other_member in member_list:
-                        if other_member != member:
-                            self.add_relation(member, other_member, "hometown")
-
-        # 在同乡的基础上建立家族关系
-        remaining_residents = set(resident_ids)
-        family_id = 0
-        
-        # 按照同乡区域分组处理家族关系
-        for area_members in location_groups.values():
-            area_remaining = set(area_members)
-            
-            while len(area_remaining) >= 3:  # 确保每个家族至少有3个成员
-                # 从当前区域随机选择3-8个居民组成家族
-                family_size = random.randint(3, min(8, len(area_remaining)))
-                family_members = set(random.sample(list(area_remaining), family_size))
-                area_remaining -= family_members
+                # 在同乡群组内基于距离建立家庭关系
+                area_remaining = set(member_list)
                 
-                # 创建家族群组
-                family_group_id = f"family_{family_id}"
-                self.add_group(family_group_id, list(family_members))
-                
-                # 建立家族成员之间的关系
-                member_list = list(family_members)
-                for i, member1 in enumerate(member_list):
-                    for member2 in member_list[i+1:]:
-                        self.add_relation(member1, member2, "family")
-                
-                family_id += 1
-                remaining_residents -= family_members
-            
-            # 将剩余的居民添加到现有家族中
-            for resident in area_remaining:
-                # 找到同一区域的现有家族
-                area_families = [f"family_{i}" for i in range(family_id) 
-                               if any(m in area_members for m in self.hyper_graph.get_hyperedge_nodes(f"family_{i}"))]
-                
-                if area_families:
-                    # 随机选择一个家族加入
-                    chosen_family = random.choice(area_families)
-                    current_members = set(self.hyper_graph.get_hyperedge_nodes(chosen_family))
-                    new_members = current_members | {resident}
+                while len(area_remaining) >= 3:  # 确保每个家族至少有3个成员
+                    # 从剩余居民中选择一个作为家庭中心点
+                    center = random.choice(list(area_remaining))
+                    center_x, center_y = residents[center].location
                     
-                    # 更新家族群组
-                    self.hyper_graph.remove_hyperedge(chosen_family)
-                    self.add_group(chosen_family, list(new_members))
+                    # 计算其他居民到中心点的距离
+                    distances = []
+                    for resident in area_remaining:
+                        if resident != center:
+                            x, y = residents[resident].location
+                            dist = ((x - center_x) ** 2 + (y - center_y) ** 2) ** 0.5
+                            distances.append((resident, dist))
                     
-                    # 建立与家族成员的关系
-                    for member in current_members:
-                        self.add_relation(resident, member, "family")
+                    # 按距离排序
+                    distances.sort(key=lambda x: x[1])
+                    
+                    # 选择3-8个最近的居民组成家庭
+                    family_size = random.randint(3, min(8, len(area_remaining)))
+                    family_members = {center}  # 包含中心点
+                    for resident, _ in distances[:family_size-1]:  # -1是因为已经包含了中心点
+                        family_members.add(resident)
+                    
+                    # 创建家庭群组
+                    family_group_id = f"family_{family_id}"
+                    self.add_group(family_group_id, list(family_members))
+                    
+                    # 更新剩余居民集合
+                    area_remaining -= family_members
+                    family_id += 1
                 
-                remaining_residents.remove(resident)
+                # 将剩余的每个居民单独作为一个家庭
+                for resident in area_remaining:
+                    # 创建单人家庭群组
+                    family_group_id = f"family_{family_id}"
+                    self.add_group(family_group_id, [resident])
+                    family_id += 1
+                
 
     def add_new_residents(self, new_residents: dict) -> None:
         """
@@ -468,42 +483,27 @@ class SocialNetwork:
                 for colleague_id in potential_colleagues:
                     self.add_relation(resident_id, colleague_id, "colleague")
             
-            # 先建立同乡关系
+            # 建立同乡关系
             x, y = new_residents[resident_id].location
             area_key = (x // 20, y // 20)
             hometown_group_id = f"hometown_{area_key[0]}_{area_key[1]}"
+            # 添加到对应的同乡群组
+            self.add_group(hometown_group_id, [resident_id])
+
+            # 在同乡中寻找现有的家族
+            area_families = []
+            for edge in self.hyper_graph.get_node_hyperedges(resident_id):
+                if edge.startswith("family_"):
+                    area_families.append(edge)
             
-            # 查找同一区域的现有居民
-            same_area_residents = []
-            for rid, resident in self.residents.items():
-                if rid != resident_id:
-                    rx, ry = resident.location
-                    if (rx // 20, ry // 20) == area_key:
-                        same_area_residents.append(rid)
-            
-            if same_area_residents:
-                # 添加到同乡群组并直接与所有同乡建立关系
-                self.add_group(hometown_group_id, [resident_id] + same_area_residents)
-                # 与所有同乡建立关系
-                for neighbor in same_area_residents:
-                    self.add_relation(resident_id, neighbor, "hometown")
-                
-                # 在同乡中寻找现有的家族
-                area_families = []
-                for neighbor in same_area_residents:
-                    # 获取邻居所属的家族
-                    for edge in self.hyper_graph.get_node_hyperedges(neighbor):
-                        if edge.startswith("family_"):
-                            area_families.append(edge)
-                
-                # 如果同乡中有家族，随机选择一个加入（80%概率）
-                if area_families and random.random() < 0.8:
-                    chosen_family = random.choice(list(set(area_families)))  # 去重
-                    # 将新居民添加到选中的家族中
-                    members = self.hyper_graph.get_hyperedge_nodes(chosen_family)
-                    members = list(members) + [resident_id]
-                    self.add_group(chosen_family, members)
-                    # 添加家族关系
-                    for member in members:
-                        if member != resident_id:
-                            self.add_relation(resident_id, member, "family")
+            # 如果同乡中有家族，随机选择一个加入（80%概率）
+            if area_families and random.random() < 0.8:
+                chosen_family = random.choice(list(set(area_families)))
+                # 将新居民添加到选中的家族中
+                members = self.hyper_graph.get_hyperedge_nodes(chosen_family)
+                members = list(members) + [resident_id]
+                self.add_group(chosen_family, members)
+                # 添加家族关系
+                for member in members:
+                    if member != resident_id:
+                        self.add_relation(resident_id, member, "family")
