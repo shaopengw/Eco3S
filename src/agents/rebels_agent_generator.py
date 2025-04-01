@@ -1,7 +1,7 @@
 import json
 import asyncio
 from typing import Dict, Optional
-from src.agents.rebels import OrdinaryRebel, RebelLeader
+from src.agents.rebels import OrdinaryRebel, RebelLeader, rebels_SharedInformationPool
 from src.agents.rebels import Rebellion
 
 async def generate_rebels_agents(
@@ -9,6 +9,8 @@ async def generate_rebels_agents(
     rebellion: Rebellion,
     agent_graph: Optional[Dict[int, OrdinaryRebel]] = None,
     rebel_id_mapping: Optional[Dict[int, int]] = None,
+    model_type: str = "gpt-3.5-turbo",
+    shared_pool: Optional[rebels_SharedInformationPool] = None,
 ) -> Dict[int, OrdinaryRebel]:
     """
     生成并返回叛军的叛军图。
@@ -19,24 +21,24 @@ async def generate_rebels_agents(
         agent_graph (Dict[int, OrdinaryRebel], 可选): 叛军图，默认为空。
         rebel_id_mapping (Dict[int, int], 可选): 叛军 ID 与 Agent ID 的映射关系，默认为空。
         model_type (str, 可选): 模型类型，默认为 "gpt-3.5-turbo"。
+        shared_pool (rebels_SharedInformationPool, 可选): 共享信息池，默认为空。
 
     返回:
         Dict[int, OrdinaryRebel]: 生成的叛军图。
     """
     if rebel_id_mapping is None:
-        rebel_id_mapping = {}  # 初始化叛军 ID 与 Agent ID 的映射字典
+        rebel_id_mapping = {}
     if agent_graph is None:
-        agent_graph = {}  # 初始化叛军图
+        agent_graph = {}
+    if shared_pool is None:
+        shared_pool = rebels_SharedInformationPool()
 
     # 读取叛军信息文件
     with open(rebellion_info_path, "r", encoding="utf-8", errors='ignore') as file:
         rebellion_info = json.load(file)
 
     async def process_rebel(i, rebel_data):
-        """
-        处理单个叛军的生成和注册。
-        """
-        # 叛军的唯一标识符
+        """处理单个叛军的生成和注册"""
         rebel_id = i + 1
 
         # 根据叛军类型创建对象
@@ -44,11 +46,13 @@ async def generate_rebels_agents(
             rebel = OrdinaryRebel(
                 rebel_id=rebel_id,
                 rebellion=rebellion,
+                shared_pool=shared_pool,
             )
         elif rebel_data["rank"] == "叛军头子":
             rebel = RebelLeader(
                 leader_id=rebel_id,
                 rebellion=rebellion,
+                shared_pool=shared_pool,
             )
         else:
             raise ValueError(f"未知的叛军类型：{rebel_data['rank']}")
@@ -70,7 +74,7 @@ async def generate_rebels_agents(
     tasks = [process_rebel(i, rebel_data) for i, rebel_data in enumerate(rebellion_info)]
     await asyncio.gather(*tasks)
 
-    # 确保返回的 agent_graph 是一个包含有效叛军对象的字典
+    # 确保返回的 agent_graph 包含有效叛军对象
     if not all(isinstance(rebel, (OrdinaryRebel, RebelLeader)) for rebel in agent_graph.values()):
         raise TypeError("agent_graph 中包含非法对象")
     
