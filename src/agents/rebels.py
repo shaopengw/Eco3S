@@ -13,7 +13,7 @@ if "sphinx" not in sys.modules:
     rebellion_log.addHandler(file_handler)
 
 class OrdinaryRebel:
-    def __init__(self, rebel_id, rebellion):
+    def __init__(self, rebel_id, rebellion, shared_pool):
         """
         初始化普通叛军类
         :param rebel_id: 叛军的唯一标识符
@@ -22,6 +22,7 @@ class OrdinaryRebel:
         """
         self.rebel_id = rebel_id
         self.rebellion = rebellion
+        self.shared_pool = shared_pool
         self.opinions = []  # 收集意见
         self.time = 0  # 当前时间（年）
 
@@ -104,24 +105,48 @@ class OrdinaryRebel:
             rebellion_log.error(f"普通叛军 {self.rebel_id} 在生成意见时出错：{e}")
             return "无法生成意见"
 
-    def express_opinion(self, message_content):
+    async def generate_and_share_opinion(self):
         """
-        表达意见
-        :param message_content: 意见内容
+        从共享信息池中获取信息并发表看法，将看法放入共享信息池
         """
-        self.opinions.append(message_content)
-
-        # 使用 CAMEL 框架处理信息
-        user_message = BaseMessage.make_user_message(
-            role_name="普通叛军",
-            content=message_content,
-        )
-        self.memory.write_record(
-            MemoryRecord(
-                message=user_message,
-                role_at_backend=OpenAIBackendRole.USER,
+        # 获取最新讨论内容
+        latest_discussion = await self.shared_pool.get_latest_discussion()
+        
+        if latest_discussion:
+            # 构建提示信息，让AI决定是否回应以及如何回应
+            prompt = (
+                f"你是一位叛军成员，以下是你的个人属性：\n"
+                f"角色: {self.role}\n"
+                f"人物性格: {self.mbti}\n"
+                f"\n最新的讨论内容是：{latest_discussion}\n"
+                f"\n请根据你的个人属性和立场，决定是否对这个观点发表看法。"
+                f"如果决定发表看法，可以选择支持、反对或提出新的建议。"
+                f"请用简短的一句话回复，语气要符合叛军的特点。"
+                f"如果决定不回复，请返回'不予置评'。"
             )
-        )
+            
+            # 使用CAMEL框架生成回应
+            user_message = BaseMessage.make_user_message(
+                role_name="普通叛军",
+                content=prompt,
+            )
+            
+            try:
+                response = await asyncio.to_thread(self.model_backend.run, [user_message.to_openai_user_message()])
+                opinion = response.choices[0].message.content
+                
+                # 如果AI决定回复，则添加到共享信息池
+                if opinion and opinion != "不予置评":
+                    await self.shared_pool.add_discussion(opinion)
+                    rebellion_log.info(f"普通叛军 {self.rebel_id} 回应了讨论：{opinion}")
+                
+            except Exception as e:
+                rebellion_log.error(f"普通叛军 {self.rebel_id} 在生成回应时出错：{e}")
+        else:
+            # 如果没有讨论内容，生成新话题
+            opinion = await self.generate_opinion()
+            await self.shared_pool.add_discussion(opinion)
+            rebellion_log.info(f"普通叛军 {self.rebel_id} 发起了新讨论：{opinion}")
 
     def get_opinions(self):
         """
@@ -129,36 +154,9 @@ class OrdinaryRebel:
         :return: 叛军的意见列表
         """
         return self.opinions
-
-    def discuss_with_other_rebels(self, other_rebels):
-        """
-        与其他普通叛军讨论
-        :param other_rebels: 其他叛军列表
-        """
-        opinions = []
-        for rebel in other_rebels:
-            opinions += rebel.get_opinions()
-        
-        # 讨论意见并生成报告
-        discussion_report = "\n".join(opinions)
-        user_msg = BaseMessage.make_user_message(
-            role_name="普通叛军",
-            content=f"我们讨论了以下意见：\n{discussion_report}\n请提出您的看法。",
-        )
-
-        # 将讨论内容写入记忆系统
-        self.memory.write_record(
-            MemoryRecord(
-                message=user_msg,
-                role_at_backend=OpenAIBackendRole.USER,
-            )
-        )
-        
-        # 更新并返回讨论报告
-        return discussion_report
     
 class RebelLeader:
-    def __init__(self, leader_id, rebellion, model_type="gpt-3.5-turbo"):
+    def __init__(self, leader_id, rebellion, shared_pool):
         """
         初始化叛军头子类（决策者）
         :param leader_id: 叛军头子的唯一标识符
@@ -167,6 +165,7 @@ class RebelLeader:
         """
         self.leader_id = leader_id
         self.rebellion = rebellion
+        self.shared_pool = shared_pool
         self.time = 0  # 当前时间（年）
         
         # 初始化叛军头子属性
@@ -188,12 +187,16 @@ class RebelLeader:
         self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
         self.memory = ChatHistoryMemory(self.context_creator, window_size=5)
 
-    def make_decision(self, discussion_report):
+    async def make_decision(self, discussion_report):
         """
         根据普通叛军的讨论作出决策
         :param discussion_report: 普通叛军的讨论报告
         :return: 决策结果
         """
+        # 等待讨论结束
+        if not self.shared_pool.is_ended():
+            return None
+            
         # 使用 CAMEL 框架来做决策
         decision_message = BaseMessage.make_user_message(
             role_name="叛军头子",
@@ -236,9 +239,11 @@ class RebelLeader:
         
         try:
             # 调用模型做出最终决策
-            response = self.model_backend.run(openai_messages)
+            response = await asyncio.to_thread(self.model_backend.run, openai_messages)
             decision = response.choices[0].message.content
             rebellion_log.info(f"叛军头子 {self.leader_id} 的决策：{decision}")
+            # 清空共享信息池
+            await self.shared_pool.clear_discussions()
             return decision
         except Exception as e:
             rebellion_log.error(f"叛军头子 {self.leader_id} 在做出决策时出错：{e}")
@@ -334,3 +339,45 @@ class Rebellion:
         print(f"叛军力量: {self.strength}")
         print(f"叛军资源: {self.resources}")
         print(f"叛军支持度: {self.support}")
+
+class rebels_SharedInformationPool:
+    def __init__(self, max_discussions: int = 5):
+        """
+        初始化共享信息池
+        :param max_discussions: 最大讨论数量
+        """
+        self.discussions = []  # 存储所有讨论内容
+        self.max_discussions = max_discussions  # 最大讨论数量
+        self.is_discussion_ended = False  # 讨论是否结束
+        self.lock = asyncio.Lock()  # 用于异步操作的锁
+
+    async def add_discussion(self, discussion) -> bool:
+        """添加讨论内容到共享信息池"""
+        async with self.lock:
+            if self.is_discussion_ended:
+                return False
+            self.discussions.append(discussion)
+            if len(self.discussions) >= self.max_discussions:
+                self.is_discussion_ended = True
+            return True
+
+    async def get_latest_discussion(self):
+        """获取最新的讨论内容"""
+        async with self.lock:
+            if self.discussions:
+                return self.discussions[-1]
+            return None
+
+    async def get_all_discussions(self):
+        """获取所有讨论内容"""
+        async with self.lock:
+            return self.discussions if self.discussions else []
+
+    async def clear_discussions(self):
+        """清空所有讨论内容"""
+        async with self.lock:
+            self.discussions.clear()
+
+    def is_ended(self) -> bool:
+        """检查讨论是否结束"""
+        return self.is_discussion_ended

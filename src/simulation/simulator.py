@@ -97,7 +97,7 @@ class Simulator:
             
             # 基于LLM的决策--测试时建议暂时注释
             # await self.government_decision_process() # 政府行为
-            # await self.rebellion_decision_process() # 叛军行为
+            await self.rebellion_decision_process() # 叛军行为
 
             rebellions = 0
 
@@ -216,34 +216,47 @@ class Simulator:
         except Exception as e:
             print(f"执行决策时出错：{e}")
 
-    async def rebellion_decision_process(self):
+    async def rebellion_decision_process(self, activate_prob=0.8):
         """
         叛军决策流程：
-        1. 普通叛军发表意见
-        2. 普通叛军互相讨论
-        3. 叛军头子做出决策
-        4. 执行决策
+        1. 随机选择一个普通叛军发起讨论
+        2. 所有普通叛军轮流查看并决定是否回应
+        3. 直到达到最大讨论数或无人回应
+        4. 叛军头子做出决策
         """
-        # 1. 普通叛军发表意见
-        ordinary_rebels = [rebel for rebel in self.rebels_agents.values() if isinstance(rebel, OrdinaryRebel)]
-        print(f"找到 {len(ordinary_rebels)} 位普通叛军")  # 输出普通叛军的数量
-        
-        for rebel in ordinary_rebels:
-            opinion = await rebel.generate_opinion()
-            rebel.express_opinion(opinion)
+        # 获取所有普通叛军
+        ordinary_rebels = [
+            rebel for rebel in self.rebels_agents.values()
+            if isinstance(rebel, OrdinaryRebel)
+        ]
 
-        # 2. 普通叛军互相讨论
-        discussion_report = ""
-        if len(ordinary_rebels) > 1:
-            discussion_report = ordinary_rebels[0].discuss_with_other_rebels(ordinary_rebels[1:])
+        # 随机选择一个叛军发起讨论
+        if ordinary_rebels and random.random() < activate_prob:
+            initiator = random.choice(ordinary_rebels)
+            await initiator.generate_and_share_opinion()
 
-        # 3. 叛军头子做出决策
-        rebel_leaders = [rebel for rebel in self.rebels_agents.values() if isinstance(rebel, RebelLeader)]
+            # 其他叛军轮流查看并决定是否回应
+            shared_pool = list(self.rebels_agents.values())[0].shared_pool
+            while not shared_pool.is_ended():
+                for rebel in ordinary_rebels:
+                    if rebel != initiator:
+                        await rebel.generate_and_share_opinion()
+
+        # 获取叛军头子
+        rebel_leaders = [
+            rebel for rebel in self.rebels_agents.values()
+            if isinstance(rebel, RebelLeader)
+        ]
+
+        # 处理讨论结果
         if rebel_leaders:
-            decision = rebel_leaders[0].make_decision(discussion_report)
-
-            # 4. 执行决策
-            self.execute_rebellion_decision(decision)
+            shared_pool = list(self.rebels_agents.values())[0].shared_pool
+            if shared_pool.is_ended():
+                discussions = await shared_pool.get_all_discussions()
+                if discussions:
+                    decision = await rebel_leaders[0].make_decision("\n".join(discussions))
+                    if decision:
+                        self.execute_rebellion_decision(decision)
 
     def execute_rebellion_decision(self, decision):
         """
