@@ -481,8 +481,8 @@ class SocialNetwork:
                 self.add_group(chosen_family, [resident_id])
                 joined_family = True
             
-            # 如果没有加入任何家族，创建单人家族
-            if not joined_family:
-                family_id = len([edge for edge in self.hyper_graph.get_hyperedges() if edge.startswith("family_")])
-                family_group_id = f"family_{family_id}"
-                self.add_group(family_group_id, [resident_id])
+            # # 如果没有加入任何家族，创建单人家族
+            # if not joined_family:
+            #     family_id = len([edge for edge in self.hyper_graph.get_hyperedges() if edge.startswith("family_")])
+            #     family_group_id = f"family_{family_id}"
+            #     self.add_group(family_group_id, [resident_id])
