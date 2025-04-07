@@ -259,7 +259,7 @@ class SocialNetwork:
         保存图片到指定目录。
         """
         # 确保保存目录存在
-        save_dir = "e:/cyf/多智能体/AgentWorld/experiment_dataset/social_network_data"
+        save_dir = "experiment_dataset/social_network_data"
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
         
