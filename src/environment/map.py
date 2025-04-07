@@ -4,77 +4,18 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 
 class Map:
-    def __init__(self, size):
+    def __init__(self, width, height):
         """
         初始化地图
-        :param size: 地图的大小（size x size 的网格）
         """
-        self.size = size
-        self.grid = np.zeros((size, size))  # 基础网格
-        self.river_grid = np.zeros((size, size))  # 沿河区域
-        self.market_towns = []  # 市场城镇的位置列表
-        self.terrain_ruggedness = np.random.rand(size, size)  # 地形崎岖指数（随机生成）
-
-    def initialize_river(self):
-        """
-        初始化京杭大运河路线
-        从北京到杭州的主要路线，使用实际经纬度的相对位置
-        """
-        # 清空原有的河道
-        self.river_grid = np.zeros((self.size, self.size))
-        
-        # 定义运河的关键点（从北到南，使用实际经纬度转换的相对位置）
-        river_points = [
-            (0.05, 0.95),    # 北京   (116.4°E, 39.9°N)
-            (0.07, 0.93),    # 通州   (116.7°E, 39.8°N)
-            (0.15, 0.90),    # 天津   (117.2°E, 39.1°N)
-            (0.20, 0.85),    # 沧州   (116.8°E, 38.3°N)
-            (0.25, 0.80),    # 德州   (116.3°E, 37.4°N)
-            (0.30, 0.75),    # 临清   (115.7°E, 36.9°N)
-            (0.35, 0.73),    # 聊城   (115.9°E, 36.4°N)
-            (0.40, 0.65),    # 济宁   (116.6°E, 35.4°N)
-            (0.45, 0.60),    # 台儿庄 (117.7°E, 34.6°N)
-            (0.50, 0.55),    # 徐州   (117.2°E, 34.3°N)
-            (0.60, 0.50),    # 清江   (119.0°E, 33.6°N)
-            (0.65, 0.45),    # 淮安   (119.1°E, 33.5°N)
-            (0.75, 0.40),    # 扬州   (119.4°E, 32.4°N)
-            (0.80, 0.35),    # 镇江   (119.4°E, 32.2°N)
-            (0.85, 0.30),    # 苏州   (120.6°E, 31.3°N)
-            (0.90, 0.25),    # 杭州   (120.2°E, 30.3°N)
-        ]
-        
-        # 将比例坐标转换为实际网格坐标
-        river_coords = [(int(x * self.size), int(y * self.size)) for x, y in river_points]
-        
-        # 连接各个点形成运河
-        for i in range(len(river_coords) - 1):
-            x1, y1 = river_coords[i]
-            x2, y2 = river_coords[i + 1]
-            # 使用线性插值连接两点
-            steps = max(abs(x2 - x1), abs(y2 - y1)) * 2
-            for step in range(steps + 1):
-                t = step / steps
-                x = int(x1 + t * (x2 - x1))
-                y = int(y1 + t * (y2 - y1))
-                if 0 <= x < self.size and 0 <= y < self.size:
-                    self.river_grid[x, y] = 1
-                    # 为运河添加一定宽度
-                    for dx in [-1, 0, 1]:
-                        for dy in [-1, 0, 1]:
-                            nx, ny = x + dx, y + dy
-                            if 0 <= nx < self.size and 0 <= ny < self.size:
-                                self.river_grid[nx, ny] = 1
-
-    def initialize_market_towns(self):
-        """
-        初始化京杭大运河沿线的主要城市
-        """
-        # 清空原有的市场城镇
+        self.width = width
+        self.height = height
+        self.grid = np.zeros((height, width))
+        self.river_grid = np.zeros((height, width))
         self.market_towns = []
-        self.town_names = []  # 添加城市名称列表
-        
-        # 定义主要城市的位置（从北到南）
-        town_points = [
+        self.town_names = []
+        # 定义京杭大运河沿线城市的位置（从北到南）
+        self.canal_points = [
             (0.05, 0.95, "北京"),     # 北京   (116.4°E, 39.9°N)
             (0.07, 0.93, "通州"),     # 通州   (116.7°E, 39.8°N)
             (0.15, 0.90, "天津"),     # 天津   (117.2°E, 39.1°N)
@@ -92,62 +33,87 @@ class Map:
             (0.85, 0.30, "苏州"),     # 苏州   (120.6°E, 31.3°N)
             (0.90, 0.25, "杭州"),     # 杭州   (120.2°E, 30.3°N)
         ]
+        self.terrain_ruggedness = np.random.rand(height, width)
+
+    def initialize_river(self):
+        """
+        初始化京杭大运河路线
+        """
+        self.river_grid = np.zeros((self.height, self.width))
         
-        # 将比例坐标转换为实际网格坐标
-        for x, y, name in town_points:
-            grid_x = int(x * self.size)
-            grid_y = int(y * self.size)
-            if 0 <= grid_x < self.size and 0 <= grid_y < self.size:
+        # 提取河流坐标点，y坐标需要反转以匹配地理方向（北上南下）
+        river_points = [(x, 1-y) for x, y, _ in self.canal_points]
+        river_coords = [(int(x * self.width), int(y * self.height)) for x, y in river_points]
+        
+        # 连接各个点形成运河
+        for i in range(len(river_coords) - 1):
+            x1, y1 = river_coords[i]
+            x2, y2 = river_coords[i + 1]
+            steps = max(abs(x2 - x1), abs(y2 - y1)) * 2
+            for step in range(steps + 1):
+                t = step / steps
+                x = int(x1 + t * (x2 - x1))
+                y = int(y1 + t * (y2 - y1))
+                if 0 <= x < self.width and 0 <= y < self.height:
+                    self.river_grid[y, x] = 1
+                    # 为运河添加一定宽度
+                    for dy, dx in [(-1,-1), (-1,0), (-1,1), (0,-1), (0,0), (0,1), (1,-1), (1,0), (1,1)]:
+                        ny, nx = y + dy, x + dx
+                        if 0 <= ny < self.height and 0 <= nx < self.width:
+                            self.river_grid[ny, nx] = 1
+
+    def initialize_market_towns(self):
+        """
+        初始化京杭大运河沿线的主要城市
+        """
+        self.market_towns = []
+        self.town_names = []
+        
+        # 直接使用已定义的城市坐标，y坐标需要反转
+        for x, y, name in self.canal_points:
+            grid_x = int(x * self.width)
+            grid_y = int((1-y) * self.height)  # 反转y坐标
+            if 0 <= grid_x < self.width and 0 <= grid_y < self.height:
                 self.market_towns.append((grid_x, grid_y))
-                self.town_names.append(name)  # 保存城市名称
+                self.town_names.append(name)
 
     def visualize_map(self):
         """
         可视化地图，显示沿河区域、市场城镇和地形崎岖指数
         """
-        plt.figure(figsize=(12, 12))  # 增加图像大小以适应文字标注
+        plt.figure(figsize=(10, 15))
 
-        # 绘制地形崎岖指数
-        plt.imshow(self.terrain_ruggedness, cmap='terrain', alpha=0.6, extent=[0, self.size, 0, self.size])
+        # 绘制地形崎岖指数，翻转y轴方向
+        plt.imshow(self.terrain_ruggedness, cmap='terrain', alpha=0.6, 
+                  extent=[0, self.width, self.height, 0])  # 修改extent顺序
 
         # 绘制沿河区域
-        river_x, river_y = np.where(self.river_grid == 1)
-        plt.scatter(river_y, self.size - np.array(river_x), color='blue', label='River', s=10)
+        river_y, river_x = np.where(self.river_grid == 1)
+        plt.scatter(river_x, river_y, color='blue', label='River', s=10)
 
         # 绘制市场城镇和城市名称
         market_x = [town[0] for town in self.market_towns]
         market_y = [town[1] for town in self.market_towns]
-        plt.scatter(market_y, self.size - np.array(market_x), color='red', label='Market Towns', s=50, marker='s')
+        plt.scatter(market_x, market_y, color='red', label='Market Towns', s=50, marker='s')
         
         # 添加城市名称标注
         for i in range(len(self.market_towns)):
             x = market_x[i]
             y = market_y[i]
             name = self.town_names[i]
-            # 在城市点右侧添加文字标注，设置中文字体
             plt.annotate(name, 
-                        xy=(y, self.size - x),
+                        xy=(x, y),
                         xytext=(5, 5), 
                         textcoords='offset points',
                         fontsize=8,
-                        fontproperties='SimHei',  # 使用黑体显示中文
+                        fontproperties='SimHei',
                         bbox=dict(facecolor='white', edgecolor='none', alpha=0.7))
 
-        # 设置地图标题和标签
         plt.title("京杭大运河沿线地图", fontproperties='SimHei', fontsize=14)
-        plt.xlabel("X 坐标", fontproperties='SimHei')
-        plt.ylabel("Y 坐标", fontproperties='SimHei')
+        plt.xlabel("东西方向", fontproperties='SimHei')
+        plt.ylabel("南北方向", fontproperties='SimHei')
         plt.legend()
         plt.show()
-        # # 保存图片
-        # save_dir = "e:/cyf/多智能体/AgentWorld/experiment_dataset/map_data"
-        # if not os.path.exists(save_dir):
-        #     os.makedirs(save_dir)
-        # current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-        # save_path = os.path.join(save_dir, f"map_{current_time}.png")
-        # plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        # print(f"地图已保存至：{save_path}")
-        # plt.close()
 
     def get_river_damage_level(self, year):
         """
@@ -193,14 +159,14 @@ class Map:
         :return: 市场城镇的位置列表
         """
         return self.market_towns
-
+    
     def get_map_size(self):
         """
-        获取地图的大小
-        :return: 地图的大小（size x size）
+        获取地图的尺寸
+        :return: 地图的宽度和高度
         """
-        return self.size
-
+        return self.width, self.height
+    
     def print_map(self):
         """
         打印地图（用于调试）
@@ -211,7 +177,7 @@ class Map:
 
 if __name__ == "__main__":
     # 初始化地图
-    map = Map(size=100)
+    map = Map(width=100, height=150)  # 修改为长方形尺寸
     map.initialize_river()
     map.initialize_market_towns()
 
