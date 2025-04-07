@@ -1,3 +1,5 @@
+# 暂时废弃
+
 class InformationSpread:
     def __init__(self, map):
         """
