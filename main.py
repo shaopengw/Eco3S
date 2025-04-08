@@ -50,9 +50,10 @@ async def run_simulation(config: dict[str, Any]) -> None:
     # print(f"生成了{N} 名居民数据，并保存到 {output_path}")
 
     # 初始化地图
-    map = Map(size=config["simulation"]["map_size"])
+    map = Map(width=config["simulation"]["map_width"], height=config["simulation"]["map_height"])
     map.initialize_river()
     map.initialize_market_towns()
+    map.initialize_non_river_towns()
 
     # 初始化时间
     time = Time(start_year=config["simulation"]["start_year"], end_year=config["simulation"]["end_year"])
