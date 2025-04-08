@@ -13,7 +13,7 @@ def plot_rebellions_over_time(years, rebellions):
     plt.grid(True)
     
     # 保存图片
-    save_dir = "e:/cyf/多智能体/AgentWorld/experiment_dataset/plot_results"
+    save_dir = "experiment_dataset/plot_results"
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -112,7 +112,7 @@ def plot_all_results(years, rebellions, unemployment_rate, population, governmen
     plt.tight_layout()
     
     # 保存图片
-    save_dir = "e:/cyf/多智能体/AgentWorld/experiment_dataset/plot_results"
+    save_dir = "experiment_dataset/plot_results"
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
