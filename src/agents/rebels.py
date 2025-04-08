@@ -18,7 +18,6 @@ class OrdinaryRebel:
         初始化普通叛军类
         :param rebel_id: 叛军的唯一标识符
         :param rebellion: 叛军对象，用于获取叛军状态
-        :param model_type: 使用的模型类型（默认使用 GPT-3.5-turbo）
         """
         self.rebel_id = rebel_id
         self.rebellion = rebellion
@@ -29,15 +28,18 @@ class OrdinaryRebel:
         # 初始化叛军属性
         self.role = None  # 角色
         self.mbti = None  # 人物性格
-
         # 初始化 CAMEL 框架组件
-        # 根据API类型获取模型类型
-        api_type = os.getenv("API_TYPE", "OPENAI")
-        model_type_env = os.getenv(f"{api_type}_MODEL_TYPE", "gpt-3.5-turbo")
-        self.model_type = ModelType(model_type_env)
+
+        # api_type = os.getenv("API_TYPE", "OPENAI")
+        # model_type_env = os.getenv(f"{api_type}_MODEL_TYPE", "gpt-3.5-turbo")
+        # self.model_type = ModelType(model_type_env)
+        
+        self.model_manager = ModelManager()
+        model_config = self.model_manager.get_random_model_config()
+        self.model_type = ModelType(model_config["model_type"])
         self.model_config = ChatGPTConfig(temperature=0.7)
         self.model_backend = ModelFactory.create(
-            model_platform=ModelPlatformType.OPENAI,
+            model_platform=model_config["model_platform"],
             model_type=self.model_type,
             model_config_dict=self.model_config.as_dict(),
         )
@@ -157,12 +159,6 @@ class OrdinaryRebel:
     
 class RebelLeader:
     def __init__(self, leader_id, rebellion, shared_pool):
-        """
-        初始化叛军头子类（决策者）
-        :param leader_id: 叛军头子的唯一标识符
-        :param rebellion: 叛军对象，用于获取叛军状态
-        :param model_type: 使用的模型类型（默认使用 GPT-3.5-turbo）
-        """
         self.leader_id = leader_id
         self.rebellion = rebellion
         self.shared_pool = shared_pool
@@ -172,17 +168,19 @@ class RebelLeader:
         self.role = None  # 角色
         self.mbti = None  # 人物性格
 
-        # 初始化 CAMEL 框架组件
-        # 根据API类型获取模型类型
-        api_type = os.getenv("API_TYPE", "OPENAI")
-        model_type_env = os.getenv(f"{api_type}_MODEL_TYPE", "gpt-3.5-turbo")
-        self.model_type = ModelType(model_type_env)
+        # 初始化模型管理器
+        self.model_manager = ModelManager()
+        model_config = self.model_manager.get_random_model_config()
+        self.model_type = ModelType(model_config["model_type"])
         self.model_config = ChatGPTConfig(temperature=0.7)
         self.model_backend = ModelFactory.create(
-            model_platform=ModelPlatformType.OPENAI,
+            model_platform=model_config["model_platform"],
             model_type=self.model_type,
             model_config_dict=self.model_config.as_dict(),
         )
+        # self.system_message = "你是一个叛军头子，负责根据下属叛军的讨论和当前叛军状态做出最终决策。"
+
+        # 初始化记忆系统
         self.token_counter = OpenAITokenCounter(self.model_type)
         self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
         self.memory = ChatHistoryMemory(self.context_creator, window_size=5)
