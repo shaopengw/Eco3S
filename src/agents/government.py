@@ -26,13 +26,13 @@ class OrdinaryGovernmentAgent:
         self.mbti = None  # 人物性格
 
         # 初始化 CAMEL 框架组件
-        # 根据API类型获取模型类型
-        api_type = os.getenv("API_TYPE", "OPENAI")
-        model_type_env = os.getenv(f"{api_type}_MODEL_TYPE", "gpt-3.5-turbo")
-        self.model_type = ModelType(model_type_env)
+
+        self.model_manager = ModelManager()
+        model_config = self.model_manager.get_random_model_config()
+        self.model_type = ModelType(model_config["model_type"])
         self.model_config = ChatGPTConfig(temperature=0.7)
         self.model_backend = ModelFactory.create(
-            model_platform=ModelPlatformType.OPENAI,
+            model_platform=model_config["model_platform"],
             model_type=self.model_type,
             model_config_dict=self.model_config.as_dict(),
         )
@@ -180,12 +180,12 @@ class HighRankingGovernmentAgent:
 
         # 初始化 CAMEL 框架组件
         # 根据API类型获取模型类型
-        api_type = os.getenv("API_TYPE", "OPENAI")
-        model_type_env = os.getenv(f"{api_type}_MODEL_TYPE", "gpt-3.5-turbo")
-        self.model_type = ModelType(model_type_env)
+        self.model_manager = ModelManager()
+        model_config = self.model_manager.get_random_model_config()
+        self.model_type = ModelType(model_config["model_type"])
         self.model_config = ChatGPTConfig(temperature=0.7)
         self.model_backend = ModelFactory.create(
-            model_platform=ModelPlatformType.OPENAI,
+            model_platform=model_config["model_platform"],
             model_type=self.model_type,
             model_config_dict=self.model_config.as_dict(),
         )
