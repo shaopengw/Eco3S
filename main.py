@@ -125,8 +125,8 @@ async def run_simulation(config: dict[str, Any]) -> None:
         social_network=social_network,
         residents=residents,
     )
-    # 添加这一行
-    simulator.initialize_resident_social_network()
+    # simulator.initialize_resident_social_network()
+    simulator.initialize_resident_groups()
     print("初始化完成")
 
     # 运行模拟
