@@ -12,6 +12,7 @@ from src.agents.government import (
 from src.agents.rebels import OrdinaryRebel, RebelLeader
 from src.generator.resident_generate import generate_resident_data, save_resident_data
 from src.environment.social_network import SocialNetwork
+from src.agents.resident import ResidentGroup
 
 class Simulator:
     def __init__(self, map, time, job_market, government, government_officials, rebellion, rebels_agents, population, social_network, residents):
@@ -38,6 +39,7 @@ class Simulator:
         self.population = population
         self.social_network = social_network
         self.residents = residents
+        self.resident_groups = {}  # 新增：按城镇分组的居民组
         self.results = {
             "years": [],
             "rebellions": [],
@@ -49,10 +51,43 @@ class Simulator:
         self.start_time = None  # 用于记录模拟开始时间
         self.end_time = None    # 用于记录模拟结束时间
 
+    def initialize_resident_groups(self):
+        """初始化居民群组"""
+        # 按城镇位置对居民进行分组
+        town_residents = {}
+        market_towns = self.map.get_market_towns()
+        
+        for resident_id, resident in self.residents.items():
+            # 找到最近的集市城镇
+            min_distance = float('inf')
+            nearest_town = None
+            for town in market_towns:
+                distance = ((resident.location[0] - town[0]) ** 2 + 
+                          (resident.location[1] - town[1]) ** 2) ** 0.5
+                if distance < min_distance:
+                    min_distance = distance
+                    nearest_town = town
+            
+            # 使用城镇坐标作为 town_id
+            town_id = f"town_{nearest_town[0]}_{nearest_town[1]}"
+            if town_id not in town_residents:
+                town_residents[town_id] = []
+            town_residents[town_id].append(resident)
+
+        # 为每个城镇创建一个 ResidentGroup
+        for town_id, residents in town_residents.items():
+            group = ResidentGroup(town_id)
+            for resident in residents:
+                group.add_resident(resident)
+            self.resident_groups[town_id] = group
+
     async def run(self):
         """
         运行模拟
         """
+        # 初始化居民群组
+        self.initialize_resident_groups()
+        
         self.start_time = datetime.now()  # 记录模拟开始时间
         while not self.time.is_end():
             # 打印当前时间步信息
@@ -97,7 +132,7 @@ class Simulator:
             
             # 基于LLM的决策--测试时建议暂时注释
             # await self.government_decision_process() # 政府行为
-            await self.rebellion_decision_process() # 叛军行为
+            # await self.rebellion_decision_process() # 叛军行为
 
             rebellions = 0
 
@@ -105,7 +140,7 @@ class Simulator:
             tasks = []
             for resident_name in list(self.residents.keys()):  # 使用 list() 确保在遍历时不会出错
                 resident = self.residents[resident_name]
-                # tasks.append(resident.decide_action_by_llm())  # 基于LLM的决策--测试时建议暂时注释
+                tasks.append(resident.decide_action_by_llm())  # 基于LLM的决策--测试时建议暂时注释
             # 并发执行所有居民的行为
             await asyncio.gather(*tasks)
 

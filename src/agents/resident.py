@@ -29,6 +29,37 @@ class ResidentSharedInformationPool:
         if category:
             return self.shared_info.get(category, {})
         return self.shared_info
+class ResidentGroup:
+    """居民群组，用于管理同一城镇的居民"""
+    def __init__(self, town_id):
+        self.town_id = town_id
+        self.residents = {}  # resident_id -> Resident
+        # 共享的 LLM 资源
+        self.model_manager = ModelManager()
+        self.model_config = self.model_manager.get_random_model_config()
+        self.model_type = ModelType(self.model_config["model_type"])
+        self.model_backend = ModelFactory.create(
+            model_platform=self.model_config["model_platform"],
+            model_type=self.model_type,
+            model_config_dict=ChatGPTConfig(temperature=0.7).as_dict(),
+        )
+        # 共享的 token 计数器和上下文创建器
+        self.token_counter = OpenAITokenCounter(self.model_type)
+        self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
+
+    def add_resident(self, resident):
+        """添加居民到群组"""
+        self.residents[resident.resident_id] = resident
+        # 设置共享的 LLM 资源
+        resident.model_backend = self.model_backend
+        resident.token_counter = self.token_counter
+        resident.context_creator = self.context_creator
+        resident.memory = ChatHistoryMemory(self.context_creator, window_size=5)
+
+    def remove_resident(self, resident_id):
+        """从群组中移除居民"""
+        if resident_id in self.residents:
+            del self.residents[resident_id]
 
 class Resident:
     def __init__(self, resident_id, location, job_market, shared_pool):
@@ -52,19 +83,25 @@ class Resident:
         self.lifespan = 100  # 居民的寿命
 
         # 初始化 CAMEL 框架组件
-        self.model_manager = ModelManager()
-        model_config = self.model_manager.get_random_model_config()
-        self.model_type = ModelType(model_config["model_type"])
-        self.model_config = ChatGPTConfig(temperature=0.7)
-        self.model_backend = ModelFactory.create(
-            model_platform=model_config["model_platform"],
-            model_type=self.model_type,
-            model_config_dict=self.model_config.as_dict(),
-        )
-        self.token_counter = OpenAITokenCounter(self.model_type)
-        self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
-        self.memory = ChatHistoryMemory(self.context_creator, window_size=5)
+        # self.model_manager = ModelManager()
+        # model_config = self.model_manager.get_random_model_config()
+        # self.model_type = ModelType(model_config["model_type"])
+        # self.model_config = ChatGPTConfig(temperature=0.7)
+        # self.model_backend = ModelFactory.create(
+        #     model_platform=model_config["model_platform"],
+        #     model_type=self.model_type,
+        #     model_config_dict=self.model_config.as_dict(),
+        # )
+        # self.token_counter = OpenAITokenCounter(self.model_type)
+        # self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
+        # self.memory = ChatHistoryMemory(self.context_creator, window_size=5)
 
+        # 这些属性将由 ResidentGroup 设置
+        self.model_backend = None
+        self.token_counter = None
+        self.context_creator = None
+        self.memory = None
+        
         # # 初始化日志
         # self.logger = logging.getLogger(name=f"resident_{resident_id}")
         # self.logger.setLevel(logging.DEBUG)
