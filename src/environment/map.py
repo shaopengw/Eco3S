@@ -186,7 +186,25 @@ class Map:
         plt.legend()
         plt.show()
 
-    # 其他方法保持不变...
+    def get_all_towns(self):
+        """获取所有城市（包括运河和非运河城市）的信息"""
+        all_towns = []
+        # 处理所有城市
+        for city_type, cities in [
+            ('canal', self.city_data['canal_cities']),
+            ('non_canal', self.city_data['other_cities'])
+        ]:
+            for city in cities:
+                x = self.longitude_to_x(city['longitude'])
+                y = self.latitude_to_y(city['latitude'])
+                all_towns.append({
+                    'id': f"town_{x}_{y}",
+                    'name': city['name'],
+                    'location': (x, y),
+                    'type': city_type
+                })
+        return all_towns
+    
     def get_river_damage_level(self, year):
         """
         获取运河的损坏程度

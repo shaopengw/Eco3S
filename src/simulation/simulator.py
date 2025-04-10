@@ -13,9 +13,10 @@ from src.agents.rebels import OrdinaryRebel, RebelLeader
 from src.generator.resident_generate import generate_resident_data, save_resident_data
 from src.environment.social_network import SocialNetwork
 from src.agents.resident import ResidentGroup
+from src.environment.towns import Towns
 
 class Simulator:
-    def __init__(self, map, time, job_market, government, government_officials, rebellion, rebels_agents, population, social_network, residents):
+    def __init__(self, map, time, job_market, government, government_officials, rebellion, rebels_agents, population, social_network, residents,towns):
         """
         初始化模拟器类
         :param map: 地图对象
@@ -39,7 +40,8 @@ class Simulator:
         self.population = population
         self.social_network = social_network
         self.residents = residents
-        self.resident_groups = {}  # 新增：按城镇分组的居民组
+        # self.resident_groups = {}  # 新增：按城镇分组的居民组
+        self.towns = towns
         self.results = {
             "years": [],
             "rebellions": [],
@@ -51,43 +53,10 @@ class Simulator:
         self.start_time = None  # 用于记录模拟开始时间
         self.end_time = None    # 用于记录模拟结束时间
 
-    def initialize_resident_groups(self):
-        """初始化居民群组"""
-        # 按城镇位置对居民进行分组
-        town_residents = {}
-        market_towns = self.map.get_market_towns()
-        
-        for resident_id, resident in self.residents.items():
-            # 找到最近的集市城镇
-            min_distance = float('inf')
-            nearest_town = None
-            for town in market_towns:
-                distance = ((resident.location[0] - town[0]) ** 2 + 
-                          (resident.location[1] - town[1]) ** 2) ** 0.5
-                if distance < min_distance:
-                    min_distance = distance
-                    nearest_town = town
-            
-            # 使用城镇坐标作为 town_id
-            town_id = f"town_{nearest_town[0]}_{nearest_town[1]}"
-            if town_id not in town_residents:
-                town_residents[town_id] = []
-            town_residents[town_id].append(resident)
-
-        # 为每个城镇创建一个 ResidentGroup
-        for town_id, residents in town_residents.items():
-            group = ResidentGroup(town_id)
-            for resident in residents:
-                group.add_resident(resident)
-            self.resident_groups[town_id] = group
-
     async def run(self):
         """
         运行模拟
         """
-        # 初始化居民群组
-        self.initialize_resident_groups()
-        
         self.start_time = datetime.now()  # 记录模拟开始时间
         while not self.time.is_end():
             # 打印当前时间步信息
@@ -98,37 +67,10 @@ class Simulator:
 
             # 居民出生（次/年）
             if self.time.get_current_quarter() == 1:
-                new_residents_count = int(self.population.birth_rate * self.population.get_population())
-                # 新居民出生
-                resident_data = generate_resident_data(new_residents_count)
-                new_resident_info_path = 'experiment_dataset/resident_data/new_resident_data.json'
-                save_resident_data(resident_data, new_resident_info_path)
-                print(f"生成了{new_residents_count} 名新居民数据")
-                
-                new_residents = await generate_canal_agents(
-                    resident_info_path=new_resident_info_path,
-                    map=self.map,
-                    job_market=self.job_market,
-                )
-                
-                # 修改新居民的编号，确保不重复
-                offset = max(self.residents.keys()) + 1 if self.residents else 1
-                new_residents_with_new_ids = {}
-                for i, (_, resident) in enumerate(new_residents.items()):
-                    new_id = offset + i
-                    resident.resident_id = new_id  # 更新居民的ID
-                    new_residents_with_new_ids[new_id] = resident
-                
-                # 更新居民字典
-                self.residents.update(new_residents_with_new_ids)
-                self.population.birth(new_residents_count)
-                print(f"{len(new_residents)} 名新居民已出生")
-                
-                # 生成新居民后添加到社交网络
-                if new_residents_with_new_ids:
-                    self.social_network.add_new_residents(new_residents_with_new_ids)
-                    print(f"{len(new_residents_with_new_ids)} 名新居民已加入社交网络")
-                    self.social_network.visualize()
+                new_count = int(self.population.birth_rate * self.population.get_population())
+                new_residents = await self.generate_new_residents(new_count)
+                await self.integrate_new_residents(new_residents)
+                self.population.birth(new_count)
             
             # 基于LLM的决策--测试时建议暂时注释
             # await self.government_decision_process() # 政府行为
@@ -336,3 +278,44 @@ class Simulator:
         # 为每个居民设置社交网络引用
         for resident in self.residents.values():
             resident.social_network = self.social_network
+
+    async def generate_new_residents(self, count):
+        """生成新居民并初始化"""
+        # 生成居民数据
+        resident_data = generate_resident_data(count)
+        new_resident_info_path = 'experiment_dataset/resident_data/new_resident_data.json'
+        save_resident_data(resident_data, new_resident_info_path)
+        
+        # 生成居民实例
+        new_residents = await generate_canal_agents(
+            resident_info_path=new_resident_info_path,
+            map=self.map,
+            job_market=self.job_market,
+        )
+        
+        # 分配新ID
+        offset = max(self.residents.keys()) + 1 if self.residents else 1
+        new_residents_with_new_ids = {}
+        for i, (_, resident) in enumerate(new_residents.items()):
+            new_id = offset + i
+            resident.resident_id = new_id  # 直接修改 ID
+            new_residents_with_new_ids[new_id] = resident
+        return new_residents_with_new_ids
+
+    async def integrate_new_residents(self, new_residents):
+        """将新居民整合到系统中"""
+        # 更新全局居民列表
+        self.residents.update(new_residents)
+        print(f"{len(new_residents)} 名新居民已出生")
+        
+        # 添加到城镇
+        for resident in new_residents.values():
+            if resident.town:
+                self.towns.add_resident(resident, resident.town)
+        print("新居民已加入各自城镇")
+        
+        # 添加到社交网络
+        if new_residents:
+            self.social_network.add_new_residents(new_residents)
+            print(f"{len(new_residents)} 名新居民已加入社交网络")
+            self.social_network.visualize()
