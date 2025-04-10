@@ -20,6 +20,7 @@ from src.agents.resident_agent_generator import generate_canal_agents
 from src.agents.government_agent_generator import generate_government_agents
 from src.agents.rebels_agent_generator import generate_rebels_agents
 from src.generator.resident_generate import generate_resident_data, save_resident_data
+from src.environment.towns import Towns
 from dotenv import load_dotenv
 
 # 确保 log 目录存在
@@ -102,9 +103,13 @@ async def run_simulation(config: dict[str, Any]) -> None:
         job_market=job_market,
     )
 
+    # 初始化居民群组
+    towns = Towns(map)
+    towns.initialize_resident_groups(residents)
+    
     # 初始化社交网络
     social_network = SocialNetwork()
-    social_network.initialize_network(residents)
+    social_network.initialize_network(residents, towns)
 
     # 可视化社交网络
     try:
@@ -124,9 +129,9 @@ async def run_simulation(config: dict[str, Any]) -> None:
         population=population,
         social_network=social_network,
         residents=residents,
+        towns=towns,
     )
-    # simulator.initialize_resident_social_network()
-    simulator.initialize_resident_groups()
+    
     print("初始化完成")
 
     # 运行模拟

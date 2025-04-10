@@ -331,13 +331,16 @@ class SocialNetwork:
             print(f"社交网络可视化失败：{e}")
         
 
-    def initialize_network(self, residents: dict) -> None:
+    def initialize_network(self, residents: dict, towns) -> None:
         """
         初始化社交网络，建立居民之间的关系
         :param residents: 居民字典
+        :param towns: 城镇
         """
         # 存储居民字典
         self.residents = residents
+        # 初始化 family_id 计数器
+        family_id = 0
         
         # 将居民添加到社交网络
         resident_ids = list(residents.keys())
@@ -372,25 +375,19 @@ class SocialNetwork:
         # 建立同事关系
         for i, j in zip(*colleague_pairs):
             self.add_relation(resident_ids[i], resident_ids[j], "colleague")
-
-        # 建立同乡关系
-        location_groups = {}
-        for resident_id, resident in residents.items():
-            x, y = resident.location
-            area_key = (x // 20, y // 20)
-            location_groups.setdefault(area_key, set()).add(resident_id)
-
-        # 在每个地理区域内建立同乡和家庭关系
-        family_id = 0
-        for area_key, members in location_groups.items():
-            if len(members) > 1:
-                # 建立同乡群组
-                hometown_group_id = f"hometown_{area_key[0]}_{area_key[1]}"
-                member_list = list(members)
-                self.add_group(hometown_group_id, member_list)
+        
+        # 为每个城镇创建同乡关系超边
+        for town_id, town_data in towns.towns.items():
+            town_residents = town_data['residents'].keys()
+            if town_residents:
+                # 创建同乡关系超边
+                hometown_group_id = f"hometown_{town_id}"
+                self.add_group(hometown_group_id, list(town_residents))
+                # 将超边ID存储到城镇数据中
+                town_data['hometown_group'] = hometown_group_id
                 
                 # 在同乡群组内基于距离建立家庭关系
-                area_remaining = set(member_list)
+                area_remaining = set(town_residents)
                 
                 while len(area_remaining) >= 3:  # 确保每个家族至少有3个成员
                     # 从剩余居民中选择一个作为家庭中心点

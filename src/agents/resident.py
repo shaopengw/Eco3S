@@ -62,18 +62,18 @@ class ResidentGroup:
             del self.residents[resident_id]
 
 class Resident:
-    def __init__(self, resident_id, location, job_market, shared_pool):
+    def __init__(self, resident_id, job_market, shared_pool):
         """
         初始化居民类
         :param resident_id: 居民的唯一标识符
-        :param location: 居民的初始位置 (x, y)
+
         :param job_market: 就业市场对象，用于获取工作机会
-        :param model_type: 使用的模型类型（默认使用 GPT-3.5-turbo）
         """
         self.resident_id = resident_id
-        self.location = location
         self.job_market = job_market
         self.shared_pool = shared_pool
+        self.location = None
+        self.town = None  # 添加城镇属性
         self.employed = False  # 是否就业
         self.job = None  # 当前工作
         self.income = 0  # 收入

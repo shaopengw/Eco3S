@@ -44,12 +44,12 @@ async def generate_canal_agents(
         # 居民的唯一标识符
         resident_id = i + 1
 
-        location = assign_resident_location(resident_data, map)
+        # 获取位置和城镇ID
+        location, town_id = assign_resident_location(resident_data, map)
         
         # 创建居民对象
         resident = Resident(
             resident_id=resident_id,
-            location=location,
             job_market=job_market,
             shared_pool=shared_pool,
         )
@@ -59,6 +59,8 @@ async def generate_canal_agents(
         resident.satisfaction = resident_data["satisfaction"]
         resident.health_index = resident_data["health_index"]  # 健康状况
         resident.lifespan = resident_data["lifespan"]  # 寿命
+        resident.town = town_id
+        resident.location = location
 
         # 如果居民有职业，分配工作
         if resident_data["profession"] != "其他":
@@ -71,7 +73,7 @@ async def generate_canal_agents(
         resident_id_mapping[resident_id] = resident_id
 
         # 记录居民生成日志
-        # resident.logger.info(f"居民 {resident_id} 在 {location} 生成成功。姓名：{resident_data['realname']}, 性别：{resident_data['gender']}, 职业：{resident_data['profession']}, 收入：{resident.income} 两白银, 满意度：{resident.satisfaction}, 健康状况：{resident.health_index}")
+        # resident.logger.info(f"居民 {resident_id} 在 {town}{location} 生成成功。姓名：{resident_data['realname']}, 性别：{resident_data['gender']}, 职业：{resident_data['profession']}, 收入：{resident.income} 两白银, 满意度：{resident.satisfaction}, 健康状况：{resident.health_index}")
 
     # 创建并执行居民生成任务
     tasks = [process_resident(i, resident_data) for i, resident_data in enumerate(resident_info)]
@@ -82,12 +84,10 @@ async def generate_canal_agents(
 
 def assign_resident_location(resident_data, map):
     """
-    分配居民的位置，根据沿河还是非沿河随机选择城市，位置在城市中心点周围某区域内
-    且大概率接近城市中心点
-    
+    分配居民的位置和所属城镇
     :param resident_data: 居民数据字典，包含"residence"字段
     :param map: Map类实例
-    :return: (x, y) 坐标元组
+    :return: ((x, y), town_id) 坐标元组和城镇ID
     """
     # 定义正态分布的标准差（控制聚集程度）
     sigma = 2.0
@@ -96,10 +96,12 @@ def assign_resident_location(resident_data, map):
         # 从沿河城市中随机选择一个
         town_idx = random.randint(0, len(map.market_towns) - 1)
         center_x, center_y = map.market_towns[town_idx]
+        town_id = f"market_town_{town_idx}"
     else:
         # 从非沿河城市中随机选择一个
         town_idx = random.randint(0, len(map.non_river_towns) - 1)
         center_x, center_y = map.non_river_towns[town_idx]
+        town_id = f"non_river_town_{town_idx}"
     
     # 在城市中心周围生成正态分布的随机位置
     while True:
@@ -115,7 +117,6 @@ def assign_resident_location(resident_data, map):
         if 0 <= x < map.width and 0 <= y < map.height:
             # 对于沿河居民，确保位置在河流附近（可选）
             if resident_data["residence"] != "沿河" or map.is_river_nearby((x, y)):
-                return (x, y)
-            
+                return ((x, y), town_id)
             # 如果沿河居民位置不在河流附近，则继续循环生成新位置
         # 如果位置超出地图范围，则继续循环生成新位置
