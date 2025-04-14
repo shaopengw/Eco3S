@@ -94,13 +94,15 @@ def assign_resident_location(resident_data, map):
     
     if resident_data["residence"] == "沿河":
         # 从沿河城市中随机选择一个
-        town_idx = random.randint(0, len(map.market_towns) - 1)
-        center_x, center_y = map.market_towns[town_idx]
+        town = map.get_market_towns()
+        town_idx = random.randint(0, len(town) - 1)
+        center_x, center_y = town[town_idx]
         town_id = f"market_town_{town_idx}"
     else:
         # 从非沿河城市中随机选择一个
-        town_idx = random.randint(0, len(map.non_river_towns) - 1)
-        center_x, center_y = map.non_river_towns[town_idx]
+        town = map.get_non_river_towns()
+        town_idx = random.randint(0, len(town) - 1)
+        center_x, center_y = town[town_idx]
         town_id = f"non_river_town_{town_idx}"
     
     # 在城市中心周围生成正态分布的随机位置

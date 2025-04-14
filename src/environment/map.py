@@ -17,10 +17,8 @@ class Map:
         self.height = height
         self.grid = np.zeros((height, width))
         self.river_grid = np.zeros((height, width))
-        self.market_towns = []
-        self.town_names = []
-        self.non_river_towns = []
-        self.non_river_town_names = []
+        self.city_matrix = []
+        self.city_dict = {}
         self.terrain_ruggedness = np.random.rand(height, width)
         
         # 加载城市数据
@@ -39,16 +37,7 @@ class Map:
         """
         try:
             with open(data_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            # 加载运河城市
-            for city in data['canal_cities']:
-                self.town_names.append(city['name'])
-                # 坐标将在initialize方法中转换
-                
-            # 加载非运河城市
-            for city in data['other_cities']:
-                self.non_river_town_names.append(city['name'])
-                
+                data = json.load(f)     
             self.city_data = data
             
         except Exception as e:
@@ -101,35 +90,137 @@ class Map:
                         ny, nx = y + dy, x + dx
                         if 0 <= ny < self.height and 0 <= nx < self.width:
                             self.river_grid[ny, nx] = 1
-
-    def initialize_market_towns(self):
+    
+    def initialize_city_matrix(self):
         """
-        初始化京杭大运河沿线的主要城市
+        初始化城市矩阵，行列分别对应东西方向和南北方向
+        矩阵中的每个元素代表该位置的城市，None表示无城市
+        :return: 城市矩阵和城市字典
         """
-        self.market_towns = []
-        self.town_names = []
-        
-        for city in self.city_data['canal_cities']:
+        # 获取所有城市
+        all_cities = []
+        for city in self.city_data['canal_cities'] + self.city_data['other_cities']:
             x = self.longitude_to_x(city['longitude'])
             y = self.latitude_to_y(city['latitude'])
-            if 0 <= x < self.width and 0 <= y < self.height:
-                self.market_towns.append((x, y))
-                self.town_names.append(city['name'])
-
-    def initialize_non_river_towns(self):
-        """
-        初始化非沿河城市
-        """
-        self.non_river_towns = []
-        self.non_river_town_names = []
+            all_cities.append({
+                'x': x,
+                'y': y,
+                'name': city['name'],
+                'type': 'canal' if city in self.city_data['canal_cities'] else 'non_canal'
+            })
         
-        for city in self.city_data['other_cities']:
-            x = self.longitude_to_x(city['longitude'])
-            y = self.latitude_to_y(city['latitude'])
-            if 0 <= x < self.width and 0 <= y < self.height:
-                self.non_river_towns.append((x, y))
-                self.non_river_town_names.append(city['name'])
+        # 按经度(东西方向)和纬度(南北方向)排序
+        # 经度越小越西，纬度越小越南
+        sorted_by_longitude = sorted(all_cities, key=lambda c: c['x'])
+        sorted_by_latitude = sorted(all_cities, key=lambda c: c['y'])
+        
+        # 创建城市矩阵
+        # 行表示南北方向(纬度)，列表示东西方向(经度)
+        city_matrix = []
+        city_dict = {}
+        
+        # 先按纬度(南北)分组
+        for lat_group in self._group_by(sorted_by_latitude, 'y'):
+            row = []
+            # 在每个纬度组内按经度(东西)排序
+            for city in sorted(lat_group, key=lambda c: c['x']):
+                row.append(city['name'])
+                city_dict[city['name']] = {
+                    'matrix_pos': (len(city_matrix), len(row)-1),
+                    'location': (city['x'], city['y']),
+                    'type': city['type']
+                }
+            city_matrix.append(row)
+        
+        self.city_matrix = city_matrix
+        self.city_dict = city_dict
 
+    def _group_by(self, iterable, key):
+        """
+        辅助函数：按指定key分组
+        """
+        groups = {}
+        for item in iterable:
+            groups.setdefault(item[key], []).append(item)
+        return groups.values()
+
+    def get_west_city(self, city_name):
+        """
+        获取指定城市西边的最近城市
+        :param city_name: 城市名称
+        :return: 西边的城市名称，若无则返回None
+        """
+        if not hasattr(self, 'city_matrix'):
+            self.initialize_city_matrix()
+        
+        if city_name not in self.city_dict:
+            return None
+        
+        row, col = self.city_dict[city_name]['matrix_pos']
+        if col > 0:
+            return self.city_matrix[row][col-1]
+        return None
+
+    def get_east_city(self, city_name):
+        """
+        获取指定城市东边的最近城市
+        :param city_name: 城市名称
+        :return: 东边的城市名称，若无则返回None
+        """
+        if not hasattr(self, 'city_matrix'):
+            self.initialize_city_matrix()
+        
+        if city_name not in self.city_dict:
+            return None
+        
+        row, col = self.city_dict[city_name]['matrix_pos']
+        if col < len(self.city_matrix[row])-1:
+            return self.city_matrix[row][col+1]
+        return None
+
+    def get_north_city(self, city_name):
+        """
+        获取指定城市北边的最近城市
+        :param city_name: 城市名称
+        :return: 北边的城市名称，若无则返回None
+        """
+        if not hasattr(self, 'city_matrix'):
+            self.initialize_city_matrix()
+        
+        if city_name not in self.city_dict:
+            return None
+        
+        row, col = self.city_dict[city_name]['matrix_pos']
+        if row > 0:
+            # 在北边的行中寻找相同列或最近列的城市
+            north_row = self.city_matrix[row-1]
+            if col < len(north_row):
+                return north_row[col]
+            elif len(north_row) > 0:
+                return north_row[-1]  # 返回该行最东边的城市
+        return None
+
+    def get_south_city(self, city_name):
+        """
+        获取指定城市南边的最近城市
+        :param city_name: 城市名称
+        :return: 南边的城市名称，若无则返回None
+        """
+        if not hasattr(self, 'city_matrix'):
+            self.initialize_city_matrix()
+        
+        if city_name not in self.city_dict:
+            return None
+        
+        row, col = self.city_dict[city_name]['matrix_pos']
+        if row < len(self.city_matrix)-1:
+            # 在南边的行中寻找相同列或最近列的城市
+            south_row = self.city_matrix[row+1]
+            if col < len(south_row):
+                return south_row[col]
+            elif len(south_row) > 0:
+                return south_row[-1]  # 返回该行最东边的城市
+        return None
     def visualize_map(self):
         """
         可视化地图，显示沿河区域、市场城镇和地形崎岖指数
@@ -138,47 +229,51 @@ class Map:
 
         # 绘制地形崎岖指数
         plt.imshow(self.terrain_ruggedness, cmap='terrain', alpha=0.6, 
-                  extent=[0, self.width, self.height, 0])
+                extent=[0, self.width, self.height, 0])
 
         # 绘制沿河区域
-        river_y, river_x = np.where(self.river_grid == 1)
+        river_y, river_x = np.where(self.river_grid > 0)  # 改为>0以显示部分损坏的运河
         plt.scatter(river_x, river_y, color='blue', label='The Canal', s=10)
 
-        # 绘制市场城镇和城市名称
-        market_x = [town[0] for town in self.market_towns]
-        market_y = [town[1] for town in self.market_towns]
-        plt.scatter(market_x, market_y, color='red', label='Canal Towns', s=50, marker='s')
+        # 准备城市数据
+        canal_cities = []
+        other_cities = []
+        for city_name in self.city_dict:
+            city_info = self.city_dict[city_name]
+            if city_info['type'] == 'canal':
+                canal_cities.append((city_info['location'][0], city_info['location'][1], city_name))
+            else:
+                other_cities.append((city_info['location'][0], city_info['location'][1], city_name))
+
+        # 绘制运河城市和名称标注
+        if canal_cities:
+            canal_x = [city[0] for city in canal_cities]
+            canal_y = [city[1] for city in canal_cities]
+            plt.scatter(canal_x, canal_y, color='red', label='Canal Towns', s=50, marker='s')
+            
+            for x, y, name in canal_cities:
+                plt.annotate(name, 
+                            xy=(x, y),
+                            xytext=(5, 5), 
+                            textcoords='offset points',
+                            fontsize=8,
+                            fontproperties='SimHei',
+                            bbox=dict(facecolor='white', edgecolor='none', alpha=0.7))
         
-        # 添加运河城市名称标注
-        for i in range(len(self.market_towns)):
-            x = market_x[i]
-            y = market_y[i]
-            name = self.town_names[i]
-            plt.annotate(name, 
-                        xy=(x, y),
-                        xytext=(5, 5), 
-                        textcoords='offset points',
-                        fontsize=8,
-                        fontproperties='SimHei',
-                        bbox=dict(facecolor='white', edgecolor='none', alpha=0.7))
-        
-        # 绘制非沿河城市
-        non_river_x = [town[0] for town in self.non_river_towns]
-        non_river_y = [town[1] for town in self.non_river_towns]
-        plt.scatter(non_river_x, non_river_y, color='green', label='Other Cities', s=50, marker='^')
-        
-        # 添加非沿河城市名称标注
-        for i in range(len(self.non_river_towns)):
-            x = non_river_x[i]
-            y = non_river_y[i]
-            name = self.non_river_town_names[i]
-            plt.annotate(name, 
-                        xy=(x, y),
-                        xytext=(5, 5), 
-                        textcoords='offset points',
-                        fontsize=8,
-                        fontproperties='SimHei',
-                        bbox=dict(facecolor='white', edgecolor='none', alpha=0.7))
+        # 绘制非运河城市和名称标注
+        if other_cities:
+            other_x = [city[0] for city in other_cities]
+            other_y = [city[1] for city in other_cities]
+            plt.scatter(other_x, other_y, color='green', label='Other Cities', s=50, marker='^')
+            
+            for x, y, name in other_cities:
+                plt.annotate(name, 
+                            xy=(x, y),
+                            xytext=(5, 5), 
+                            textcoords='offset points',
+                            fontsize=8,
+                            fontproperties='SimHei',
+                            bbox=dict(facecolor='white', edgecolor='none', alpha=0.7))
 
         plt.title("中国主要城市与京杭大运河地图", fontproperties='SimHei', fontsize=14)
         plt.xlabel("经度方向 (东→西)", fontproperties='SimHei')
@@ -247,14 +342,22 @@ class Map:
         获取所有市场城镇的位置
         :return: 市场城镇的位置列表
         """
-        return self.market_towns
-    
+        towns = []
+        for city in self.city_dict:
+            if self.city_dict[city]['type'] == 'canal':
+                towns.append(self.city_dict[city]['location'])
+        return towns
+
     def get_non_river_towns(self):
         """
         获取所有非沿河城市的位置
         :return: 非沿河城市的位置列表
         """
-        return self.non_river_towns
+        towns = []
+        for city in self.city_dict:
+            if self.city_dict[city]['type'] == 'non_canal':
+                towns.append(self.city_dict[city]['location'])
+        return towns
     
     def print_map(self):
         """
@@ -262,17 +365,18 @@ class Map:
         """
         print("River Grid:")
         print(self.river_grid)
-        print("Market Towns:", self.market_towns)
-        print("Non-River Towns:", self.non_river_towns)
+        print("Market Towns:", self.get_market_towns)
+        print("Non-River Towns:", self.get_non_river_towns)
+
+    def initialize_map(self):
+        self.initialize_river()
+        self.initialize_city_matrix()
+
 
 if __name__ == "__main__":
     # 初始化地图
     map = Map(width=100, height=150)  # 调整尺寸以适应中国地图比例
-    
-    # 初始化河流和城市
-    map.initialize_river()
-    map.initialize_market_towns()
-    map.initialize_non_river_towns()
+    map.initialize_map()
 
     # 打印地图信息
     map.print_map()
