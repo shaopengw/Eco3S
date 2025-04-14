@@ -52,10 +52,8 @@ async def run_simulation(config: dict[str, Any]) -> None:
 
     # 初始化地图
     map = Map(width=config["simulation"]["map_width"], height=config["simulation"]["map_height"])
-    map.initialize_river()
-    map.initialize_market_towns()
-    map.initialize_non_river_towns()
-
+    map.initialize_map()
+    
     # 初始化时间
     time = Time(start_year=config["simulation"]["start_year"], end_year=config["simulation"]["end_year"])
 

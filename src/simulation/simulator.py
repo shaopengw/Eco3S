@@ -82,7 +82,7 @@ class Simulator:
             tasks = []
             for resident_name in list(self.residents.keys()):  # 使用 list() 确保在遍历时不会出错
                 resident = self.residents[resident_name]
-                tasks.append(resident.decide_action_by_llm())  # 基于LLM的决策--测试时建议暂时注释
+                # tasks.append(resident.decide_action_by_llm())  # 基于LLM的决策--测试时建议暂时注释
             # 并发执行所有居民的行为
             await asyncio.gather(*tasks)
 
