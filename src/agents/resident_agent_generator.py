@@ -52,6 +52,7 @@ async def generate_canal_agents(
             resident_id=resident_id,
             job_market=job_market,
             shared_pool=shared_pool,
+            map=map  # 添加地图对象
         )
 
         # 设置居民的初始属性
@@ -89,36 +90,17 @@ def assign_resident_location(resident_data, map):
     :param map: Map类实例
     :return: ((x, y), town_id) 坐标元组和城镇ID
     """
-    # 定义正态分布的标准差（控制聚集程度）
-    sigma = 2.0
+    # 从城市字典中随机选择一个城市
+    canal_cities = [name for name, info in map.city_dict.items() if info['type'] == 'canal']
+    non_canal_cities = [name for name, info in map.city_dict.items() if info['type'] == 'non_canal']
     
     if resident_data["residence"] == "沿河":
-        # 从沿河城市中随机选择一个
-        town = map.get_river_towns()
-        town_idx = random.randint(0, len(town) - 1)
-        center_x, center_y = town[town_idx]
-        town_id = f"river_town_{town_idx}"
+        if not canal_cities:
+            return None
+        city_name = random.choice(canal_cities)
     else:
-        # 从非沿河城市中随机选择一个
-        town = map.get_non_river_towns()
-        town_idx = random.randint(0, len(town) - 1)
-        center_x, center_y = town[town_idx]
-        town_id = f"non_river_town_{town_idx}"
+        if not non_canal_cities:
+            return None
+        city_name = random.choice(non_canal_cities)
     
-    # 在城市中心周围生成正态分布的随机位置
-    while True:
-        # 生成正态分布的偏移量
-        offset_x = int(random.gauss(0, sigma))
-        offset_y = int(random.gauss(0, sigma))
-        
-        # 计算实际位置
-        x = center_x + offset_x
-        y = center_y + offset_y
-        
-        # 确保位置在地图范围内
-        if 0 <= x < map.width and 0 <= y < map.height:
-            # 对于沿河居民，确保位置在河流附近（可选）
-            if resident_data["residence"] != "沿河" or map.is_river_nearby((x, y)):
-                return ((x, y), town_id)
-            # 如果沿河居民位置不在河流附近，则继续循环生成新位置
-        # 如果位置超出地图范围，则继续循环生成新位置
+    return map.generate_random_location(city_name)

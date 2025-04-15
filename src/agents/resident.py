@@ -62,16 +62,12 @@ class ResidentGroup:
             del self.residents[resident_id]
 
 class Resident:
-    def __init__(self, resident_id, job_market, shared_pool):
-        """
-        初始化居民类
-        :param resident_id: 居民的唯一标识符
-
-        :param job_market: 就业市场对象，用于获取工作机会
-        """
+    def __init__(self, resident_id, job_market, shared_pool, map):
+        """初始化居民"""
         self.resident_id = resident_id
         self.job_market = job_market
         self.shared_pool = shared_pool
+        self.map = map  # 添加地图对象
         self.location = None
         self.town = None  # 添加城镇属性
         self.employed = False  # 是否就业
@@ -130,13 +126,13 @@ class Resident:
         self.satisfaction -= 20  # 失业降低满意度
         resident_log.info(f"居民 {self.resident_id} 在 {self.location} 失业了。")
 
-    def migrate(self, new_location):
-        """
-        居民迁徙
-        :param new_location: 新位置的坐标 (x, y)
-        """
-        self.location = new_location
-        resident_log.info(f"居民 {self.resident_id} 迁徙到了 {new_location}。")
+    # def migrate(self, new_location):
+    #     """
+    #     居民迁徙
+    #     :param new_location: 新位置的坐标 (x, y)
+    #     """
+    #     self.location = new_location
+    #     resident_log.info(f"居民 {self.resident_id} 迁徙到了 {new_location}。")
 
     def evaluate_rebellion_risk(self):
         """
@@ -305,7 +301,13 @@ class Resident:
             speech = decision_data.get("speech", "")
             
             resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}")
-            
+
+             # 处理迁移决定
+            if select == "3":
+                success = await self.migrate_to_new_town(self.map)  # 使用实例变量
+                if not success:
+                    resident_log.info(f"居民 {self.resident_id} 迁移失败，保持原位置")
+
             # 如果有发言，在社交网络中传播
             if speech:
                 # 获取所有可能的关系类型
@@ -403,3 +405,61 @@ class Resident:
         else:
             resident_log.info(f"居民 {self.resident_id} 的健康状况为 {self.health_index}，寿命更新为 {self.lifespan}。")
 
+
+    def get_random_direction_city(self, map):
+        """随机选择一个方向并获取该方向的城市"""
+        directions = ['east', 'west', 'north', 'south']
+        direction_funcs = {
+            'east': map.get_east_city,
+            'west': map.get_west_city,
+            'north': map.get_north_city,
+            'south': map.get_south_city
+        }
+        
+        # 获取当前城镇名称（从town_id中提取）
+        current_town_name = None
+        for city_name, city_info in map.city_dict.items():
+            x, y = city_info['location']
+            if f"town_{x}_{y}" == self.town:
+                current_town_name = city_name
+                break
+        
+        if not current_town_name:
+            return None
+            
+        # 尝试四个方向
+        tried_directions = set()
+        for _ in range(4):
+            # 从未尝试过的方向中随机选择
+            available_directions = [d for d in directions if d not in tried_directions]
+            if not available_directions:
+                break
+                
+            direction = random.choice(available_directions)
+            tried_directions.add(direction)
+            
+            # 获取该方向的城市
+            next_city = direction_funcs[direction](current_town_name)
+            if next_city:
+                return next_city
+        
+        return None
+
+    async def migrate_to_new_town(self, map):
+        """迁移到新城镇"""
+        # 获取目标城市
+        target_city = self.get_random_direction_city(map)
+        if not target_city:
+            resident_log.info(f"居民 {self.resident_id} 未找到合适的迁移目标城市")
+            return False
+        
+        # 生成新位置和town_id
+        new_location, new_town_id = map.generate_random_location(target_city)
+
+        # 更新居民信息
+        old_town = self.town
+        self.location = new_location
+        self.town = new_town_id
+        
+        resident_log.info(f"居民 {self.resident_id} 从 {old_town} 迁移到了 {new_town_id}")
+        return True

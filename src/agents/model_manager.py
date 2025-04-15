@@ -8,17 +8,17 @@ class ModelManager:
         # 可用模型配置
         self.available_models = {
             "OPENAI": {
-                "model_types": ["gpt-3.5-turbo", "gpt-4"],
+                "model_types": ["gpt-3.5-turbo"],
                 "model_platform": ModelPlatformType.OPENAI,
                 "url":os.getenv('OPENAI_API_BASE_URL'),
                 "api_key":os.getenv('OPENAI_API_KEY')
             },
-            "deepseek": {
-                "model_types": ["deepseek-chat"],
-                "model_platform": ModelPlatformType.OPENAI_COMPATIBLE_MODEL,
-                "url":os.getenv('DEEPSEEK_API_BASE_URL'),
-                "api_key":os.getenv('DEEPSEEK_API_KEY')
-            },
+            # "deepseek": {
+            #     "model_types": ["deepseek-chat"],
+            #     "model_platform": ModelPlatformType.OPENAI_COMPATIBLE_MODEL,
+            #     "url":os.getenv('DEEPSEEK_API_BASE_URL'),
+            #     "api_key":os.getenv('DEEPSEEK_API_KEY')
+            # },
             
         }
         self.model_config = ChatGPTConfig(temperature=0.7)
