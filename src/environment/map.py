@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 import json
 import math
+import random
 
 class Map:
     def __init__(self, width, height, data_file='src\environment\cities_data.json'):
@@ -221,6 +222,33 @@ class Map:
             elif len(south_row) > 0:
                 return south_row[-1]  # 返回该行最东边的城市
         return None
+
+    def generate_random_location(self, city_name, sigma=2.0):
+        """
+        为指定城市生成一个随机位置
+        :param city_name: 城市名称
+        :param sigma: 正态分布标准差，默认2.0
+        :return: ((x, y), town_id) 坐标元组和城镇ID
+        """
+        if city_name not in self.city_dict:
+            return None
+            
+        city_info = self.city_dict[city_name]
+        center_x, center_y = city_info['location']
+        
+        while True:
+            # 生成正态分布的偏移量
+            offset_x = int(random.gauss(0, sigma))
+            offset_y = int(random.gauss(0, sigma))
+            
+            # 计算实际位置
+            x = center_x + offset_x
+            y = center_y + offset_y
+            
+            # 确保位置在地图范围内
+            if 0 <= x < self.width and 0 <= y < self.height:
+                return (x, y), f"town_{x}_{y}"
+
     def visualize_map(self):
         """
         可视化地图，显示沿河区域、市场城镇和地形崎岖指数
