@@ -3,19 +3,27 @@ from typing import Dict, List, Any
 from src.agents.resident import ResidentGroup
 
 class Towns:
-    def __init__(self, map_obj):
+    def __init__(self, map):
         self.towns = defaultdict(lambda: {
             'info': {},
             'residents': {},
             'resident_group': None
         })
-        self.initialize_towns(map_obj)
+        self.initialize_towns(map)
     
-    def initialize_towns(self, map_obj):
+    def initialize_towns(self, map):
         """初始化所有城镇信息"""
-        for town in map_obj.get_all_towns():
-            self.towns[town['id']]['info'] = town
-            self.towns[town['id']]['resident_group'] = ResidentGroup(town['id'])
+        for city_name, city_info in map.city_dict.items():
+            x, y = city_info['location']
+            town_id = f"town_{x}_{y}"
+            town_info = {
+                'id': town_id,
+                'name': city_name,
+                'location': city_info['location'],
+                'type': city_info['type']
+            }
+            self.towns[town_id]['info'] = town_info
+            self.towns[town_id]['resident_group'] = ResidentGroup(town_id)
     
     def initialize_resident_groups(self, residents: Dict[int, 'Resident']):
         """

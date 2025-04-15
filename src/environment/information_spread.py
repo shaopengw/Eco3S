@@ -14,7 +14,7 @@ class InformationSpread:
         初始化信息状态
         假设初始时只有市场城镇有信息
         """
-        for town in self.map.get_market_towns():
+        for town in self.map.get_river_towns():
             self.information_grid[town] = True  # 市场城镇初始有信息
 
     def spread_information(self, agents):
