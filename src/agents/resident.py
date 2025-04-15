@@ -407,6 +407,7 @@ class Resident:
 
 
     def get_random_direction_city(self, map):
+        print(f"开始选择城市：get_random_direction_city")
         """随机选择一个方向并获取该方向的城市"""
         directions = ['east', 'west', 'north', 'south']
         direction_funcs = {
@@ -416,12 +417,13 @@ class Resident:
             'south': map.get_south_city
         }
         
-        # 获取当前城镇名称（从town_id中提取）
+        # 获取当前城镇所属的城市名称
         current_town_name = None
         for city_name, city_info in map.city_dict.items():
             x, y = city_info['location']
             if f"town_{x}_{y}" == self.town:
                 current_town_name = city_name
+                print(f"当前城镇名称：{current_town_name}")
                 break
         
         if not current_town_name:
@@ -436,10 +438,12 @@ class Resident:
                 break
                 
             direction = random.choice(available_directions)
+            print(f"尝试方向：{direction}")
             tried_directions.add(direction)
             
             # 获取该方向的城市
             next_city = direction_funcs[direction](current_town_name)
+            print(f"下一个城市：{next_city}")
             if next_city:
                 return next_city
         

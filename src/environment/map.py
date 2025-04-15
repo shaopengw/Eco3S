@@ -49,6 +49,16 @@ class Map:
                 "other_cities": []
             }
 
+    def _prepare_cities(self):
+        """转换原始城市数据为带坐标的列表"""
+        cities = []
+        for city in self.city_data['canal_cities'] + self.city_data['other_cities']:
+            x = self.longitude_to_x(city['longitude'])
+            y = self.latitude_to_y(city['latitude'])
+            city_type = 'canal' if city in self.city_data['canal_cities'] else 'non_canal'
+            cities.append({'x': x, 'y': y, 'name': city['name'], 'type': city_type})
+        return cities
+
     def longitude_to_x(self, longitude):
         """
         将经度转换为地图x坐标
@@ -94,47 +104,68 @@ class Map:
     
     def initialize_city_matrix(self):
         """
-        初始化城市矩阵，行列分别对应东西方向和南北方向
-        矩阵中的每个元素代表该位置的城市，None表示无城市
-        :return: 城市矩阵和城市字典
+        初始化城市矩阵，矩阵的行列对应南北和东西方向，城市字典记录详细信息。
         """
-        # 获取所有城市
-        all_cities = []
-        for city in self.city_data['canal_cities'] + self.city_data['other_cities']:
-            x = self.longitude_to_x(city['longitude'])
-            y = self.latitude_to_y(city['latitude'])
-            all_cities.append({
-                'x': x,
-                'y': y,
-                'name': city['name'],
-                'type': 'canal' if city in self.city_data['canal_cities'] else 'non_canal'
-            })
-        
-        # 按经度(东西方向)和纬度(南北方向)排序
-        # 经度越小越西，纬度越小越南
-        sorted_by_longitude = sorted(all_cities, key=lambda c: c['x'])
-        sorted_by_latitude = sorted(all_cities, key=lambda c: c['y'])
-        
-        # 创建城市矩阵
-        # 行表示南北方向(纬度)，列表示东西方向(经度)
+        all_cities = self._prepare_cities()
+        tolerance = 5
+
+        # 按纬度（y）分组，每组内的城市y坐标差异在容差内
+        latitude_groups = self._group_cities(all_cities, 'y', tolerance)
+
         city_matrix = []
         city_dict = {}
-        
-        # 先按纬度(南北)分组
-        for lat_group in self._group_by(sorted_by_latitude, 'y'):
-            row = []
-            # 在每个纬度组内按经度(东西)排序
-            for city in sorted(lat_group, key=lambda c: c['x']):
-                row.append(city['name'])
+
+        # 处理每个纬度组（矩阵的行）
+        for row_idx, lat_group in enumerate(latitude_groups):
+            # 按经度（x）分组，每组内的城市x坐标差异在容差内
+            longitude_groups = self._group_cities(lat_group, 'x', tolerance)
+
+            # 生成当前行的代表城市并排序
+            row_cities = [
+                self._select_representative(lon_group) 
+                for lon_group in longitude_groups
+                if lon_group  # 过滤空组
+            ]
+            row_cities_sorted = sorted(row_cities, key=lambda c: c['x'])
+
+            # 构建矩阵行和更新字典
+            matrix_row = [city['name'] for city in row_cities_sorted]
+            city_matrix.append(matrix_row)
+            for col_idx, city in enumerate(row_cities_sorted):
                 city_dict[city['name']] = {
-                    'matrix_pos': (len(city_matrix), len(row)-1),
+                    'matrix_pos': (row_idx, col_idx),
                     'location': (city['x'], city['y']),
                     'type': city['type']
                 }
-            city_matrix.append(row)
-        
+
         self.city_matrix = city_matrix
         self.city_dict = city_dict
+
+
+
+    def _group_cities(self, cities, coord_key, tolerance):
+        """将城市按坐标分组，容差内归为一组，返回分组列表"""
+        if not cities:
+            return []
+        sorted_cities = sorted(cities, key=lambda c: c[coord_key])
+        groups = []
+        current_group = [sorted_cities[0]]
+        base_coord = sorted_cities[0][coord_key]
+
+        for city in sorted_cities[1:]:
+            if abs(city[coord_key] - base_coord) <= tolerance:
+                current_group.append(city)
+            else:
+                groups.append(current_group)
+                current_group = [city]
+                base_coord = city[coord_key]
+        groups.append(current_group)
+        return groups
+
+    def _select_representative(self, city_group):
+        """从同组中选择离基准点最近的城市作为代表"""
+        base_x = city_group[0]['x']
+        return min(city_group, key=lambda c: abs(c['x'] - base_x))
 
     def _group_by(self, iterable, key):
         """
@@ -374,8 +405,40 @@ class Map:
         """
         print("River Grid:")
         print(self.river_grid)
-        print("River Towns:", self.get_river_towns)
-        print("Non-River Towns:", self.get_non_river_towns)
+        print("city_matrix:", self.city_matrix)
+        print("city_dict:", self.city_dict)
+        # 打印城市矩阵
+        self.print_city_matrix()
+
+    def print_city_matrix(self):
+        """
+        以矩阵形式可视化城市矩阵，用于测试
+        """
+        if not self.city_matrix:
+            print("城市矩阵为空")
+            return
+            
+        # 获取最大列数，用于对齐
+        max_name_length = max(
+            max(len(city) if city else 0 for city in row)
+            for row in self.city_matrix
+        )
+        
+        # 打印矩阵
+        print("\n城市矩阵 (北→南, 西→东):")
+        print("-" * (max_name_length + 4) * len(self.city_matrix[0]))
+        
+        for row in self.city_matrix:
+            # 打印每个城市，保持对齐
+            row_str = ""
+            for city in row:
+                if city:
+                    row_str += f"| {city:<{max_name_length}} "
+                else:
+                    row_str += f"| {'*':<{max_name_length}} "
+            row_str += "|"
+            print(row_str)
+            print("-" * (max_name_length + 4) * len(row))
 
     def initialize_map(self):
         self.initialize_river()
