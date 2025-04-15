@@ -280,25 +280,6 @@ class Map:
         plt.ylabel("纬度方向 (北→南)", fontproperties='SimHei')
         plt.legend()
         plt.show()
-
-    def get_all_towns(self):
-        """获取所有城市（包括运河和非运河城市）的信息"""
-        all_towns = []
-        # 处理所有城市
-        for city_type, cities in [
-            ('canal', self.city_data['canal_cities']),
-            ('non_canal', self.city_data['other_cities'])
-        ]:
-            for city in cities:
-                x = self.longitude_to_x(city['longitude'])
-                y = self.latitude_to_y(city['latitude'])
-                all_towns.append({
-                    'id': f"town_{x}_{y}",
-                    'name': city['name'],
-                    'location': (x, y),
-                    'type': city_type
-                })
-        return all_towns
     
     def get_river_damage_level(self, year):
         """
@@ -337,7 +318,7 @@ class Map:
         x, y = location
         return self.terrain_ruggedness[y, x]
 
-    def get_market_towns(self):
+    def get_river_towns(self):
         """
         获取所有市场城镇的位置
         :return: 市场城镇的位置列表
@@ -365,7 +346,7 @@ class Map:
         """
         print("River Grid:")
         print(self.river_grid)
-        print("Market Towns:", self.get_market_towns)
+        print("River Towns:", self.get_river_towns)
         print("Non-River Towns:", self.get_non_river_towns)
 
     def initialize_map(self):
