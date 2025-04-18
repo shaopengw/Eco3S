@@ -13,13 +13,13 @@ if "sphinx" not in sys.modules:
     rebellion_log.addHandler(file_handler)
 
 class OrdinaryRebel:
-    def __init__(self, rebel_id, rebellion, shared_pool):
+    def __init__(self, agent_id, rebellion, shared_pool):
         """
         初始化普通叛军类
-        :param rebel_id: 叛军的唯一标识符
+        :param agent_id: 叛军的唯一标识符
         :param rebellion: 叛军对象，用于获取叛军状态
         """
-        self.rebel_id = rebel_id
+        self.agent_id = agent_id
         self.rebellion = rebellion
         self.shared_pool = shared_pool
         self.opinions = []  # 收集意见
@@ -45,7 +45,13 @@ class OrdinaryRebel:
         )
         self.token_counter = OpenAITokenCounter(self.model_type)
         self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
-        self.memory = ChatHistoryMemory(self.context_creator, window_size=3)
+        # self.memory = ChatHistoryMemory(self.context_creator, window_size=3)
+        self.memory = MemoryManager(
+            agent_id=self.agent_id,
+            model_type=self.model_type,
+            window_size=3
+        )
+        
         # 系统消息
         self.system_message = BaseMessage.make_assistant_message(
             role_name="system",
@@ -79,32 +85,32 @@ class OrdinaryRebel:
             role_name="普通叛军",
             content=prompt,
         )
-        self.memory.write_record(
-            MemoryRecord(
-                message=user_message,
-                role_at_backend=OpenAIBackendRole.USER,
-            )
+        # 记忆写入
+        await self.memory.write_record(
+            role_name="普通叛军",
+            content=prompt,
+            is_user=True
         )
         
         # 获取历史信息
-        openai_messages, _ = self.memory.get_context()
+        openai_messages = await self.memory.get_context_messages(prompt)
         if not openai_messages:
             openai_messages = [{
                 "role": self.system_message.role_name,
                 "content": self.system_message.content,
             }] + [user_message.to_openai_user_message()]
 
-        rebellion_log.info(f"普通叛军 {self.rebel_id} 正在生成意见，提示信息：{openai_messages}")
+        rebellion_log.info(f"普通叛军 {self.agent_id} 正在生成意见，提示信息：{openai_messages}")
 
         try:
             # 调用模型生成意见
             # response = self.model_backend.run(openai_messages)
             response = await asyncio.to_thread(self.model_backend.run, openai_messages)  # 异步运行模型
             opinion = response.choices[0].message.content
-            rebellion_log.info(f"普通叛军 {self.rebel_id} 生成的意见：{opinion}")
+            rebellion_log.info(f"普通叛军 {self.agent_id} 生成的意见：{opinion}")
             return opinion
         except Exception as e:
-            rebellion_log.error(f"普通叛军 {self.rebel_id} 在生成意见时出错：{e}")
+            rebellion_log.error(f"普通叛军 {self.agent_id} 在生成意见时出错：{e}")
             return "无法生成意见"
 
     async def generate_and_share_opinion(self):
@@ -140,15 +146,15 @@ class OrdinaryRebel:
                 # 如果AI决定回复，则添加到共享信息池
                 if opinion and opinion != "不予置评":
                     await self.shared_pool.add_discussion(opinion)
-                    rebellion_log.info(f"普通叛军 {self.rebel_id} 回应了讨论：{opinion}")
+                    rebellion_log.info(f"普通叛军 {self.agent_id} 回应了讨论：{opinion}")
                 
             except Exception as e:
-                rebellion_log.error(f"普通叛军 {self.rebel_id} 在生成回应时出错：{e}")
+                rebellion_log.error(f"普通叛军 {self.agent_id} 在生成回应时出错：{e}")
         else:
             # 如果没有讨论内容，生成新话题
             opinion = await self.generate_opinion()
             await self.shared_pool.add_discussion(opinion)
-            rebellion_log.info(f"普通叛军 {self.rebel_id} 发起了新讨论：{opinion}")
+            rebellion_log.info(f"普通叛军 {self.agent_id} 发起了新讨论：{opinion}")
 
     def get_opinions(self):
         """
@@ -158,8 +164,8 @@ class OrdinaryRebel:
         return self.opinions
     
 class RebelLeader:
-    def __init__(self, leader_id, rebellion, shared_pool):
-        self.leader_id = leader_id
+    def __init__(self, agent_id, rebellion, shared_pool):
+        self.agent_id = agent_id
         self.rebellion = rebellion
         self.shared_pool = shared_pool
         self.time = 0  # 当前时间（年）
@@ -183,7 +189,12 @@ class RebelLeader:
         # 初始化记忆系统
         self.token_counter = OpenAITokenCounter(self.model_type)
         self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
-        self.memory = ChatHistoryMemory(self.context_creator, window_size=5)
+        # self.memory = ChatHistoryMemory(self.context_creator, window_size=5)
+        self.memory = MemoryManager(
+            agent_id=self.agent_id,
+            model_type=self.model_type,
+            window_size=5
+        )
 
     async def make_decision(self, discussion_report):
         """
@@ -196,62 +207,67 @@ class RebelLeader:
             return None
             
         # 使用 CAMEL 框架来做决策
-        decision_message = BaseMessage.make_user_message(
+        decision_prompt = (
+            f"你是一个叛军头子，负责根据下属叛军的讨论和当前叛军状态做出最终决策。\n"
+            f"请从以下动作中选择一个，并提供一个参数：\n"
+            f"- 袭击政府设施: 参数为 `力量投入`（整数）\n"
+            f"- 招募新成员: 参数为 `资源投入`（整数）\n"
+            f"- 争取民众支持: 参数为 `资源投入`（整数）\n"
+            f"- 撤退: 参数为 `无`\n"
+            f"\n"
+            f"当前叛军状态：\n"
+            f"力量: {self.rebellion.get_strength()}\n"
+            f"资源: {self.rebellion.get_resources()}\n"
+            f"支持度: {self.rebellion.get_support()}\n"
+            f"\n"
+            f"普通叛军们的讨论报告：\n{discussion_report}\n"
+            f"\n"
+            f"请根据以上信息和状态作出最终决策，不要解释理由，只需简单说明你的选择，输出格式为 JSON，例如：\n"
+            f'{{"action": "袭击政府设施", "params": 1000}}'
+        )
+        
+        # 修改这里的写入记录方式
+        await self.memory.write_record(
             role_name="叛军头子",
-            content=(
-                f"你是一个叛军头子，负责根据下属叛军的讨论和当前叛军状态做出最终决策。\n"
-                f"请从以下动作中选择一个，并提供一个参数：\n"
-                f"- 袭击政府设施: 参数为 `力量投入`（整数）\n"
-                f"- 招募新成员: 参数为 `资源投入`（整数）\n"
-                f"- 争取民众支持: 参数为 `资源投入`（整数）\n"
-                f"- 撤退: 参数为 `无`\n"
-                f"\n"
-                f"当前叛军状态：\n"
-                f"力量: {self.rebellion.get_strength()}\n"
-                f"资源: {self.rebellion.get_resources()}\n"
-                f"支持度: {self.rebellion.get_support()}\n"
-                f"\n"
-                f"普通叛军们的讨论报告：\n{discussion_report}\n"
-                f"\n"
-                f"请根据以上信息和状态作出最终决策，输出格式为 JSON，例如：\n"
-                f'{{"action": "袭击政府设施", "params": 1000}}'
-            )
+            content=decision_prompt,
+            is_user=True
         )
         
-        # 将讨论内容写入记忆系统
-        self.memory.write_record(
-            MemoryRecord(
-                message=decision_message,
-                role_at_backend=OpenAIBackendRole.USER,
-            )
-        )
-        
-        openai_messages, _ = self.memory.get_context()
+        # 获取历史上下文
+        openai_messages = await self.memory.get_context_messages(decision_prompt)
         if not openai_messages:
             openai_messages = [{
                 "role": "system",
                 "content": "你是一个叛军头子，负责根据下属叛军的讨论和当前叛军状态做出最终决策。"
-            }] + [decision_message.to_openai_user_message()]
+            }]
 
-        rebellion_log.info(f"叛军头子 {self.leader_id} 正在处理决策，提示信息：{openai_messages}")
+        rebellion_log.info(f"叛军头子 {self.agent_id} 正在处理决策，提示信息：{openai_messages}")
         
         try:
             # 调用模型做出最终决策
             response = await asyncio.to_thread(self.model_backend.run, openai_messages)
             decision = response.choices[0].message.content
-            rebellion_log.info(f"叛军头子 {self.leader_id} 的决策：{decision}")
+            
+            # 保存决策到记忆
+            await self.memory.write_record(
+                role_name="叛军头子",
+                content=decision,
+                is_user=False
+            )
+            
+            rebellion_log.info(f"叛军头子 {self.agent_id} 的决策：{decision}")
             # 清空共享信息池
             await self.shared_pool.clear_discussions()
             return decision
         except Exception as e:
-            rebellion_log.error(f"叛军头子 {self.leader_id} 在做出决策时出错：{e}")
+            rebellion_log.error(f"叛军头子 {self.agent_id} 在做出决策时出错：{e}")
             return "无法做出决策"
 
     def print_leader_status(self):
         """
         打印叛军头子的状态
         """
-        rebellion_log.info(f"叛军头子 {self.leader_id} 的状态：")
+        rebellion_log.info(f"叛军头子 {self.agent_id} 的状态：")
         rebellion_log.info(f"  当前时间：{self.time}年")
         rebellion_log.info(f"  角色：{self.role}")
         rebellion_log.info(f"  人物性格：{self.mbti}")
