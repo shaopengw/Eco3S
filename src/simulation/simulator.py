@@ -82,7 +82,7 @@ class Simulator:
             tasks = []
             for resident_name in list(self.residents.keys()):  # 使用 list() 确保在遍历时不会出错
                 resident = self.residents[resident_name]
-                tasks.append(resident.decide_action_by_llm())  # 基于LLM的决策--测试时建议暂时注释
+                # tasks.append(resident.decide_action_by_llm())  # 基于LLM的决策--测试时建议暂时注释
             # 并发执行所有居民的行为
             await asyncio.gather(*tasks)
 
@@ -207,13 +207,17 @@ class Simulator:
             if isinstance(rebel, OrdinaryRebel)
         ]
 
+        # 获取共享信息池
+        shared_pool = list(self.rebels_agents.values())[0].shared_pool if self.rebels_agents else None
+        if not shared_pool:
+            return
+
         # 随机选择一个叛军发起讨论
         if ordinary_rebels and random.random() < activate_prob:
             initiator = random.choice(ordinary_rebels)
             await initiator.generate_and_share_opinion()
 
             # 其他叛军轮流查看并决定是否回应
-            shared_pool = list(self.rebels_agents.values())[0].shared_pool
             while not shared_pool.is_ended():
                 for rebel in ordinary_rebels:
                     if rebel != initiator:
@@ -225,15 +229,15 @@ class Simulator:
             if isinstance(rebel, RebelLeader)
         ]
 
+        # 获取所有讨论内容并过滤掉 None 值
+        discussions = [d for d in await shared_pool.get_all_discussions() if d is not None]
+        
         # 处理讨论结果
-        if rebel_leaders:
-            shared_pool = list(self.rebels_agents.values())[0].shared_pool
-            if shared_pool.is_ended():
-                discussions = await shared_pool.get_all_discussions()
-                if discussions:
-                    decision = await rebel_leaders[0].make_decision("\n".join(discussions))
-                    if decision:
-                        self.execute_rebellion_decision(decision)
+        if rebel_leaders and shared_pool.is_ended():
+            if discussions:  # 只有在有有效讨论内容时才进行决策
+                decision = await rebel_leaders[0].make_decision("\n".join(discussions))
+                if decision:
+                    self.execute_rebellion_decision(decision)
 
     def execute_rebellion_decision(self, decision):
         """

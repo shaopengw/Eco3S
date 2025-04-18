@@ -7,3 +7,4 @@ python-dotenv
 requests
 hypernetx
 fastjsonschema
+qdrant_client

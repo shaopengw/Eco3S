@@ -38,7 +38,12 @@ class OrdinaryGovernmentAgent:
         )
         self.token_counter = OpenAITokenCounter(self.model_type)
         self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
-        self.memory = ChatHistoryMemory(self.context_creator, window_size=3)
+        # self.memory = ChatHistoryMemory(self.context_creator, window_size=3)
+        self.memory = MemoryManager(
+            agent_id=self.agent_id,
+            model_type=self.model_type,
+            window_size=3
+        )
         # 系统消息
         self.system_message = BaseMessage.make_assistant_message(
             role_name="system",
@@ -80,15 +85,15 @@ class OrdinaryGovernmentAgent:
             role_name="普通政府官员",
             content=prompt,
         )
-        self.memory.write_record(
-            MemoryRecord(
-                message=user_message,
-                role_at_backend=OpenAIBackendRole.USER,
-            )
+        # 修改这里的写入记录方式
+        await self.memory.write_record(
+            role_name="普通政府官员",
+            content=prompt,
+            is_user=True
         )
         
         # 获取历史信息
-        openai_messages, _ = self.memory.get_context()
+        openai_messages = await self.memory.get_context_messages(prompt)
         if not openai_messages:
             openai_messages = [{
                 "role": self.system_message.role_name,
@@ -191,7 +196,12 @@ class HighRankingGovernmentAgent:
         )
         self.token_counter = OpenAITokenCounter(self.model_type)
         self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
-        self.memory = ChatHistoryMemory(self.context_creator, window_size=5)
+        # self.memory = ChatHistoryMemory(self.context_creator, window_size=5)
+        self.memory = MemoryManager(
+            agent_id=self.agent_id,
+            model_type=self.model_type,
+            window_size=5
+        )
 
     async def make_decision(self, summary):
         """
@@ -206,50 +216,54 @@ class HighRankingGovernmentAgent:
         # 获取讨论总结
         discussion_report = summary
         
-        # 使用 CAMEL 框架来做决策
-        decision_message = BaseMessage.make_user_message(
-            role_name="高级政府官员",
-            content=(
-                f"你是一个高级政府官员，负责根据下属官员的讨论和当前政府状态做出最终决策。\n"
-                f"请从以下动作中选择一个，并提供一个参数：\n"
-                f"- 增加就业: 参数为 `预算分配`（整数）\n"
-                f"- 维护运河: 参数为 `预算分配`（整数）\n"
-                f"- 提供公共服务: 参数为 `预算分配`（整数）\n"
-                f"- 军需拨款: 参数为 `预算分配`（整数）\n"
-                f"\n"
-                f"当前政府状态：\n"
-                f"预算: {self.government.get_budget()}\n"
-                f"军事力量: {self.government.get_military_strength()}\n"
-                f"运河维护政策支持: {self.government.policy_support_canal}\n"
-                f"\n"
-                f"普通政府官员们的讨论报告：\n{discussion_report}\n"
-                f"\n"
-                f"请根据以上信息和状态作出最终决策，输出格式为 JSON，例如：\n"
-                f'{{"action": "维护运河", "params": 2000000}}'
-            )
+        decision_prompt = (
+            f"你是一个高级政府官员，负责根据下属官员的讨论和当前政府状态做出最终决策。\n"
+            f"请从以下动作中选择一个，并提供一个参数：\n"
+            f"- 增加就业: 参数为 `预算分配`（整数）\n"
+            f"- 维护运河: 参数为 `预算分配`（整数）\n"
+            f"- 提供公共服务: 参数为 `预算分配`（整数）\n"
+            f"- 军需拨款: 参数为 `预算分配`（整数）\n"
+            f"\n"
+            f"当前政府状态：\n"
+            f"预算: {self.government.get_budget()}\n"
+            f"军事力量: {self.government.get_military_strength()}\n"
+            f"运河维护政策支持: {self.government.policy_support_canal}\n"
+            f"\n"
+            f"普通政府官员们的讨论报告：\n{discussion_report}\n"
+            f"\n"
+            f"请根据以上信息和状态作出最终决策，不要解释理由，只需简单说明你的选择，输出格式为 JSON，例如：\n"
+            f'{{"action": "维护运河", "params": 2000000}}'
         )
         
         # 将讨论内容写入记忆系统
-        self.memory.write_record(
-            MemoryRecord(
-                message=decision_message,
-                role_at_backend=OpenAIBackendRole.USER,
-            )
+        await self.memory.write_record(
+            role_name="高级政府官员",
+            content=decision_prompt,
+            is_user=True
         )
         
-        openai_messages, _ = self.memory.get_context()
+        # 获取历史上下文
+        openai_messages = await self.memory.get_context_messages(decision_prompt)
         if not openai_messages:
             openai_messages = [{
-                "role": "system",
+                "role": "系统",
                 "content": "你是一个高级政府官员，负责根据下属官员的讨论和当前政府状态做出最终决策。"
-            }] + [decision_message.to_openai_user_message()]
+            }]
 
         government_log.info(f"高级政府官员 {self.agent_id} 正在处理决策，提示信息：{openai_messages}")
         
         try:
             # 调用模型做出最终决策
-            response = self.model_backend.run(openai_messages)
+            response = await asyncio.to_thread(self.model_backend.run, openai_messages)
             decision = response.choices[0].message.content
+            
+            # 保存决策到记忆
+            await self.memory.write_record(
+                role_name="高级政府官员",
+                content=decision,
+                is_user=False
+            )
+            
             government_log.info(f"高级政府官员 {self.agent_id} 的决策：{decision}")
             # 清空共享信息池
             await self.shared_pool.clear_discussions()

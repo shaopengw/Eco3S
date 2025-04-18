@@ -7,6 +7,7 @@ from camel.utils import OpenAITokenCounter
 from datetime import datetime
 from typing import List
 from .model_manager import ModelManager
+from .memory_manager import MemoryManager 
 import sys
 import logging
 import os
