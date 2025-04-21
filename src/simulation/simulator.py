@@ -73,7 +73,7 @@ class Simulator:
                 self.population.birth(new_count)
             
             # 基于LLM的决策--测试时建议暂时注释
-            # await self.government_decision_process() # 政府行为
+            await self.government_decision_process() # 政府行为
             # await self.rebellion_decision_process() # 叛军行为
 
             rebellions = 0
@@ -163,7 +163,7 @@ class Simulator:
             if shared_pool.is_ended():
                 summary = await info_officers[0].summarize_discussions()
                 if summary:
-                    decision = await high_ranking_officials[0].make_decision(summary)
+                    decision = await high_ranking_officials[0].make_decision(summary,self.time.get_current_time())
                     if decision:
                         self.execute_government_decision(decision)
 
