@@ -9,6 +9,15 @@ from camel.messages import BaseMessage
 from camel.types import ModelType, OpenAIBackendRole
 from camel.utils import OpenAITokenCounter
 
+class SharedVectorDB:
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(SharedVectorDB, cls).__new__(cls)
+            cls._instance.vector_db = VectorDBBlock()
+        return cls._instance
+
 class MemoryManager:
     def __init__(self, agent_id, model_type, window_size=5):
         """
@@ -24,22 +33,26 @@ class MemoryManager:
             token_limit=4096
         )
         
+        # 使用共享的向量数据库
+        shared_vector_db = SharedVectorDB()
+        
         # 初始化长期记忆系统
         self.memory = LongtermAgentMemory(
             context_creator=self.context_creator,
             chat_history_block=ChatHistoryBlock(),
-            vector_db_block=VectorDBBlock(),
+            vector_db_block=shared_vector_db.vector_db,
             retrieve_limit=3  # 检索历史记录的数量限制
         )
         
         self.window_size = window_size
 
-    async def write_record(self, role_name, content, is_user=True):
+    async def write_record(self, role_name, content, is_user=True, round_num=None):
         """
         写入新的对话记录
         :param role_name: 角色名称
         :param content: 对话内容
         :param is_user: 是否为用户消息
+        :param round_num: 当前轮次
         """
         if is_user:
             message = BaseMessage.make_user_message(
@@ -54,6 +67,13 @@ class MemoryManager:
             )
             role = OpenAIBackendRole.ASSISTANT
 
+        # 如果是信息官的总结或高级官员的决策，添加轮次信息
+        if round_num is not None and (
+            role_name == "高级政府官员" and not is_user
+        ):
+            content = f"Round {round_num}: {content}"
+            message.content = content
+
         record = MemoryRecord(
             message=message,
             role_at_backend=role
@@ -67,19 +87,46 @@ class MemoryManager:
         :param current_prompt: 当前提示词
         :return: OpenAI消息列表和系统消息
         """
-        # 写入当前提示词以便检索相关历史
-        await self.write_record(f"Agent_{self.agent_id}", current_prompt)
+        # 获取最近的历史记录
+        try:
+            recent_context = self.memory.chat_history_block.retrieve(3)
+        except:
+            recent_context = []
+            
+        # 从向量数据库检索相似记录
+        try:
+            similar_context = self.memory.vector_db_block.retrieve(current_prompt)
+        except:
+            similar_context = []
         
-        # 获取完整上下文
-        context, token_count = self.memory.get_context()
+        def clean_message(msg):
+            if isinstance(msg, dict):
+                return {
+                    "role": msg.get("role", "user"),
+                    "content": msg.get("content", "")
+                }
+            # 如果是 ContextRecord 对象
+            if hasattr(msg, "memory_record"):
+                message = msg.memory_record.message
+                return {
+                    "role": "assistant" if message.role_type == "assistant" else "user",
+                    "content": message.content
+                }
+            return None
         
-        # 如果上下文为空，添加默认系统消息
-        if not context:
-            system_message = {
-                "role": "system",
-                "content": f"你是Agent_{self.agent_id}，负责根据历史记录和当前状态做出决策。"
-            }
-            context = [system_message]
+        # 合并两种上下文和提示词
+        context = []
+        if recent_context:
+            context.extend(filter(None, [clean_message(msg) for msg in recent_context]))
+        if similar_context:
+            context.extend(filter(None, [clean_message(msg) for msg in similar_context]))
+        
+        # 添加当前提示词
+        user_message = {
+            "role": "user",
+            "content": current_prompt
+        }
+        context.append(user_message)
             
         return context
 

@@ -160,7 +160,7 @@ def save_resident_data(resident_data, filename):
         json.dump(resident_data, f, ensure_ascii=False, indent=2)
 
 if __name__ == "__main__":
-    N = 1000 # 目标数据量
+    N = 10 # 目标数据量
     resident_data = generate_resident_data(N)
     output_path = 'experiment_dataset/resident_data/resident_data.json'
     save_resident_data(resident_data, output_path)

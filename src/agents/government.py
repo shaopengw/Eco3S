@@ -72,7 +72,7 @@ class OrdinaryGovernmentAgent:
 
         # 构建提示信息
         prompt = (
-            f"你是一位普通代会政府官员，以下是你的个人属性：\n"
+            f"你是一位普通清代政府官员，以下是你的个人属性：\n"
             f"职能: {self.function}\n"
             f"人物性格: {self.mbti}\n"
             f"{government_status}\n"
@@ -84,12 +84,6 @@ class OrdinaryGovernmentAgent:
         user_message = BaseMessage.make_user_message(
             role_name="普通政府官员",
             content=prompt,
-        )
-        # 修改这里的写入记录方式
-        await self.memory.write_record(
-            role_name="普通政府官员",
-            content=prompt,
-            is_user=True
         )
         
         # 获取历史信息
@@ -203,18 +197,14 @@ class HighRankingGovernmentAgent:
             window_size=5
         )
 
-    async def make_decision(self, summary):
+    async def make_decision(self, summary, round_num):
         """
         根据普通政府官员的讨论作出决策
-        :param discussion_report: 普通政府官员的讨论报告
         :return: 决策结果
         """
         # 等待讨论结束
         if not self.shared_pool.is_ended():
             return None
-        
-        # 获取讨论总结
-        discussion_report = summary
         
         decision_prompt = (
             f"你是一个高级政府官员，负责根据下属官员的讨论和当前政府状态做出最终决策。\n"
@@ -229,19 +219,12 @@ class HighRankingGovernmentAgent:
             f"军事力量: {self.government.get_military_strength()}\n"
             f"运河维护政策支持: {self.government.policy_support_canal}\n"
             f"\n"
-            f"普通政府官员们的讨论报告：\n{discussion_report}\n"
+            f"普通政府官员们的讨论报告：\n{summary}\n"
             f"\n"
             f"请根据以上信息和状态作出最终决策，不要解释理由，只需简单说明你的选择，输出格式为 JSON，例如：\n"
             f'{{"action": "维护运河", "params": 2000000}}'
         )
-        
-        # 将讨论内容写入记忆系统
-        await self.memory.write_record(
-            role_name="高级政府官员",
-            content=decision_prompt,
-            is_user=True
-        )
-        
+
         # 获取历史上下文
         openai_messages = await self.memory.get_context_messages(decision_prompt)
         if not openai_messages:
@@ -257,11 +240,13 @@ class HighRankingGovernmentAgent:
             response = await asyncio.to_thread(self.model_backend.run, openai_messages)
             decision = response.choices[0].message.content
             
-            # 保存决策到记忆
+            # 将讨论内容和决策合并写入记忆系统
+            combined_content = f"讨论总结：\n{summary}\n\n决策结果：\n{decision}"
             await self.memory.write_record(
                 role_name="高级政府官员",
-                content=decision,
-                is_user=False
+                content=combined_content,
+                is_user=False,
+                round_num=round_num
             )
             
             government_log.info(f"高级政府官员 {self.agent_id} 的决策：{decision}")
