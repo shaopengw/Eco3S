@@ -70,8 +70,8 @@ class Simulator:
                 self.population.birth(new_count)
             
             # 基于LLM的决策--测试时建议暂时注释
-            await self.government_decision_process() # 政府行为
-            # await self.rebellion_decision_process() # 叛军行为
+            # await self.government_decision_process() # 政府行为
+            await self.rebellion_decision_process() # 叛军行为
 
             rebellions = 0
 
@@ -198,18 +198,14 @@ class Simulator:
         1. 随机选择一个普通叛军发起讨论
         2. 所有普通叛军轮流查看并决定是否回应
         3. 直到达到最大讨论数或无人回应
-        4. 叛军头子做出决策
+        4. 信息整理员整理讨论内容
+        5. 叛军头子做出决策
         """
         # 获取所有普通叛军
         ordinary_rebels = [
             rebel for rebel in self.rebels_agents.values()
-            if isinstance(rebel, OrdinaryRebel)
+            if isinstance(rebel, OrdinaryRebel) and not isinstance(rebel, InformationOfficer)
         ]
-
-        # 获取共享信息池
-        shared_pool = list(self.rebels_agents.values())[0].shared_pool if self.rebels_agents else None
-        if not shared_pool:
-            return
 
         # 随机选择一个叛军发起讨论
         if ordinary_rebels and random.random() < activate_prob:
@@ -217,26 +213,31 @@ class Simulator:
             await initiator.generate_and_share_opinion()
 
             # 其他叛军轮流查看并决定是否回应
+            shared_pool = list(self.rebels_agents.values())[0].shared_pool
             while not shared_pool.is_ended():
                 for rebel in ordinary_rebels:
                     if rebel != initiator:
                         await rebel.generate_and_share_opinion()
 
-        # 获取叛军头子
+        # 获取信息整理员和叛军头子
+        info_officers = [
+            rebel for rebel in self.rebels_agents.values()
+            if isinstance(rebel, InformationOfficer)
+        ]
         rebel_leaders = [
             rebel for rebel in self.rebels_agents.values()
             if isinstance(rebel, RebelLeader)
         ]
 
-        # 获取所有讨论内容并过滤掉 None 值
-        discussions = [d for d in await shared_pool.get_all_discussions() if d is not None]
-        
         # 处理讨论结果
-        if rebel_leaders and shared_pool.is_ended():
-            if discussions:  # 只有在有有效讨论内容时才进行决策
-                decision = await rebel_leaders[0].make_decision("\n".join(discussions))
-                if decision:
-                    self.execute_rebellion_decision(decision)
+        if info_officers and rebel_leaders:
+            shared_pool = list(self.rebels_agents.values())[0].shared_pool
+            if shared_pool.is_ended():
+                summary = await info_officers[0].summarize_discussions()
+                if summary:
+                    decision = await rebel_leaders[0].make_decision(summary, self.time.get_current_time())
+                    if decision:
+                        self.execute_rebellion_decision(decision)
 
     def execute_rebellion_decision(self, decision):
         """
