@@ -99,18 +99,7 @@ class OrdinaryGovernmentAgent:
         try:
             # 调用模型生成意见
             response = await asyncio.to_thread(self.model_backend.run, openai_messages)  # 异步运行模型
-            # response = self.model_backend.run(openai_messages)
             opinion = response.choices[0].message.content
-            # # 只保存模型的回复内容到记忆
-            # self.memory.write_record(
-            #     MemoryRecord(
-            #         message=BaseMessage.make_assistant_message(
-            #             role_name="普通政府官员",
-            #             content=opinion,
-            #         ),
-            #         role_at_backend=OpenAIBackendRole.ASSISTANT,
-            #     )
-            # )
             government_log.info(f"普通政府官员 {self.agent_id} 生成的意见：{opinion}")
             return opinion
         except Exception as e:

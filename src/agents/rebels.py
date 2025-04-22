@@ -85,12 +85,12 @@ class OrdinaryRebel:
             role_name="普通叛军",
             content=prompt,
         )
-        # 记忆写入
-        await self.memory.write_record(
-            role_name="普通叛军",
-            content=prompt,
-            is_user=True
-        )
+        # # 记忆写入
+        # await self.memory.write_record(
+        #     role_name="普通叛军",
+        #     content=prompt,
+        #     is_user=True
+        # )
         
         # 获取历史信息
         openai_messages = await self.memory.get_context_messages(prompt)
@@ -196,10 +196,11 @@ class RebelLeader:
             window_size=5
         )
 
-    async def make_decision(self, discussion_report):
+    async def make_decision(self, discussion_report, round_num):
         """
         根据普通叛军的讨论作出决策
         :param discussion_report: 普通叛军的讨论报告
+        :param round_num: 当前轮次
         :return: 决策结果
         """
         # 等待讨论结束
@@ -226,13 +227,6 @@ class RebelLeader:
             f'{{"action": "袭击政府设施", "params": 1000}}'
         )
         
-        # 修改这里的写入记录方式
-        await self.memory.write_record(
-            role_name="叛军头子",
-            content=decision_prompt,
-            is_user=True
-        )
-        
         # 获取历史上下文
         openai_messages = await self.memory.get_context_messages(decision_prompt)
         if not openai_messages:
@@ -248,11 +242,13 @@ class RebelLeader:
             response = await asyncio.to_thread(self.model_backend.run, openai_messages)
             decision = response.choices[0].message.content
             
-            # 保存决策到记忆
+            # 将讨论内容和决策合并写入记忆系统
+            combined_content = f"讨论总结：\n{discussion_report}\n\n决策结果：\n{decision}"
             await self.memory.write_record(
                 role_name="叛军头子",
-                content=decision,
-                is_user=False
+                content=combined_content,
+                is_user=False,
+                round_num=round_num
             )
             
             rebellion_log.info(f"叛军头子 {self.agent_id} 的决策：{decision}")
@@ -271,6 +267,51 @@ class RebelLeader:
         rebellion_log.info(f"  当前时间：{self.time}年")
         rebellion_log.info(f"  角色：{self.role}")
         rebellion_log.info(f"  人物性格：{self.mbti}")
+
+class InformationOfficer(OrdinaryRebel):
+    def __init__(self, agent_id, government, rebellion, model_type="gpt-3.5-turbo"):
+        super().__init__(agent_id, government, rebellion, model_type)
+        self.function = "信息整理官"
+        self.system_message = BaseMessage.make_assistant_message(
+            role_name="system",
+            content="你是一位清代叛军信息整理官，负责整理和总结其他官员的讨论内容。"
+        )
+
+    async def summarize_discussions(self) -> str:
+        """
+        整理和总结所有讨论内容
+        :return: 总结后的报告
+        """
+        discussions = await self.shared_pool.get_all_discussions()
+        if not discussions:
+            return "暂无讨论内容"
+
+        # 构建提示信息
+        prompt = (
+            f"作为信息整理官，请你整理以下{len(discussions)}条关于大运河管理的讨论内容，"
+            f"提供一个简明扼要的总结报告。\n\n"
+            f"讨论内容：\n" + "\n".join([f"{i+1}. {d}" for i, d in enumerate(discussions)])
+        )
+
+        # 使用 CAMEL 框架生成总结
+        user_message = BaseMessage.make_user_message(
+            role_name="信息整理官",
+            content=prompt,
+        )
+
+        openai_messages = [{
+            "role": self.system_message.role_name,
+            "content": self.system_message.content,
+        }, user_message.to_openai_user_message()]
+
+        try:
+            response = await asyncio.to_thread(self.model_backend.run, openai_messages)
+            summary = response.choices[0].message.content
+            government_log.info(f"信息整理官 {self.agent_id} 生成的总结报告：{summary}")
+            return summary
+        except Exception as e:
+            government_log.error(f"信息整理官 {self.agent_id} 在生成总结报告时出错：{e}")
+            return "无法生成总结报告"
 
 class Rebellion:
     def __init__(self, initial_strength, initial_resources, initial_support):
@@ -355,13 +396,14 @@ class Rebellion:
         print(f"叛军支持度: {self.support}")
 
 class rebels_SharedInformationPool:
-    def __init__(self, max_discussions: int = 5):
+    def __init__(self, max_discussions: int = 5, min_discussions=3):
         """
         初始化共享信息池
         :param max_discussions: 最大讨论数量
         """
         self.discussions = []  # 存储所有讨论内容
         self.max_discussions = max_discussions  # 最大讨论数量
+        self.min_discussions = min_discussions  # 最小讨论数量
         self.is_discussion_ended = False  # 讨论是否结束
         self.lock = asyncio.Lock()  # 用于异步操作的锁
 
@@ -394,4 +436,6 @@ class rebels_SharedInformationPool:
 
     def is_ended(self) -> bool:
         """检查讨论是否结束"""
-        return self.is_discussion_ended
+        return (len(self.discussions) >= self.min_discussions and 
+                (len(self.discussions) >= self.max_discussions or 
+                 (len(self.discussions) > 0 and self.discussions[-1] is None)))
