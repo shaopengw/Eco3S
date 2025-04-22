@@ -114,12 +114,23 @@ class MemoryManager:
                 }
             return None
         
-        # 合并两种上下文和提示词
+        # 使用集合去重
+        seen_contents = set()
         context = []
-        if recent_context:
-            context.extend(filter(None, [clean_message(msg) for msg in recent_context]))
-        if similar_context:
-            context.extend(filter(None, [clean_message(msg) for msg in similar_context]))
+        
+        # 处理最近历史记录
+        for msg in recent_context:
+            cleaned_msg = clean_message(msg)
+            if cleaned_msg and cleaned_msg["content"] not in seen_contents:
+                context.append(cleaned_msg)
+                seen_contents.add(cleaned_msg["content"])
+        
+        # 处理相似记录，避免重复
+        for msg in similar_context:
+            cleaned_msg = clean_message(msg)
+            if cleaned_msg and cleaned_msg["content"] not in seen_contents:
+                context.append(cleaned_msg)
+                seen_contents.add(cleaned_msg["content"])
         
         # 添加当前提示词
         user_message = {

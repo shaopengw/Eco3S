@@ -62,9 +62,6 @@ class Simulator:
             # 打印当前时间步信息
             print(Back.GREEN + f"年份:{self.time.get_current_time()}" + Back.RESET)
 
-            # 推进时间
-            self.time.step()
-
             # 居民出生（次/年）
             if self.time.get_current_quarter() == 1:
                 new_count = int(self.population.birth_rate * self.population.get_population())
@@ -104,7 +101,9 @@ class Simulator:
 
             # 打印当前状态
             print(f"年份: {self.time.get_current_time()}, 叛乱次数: {rebellions}, 人口数量: {self.population.get_population()}")
-
+            
+            # 推进时间
+            self.time.step()
             # 模拟时间步延迟（可选）
             await asyncio.sleep(1)  # 模拟每秒推进一个时间步
 
