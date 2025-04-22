@@ -17,6 +17,28 @@ class SharedVectorDB:
             cls._instance = super(SharedVectorDB, cls).__new__(cls)
             cls._instance.vector_db = VectorDBBlock()
         return cls._instance
+    
+    def write_record(self, record):
+        """写入记录到共享向量数据库"""
+        self.vector_db.write_record(record)
+        
+    def retrieve(self, query, limit=2):
+        """从共享向量数据库检索记录"""
+        return self.vector_db.retrieve(query, limit=limit)
+
+class PersonalMemory:
+    def __init__(self, window_size=5):
+        """个人记忆系统"""
+        self.chat_history = ChatHistoryBlock()
+        self.window_size = window_size
+    
+    def write_record(self, record):
+        """写入记录到个人历史"""
+        self.chat_history.write_record(record)
+    
+    def retrieve(self, limit=3):
+        """获取最近的个人历史记录"""
+        return self.chat_history.retrieve(limit)
 
 class MemoryManager:
     def __init__(self, agent_id, model_type, window_size=5):
@@ -34,26 +56,14 @@ class MemoryManager:
         )
         
         # 使用共享的向量数据库
-        shared_vector_db = SharedVectorDB()
-        
-        # 初始化长期记忆系统
-        self.memory = LongtermAgentMemory(
-            context_creator=self.context_creator,
-            chat_history_block=ChatHistoryBlock(),
-            vector_db_block=shared_vector_db.vector_db,
-            retrieve_limit=3  # 检索历史记录的数量限制
-        )
+        self.shared_memory = SharedVectorDB()
+        # 初始化个人记忆系统
+        self.personal_memory = PersonalMemory(window_size)
         
         self.window_size = window_size
 
     async def write_record(self, role_name, content, is_user=True, round_num=None):
-        """
-        写入新的对话记录
-        :param role_name: 角色名称
-        :param content: 对话内容
-        :param is_user: 是否为用户消息
-        :param round_num: 当前轮次
-        """
+        """写入新的对话记录"""
         if is_user:
             message = BaseMessage.make_user_message(
                 role_name=role_name,
@@ -67,7 +77,6 @@ class MemoryManager:
             )
             role = OpenAIBackendRole.ASSISTANT
 
-        # 如果是信息官的总结或高级官员的决策，添加轮次信息
         if round_num is not None and (
             role_name == "高级政府官员" and not is_user
         ):
@@ -79,25 +88,24 @@ class MemoryManager:
             role_at_backend=role
         )
         
-        self.memory.write_record(record)
+        # 写入个人记忆
+        self.personal_memory.write_record(record)
+        # 写入共享记忆
+        self.shared_memory.write_record(record)
 
     async def get_context_messages(self, current_prompt):
-        """
-        获取上下文消息，包括最近对话和相关历史记录
-        :param current_prompt: 当前提示词
-        :return: OpenAI消息列表和系统消息
-        """
-        # 获取最近的历史记录
+        """获取上下文消息"""
+        # 从个人历史获取最近3条记录
         try:
-            recent_context = self.memory.chat_history_block.retrieve(3)
+            personal_context = self.personal_memory.retrieve(limit=3)
         except:
-            recent_context = []
+            personal_context = []
             
-        # 从向量数据库检索相似记录
+        # 从共享向量数据库检索2条相关记录
         try:
-            similar_context = self.memory.vector_db_block.retrieve(current_prompt)
+            shared_context = self.shared_memory.retrieve(current_prompt, limit=2)
         except:
-            similar_context = []
+            shared_context = []
         
         def clean_message(msg):
             if isinstance(msg, dict):
@@ -105,7 +113,6 @@ class MemoryManager:
                     "role": msg.get("role", "user"),
                     "content": msg.get("content", "")
                 }
-            # 如果是 ContextRecord 对象
             if hasattr(msg, "memory_record"):
                 message = msg.memory_record.message
                 return {
@@ -118,15 +125,15 @@ class MemoryManager:
         seen_contents = set()
         context = []
         
-        # 处理最近历史记录
-        for msg in recent_context:
+        # 处理个人历史记录
+        for msg in personal_context:
             cleaned_msg = clean_message(msg)
             if cleaned_msg and cleaned_msg["content"] not in seen_contents:
                 context.append(cleaned_msg)
                 seen_contents.add(cleaned_msg["content"])
         
-        # 处理相似记录，避免重复
-        for msg in similar_context:
+        # 处理共享记录
+        for msg in shared_context:
             cleaned_msg = clean_message(msg)
             if cleaned_msg and cleaned_msg["content"] not in seen_contents:
                 context.append(cleaned_msg)
@@ -143,4 +150,4 @@ class MemoryManager:
 
     async def clear(self):
         """清空记忆"""
-        self.memory.clear()
+        self.personal_memory.chat_history.clear()
