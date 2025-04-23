@@ -73,7 +73,6 @@ async def run_simulation(config: dict[str, Any]) -> None:
     government_officials = await generate_government_agents(
         government_info_path=government_info_path,
         government=government,
-        job_market=job_market,
     )
 
     # 初始化叛军
