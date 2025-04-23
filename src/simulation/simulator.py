@@ -70,8 +70,8 @@ class Simulator:
                 self.population.birth(new_count)
             
             # 基于LLM的决策--测试时建议暂时注释
-            # await self.process_group_decision('government') # 政府行为
-            # await self.process_group_decision('rebellion') # 叛军行为
+            await self.process_group_decision('government') # 政府行为
+            await self.process_group_decision('rebellion') # 叛军行为
 
             rebellions = 0
 
@@ -79,7 +79,7 @@ class Simulator:
             tasks = []
             for resident_name in list(self.residents.keys()):
                 resident = self.residents[resident_name]
-                tasks.append(resident.decide_action_by_llm())  # 基于LLM的决策--测试时建议暂时注释
+                # tasks.append(resident.decide_action_by_llm())  # 基于LLM的决策--测试时建议暂时注释
                 
                 # 更新居民寿命（次/年）
                 if self.time.get_current_quarter() == 1:
@@ -118,15 +118,13 @@ class Simulator:
             total_time = self.end_time - self.start_time
             print(f"总模拟时间: {total_time}")
 
-    async def process_group_decision(self, group_type, activate_prob=0.8):
+    async def process_group_decision(self, group_type, activate_prob=0.8, max_rounds=3):
         """
         通用决策流程：
-        1. 随机选择一个普通成员发起讨论
-        2. 所有普通成员轮流查看并决定是否回应
-        3. 直到达到最大讨论数或无人回应
-        4. 信息整理员整理讨论内容
-        5. 领导者做出决策
-        :param group_type: 群体类型，'government' 或 'rebellion'
+        1. 第一轮：所有成员异步发表初始意见
+        2. 后续轮次：基于之前的讨论内容发表见解
+        3. 信息整理员整理讨论内容
+        4. 领导者做出决策
         """
         # 根据群体类型获取相应的配置
         config = {
@@ -150,17 +148,27 @@ class Simulator:
             if isinstance(member, config['ordinary_type']) and not isinstance(member, InformationOfficer)
         ]
 
-        # 随机选择一个成员发起讨论
         if ordinary_members and random.random() < activate_prob:
-            initiator = random.choice(ordinary_members)
-            await initiator.generate_and_share_opinion()
-
-            # 其他成员轮流查看并决定是否回应
             shared_pool = list(config['agents'].values())[0].shared_pool
-            while not shared_pool.is_ended():
-                for member in ordinary_members:
-                    if member != initiator:
-                        await member.generate_and_share_opinion()
+            
+            # 第一轮：所有成员异步发表初始意见
+            first_round_tasks = [
+                member.generate_and_share_opinion()
+                for member in random.sample(ordinary_members, len(ordinary_members))
+            ]
+            await asyncio.gather(*first_round_tasks)
+
+            # 后续轮次：基于之前的讨论内容发表见解
+            for round_num in range(2, max_rounds + 1):
+                if shared_pool.is_ended():
+                    break
+                    
+                # 随机打乱发言顺序
+                round_tasks = [
+                    member.generate_and_share_opinion()
+                    for member in random.sample(ordinary_members, len(ordinary_members))
+                ]
+                await asyncio.gather(*round_tasks)
 
             # 获取信息整理员和领导者
             info_officers = [
@@ -173,13 +181,12 @@ class Simulator:
             ]
 
             # 处理讨论结果
-            if info_officers and leaders:
-                if shared_pool.is_ended():
-                    summary = await info_officers[0].summarize_discussions()
-                    if summary:
-                        decision = await leaders[0].make_decision(summary, self.time.get_current_time())
-                        if decision:
-                            config['execute_func'](decision)
+            if info_officers and leaders and shared_pool.is_ended():
+                summary = await info_officers[0].summarize_discussions()
+                if summary:
+                    decision = await leaders[0].make_decision(summary, self.time.get_current_time())
+                    if decision:
+                        config['execute_func'](decision)
 
     def execute_government_decision(self, decision):
         """执行政府决策"""
