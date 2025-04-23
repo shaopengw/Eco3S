@@ -70,26 +70,27 @@ class Simulator:
                 self.population.birth(new_count)
             
             # 基于LLM的决策--测试时建议暂时注释
-            # await self.government_decision_process() # 政府行为
-            await self.rebellion_decision_process() # 叛军行为
+            # await self.process_group_decision('government') # 政府行为
+            # await self.process_group_decision('rebellion') # 叛军行为
 
             rebellions = 0
 
             # 居民行为
             tasks = []
-            for resident_name in list(self.residents.keys()):  # 使用 list() 确保在遍历时不会出错
-                resident = self.residents[resident_name]
-                # tasks.append(resident.decide_action_by_llm())  # 基于LLM的决策--测试时建议暂时注释
-            # 并发执行所有居民的行为
-            await asyncio.gather(*tasks)
-
-            # 更新居民寿命（次/年）
             for resident_name in list(self.residents.keys()):
                 resident = self.residents[resident_name]
+                tasks.append(resident.decide_action_by_llm())  # 基于LLM的决策--测试时建议暂时注释
+                
+                # 更新居民寿命（次/年）
                 if self.time.get_current_quarter() == 1:
                     if resident.update_lifespan() == 0:
                         del self.residents[resident_name]  # 从居民列表中删除逝世的居民
                         self.population.death()
+                        continue  # 如果居民已死亡，跳过添加任务
+            
+            # 并发执行所有居民的行为
+            if tasks:  # 只在有任务时执行
+                await asyncio.gather(*tasks)
 
             # 记录数据
             self.results["years"].append(self.time.get_current_time())
@@ -104,8 +105,6 @@ class Simulator:
             
             # 推进时间
             self.time.step()
-            # 模拟时间步延迟（可选）
-            await asyncio.sleep(1)  # 模拟每秒推进一个时间步
 
         self.end_time = datetime.now()  # 记录模拟结束时间
         self.display_total_simulation_time()
@@ -119,151 +118,156 @@ class Simulator:
             total_time = self.end_time - self.start_time
             print(f"总模拟时间: {total_time}")
 
-    async def government_decision_process(self, activate_prob=0.8):
+    async def process_group_decision(self, group_type, activate_prob=0.8):
         """
-        政府决策流程：
-        1. 随机选择一个普通官员发起讨论
-        2. 所有普通官员轮流查看并决定是否回应
-        3. 直到达到最大讨论数或无人回应
-        4. 信息整理官整理讨论内容
-        5. 高级官员做出决策
-        """
-        # 获取所有普通官员
-        ordinary_officials = [
-            official for official in self.government_officials.values()
-            if isinstance(official, OrdinaryGovernmentAgent) and not isinstance(official, InformationOfficer)
-        ]
-
-        # 随机选择一个官员发起讨论
-        if ordinary_officials and random.random() < activate_prob:
-            initiator = random.choice(ordinary_officials)
-            await initiator.generate_and_share_opinion()
-
-            # 其他官员轮流查看并决定是否回应
-            shared_pool = list(self.government_officials.values())[0].shared_pool
-            while not shared_pool.is_ended():
-                for official in ordinary_officials:
-                    if official != initiator:
-                        await official.generate_and_share_opinion()
-
-        # 获取信息整理官和高级官员
-        info_officers = [
-            official for official in self.government_officials.values()
-            if isinstance(official, InformationOfficer)
-        ]
-        high_ranking_officials = [
-            official for official in self.government_officials.values()
-            if isinstance(official, HighRankingGovernmentAgent)
-        ]
-
-        # 处理讨论结果
-        if info_officers and high_ranking_officials:
-            shared_pool = list(self.government_officials.values())[0].shared_pool
-            if shared_pool.is_ended():
-                summary = await info_officers[0].summarize_discussions()
-                if summary:
-                    decision = await high_ranking_officials[0].make_decision(summary,self.time.get_current_time())
-                    if decision:
-                        self.execute_government_decision(decision)
-
-    def execute_government_decision(self, decision):
-        """
-        执行高级官员的决策
-        :param decision: 高级官员的决策内容，格式为 JSON，例如：{"action": "维护运河", "参数": 2000000}
-        """
-        try:
-            # 解析决策内容
-            decision_data = json.loads(decision)  # 将 JSON 字符串解析为字典
-            action = decision_data.get("action")
-            param = decision_data.get("params")
-
-            if action == "增加就业":
-                self.government.provide_jobs(budget_allocation=param)
-            elif action == "维护运河":
-                self.government.maintain_canals(budget_allocation=param)
-            elif action == "提供公共服务":
-                self.government.provide_public_services(budget_allocation=param)
-            elif action == "军需拨款":
-                self.government.support_military(budget_allocation=param)
-            else:
-                print(f"未知的决策动作：{action}")
-        except json.JSONDecodeError:
-            print("决策内容格式错误，无法解析 JSON。")
-        except Exception as e:
-            print(f"执行决策时出错：{e}")
-
-    async def rebellion_decision_process(self, activate_prob=0.8):
-        """
-        叛军决策流程：
-        1. 随机选择一个普通叛军发起讨论
-        2. 所有普通叛军轮流查看并决定是否回应
+        通用决策流程：
+        1. 随机选择一个普通成员发起讨论
+        2. 所有普通成员轮流查看并决定是否回应
         3. 直到达到最大讨论数或无人回应
         4. 信息整理员整理讨论内容
-        5. 叛军头子做出决策
+        5. 领导者做出决策
+        :param group_type: 群体类型，'government' 或 'rebellion'
         """
-        # 获取所有普通叛军
-        ordinary_rebels = [
-            rebel for rebel in self.rebels_agents.values()
-            if isinstance(rebel, OrdinaryRebel) and not isinstance(rebel, InformationOfficer)
+        # 根据群体类型获取相应的配置
+        config = {
+            'government': {
+                'agents': self.government_officials,
+                'ordinary_type': OrdinaryGovernmentAgent,
+                'leader_type': HighRankingGovernmentAgent,
+                'execute_func': self.execute_government_decision
+            },
+            'rebellion': {
+                'agents': self.rebels_agents,
+                'ordinary_type': OrdinaryRebel,
+                'leader_type': RebelLeader,
+                'execute_func': self.execute_rebellion_decision
+            }
+        }[group_type]
+
+        # 获取所有普通成员
+        ordinary_members = [
+            member for member in config['agents'].values()
+            if isinstance(member, config['ordinary_type']) and not isinstance(member, InformationOfficer)
         ]
 
-        # 随机选择一个叛军发起讨论
-        if ordinary_rebels and random.random() < activate_prob:
-            initiator = random.choice(ordinary_rebels)
+        # 随机选择一个成员发起讨论
+        if ordinary_members and random.random() < activate_prob:
+            initiator = random.choice(ordinary_members)
             await initiator.generate_and_share_opinion()
 
-            # 其他叛军轮流查看并决定是否回应
-            shared_pool = list(self.rebels_agents.values())[0].shared_pool
+            # 其他成员轮流查看并决定是否回应
+            shared_pool = list(config['agents'].values())[0].shared_pool
             while not shared_pool.is_ended():
-                for rebel in ordinary_rebels:
-                    if rebel != initiator:
-                        await rebel.generate_and_share_opinion()
+                for member in ordinary_members:
+                    if member != initiator:
+                        await member.generate_and_share_opinion()
 
-        # 获取信息整理员和叛军头子
-        info_officers = [
-            rebel for rebel in self.rebels_agents.values()
-            if isinstance(rebel, InformationOfficer)
-        ]
-        rebel_leaders = [
-            rebel for rebel in self.rebels_agents.values()
-            if isinstance(rebel, RebelLeader)
-        ]
+            # 获取信息整理员和领导者
+            info_officers = [
+                member for member in config['agents'].values()
+                if isinstance(member, InformationOfficer)
+            ]
+            leaders = [
+                member for member in config['agents'].values()
+                if isinstance(member, config['leader_type'])
+            ]
 
-        # 处理讨论结果
-        if info_officers and rebel_leaders:
-            shared_pool = list(self.rebels_agents.values())[0].shared_pool
-            if shared_pool.is_ended():
-                summary = await info_officers[0].summarize_discussions()
-                if summary:
-                    decision = await rebel_leaders[0].make_decision(summary, self.time.get_current_time())
-                    if decision:
-                        self.execute_rebellion_decision(decision)
+            # 处理讨论结果
+            if info_officers and leaders:
+                if shared_pool.is_ended():
+                    summary = await info_officers[0].summarize_discussions()
+                    if summary:
+                        decision = await leaders[0].make_decision(summary, self.time.get_current_time())
+                        if decision:
+                            config['execute_func'](decision)
+
+    def execute_government_decision(self, decision):
+        """执行政府决策"""
+        return self.execute_decision(decision, 'government')
 
     def execute_rebellion_decision(self, decision):
+        """执行叛军决策"""
+        return self.execute_decision(decision, 'rebellion')
+
+    def execute_decision(self, decision, group_type):
         """
-        执行叛军头子的决策
-        :param decision: 叛军头子的决策内容，格式为 JSON，例如：{"action": "袭击政府设施", "params": 1000}
+        通用决策执行函数
+        :param decision: 决策内容
+        :param group_type: 群体类型，'government' 或 'rebellion'
+        :return: 是否执行成功
         """
+        # 定义决策配置
+        config = {
+            'government': {
+                'actions': {
+                    "增加就业": lambda p: self.government.provide_jobs(budget_allocation=p),
+                    "维护运河": lambda p: self.government.maintain_canals(budget_allocation=p),
+                    "提供公共服务": lambda p: self.government.provide_public_services(budget_allocation=p),
+                    "军需拨款": lambda p: self.government.support_military(budget_allocation=p)
+                }
+            },
+            'rebellion': {
+                'actions': {
+                    "袭击政府设施": lambda p: self.rebellion.attack_government_facility(strength_investment=p),
+                    "招募新成员": lambda p: self.rebellion.recruit_new_members(resource_investment=p),
+                    "争取民众支持": lambda p: self.rebellion.gain_public_support(resource_investment=p),
+                    "撤退": lambda _: self.rebellion.retreat()
+                }
+            }
+        }
+
+        def extract_json_from_text(text):
+            """从文本中提取JSON内容"""
+            import re
+            json_pattern = r'\{[^{}]*\}'
+            matches = re.findall(json_pattern, text)
+            for match in matches:
+                try:
+                    return json.loads(match)
+                except json.JSONDecodeError:
+                    continue
+            return None
+
+        def parse_decision(decision_text, max_retries=3):
+            """解析决策内容，支持重试"""
+            for attempt in range(max_retries):
+                try:
+                    # 尝试直接解析JSON
+                    return json.loads(decision_text)
+                except json.JSONDecodeError:
+                    # 尝试从文本中提取JSON
+                    extracted = extract_json_from_text(decision_text)
+                    if extracted:
+                        return extracted
+                    
+                    if attempt < max_retries - 1:
+                        print(f"决策内容格式错误，第{attempt + 1}次重试...")
+                        # 这里可以添加重新调用LLM的逻辑
+                        continue
+                    else:
+                        print("达到最大重试次数，决策执行失败")
+                        return None
+
         try:
             # 解析决策内容
-            decision_data = json.loads(decision)  # 将 JSON 字符串解析为字典
+            decision_data = parse_decision(decision)
+            if not decision_data:
+                return False
+
             action = decision_data.get("action")
             param = decision_data.get("params")
 
-            if action == "袭击政府设施":
-                self.rebellion.attack_government_facility(strength_investment=param)
-            elif action == "招募新成员":
-                self.rebellion.recruit_new_members(resource_investment=param)
-            elif action == "争取民众支持":
-                self.rebellion.gain_public_support(resource_investment=param)
-            elif action == "撤退":
-                self.rebellion.retreat()
+            # 执行决策
+            if action in config[group_type]['actions']:
+                config[group_type]['actions'][action](param)
+                return True
             else:
                 print(f"未知的决策动作：{action}")
-        except json.JSONDecodeError:
-            print("决策内容格式错误，无法解析 JSON。")
+                return False
+
         except Exception as e:
             print(f"执行决策时出错：{e}")
+            return False
 
     def save_results(self, filename="data/simulation_results.csv"):
         """

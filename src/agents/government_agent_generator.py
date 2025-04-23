@@ -2,12 +2,12 @@ import json
 import asyncio
 from typing import Dict, Optional
 from src.agents.government import OrdinaryGovernmentAgent, HighRankingGovernmentAgent, government_SharedInformationPool, InformationOfficer
-from src.environment.job_market import JobMarket
+# from src.environment.job_market import JobMarket
 from src.agents.government import Government
 
 async def generate_government_agents(
     government_info_path: str,  # 政府官员信息文件的路径
-    job_market: JobMarket,  # 就业市场对象，用于提供就业机会
+    # job_market: JobMarket,  # 就业市场对象，用于提供就业机会
     government: Government,  # 政府对象，用于关联官员
     agent_graph: Optional[Dict[int, OrdinaryGovernmentAgent]] = None,  # 官员图，默认为空
     official_id_mapping: Optional[Dict[int, int]] = None,  # 官员 ID 与 Agent ID 的映射关系，默认为空
@@ -19,7 +19,6 @@ async def generate_government_agents(
 
     参数:
         government_info_path (str): 政府官员信息文件的路径。
-        job_market (JobMarket): 就业市场对象，用于提供就业机会。
         government (Government): 政府对象，用于关联官员。
         agent_graph (Dict[int, OrdinaryGovernmentAgent], 可选): 官员图，默认为空。
         official_id_mapping (Dict[int, int], 可选): 官员 ID 与 Agent ID 的映射关系，默认为空。
