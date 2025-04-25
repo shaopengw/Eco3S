@@ -16,7 +16,7 @@ from src.agents.resident import ResidentGroup
 from src.environment.towns import Towns
 
 class Simulator:
-    def __init__(self, map, time, job_market, government, government_officials, rebellion, rebels_agents, population, social_network, residents,towns):
+    def __init__(self, map, time, job_market, government, government_officials, rebellion, rebels_agents, population, social_network, residents, towns):
         """
         初始化模拟器类
         :param map: 地图对象
@@ -40,8 +40,9 @@ class Simulator:
         self.population = population
         self.social_network = social_network
         self.residents = residents
-        # self.resident_groups = {}  # 新增：按城镇分组的居民组
+        # self.resident_groups = {}  # 按城镇分组的居民组
         self.towns = towns
+        self.basic_living_cost = 10  # 每年基本生活所需值（单位：两）
         self.results = {
             "years": [],
             "rebellions": [],
@@ -49,6 +50,10 @@ class Simulator:
             "population": [],
             "government_budget": [],
             "rebellion_strength": [],
+            "average_satisfaction": [],
+            "tax_rate": [],
+            "basic_living_cost": [],
+            "gdp": [],
         }
         self.start_time = None  # 用于记录模拟开始时间
         self.end_time = None    # 用于记录模拟结束时间
@@ -61,7 +66,16 @@ class Simulator:
         while not self.time.is_end():
             # 打印当前时间步信息
             print(Back.GREEN + f"年份:{self.time.get_current_time()}" + Back.RESET)
-
+    
+            # 计算GDP和税收
+            current_gdp = self.calculate_gdp()
+            print(f"当前GDP: {current_gdp}")
+            tax_income = current_gdp * self.government.get_tax_rate()
+            print(f"税收收入: {tax_income}")
+            self.government.budget += tax_income  # 增加政府预算
+            print(f"政府预算: {self.government.budget}")
+            
+            
             # 居民出生（次/年）
             if self.time.get_current_quarter() == 1:
                 new_count = int(self.population.birth_rate * self.population.get_population())
@@ -70,8 +84,8 @@ class Simulator:
                 self.population.birth(new_count)
             
             # 基于LLM的决策--测试时建议暂时注释
-            await self.process_group_decision('government') # 政府行为
-            await self.process_group_decision('rebellion') # 叛军行为
+            # await self.process_group_decision('government') # 政府行为
+            # await self.process_group_decision('rebellion') # 叛军行为
 
             rebellions = 0
 
@@ -99,10 +113,20 @@ class Simulator:
             self.results["population"].append(self.population.get_population())
             self.results["government_budget"].append(self.government.get_budget())
             self.results["rebellion_strength"].append(self.rebellion.get_strength())
+            self.results["average_satisfaction"].append(self.calculate_average_satisfaction())
+            self.results["tax_rate"].append(self.government.get_tax_rate())
+            self.results["basic_living_cost"].append(self.basic_living_cost)
+            self.results["gdp"].append(self.calculate_gdp())
 
             # 打印当前状态
-            print(f"年份: {self.time.get_current_time()}, 叛乱次数: {rebellions}, 人口数量: {self.population.get_population()}")
-            
+            print(f"年份: {self.time.get_current_time()}, "
+                  f"叛乱次数: {rebellions}, "
+                  f"人口数量: {self.population.get_population()}, "
+                  f"平均满意度: {self.results['average_satisfaction'][-1]:.2f}, "
+                  f"税率: {self.results['tax_rate'][-1]*100:.1f}%, "
+                  f"基本生活所需值: {self.basic_living_cost}, "
+                  f"GDP: {self.results['gdp'][-1]:.2f}")
+
             # 推进时间
             self.time.step()
 
@@ -213,7 +237,8 @@ class Simulator:
                     "增加就业": lambda p: self.government.provide_jobs(budget_allocation=p),
                     "维护运河": lambda p: self.government.maintain_canals(budget_allocation=p),
                     "提供公共服务": lambda p: self.government.provide_public_services(budget_allocation=p),
-                    "军需拨款": lambda p: self.government.support_military(budget_allocation=p)
+                    "军需拨款": lambda p: self.government.support_military(budget_allocation=p),
+                    "调整税率": lambda p: self.government.adjust_tax_rate(p),  # 修改为直接调用政府的方法
                 }
             },
             'rebellion': {
@@ -337,3 +362,46 @@ class Simulator:
             self.social_network.add_new_residents(new_residents)
             print(f"{len(new_residents)} 名新居民已加入社交网络")
             self.social_network.visualize()
+
+    def calculate_average_satisfaction(self):
+        """
+        计算所有居民的平均满意度
+        :return: 平均满意度（浮点数）
+        """
+        if not self.residents:
+            return 0.0
+        total_satisfaction = sum(resident.satisfaction for resident in self.residents.values())
+        return total_satisfaction / len(self.residents)
+
+    def get_basic_living_cost(self):
+        """
+        获取当前基本生活所需值
+        :return: 基本生活所需值（浮点数）
+        """
+        return self.basic_living_cost
+
+    def adjust_basic_living_cost(self, adjustment):
+        """
+        调整基本生活所需值
+        :param adjustment: 调整值（浮点数，正数表示增加，负数表示减少）
+        :return: 调整后的基本生活所需值
+        """
+        self.basic_living_cost = max(500, self.basic_living_cost + adjustment)  # 确保基本生活所需值不低于500
+        print(f"基本生活所需值调整为: {self.basic_living_cost}")
+        return self.basic_living_cost
+
+
+    def calculate_gdp(self):
+        """
+        计算GDP：所有居民工资总和减去基本生活所需值总和
+        :return: GDP值（浮点数）
+        """
+        if not self.residents:
+            return 0.0
+        # 计算所有居民的工资总和
+        total_income = sum(resident.income for resident in self.residents.values())
+        # 计算基本生活所需值总和
+        total_basic_cost = self.basic_living_cost * len(self.residents)
+        # GDP = 总收入 - 总基本生活所需值
+        gdp = total_income - total_basic_cost
+        return gdp
