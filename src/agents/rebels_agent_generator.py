@@ -1,7 +1,7 @@
 import json
 import asyncio
 from typing import Dict, Optional
-from src.agents.rebels import OrdinaryRebel, RebelLeader, rebels_SharedInformationPool
+from src.agents.rebels import OrdinaryRebel, RebelLeader, rebels_SharedInformationPool, InformationOfficer
 from src.agents.rebels import Rebellion
 
 async def generate_rebels_agents(
@@ -54,6 +54,13 @@ async def generate_rebels_agents(
                 rebellion=rebellion,
                 shared_pool=shared_pool,
             )
+        elif rebel_data["rank"] == "信息整理官":  # 添加信息整理官支持
+            rebel = InformationOfficer(
+                agent_id=agent_id,
+                rebellion=rebellion,
+                model_type=model_type,
+                shared_pool=shared_pool,
+            )
         else:
             raise ValueError(f"未知的叛军类型：{rebel_data['rank']}")
 
@@ -75,7 +82,7 @@ async def generate_rebels_agents(
     await asyncio.gather(*tasks)
 
     # 确保返回的 agent_graph 包含有效叛军对象
-    if not all(isinstance(rebel, (OrdinaryRebel, RebelLeader)) for rebel in agent_graph.values()):
+    if not all(isinstance(rebel, (OrdinaryRebel, RebelLeader, InformationOfficer)) for rebel in agent_graph.values()):
         raise TypeError("agent_graph 中包含非法对象")
     
     return agent_graph  # 返回生成的叛军图

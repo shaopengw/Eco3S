@@ -13,11 +13,9 @@ if "sphinx" not in sys.modules:
     rebellion_log.addHandler(file_handler)
 
 class OrdinaryRebel:
-    def __init__(self, agent_id, rebellion, shared_pool):
+    def __init__(self, agent_id, rebellion, shared_pool, model_type=None):
         """
         初始化普通叛军类
-        :param agent_id: 叛军的唯一标识符
-        :param rebellion: 叛军对象，用于获取叛军状态
         """
         self.agent_id = agent_id
         self.rebellion = rebellion
@@ -49,6 +47,7 @@ class OrdinaryRebel:
         self.memory = MemoryManager(
             agent_id=self.agent_id,
             model_type=self.model_type,
+            group_type='rebellion',  # 指定为叛军群体
             window_size=3
         )
         
@@ -60,7 +59,7 @@ class OrdinaryRebel:
 
     async def generate_opinion(self):
         """
-        利用 AI 生成一句关于叛军行动的意见
+        生成一句关于叛军行动的意见
         :return: 生成的意见内容
         """
         # 获取当前叛军状态
@@ -77,7 +76,7 @@ class OrdinaryRebel:
             f"角色: {self.role}\n"
             f"人物性格: {self.mbti}\n"
             f"{rebellion_status}\n"
-            f"请根据你的个人属性和当前叛军状态，提出一句关于叛军行动的意见。"
+            f"请根据你的个人属性、当前叛军状态和讨论内容，提出一句关于叛军行动的意见。尽可能简洁，不必说明理由。"
         )
 
         # 使用 CAMEL 框架生成意见
@@ -104,9 +103,15 @@ class OrdinaryRebel:
 
         try:
             # 调用模型生成意见
-            # response = self.model_backend.run(openai_messages)
             response = await asyncio.to_thread(self.model_backend.run, openai_messages)  # 异步运行模型
             opinion = response.choices[0].message.content
+            # 决策存入个人记忆
+            await self.memory.write_record(
+                role_name="普通叛军",
+                content=f"我的意见：{opinion}",
+                is_user=False,
+                store_in_shared=False  # 不存入共享记忆
+            )
             rebellion_log.info(f"普通叛军 {self.agent_id} 生成的意见：{opinion}")
             return opinion
         except Exception as e:
@@ -117,20 +122,18 @@ class OrdinaryRebel:
         """
         从共享信息池中获取信息并发表看法，将看法放入共享信息池
         """
-        # 获取最新讨论内容
-        latest_discussion = await self.shared_pool.get_latest_discussion()
-        
-        if latest_discussion:
+        # 获取所有讨论内容
+        all_discussion = await self.shared_pool.get_all_discussions()
+        if all_discussion:
             # 构建提示信息，让AI决定是否回应以及如何回应
             prompt = (
                 f"你是一位叛军成员，以下是你的个人属性：\n"
                 f"角色: {self.role}\n"
                 f"人物性格: {self.mbti}\n"
-                f"\n最新的讨论内容是：{latest_discussion}\n"
-                f"\n请根据你的个人属性和立场，决定是否对这个观点发表看法。"
-                f"如果决定发表看法，可以选择支持、反对或提出新的建议。"
+                f"\n所有成员的观点包括：{all_discussion}\n"
+                f"\n请根据你的个人属性和立场，对这些观点发表看法。"
+                f"可以选择支持、反对或提出新的观点。"
                 f"请用简短的一句话回复，语气要符合叛军的特点。"
-                f"如果决定不回复，请返回'不予置评'。"
             )
             
             # 使用CAMEL框架生成回应
@@ -142,11 +145,9 @@ class OrdinaryRebel:
             try:
                 response = await asyncio.to_thread(self.model_backend.run, [user_message.to_openai_user_message()])
                 opinion = response.choices[0].message.content
-                
-                # 如果AI决定回复，则添加到共享信息池
-                if opinion and opinion != "不予置评":
-                    await self.shared_pool.add_discussion(opinion)
-                    rebellion_log.info(f"普通叛军 {self.agent_id} 回应了讨论：{opinion}")
+                # 回复信息添加到共享信息池
+                await self.shared_pool.add_discussion(opinion)
+                rebellion_log.info(f"普通叛军 {self.agent_id} 回应了讨论：{opinion}")
                 
             except Exception as e:
                 rebellion_log.error(f"普通叛军 {self.agent_id} 在生成回应时出错：{e}")
@@ -184,8 +185,6 @@ class RebelLeader:
             model_type=self.model_type,
             model_config_dict=self.model_config.as_dict(),
         )
-        # self.system_message = "你是一个叛军头子，负责根据下属叛军的讨论和当前叛军状态做出最终决策。"
-
         # 初始化记忆系统
         self.token_counter = OpenAITokenCounter(self.model_type)
         self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
@@ -193,10 +192,11 @@ class RebelLeader:
         self.memory = MemoryManager(
             agent_id=self.agent_id,
             model_type=self.model_type,
+            group_type='rebellion',  # 指定为叛军群体
             window_size=5
         )
 
-    async def make_decision(self, discussion_report, round_num):
+    async def make_decision(self, summary, round_num):
         """
         根据普通叛军的讨论作出决策
         :param discussion_report: 普通叛军的讨论报告
@@ -221,7 +221,7 @@ class RebelLeader:
             f"资源: {self.rebellion.get_resources()}\n"
             f"支持度: {self.rebellion.get_support()}\n"
             f"\n"
-            f"普通叛军们的讨论报告：\n{discussion_report}\n"
+            f"普通叛军们的讨论报告：\n{summary}\n"
             f"\n"
             f"请根据以上信息和状态作出最终决策，不要解释理由，只需简单说明你的选择，输出格式为 JSON，例如：\n"
             f'{{"action": "袭击政府设施", "params": 1000}}'
@@ -269,12 +269,20 @@ class RebelLeader:
         rebellion_log.info(f"  人物性格：{self.mbti}")
 
 class InformationOfficer(OrdinaryRebel):
-    def __init__(self, agent_id, government, rebellion, model_type="gpt-3.5-turbo"):
-        super().__init__(agent_id, government, rebellion, model_type)
-        self.function = "信息整理官"
+    def __init__(self, agent_id, rebellion, shared_pool, model_type=None):
+        """
+        初始化叛军信息整理官
+        :param agent_id: 叛军的唯一标识符
+        :param rebellion: 叛军对象
+        :param shared_pool: 共享信息池
+        :param model_type: 模型类型，默认为 None
+        """
+        super().__init__(agent_id, rebellion, shared_pool)  # 移除 model_type 参数
+        self.model_type = model_type
+        self.role = "信息整理官"
         self.system_message = BaseMessage.make_assistant_message(
             role_name="system",
-            content="你是一位清代叛军信息整理官，负责整理和总结其他官员的讨论内容。"
+            content="你是一位叛军信息整理官，负责整理和总结其他成员的讨论内容。"
         )
 
     async def summarize_discussions(self) -> str:
@@ -288,7 +296,7 @@ class InformationOfficer(OrdinaryRebel):
 
         # 构建提示信息
         prompt = (
-            f"作为信息整理官，请你整理以下{len(discussions)}条关于大运河管理的讨论内容，"
+            f"作为叛军信息整理官，请你整理以下{len(discussions)}条讨论内容，"
             f"提供一个简明扼要的总结报告。\n\n"
             f"讨论内容：\n" + "\n".join([f"{i+1}. {d}" for i, d in enumerate(discussions)])
         )
@@ -307,10 +315,10 @@ class InformationOfficer(OrdinaryRebel):
         try:
             response = await asyncio.to_thread(self.model_backend.run, openai_messages)
             summary = response.choices[0].message.content
-            government_log.info(f"信息整理官 {self.agent_id} 生成的总结报告：{summary}")
+            rebellion_log.info(f"叛军信息整理官 {self.agent_id} 生成的总结报告：{summary}")
             return summary
         except Exception as e:
-            government_log.error(f"信息整理官 {self.agent_id} 在生成总结报告时出错：{e}")
+            rebellion_log.error(f"叛军信息整理官 {self.agent_id} 在生成总结报告时出错：{e}")
             return "无法生成总结报告"
 
 class Rebellion:
@@ -396,14 +404,13 @@ class Rebellion:
         print(f"叛军支持度: {self.support}")
 
 class rebels_SharedInformationPool:
-    def __init__(self, max_discussions: int = 5, min_discussions=3):
+    def __init__(self, max_discussions: int = 5):
         """
         初始化共享信息池
         :param max_discussions: 最大讨论数量
         """
         self.discussions = []  # 存储所有讨论内容
         self.max_discussions = max_discussions  # 最大讨论数量
-        self.min_discussions = min_discussions  # 最小讨论数量
         self.is_discussion_ended = False  # 讨论是否结束
         self.lock = asyncio.Lock()  # 用于异步操作的锁
 
@@ -436,6 +443,4 @@ class rebels_SharedInformationPool:
 
     def is_ended(self) -> bool:
         """检查讨论是否结束"""
-        return (len(self.discussions) >= self.min_discussions and 
-                (len(self.discussions) >= self.max_discussions or 
-                 (len(self.discussions) > 0 and self.discussions[-1] is None)))
+        return True
