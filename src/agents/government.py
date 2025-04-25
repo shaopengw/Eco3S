@@ -199,11 +199,13 @@ class HighRankingGovernmentAgent:
             f"- 维护运河: 参数为 `预算分配`（整数）\n"
             f"- 提供公共服务: 参数为 `预算分配`（整数）\n"
             f"- 军需拨款: 参数为 `预算分配`（整数）\n"
+            f"- 调整税率: 参数为 `调整值`（浮点数，范围-0.1到0.1）\n"
             f"\n"
             f"当前政府状态：\n"
             f"预算: {self.government.get_budget()}\n"
             f"军事力量: {self.government.get_military_strength()}\n"
             f"运河维护政策支持: {self.government.policy_support_canal}\n"
+            f"当前税率: {self.government.get_tax_rate()*100:.1f}%\n"
             f"\n"
             f"普通政府官员们的讨论报告：\n{summary}\n"
             f"\n"
@@ -266,6 +268,8 @@ class Government:
         self.military_strength = 100  # 初始军事力量
         self.policy_support_canal = True  # 是否支持运河维护
         self.time = time
+        self.tax_rate = 0.1  # 初始税率为 10%
+        self.residents = {}  # 添加居民引用
 
     def provide_jobs(self,budget_allocation):
         """
@@ -346,6 +350,37 @@ class Government:
         """
         return self.military_strength
 
+    def adjust_tax_rate(self, adjustment):
+        """
+        调整税率并更新居民满意度
+        :param adjustment: 税率调整值（浮点数，正数表示增加，负数表示减少）
+        """
+        old_rate = self.tax_rate
+        # 限制税率在 0% 到 50% 之间
+        self.tax_rate = max(0.0, min(0.5, self.tax_rate + adjustment))
+        
+        # # 根据税率变化调整所有居民的满意度
+        # for resident in self.residents.values():
+        #     if self.tax_rate > old_rate:
+        #         # 税率上升，满意度下降（影响更大）
+        #         resident.satisfaction -= (self.tax_rate - old_rate) * 200
+        #     else:
+        #         # 税率下降，满意度上升（影响较小）
+        #         resident.satisfaction += (old_rate - self.tax_rate) * 100
+            
+        #     # 确保满意度在合理范围内
+        #     resident.satisfaction = max(0, min(100, resident.satisfaction))
+        
+        print(f"税率从 {old_rate*100:.1f}% 调整到 {self.tax_rate*100:.1f}%")
+        return self.tax_rate
+
+    def get_tax_rate(self):
+        """
+        获取当前税率
+        :return: 当前税率
+        """
+        return self.tax_rate
+
     def print_government_status(self):
         """
         打印政府状态（用于调试）
@@ -353,6 +388,7 @@ class Government:
         print(f"政府预算: {self.budget}")
         print(f"军事力量: {self.military_strength}")
         print(f"运河维护政策支持: {self.policy_support_canal}")
+        print(f"当前税率: {self.tax_rate*100:.1f}%")
 
 class government_SharedInformationPool:
     def __init__(self, max_discussions: int = 5):
