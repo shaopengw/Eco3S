@@ -10,13 +10,18 @@ from camel.types import ModelType, OpenAIBackendRole
 from camel.utils import OpenAITokenCounter
 
 class SharedVectorDB:
-    _instance = None
+    _instances = {}
     
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(SharedVectorDB, cls).__new__(cls)
-            cls._instance.vector_db = VectorDBBlock()
-        return cls._instance
+    def __new__(cls, group_type='default'):
+        """
+        创建或获取指定群体的向量数据库实例
+        :param group_type: 群体类型，如 'government' 或 'rebellion'
+        """
+        if group_type not in cls._instances:
+            instance = super(SharedVectorDB, cls).__new__(cls)
+            instance.vector_db = VectorDBBlock()
+            cls._instances[group_type] = instance
+        return cls._instances[group_type]
     
     def write_record(self, record):
         """写入记录到共享向量数据库"""
@@ -41,11 +46,12 @@ class PersonalMemory:
         return self.chat_history.retrieve(limit)
 
 class MemoryManager:
-    def __init__(self, agent_id, model_type, window_size=5):
+    def __init__(self, agent_id, model_type, group_type='default', window_size=5):
         """
         初始化代理记忆管理器
         :param agent_id: 代理ID
         :param model_type: 模型类型
+        :param group_type: 群体类型，'government' 或 'rebellion'
         :param window_size: 最近对话窗口大小
         """
         self.agent_id = agent_id
@@ -55,15 +61,18 @@ class MemoryManager:
             token_limit=4096
         )
         
-        # 使用共享的向量数据库
-        self.shared_memory = SharedVectorDB()
+        # 使用群体特定的共享向量数据库
+        self.shared_memory = SharedVectorDB(group_type)
         # 初始化个人记忆系统
         self.personal_memory = PersonalMemory(window_size)
         
         self.window_size = window_size
 
-    async def write_record(self, role_name, content, is_user=True, round_num=None):
-        """写入新的对话记录"""
+    async def write_record(self, role_name, content, is_user=True, round_num=None, store_in_shared=True):
+        """
+        写入新的对话记录
+        :param store_in_shared: 是否存入共享记忆，默认为True
+        """
         if is_user:
             message = BaseMessage.make_user_message(
                 role_name=role_name,
@@ -90,8 +99,9 @@ class MemoryManager:
         
         # 写入个人记忆
         self.personal_memory.write_record(record)
-        # 写入共享记忆
-        self.shared_memory.write_record(record)
+        # 根据参数决定是否写入共享记忆
+        if store_in_shared:
+            self.shared_memory.write_record(record)
 
     async def get_context_messages(self, current_prompt):
         """获取上下文消息"""

@@ -9,7 +9,7 @@ from src.agents.government import (
     HighRankingGovernmentAgent,
     InformationOfficer
 )
-from src.agents.rebels import OrdinaryRebel, RebelLeader
+from src.agents.rebels import OrdinaryRebel, RebelLeader, InformationOfficer as RebelsInformationOfficer
 from src.generator.resident_generate import generate_resident_data, save_resident_data
 from src.environment.social_network import SocialNetwork
 from src.agents.resident import ResidentGroup
@@ -147,6 +147,7 @@ class Simulator:
             member for member in config['agents'].values()
             if isinstance(member, config['ordinary_type']) and not isinstance(member, InformationOfficer)
         ]
+        # print(f"普通成员: {ordinary_members}")
 
         if ordinary_members and random.random() < activate_prob:
             shared_pool = list(config['agents'].values())[0].shared_pool
@@ -175,6 +176,7 @@ class Simulator:
                 member for member in config['agents'].values()
                 if isinstance(member, InformationOfficer)
             ]
+            # print(f"信息整理员: {info_officers}")
             leaders = [
                 member for member in config['agents'].values()
                 if isinstance(member, config['leader_type'])
@@ -182,6 +184,7 @@ class Simulator:
 
             # 处理讨论结果
             if info_officers and leaders and shared_pool.is_ended():
+                # print(f"决策轮次: {round_num},开始处理讨论结果")
                 summary = await info_officers[0].summarize_discussions()
                 if summary:
                     decision = await leaders[0].make_decision(summary, self.time.get_current_time())

@@ -42,6 +42,7 @@ class OrdinaryGovernmentAgent:
         self.memory = MemoryManager(
             agent_id=self.agent_id,
             model_type=self.model_type,
+            group_type='government',  # 指定为政府群体
             window_size=3
         )
         # 系统消息
@@ -52,7 +53,7 @@ class OrdinaryGovernmentAgent:
 
     async def generate_opinion(self):
         """
-        利用 AI 生成一句关于政治决策的意见
+        生成一句关于政治决策的意见
         :return: 生成的意见内容
         """
         # 获取当前政府状态
@@ -63,20 +64,12 @@ class OrdinaryGovernmentAgent:
             f"运河维护政策支持: {self.government.policy_support_canal}\n"
         )
 
-        # 从共享信息池中获取最新的讨论内容
-        latest_discussion = await self.shared_pool.get_latest_discussion()
-        if latest_discussion:
-            discussion_context = f"讨论内容：\n{latest_discussion}\n"
-        else:
-            discussion_context = f"讨论内容：\n"
-
         # 构建提示信息
         prompt = (
             f"你是一位普通清代政府官员，以下是你的个人属性：\n"
             f"职能: {self.function}\n"
             f"人物性格: {self.mbti}\n"
             f"{government_status}\n"
-            f"{discussion_context}\n"
             f"请根据你的个人属性、当前政府状态和讨论内容，提出一句关于大运河运营的政治决策的意见。尽可能简洁，不必说明理由。"
         )
 
@@ -100,6 +93,13 @@ class OrdinaryGovernmentAgent:
             # 调用模型生成意见
             response = await asyncio.to_thread(self.model_backend.run, openai_messages)  # 异步运行模型
             opinion = response.choices[0].message.content
+            # 决策存入个人记忆
+            await self.memory.write_record(
+                role_name="普通政府官员",
+                content=f"我的意见：{opinion}",
+                is_user=False,
+                store_in_shared=False  # 不存入共享记忆
+                )
             government_log.info(f"普通政府官员 {self.agent_id} 生成的意见：{opinion}")
             return opinion
         except Exception as e:
@@ -111,19 +111,17 @@ class OrdinaryGovernmentAgent:
         从共享信息池中获取信息并发表看法，将看法放入共享信息池
         """
         # 获取最新讨论内容
-        latest_discussion = await self.shared_pool.get_latest_discussion()
-        
-        if latest_discussion:
+        all_discussion = await self.shared_pool.get_all_discussions()
+        if all_discussion:
             # 构建提示信息，让AI决定是否回应以及如何回应
             prompt = (
                 f"你是一位普通清代政府官员，以下是你的个人属性：\n"
                 f"职能: {self.function}\n"
                 f"人物性格: {self.mbti}\n"
-                f"\n最新的讨论内容是：{latest_discussion}\n"
-                f"\n请根据你的个人属性和立场，决定是否对这个观点发表看法。"
-                f"如果决定发表看法，可以选择支持、反对或提出新的建议。"
+                f"\n所有官员的观点包括：{all_discussion}\n"
+                f"\n请根据你的个人属性和立场，对这些观点发表看法。"
+                f"可以选择支持、反对或提出新的观点。"
                 f"请用简短的一句话回复，语气要符合清朝官员的特点。"
-                f"如果决定不回复，请返回'不予置评'。"
             )
             
             # 使用CAMEL框架生成回应
@@ -135,11 +133,9 @@ class OrdinaryGovernmentAgent:
             try:
                 response = await asyncio.to_thread(self.model_backend.run, [user_message.to_openai_user_message()])
                 opinion = response.choices[0].message.content
-                
-                # 如果AI决定回复，则添加到共享信息池
-                if opinion and opinion != "不予置评":
-                    await self.shared_pool.add_discussion(opinion)
-                    government_log.info(f"普通官员 {self.agent_id} 回应了讨论：{opinion}")
+                # 回复信息添加到共享信息池
+                await self.shared_pool.add_discussion(opinion)
+                government_log.info(f"普通官员 {self.agent_id} 回应了讨论：{opinion}")
                 
             except Exception as e:
                 government_log.error(f"普通官员 {self.agent_id} 在生成回应时出错：{e}")
@@ -183,6 +179,7 @@ class HighRankingGovernmentAgent:
         self.memory = MemoryManager(
             agent_id=self.agent_id,
             model_type=self.model_type,
+            group_type='government',  # 指定为政府群体
             window_size=5
         )
 
