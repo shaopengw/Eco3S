@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from colorama import Back
 from src.agents.resident_agent_generator import (generate_canal_agents)
 from src.agents.government import (
-    OrdinaryGovernmentAgent, 
+    OrdinaryGovernmentAgent,
     HighRankingGovernmentAgent,
     InformationOfficer
 )
@@ -66,7 +66,7 @@ class Simulator:
         while not self.time.is_end():
             # 打印当前时间步信息
             print(Back.GREEN + f"年份:{self.time.get_current_time()}" + Back.RESET)
-    
+
             # 计算GDP和税收
             current_gdp = self.calculate_gdp()
             print(f"当前GDP: {current_gdp}")
@@ -74,15 +74,15 @@ class Simulator:
             print(f"税收收入: {tax_income}")
             self.government.budget += tax_income  # 增加政府预算
             print(f"政府预算: {self.government.budget}")
-            
-            
+
+
             # 居民出生（次/年）
             if self.time.get_current_quarter() == 1:
                 new_count = int(self.population.birth_rate * self.population.get_population())
                 new_residents = await self.generate_new_residents(new_count)
                 await self.integrate_new_residents(new_residents)
                 self.population.birth(new_count)
-            
+
             # 基于LLM的决策--测试时建议暂时注释
             # await self.process_group_decision('government') # 政府行为
             # await self.process_group_decision('rebellion') # 叛军行为
@@ -94,14 +94,14 @@ class Simulator:
             for resident_name in list(self.residents.keys()):
                 resident = self.residents[resident_name]
                 # tasks.append(resident.decide_action_by_llm())  # 基于LLM的决策--测试时建议暂时注释
-                
+
                 # 更新居民寿命（次/年）
                 if self.time.get_current_quarter() == 1:
                     if resident.update_lifespan() == 0:
                         del self.residents[resident_name]  # 从居民列表中删除逝世的居民
                         self.population.death()
                         continue  # 如果居民已死亡，跳过添加任务
-            
+
             # 并发执行所有居民的行为
             if tasks:  # 只在有任务时执行
                 await asyncio.gather(*tasks)
@@ -175,7 +175,7 @@ class Simulator:
 
         if ordinary_members and random.random() < activate_prob:
             shared_pool = list(config['agents'].values())[0].shared_pool
-            
+
             # 第一轮：所有成员异步发表初始意见
             first_round_tasks = [
                 member.generate_and_share_opinion()
@@ -187,7 +187,7 @@ class Simulator:
             for round_num in range(2, max_rounds + 1):
                 if shared_pool.is_ended():
                     break
-                    
+
                 # 随机打乱发言顺序
                 round_tasks = [
                     member.generate_and_share_opinion()
@@ -274,7 +274,7 @@ class Simulator:
                     extracted = extract_json_from_text(decision_text)
                     if extracted:
                         return extracted
-                    
+
                     if attempt < max_retries - 1:
                         print(f"决策内容格式错误，第{attempt + 1}次重试...")
                         # 这里可以添加重新调用LLM的逻辑
@@ -328,14 +328,14 @@ class Simulator:
         resident_data = generate_resident_data(count)
         new_resident_info_path = 'experiment_dataset/resident_data/new_resident_data.json'
         save_resident_data(resident_data, new_resident_info_path)
-        
+
         # 生成居民实例
         new_residents = await generate_canal_agents(
             resident_info_path=new_resident_info_path,
             map=self.map,
             job_market=self.job_market,
         )
-        
+
         # 分配新ID
         offset = max(self.residents.keys()) + 1 if self.residents else 1
         new_residents_with_new_ids = {}
@@ -350,13 +350,13 @@ class Simulator:
         # 更新全局居民列表
         self.residents.update(new_residents)
         print(f"{len(new_residents)} 名新居民已出生")
-        
+
         # 添加到城镇
         for resident in new_residents.values():
             if resident.town:
                 self.towns.add_resident(resident, resident.town)
         print("新居民已加入各自城镇")
-        
+
         # 添加到社交网络
         if new_residents:
             self.social_network.add_new_residents(new_residents)
@@ -396,6 +396,7 @@ class Simulator:
         计算GDP：所有居民工资总和减去基本生活所需值总和
         :return: GDP值（浮点数）
         """
+        # TODO: GDP按照收入法计算：增加值＝劳动者报酬＋生产税净额＋固定资产折旧＋营业盈余 ，不必减去基本生活所需值
         if not self.residents:
             return 0.0
         # 计算所有居民的工资总和
