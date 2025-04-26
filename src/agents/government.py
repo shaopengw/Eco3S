@@ -18,7 +18,7 @@ class OrdinaryGovernmentAgent:
         self.model_type = model_type
         self.agent_id = agent_id
         self.government = government
-        self.shared_pool = shared_pool 
+        self.shared_pool = shared_pool
         self.time = 0  # 当前时间（年）
 
         # 初始化官员属性
@@ -59,7 +59,7 @@ class OrdinaryGovernmentAgent:
         # 获取当前政府状态
         government_status = (
             f"当前政府状态：\n"
-            f"预算: {self.government.get_budget()}\n"
+            f"财政预算: {self.government.get_budget()}\n"
             f"军事力量: {self.government.get_military_strength()}\n"
             f"运河维护政策支持: {self.government.policy_support_canal}\n"
         )
@@ -78,7 +78,7 @@ class OrdinaryGovernmentAgent:
             role_name="普通政府官员",
             content=prompt,
         )
-        
+
         # 获取历史信息
         openai_messages = await self.memory.get_context_messages(prompt)
         if not openai_messages:
@@ -123,20 +123,20 @@ class OrdinaryGovernmentAgent:
                 f"可以选择支持、反对或提出新的观点。"
                 f"请用简短的一句话回复，语气要符合清朝官员的特点。"
             )
-            
+
             # 使用CAMEL框架生成回应
             user_message = BaseMessage.make_user_message(
                 role_name="普通政府官员",
                 content=prompt,
             )
-            
+
             try:
                 response = await asyncio.to_thread(self.model_backend.run, [user_message.to_openai_user_message()])
                 opinion = response.choices[0].message.content
                 # 回复信息添加到共享信息池
                 await self.shared_pool.add_discussion(opinion)
                 government_log.info(f"普通官员 {self.agent_id} 回应了讨论：{opinion}")
-                
+
             except Exception as e:
                 government_log.error(f"普通官员 {self.agent_id} 在生成回应时出错：{e}")
         else:
@@ -144,7 +144,7 @@ class OrdinaryGovernmentAgent:
             opinion = await self.generate_opinion()
             await self.shared_pool.add_discussion(opinion)
             government_log.info(f"普通官员 {self.agent_id} 发起了新讨论：{opinion}")
-    
+
 class HighRankingGovernmentAgent:
     def __init__(self, agent_id, government, shared_pool):
         """
@@ -157,7 +157,7 @@ class HighRankingGovernmentAgent:
         self.government = government
         self.shared_pool = shared_pool
         self.time = 0  # 当前时间（年）
-        
+
         # 初始化官员属性
         self.function = None  # 职能
         self.mbti = None  # 人物性格
@@ -191,8 +191,11 @@ class HighRankingGovernmentAgent:
         # 等待讨论结束
         if not self.shared_pool.is_ended():
             return None
-        
+        # TODO :政府状态删去运河维护政策支持，改为运河状态（通航比率），增加当前失业率
+        #       决策内容删去提供公共服务。
+        #       可以考虑决策结果可以是多个动作的组合。如果支出之和大于财政预算，则优先满足重要的（决策按照重要性排序）。
         decision_prompt = (
+            # TODO :增加prompt： 你的目标是维持社会稳定，完成航运任务。其中航运包括河运和海运，河运具有提供运河沿线就业岗位的优势，但是成本相比海运高。
             f"你是一个高级政府官员，负责根据下属官员的讨论和当前政府状态做出最终决策。\n"
             f"请从以下动作中选择一个，并提供一个参数：\n"
             f"- 增加就业: 参数为 `预算分配`（整数）\n"
@@ -202,7 +205,7 @@ class HighRankingGovernmentAgent:
             f"- 调整税率: 参数为 `调整值`（浮点数，范围-0.1到0.1）\n"
             f"\n"
             f"当前政府状态：\n"
-            f"预算: {self.government.get_budget()}\n"
+            f"财政预算: {self.government.get_budget()}\n"
             f"军事力量: {self.government.get_military_strength()}\n"
             f"运河维护政策支持: {self.government.policy_support_canal}\n"
             f"当前税率: {self.government.get_tax_rate()*100:.1f}%\n"
@@ -222,12 +225,12 @@ class HighRankingGovernmentAgent:
             }]
 
         government_log.info(f"高级政府官员 {self.agent_id} 正在处理决策，提示信息：{openai_messages}")
-        
+
         try:
             # 调用模型做出最终决策
             response = await asyncio.to_thread(self.model_backend.run, openai_messages)
             decision = response.choices[0].message.content
-            
+
             # 将讨论内容和决策合并写入记忆系统
             combined_content = f"讨论总结：\n{summary}\n\n决策结果：\n{decision}"
             await self.memory.write_record(
@@ -236,7 +239,7 @@ class HighRankingGovernmentAgent:
                 is_user=False,
                 round_num=round_num
             )
-            
+
             government_log.info(f"高级政府官员 {self.agent_id} 的决策：{decision}")
             # 清空共享信息池
             await self.shared_pool.clear_discussions()
@@ -275,6 +278,7 @@ class Government:
         """
         提供就业机会
         """
+        # TODO : 提供就业机会/以工代赈，不仅限于运河沿线地区，而是均匀分布在各地区。
         if self.budget >= budget_allocation:
             self.job_market.add_job("Canal Maintenance")
             self.budget -= budget_allocation
@@ -286,6 +290,11 @@ class Government:
         """
         维护运河
         """
+        # TODO : 维护运河有三个方面的影响：
+        # 1. 改善运河状态（运河通航能力，取值范围：[0,1]），从而降低运输成本。否则运输成本上升，政府需要支出更多的预算来完成运输。
+        # 2. 提供就业机会，增加居民满意度。但是提供的就业机会仅限运河沿线地区。
+        # 3. 政府预算减少：支出=预算分配+运输成本=预算分配+运河状态*河运成本系数+（1-运河状态）*海运成本系数。
+        #   河运成本系数 = 0.5，海运成本系数 = 0.1。
         if self.policy_support_canal and self.budget >= budget_allocation:
             self.map.update_river_condition(year=self.time.get_current_year())
             self.budget -= budget_allocation
@@ -304,13 +313,14 @@ class Government:
             print(f"政府支持军事力量，军事力量增加了 {budget_allocation * 0.1}。")
         else:
             print("政府因预算限制未支持军事力量。")
-        
+
     def suppress_rebellion(self, rebellion_strength):
         """
         镇压叛乱
         :param rebellion_strength: 叛乱的强度
         :return: 是否成功镇压叛乱（布尔值）
         """
+        #  TODO : 无论是否镇压叛乱，都要消耗军事力量。如果成功镇压叛乱，则居民满意度不变，否则将减少就业岗位（逻辑：地区动乱，商业衰败，居民失业）
         if self.military_strength >= rebellion_strength:
             self.military_strength -= rebellion_strength * 0.1  # 军事力量消耗
             print(f"政府成功压制了强度为 {rebellion_strength} 的叛乱。")
@@ -322,6 +332,7 @@ class Government:
         """
         提供公共服务（如粮食救济）
         """
+        # TODO : 可以暂时不考虑
         if self.budget >= budget_allocation:
             self.budget -= budget_allocation
             print("政府提供公共服务（如粮食救济）。")
@@ -333,6 +344,7 @@ class Government:
         设置是否支持运河维护的政策
         :param support: 是否支持运河维护（布尔值）
         """
+        # TODO : 可以暂时不考虑
         self.policy_support_canal = support
         print(f"政府关于运河维护政策的支持已设置为 {support}。")
 
@@ -358,7 +370,7 @@ class Government:
         old_rate = self.tax_rate
         # 限制税率在 0% 到 50% 之间
         self.tax_rate = max(0.0, min(0.5, self.tax_rate + adjustment))
-        
+
         # # 根据税率变化调整所有居民的满意度
         # for resident in self.residents.values():
         #     if self.tax_rate > old_rate:
@@ -367,10 +379,10 @@ class Government:
         #     else:
         #         # 税率下降，满意度上升（影响较小）
         #         resident.satisfaction += (old_rate - self.tax_rate) * 100
-            
+
         #     # 确保满意度在合理范围内
         #     resident.satisfaction = max(0, min(100, resident.satisfaction))
-        
+
         print(f"税率从 {old_rate*100:.1f}% 调整到 {self.tax_rate*100:.1f}%")
         return self.tax_rate
 
