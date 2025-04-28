@@ -84,12 +84,6 @@ class OrdinaryRebel:
             role_name="普通叛军",
             content=prompt,
         )
-        # # 记忆写入
-        # await self.memory.write_record(
-        #     role_name="普通叛军",
-        #     content=prompt,
-        #     is_user=True
-        # )
         
         # 获取历史信息
         openai_messages = await self.memory.get_context_messages(prompt)

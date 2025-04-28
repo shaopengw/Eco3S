@@ -6,13 +6,16 @@ class JobMarket:
         self.jobs = []  # 可用工作列表
         self.employed_residents = {}  # 已就业工人字典，键为工作，值为工人列表
 
-    def add_job(self, job):
+    def add_job(self, job, num=1):
         """
         添加工作机会
         :param job: 工作名称
+        :param num: 添加该工作的数量，默认为1
         """
-        self.jobs.append(job)
-        self.employed_residents[job] = []
+        for _ in range(num):
+            self.jobs.append(job)
+        if job not in self.employed_residents:
+            self.employed_residents[job] = []
 
     def remove_job(self, job):
         """

@@ -85,7 +85,7 @@ class Simulator:
 
             # 基于LLM的决策--测试时建议暂时注释
             await self.process_group_decision('government') # 政府行为
-            # await self.process_group_decision('rebellion') # 叛军行为
+            await self.process_group_decision('rebellion') # 叛军行为
 
             rebellions = 0
 
@@ -242,10 +242,9 @@ class Simulator:
             },
             'rebellion': {
                 'actions': {
-                    "袭击政府设施": lambda p: self.rebellion.attack_government_facility(strength_investment=p),
+                    "袭击政府设施": lambda p: self.handle_rebellion(p),
                     "招募新成员": lambda p: self.rebellion.recruit_new_members(resource_investment=p),
-                    "争取民众支持": lambda p: self.rebellion.gain_public_support(resource_investment=p),
-                    "撤退": lambda _: self.rebellion.retreat()
+                    "什么都不做": lambda _: True
                 }
             }
         }
@@ -415,9 +414,41 @@ class Simulator:
             return 0.0
         # 计算所有居民的工资总和
         total_income = sum(resident.income for resident in self.residents.values())
-        # 计算基本生活所需值总和
-        total_basic_cost = self.basic_living_cost * len(self.residents)
-        # GDP = 总收入 - 总基本生活所需值
+        # total_basic_cost = self.basic_living_cost * len(self.residents)
         # gdp = total_income - total_basic_cost
         gdp = total_income
         return gdp
+
+
+    def handle_rebellion(self, strength_investment):
+        """
+        处理叛军袭击事件
+        :param strength_investment: 叛军投入的力量
+        :return: 是否执行成功
+        """
+        # 叛军发动袭击
+        actual_strength = self.rebellion.stage_rebellion(strength_investment)
+        if actual_strength == 0:
+            return False
+            
+        # 政府进行镇压
+        if self.government.suppress_rebellion(actual_strength):
+            # 镇压成功，叛军损失大量军事力量和资源
+            strength_loss = actual_strength * 0.8  # 损失80%的投入力量
+            resource_loss = actual_strength * 0.5  # 损失50%对应的资源
+            
+            self.rebellion.strength = max(0, self.rebellion.strength - strength_loss)
+            self.rebellion.resources = max(0, self.rebellion.resources - resource_loss)
+            
+            print(f"叛军被镇压，损失军事力量 {strength_loss:.1f}，损失资源 {resource_loss:.1f}")
+            return True
+        else:
+            # 镇压失败，叛军损失少量军事力量，获得大量资源
+            strength_loss = actual_strength * 0.2  # 损失20%的投入力量
+            resource_gain = actual_strength * 1.5  # 获得150%对应的资源
+            
+            self.rebellion.strength = max(0, self.rebellion.strength - strength_loss)
+            self.rebellion.resources += resource_gain
+            
+            print(f"叛军袭击成功，损失军事力量 {strength_loss:.1f}，获得资源 {resource_gain:.1f}")
+            return True
