@@ -20,6 +20,7 @@ class OrdinaryGovernmentAgent:
         self.government = government
         self.shared_pool = shared_pool
         self.time = 0  # 当前时间（年）
+        self.map = government.map
 
         # 初始化官员属性
         self.function = None  # 职能
@@ -61,7 +62,7 @@ class OrdinaryGovernmentAgent:
             f"当前政府状态：\n"
             f"财政预算: {self.government.get_budget()}\n"
             f"军事力量: {self.government.get_military_strength()}\n"
-            f"运河维护政策支持: {self.government.policy_support_canal}\n"
+            f"运河通航比率: {self.map.get_navigability()}（海运通航比率：{1-self.map.get_navigability()}）\n"
         )
 
         # 构建提示信息
@@ -157,6 +158,7 @@ class HighRankingGovernmentAgent:
         self.government = government
         self.shared_pool = shared_pool
         self.time = 0  # 当前时间（年）
+        self.map = government.map
 
         # 初始化官员属性
         self.function = None  # 职能
@@ -195,25 +197,25 @@ class HighRankingGovernmentAgent:
         #       决策内容删去提供公共服务。
         #       可以考虑决策结果可以是多个动作的组合。如果支出之和大于财政预算，则优先满足重要的（决策按照重要性排序）。
         decision_prompt = (
-            # TODO :增加prompt： 你的目标是维持社会稳定，完成航运任务。其中航运包括河运和海运，河运具有提供运河沿线就业岗位的优势，但是成本相比海运高。
             f"你是一个高级政府官员，负责根据下属官员的讨论和当前政府状态做出最终决策。\n"
-            f"请从以下动作中选择一个，并提供一个参数：\n"
-            f"- 增加就业: 参数为 `预算分配`（整数）\n"
-            f"- 维护运河: 参数为 `预算分配`（整数）\n"
-            f"- 提供公共服务: 参数为 `预算分配`（整数）\n"
-            f"- 军需拨款: 参数为 `预算分配`（整数）\n"
-            f"- 调整税率: 参数为 `调整值`（浮点数，范围-0.1到0.1）\n"
+            f"请为以下每个政策分配预算或调整参数。你需要合理分配总预算，建议保留20%-30%的预算作为储备，以应对突发事件。\n"
+            f"输出格式为 JSON，包含以下字段：\n"
+            f"- increase_employment: 增加就业的预算分配（整数）\n"
+            # f"- canal_navigability: 运河通航比率（浮点数，范围0到1，1表示完全通航，0表示完全不通航。注意：海运通航比率将自动设为1-运河通航比率）\n"
+            f"- maintain_canal: 维护运河的预算分配（整数）\n"
+            f"- military_support: 军需拨款的预算分配（整数）\n"
+            f"- tax_adjustment: 税率调整值（浮点数，范围-0.1到0.1）\n"
             f"\n"
             f"当前政府状态：\n"
             f"财政预算: {self.government.get_budget()}\n"
             f"军事力量: {self.government.get_military_strength()}\n"
-            f"运河维护政策支持: {self.government.policy_support_canal}\n"
+            f"运河通航比率: {self.map.get_navigability()}（海运通航比率：{1-self.map.get_navigability()}）\n"
             f"当前税率: {self.government.get_tax_rate()*100:.1f}%\n"
             f"\n"
             f"普通政府官员们的讨论报告：\n{summary}\n"
             f"\n"
-            f"请根据以上信息和状态作出最终决策，不要解释理由，只需简单说明你的选择，输出格式为 JSON，例如：\n"
-            f'{{"action": "维护运河", "params": 2000000}}'
+            f"请根据以上信息和状态作出最终决策，不要解释理由，只需输出JSON格式的决策结果。记住要保留足够的预算储备。例如：\n"
+            f'{{"increase_employment": 100000, "canal_navigability": 0.8, "military_support": 50000, "tax_adjustment": -0.02}}'
         )
 
         # 获取历史上下文
@@ -221,7 +223,7 @@ class HighRankingGovernmentAgent:
         if not openai_messages:
             openai_messages = [{
                 "role": "系统",
-                "content": "你是一个高级政府官员，负责根据下属官员的讨论和当前政府状态做出最终决策。"
+                "content": "你是一个高级政府官员，你的目标是维持社会稳定，完成航运任务。其中航运包括河运和海运，河运具有提供运河沿线就业岗位的优势，但是成本相比海运高。你需要根据下属官员的讨论和当前政府状态做出最终决策。"
             }]
 
         government_log.info(f"高级政府官员 {self.agent_id} 正在处理决策，提示信息：{openai_messages}")
@@ -269,7 +271,6 @@ class Government:
         self.job_market = job_market
         self.budget = initial_budget
         self.military_strength = 100  # 初始军事力量
-        self.policy_support_canal = True  # 是否支持运河维护
         self.time = time
         self.tax_rate = 0.1  # 初始税率为 10%
         self.residents = {}  # 添加居民引用
@@ -286,21 +287,42 @@ class Government:
         else:
             print("政府预算不足以提供工作。")
 
-    def maintain_canals(self, budget_allocation):
+    def maintain_canal(self, budget_allocation):
         """
         维护运河
+        :param budget_allocation: 预算分配
+        :return: 是否维护成功
         """
         # TODO : 维护运河有三个方面的影响：
         # 1. 改善运河状态（运河通航能力，取值范围：[0,1]），从而降低运输成本。否则运输成本上升，政府需要支出更多的预算来完成运输。
         # 2. 提供就业机会，增加居民满意度。但是提供的就业机会仅限运河沿线地区。
         # 3. 政府预算减少：支出=预算分配+运输成本=预算分配+运河状态*河运成本系数+（1-运河状态）*海运成本系数。
         #   河运成本系数 = 0.5，海运成本系数 = 0.1。
-        if self.policy_support_canal and self.budget >= budget_allocation:
-            self.map.update_river_condition(year=self.time.get_current_year())
-            self.budget -= budget_allocation
-            print("政府维护运河。")
+        if self.budget >= budget_allocation:
+            # 1. 改善运河状态，维护系数与预算分配成正比
+            # 假设每1000两可以提升0.1的通航能力
+            maint_factor = min(1.0, budget_allocation / 10000)
+            current_navigability = self.map.update_river_condition(maint_factor)
+            
+            # 2. 计算运输成本
+            # 河运成本系数 = 0.5，海运成本系数 = 0.1
+            transport_cost = (current_navigability * 0.5 + (1 - current_navigability) * 0.1) * budget_allocation
+            
+            # 3. 提供就业机会（仅限运河沿线地区）
+            # 假设每100两预算可以提供1个工作岗位
+            job_opportunities = int(budget_allocation / 100)
+            if job_opportunities > 0:
+                self.job_market.add_jobs("运河维护工人", job_opportunities)
+            
+            # 扣除总支出（预算分配+运输成本）
+            total_cost = budget_allocation + transport_cost
+            self.budget -= total_cost
+            
+            print(f"政府维护运河。通航能力：{current_navigability:.2f}，总支出：{total_cost:.2f}两，新增就业岗位：{job_opportunities}个")
+            return True
         else:
-            print("政府因政策或预算限制未维护运河。")
+            print(f"政府预算不足（需要{budget_allocation}两），无法维护运河。")
+            return False
 
     def support_military(self, budget_allocation):
         """
@@ -328,25 +350,6 @@ class Government:
         else:
             print(f"政府未能压制强度为 {rebellion_strength} 的叛乱。")
             return False
-    def provide_public_services(self, budget_allocation):
-        """
-        提供公共服务（如粮食救济）
-        """
-        # TODO : 可以暂时不考虑
-        if self.budget >= budget_allocation:
-            self.budget -= budget_allocation
-            print("政府提供公共服务（如粮食救济）。")
-        else:
-            print("政府预算不足以提供公共服务。")
-
-    def set_policy_support_canal(self, support):
-        """
-        设置是否支持运河维护的政策
-        :param support: 是否支持运河维护（布尔值）
-        """
-        # TODO : 可以暂时不考虑
-        self.policy_support_canal = support
-        print(f"政府关于运河维护政策的支持已设置为 {support}。")
 
     def get_budget(self):
         """
@@ -399,7 +402,7 @@ class Government:
         """
         print(f"政府预算: {self.budget}")
         print(f"军事力量: {self.military_strength}")
-        print(f"运河维护政策支持: {self.policy_support_canal}")
+        print(f"运河通航比率: {self.map.get_navigability()}（海运通航比率：{1-self.map.get_navigability()}）")
         print(f"当前税率: {self.tax_rate*100:.1f}%")
 
 class government_SharedInformationPool:

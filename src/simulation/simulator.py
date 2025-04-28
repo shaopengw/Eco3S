@@ -84,7 +84,7 @@ class Simulator:
                 self.population.birth(new_count)
 
             # 基于LLM的决策--测试时建议暂时注释
-            # await self.process_group_decision('government') # 政府行为
+            await self.process_group_decision('government') # 政府行为
             # await self.process_group_decision('rebellion') # 叛军行为
 
             rebellions = 0
@@ -234,11 +234,10 @@ class Simulator:
         config = {
             'government': {
                 'actions': {
-                    "增加就业": lambda p: self.government.provide_jobs(budget_allocation=p),
-                    "维护运河": lambda p: self.government.maintain_canals(budget_allocation=p),
-                    "提供公共服务": lambda p: self.government.provide_public_services(budget_allocation=p),
-                    "军需拨款": lambda p: self.government.support_military(budget_allocation=p),
-                    "调整税率": lambda p: self.government.adjust_tax_rate(p),  # 修改为直接调用政府的方法
+                    "increase_employment": lambda p: self.government.provide_jobs(budget_allocation=p),
+                    "maintain_canal": lambda p: self.government.maintain_canal(budget_allocation=p),
+                    "military_support": lambda p: self.government.support_military(budget_allocation=p),
+                    "tax_adjustment": lambda p: self.government.adjust_tax_rate(p),
                 }
             },
             'rebellion': {
@@ -289,16 +288,31 @@ class Simulator:
             if not decision_data:
                 return False
 
-            action = decision_data.get("action")
-            param = decision_data.get("params")
+            # # 检查总预算支出是否超过当前预算
+            # if group_type == 'government':
+            #     total_budget = (
+            #         decision_data.get("increase_employment", 0) +
+            #         decision_data.get("maintain_canal", 0) +
+            #         decision_data.get("military_support", 0)
+            #     )
+            #     if total_budget > self.government.get_budget():
+            #         print(f"总支出 {total_budget} 超过当前预算 {self.government.get_budget()}，决策执行失败")
+            #         return False
 
-            # 执行决策
-            if action in config[group_type]['actions']:
-                config[group_type]['actions'][action](param)
-                return True
-            else:
-                print(f"未知的决策动作：{action}")
-                return False
+            # 执行所有决策动作
+            success = True
+            for action, param in decision_data.items():
+                if action in config[group_type]['actions']:
+                    try:
+                        config[group_type]['actions'][action](param)
+                    except Exception as e:
+                        print(f"执行决策 {action} 时出错：{e}")
+                        success = False
+                else:
+                    print(f"未知的决策动作：{action}")
+                    success = False
+
+            return success
 
         except Exception as e:
             print(f"执行决策时出错：{e}")
@@ -404,5 +418,6 @@ class Simulator:
         # 计算基本生活所需值总和
         total_basic_cost = self.basic_living_cost * len(self.residents)
         # GDP = 总收入 - 总基本生活所需值
-        gdp = total_income - total_basic_cost
+        # gdp = total_income - total_basic_cost
+        gdp = total_income
         return gdp
