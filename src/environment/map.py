@@ -18,6 +18,7 @@ class Map:
         self.height = height
         self.grid = np.zeros((height, width))
         self.river_grid = np.zeros((height, width))
+        self.navigability = 1.0  # 初始运河通航能力为1.0（最佳状态）
         self.city_matrix = []
         self.city_dict = {}
         self.terrain_ruggedness = np.random.rand(height, width)
@@ -77,6 +78,7 @@ class Map:
         初始化京杭大运河路线
         """
         self.river_grid = np.zeros((self.height, self.width))
+        self.navigability = 1.0  # 重置运河通航能力
         
         # 获取运河城市坐标点
         river_points = []
@@ -339,25 +341,32 @@ class Map:
         plt.ylabel("纬度方向 (北→南)", fontproperties='SimHei')
         plt.legend()
         plt.show()
-    
-    def get_river_damage_level(self, year):
-        """
-        获取运河的损坏程度
-        :param year: 当前年份
-        :return: 运河损坏程度（0到1之间的值，1表示完全损坏）
-        """
-        if year < 1826:
-            return 0.0
-        else:
-            return min(1.0, (year - 1826) / 100)
 
-    def update_river_condition(self, year):
+    def update_river_condition(self, maint_factor= None):
         """
         更新运河的状态
-        :param year: 当前年份
+        :param maint_factor: 维护系数，范围[0,1]，如果提供则直接设置为该值
+        :return: 当前运河通航能力，如果系数不合法则返回提示信息
         """
-        damage_level = self.get_river_damage_level(year)
-        self.river_grid[self.river_grid == 1] = 1 - damage_level
+        if maint_factor is not None:
+            if not (0 <= maint_factor <= 1):
+                return f"维护系数 {maint_factor} 不在有效范围[0,1]内"
+            self.navigability = maint_factor
+            # 更新运河网格的状态
+            self.river_grid[self.river_grid > 0] = self.navigability
+            return self.navigability
+        
+        # 更新运河网格的状态
+        self.river_grid[self.river_grid > 0] = self.navigability
+        
+        return self.navigability
+
+    def get_navigability(self):
+        """
+        获取当前运河通航能力
+        :return: 通航能力值（0-1之间的浮点数）
+        """
+        return self.navigability
 
     def is_river_nearby(self, location):
         """
@@ -457,5 +466,5 @@ if __name__ == "__main__":
     map.visualize_map()
 
     # 更新运河状态并重新可视化
-    map.update_river_condition(year=1850)
+    # map.update_river_condition(year=1850)
     map.visualize_map()

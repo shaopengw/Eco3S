@@ -199,7 +199,7 @@ class RebelLeader:
     async def make_decision(self, summary, round_num):
         """
         根据普通叛军的讨论作出决策
-        :param discussion_report: 普通叛军的讨论报告
+        :param summary: 普通叛军的讨论报告
         :param round_num: 当前轮次
         :return: 决策结果
         """
@@ -243,7 +243,7 @@ class RebelLeader:
             decision = response.choices[0].message.content
             
             # 将讨论内容和决策合并写入记忆系统
-            combined_content = f"讨论总结：\n{discussion_report}\n\n决策结果：\n{decision}"
+            combined_content = f"讨论总结：\n{summary}\n\n决策结果：\n{decision}"
             await self.memory.write_record(
                 role_name="叛军头子",
                 content=combined_content,
