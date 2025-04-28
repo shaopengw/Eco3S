@@ -79,7 +79,7 @@ async def run_simulation(config: dict[str, Any]) -> None:
     rebellion = Rebellion(
         initial_strength=config["simulation"]["rebellion_initial_strength"],
         initial_resources=config["simulation"]["rebellion_initial_resources"],
-        initial_support=config["simulation"]["rebellion_initial_support"],
+        job_market=job_market,
     )
 
     # 初始化叛军成员

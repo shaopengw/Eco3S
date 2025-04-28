@@ -200,7 +200,7 @@ class HighRankingGovernmentAgent:
             f"你是一个高级政府官员，负责根据下属官员的讨论和当前政府状态做出最终决策。\n"
             f"请为以下每个政策分配预算或调整参数。你需要合理分配总预算，建议保留20%-30%的预算作为储备，以应对突发事件。\n"
             f"输出格式为 JSON，包含以下字段：\n"
-            f"- increase_employment: 增加就业的预算分配（整数）\n"
+            f"- increase_employment: 提供就业的预算分配（整数）\n"
             # f"- canal_navigability: 运河通航比率（浮点数，范围0到1，1表示完全通航，0表示完全不通航。注意：海运通航比率将自动设为1-运河通航比率）\n"
             f"- maintain_canal: 维护运河的预算分配（整数）\n"
             f"- military_support: 军需拨款的预算分配（整数）\n"
@@ -312,7 +312,7 @@ class Government:
             # 假设每100两预算可以提供1个工作岗位
             job_opportunities = int(budget_allocation / 100)
             if job_opportunities > 0:
-                self.job_market.add_jobs("运河维护工人", job_opportunities)
+                self.job_market.add_job("运河维护工人", job_opportunities)
             
             # 扣除总支出（预算分配+运输成本）
             total_cost = budget_allocation + transport_cost
@@ -342,13 +342,20 @@ class Government:
         :param rebellion_strength: 叛乱的强度
         :return: 是否成功镇压叛乱（布尔值）
         """
-        #  TODO : 无论是否镇压叛乱，都要消耗军事力量。如果成功镇压叛乱，则居民满意度不变，否则将减少就业岗位（逻辑：地区动乱，商业衰败，居民失业）
+        # 无论是否镇压叛乱，都要消耗军事力量。如果成功镇压叛乱，则居民满意度不变，否则将减少就业岗位（逻辑：地区动乱，商业衰败，居民失业）
+        # 计算军事力量消耗（无论成功与否都会消耗）
+        military_consumption = rebellion_strength * 0.1
+        self.military_strength = max(0, self.military_strength - military_consumption)
+        
         if self.military_strength >= rebellion_strength:
-            self.military_strength -= rebellion_strength * 0.1  # 军事力量消耗
-            print(f"政府成功压制了强度为 {rebellion_strength} 的叛乱。")
+            print(f"政府成功压制了强度为 {rebellion_strength} 的叛乱，消耗军事力量 {military_consumption:.1f}。")
             return True
         else:
-            print(f"政府未能压制强度为 {rebellion_strength} 的叛乱。")
+            # 叛乱失败导致就业岗位减少（假设每点叛乱强度减少1个工作岗位）
+            job_loss = int(rebellion_strength)
+            self.job_market.remove_jobs(job_loss)
+            print(f"政府未能压制强度为 {rebellion_strength} 的叛乱，消耗军事力量 {military_consumption:.1f}，")
+            print(f"地区动乱导致商业衰败，减少就业岗位 {job_loss} 个。")
             return False
 
     def get_budget(self):
