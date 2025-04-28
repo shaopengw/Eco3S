@@ -106,6 +106,11 @@ class Simulator:
             if tasks:  # 只在有任务时执行
                 await asyncio.gather(*tasks)
 
+            # 更新平均满意度
+            self.average_satisfaction = self.calculate_average_satisfaction()
+            # 更新出生率
+            self.population.update_birth_rate(self.average_satisfaction)
+
             # 记录数据
             self.results["years"].append(self.time.get_current_time())
             self.results["rebellions"].append(rebellions)
@@ -242,9 +247,9 @@ class Simulator:
             },
             'rebellion': {
                 'actions': {
-                    "袭击政府设施": lambda p: self.handle_rebellion(p),
+                    "发动叛乱": lambda p: self.handle_rebellion(p),
                     "招募新成员": lambda p: self.rebellion.recruit_new_members(resource_investment=p),
-                    "什么都不做": lambda _: True
+                    "维持现状": lambda _: self.rebellion.do_nothing(),
                 }
             }
         }

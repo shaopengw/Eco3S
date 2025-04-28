@@ -342,20 +342,22 @@ class Map:
         plt.legend()
         plt.show()
 
-    def update_river_condition(self, maint_factor= None):
+    def update_river_condition(self, maint_factor=None):
         """
         更新运河的状态
-        :param maint_factor: 维护系数，范围[0,1]，如果提供则直接设置为该值
+        :param maint_factor: 维护系数的变化值，范围[-1,1]，表示通航能力的增减
         :return: 当前运河通航能力，如果系数不合法则返回提示信息
         """
+        # 自然衰减
+        natural_decay_rate=0.1
+        self.navigability = max(0, self.navigability * (1 - natural_decay_rate))
+
+        # 如果提供了维护系数，进行增量更新
         if maint_factor is not None:
-            if not (0 <= maint_factor <= 1):
-                return f"维护系数 {maint_factor} 不在有效范围[0,1]内"
-            self.navigability = maint_factor
-            # 更新运河网格的状态
-            self.river_grid[self.river_grid > 0] = self.navigability
-            return self.navigability
-        
+            if not (-1 <= maint_factor <= 1):
+                return f"维护系数变化值 {maint_factor} 不在有效范围[-1,1]内"
+            self.navigability = max(0, min(1, self.navigability + maint_factor))
+
         # 更新运河网格的状态
         self.river_grid[self.river_grid > 0] = self.navigability
         

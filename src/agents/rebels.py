@@ -67,7 +67,6 @@ class OrdinaryRebel:
             f"当前叛军状态：\n"
             f"力量: {self.rebellion.get_strength()}\n"
             f"资源: {self.rebellion.get_resources()}\n"
-            f"支持度: {self.rebellion.get_support()}\n"
         )
 
         # 构建提示信息
@@ -205,20 +204,17 @@ class RebelLeader:
         decision_prompt = (
             f"你是一个叛军头子，负责根据下属叛军的讨论和当前叛军状态做出最终决策。\n"
             f"请从以下动作中选择一个，并提供一个参数：\n"
-            f"- 袭击政府设施: 参数为 `力量投入`（整数）\n"
+            f"- 发动叛乱: 参数为 `力量投入`（整数）\n"
             f"- 招募新成员: 参数为 `资源投入`（整数）\n"
-            f"- 争取民众支持: 参数为 `资源投入`（整数）\n"
-            f"- 撤退: 参数为 `无`\n"
             f"\n"
             f"当前叛军状态：\n"
             f"力量: {self.rebellion.get_strength()}\n"
             f"资源: {self.rebellion.get_resources()}\n"
-            f"支持度: {self.rebellion.get_support()}\n"
             f"\n"
             f"普通叛军们的讨论报告：\n{summary}\n"
             f"\n"
             f"请根据以上信息和状态作出最终决策，不要解释理由，只需简单说明你的选择，输出格式为 JSON，例如：\n"
-            f'{{"action": "袭击政府设施", "params": 1000}}'
+            f'{{"action": "发动叛乱", "params": 1000}}'
         )
         
         # 获取历史上下文
@@ -226,7 +222,7 @@ class RebelLeader:
         if not openai_messages:
             openai_messages = [{
                 "role": "system",
-                "content": "你是一个叛军头子，负责根据下属叛军的讨论和当前叛军状态做出最终决策。"
+                "content": "你是一个叛军头子，你的目标是确保叛军组织的生存和壮大。你需要平衡资源分配、招募新成员和军事行动。你的决策将影响叛军的发展方向和生存机会。你需要根据下属叛军的讨论和当前叛军状态做出最终决策。"
             }]
 
         rebellion_log.info(f"叛军头子 {self.agent_id} 正在处理决策，提示信息：{openai_messages}")
@@ -316,27 +312,26 @@ class InformationOfficer(OrdinaryRebel):
             return "无法生成总结报告"
 
 class Rebellion:
-    def __init__(self, initial_strength, initial_resources, initial_support):
+    def __init__(self, initial_strength, initial_resources, job_market):
         """
         初始化叛军类
         :param initial_strength: 初始力量
         :param initial_resources: 初始资源
-        :param initial_support: 初始支持度
         """
         self.strength = initial_strength
         self.resources = initial_resources
-        self.support = initial_support
+        self.job_market = job_market
 
     def attack_government_facility(self, strength_investment):
         """
-        袭击政府设施
+        发动叛乱
         :param strength_investment: 投入的力量
         """
         if self.strength >= strength_investment:
             self.strength -= strength_investment * 0.1  # 力量消耗
-            print(f"叛军成功袭击了政府设施，消耗了 {strength_investment * 0.1} 力量。")
+            print(f"叛军成功发动了叛乱，消耗了 {strength_investment * 0.1} 力量。")
         else:
-            print("叛军力量不足以袭击政府设施。")
+            print("叛军力量不足以发动叛乱。")
 
     def recruit_new_members(self, resource_investment):
         """
@@ -350,23 +345,14 @@ class Rebellion:
         else:
             print("叛军资源不足以招募新成员。")
 
-    def gain_public_support(self, resource_investment):
+    def do_nothing(self):
         """
-        争取民众支持
-        :param resource_investment: 投入的资源
+        维持现状，获取基本收入
         """
-        if self.resources >= resource_investment:
-            self.support += resource_investment * 0.1  # 假设每投入1单位资源，支持度增加0.1
-            self.resources -= resource_investment
-            print(f"叛军成功争取了民众支持，支持度增加了 {resource_investment * 0.1}。")
-        else:
-            print("叛军资源不足以争取民众支持。")
-
-    def retreat(self):
-        """
-        撤退
-        """
-        print("叛军决定撤退。")
+        income_rate=0.01
+        income = int(self.strength * income_rate)  # 计算收入
+        self.resources += income  # 增加资源
+        print(f"叛军维持现状，获得基本收入 {income} 。")
 
     def get_strength(self):
         """
@@ -382,20 +368,12 @@ class Rebellion:
         """
         return self.resources
 
-    def get_support(self):
-        """
-        获取当前支持度
-        :return: 当前支持度
-        """
-        return self.support
-
     def print_rebellion_status(self):
         """
         打印叛军状态（用于调试）
         """
         print(f"叛军力量: {self.strength}")
         print(f"叛军资源: {self.resources}")
-        print(f"叛军支持度: {self.support}")
 
 class rebels_SharedInformationPool:
     def __init__(self, max_discussions: int = 5):
