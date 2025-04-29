@@ -320,14 +320,6 @@ class Simulator:
         df.to_csv(filename, index=False)
         print(f"模拟结果已保存至 {filename}")
 
-    def initialize_resident_social_network(self):
-        """
-        初始化居民的社交网络访问
-        """
-        # 为每个居民设置社交网络引用
-        for resident in self.residents.values():
-            resident.social_network = self.social_network
-
     async def generate_new_residents(self, count):
         """生成新居民并初始化"""
         # 生成居民数据

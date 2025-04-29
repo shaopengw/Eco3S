@@ -1,12 +1,12 @@
 [
   {
-    "gender": "男性",
-    "lifespan": 63,
+    "gender": "女性",
+    "lifespan": 40,
     "residence": "沿河",
-    "satisfaction": 9,
+    "satisfaction": 91,
     "health_index": 2,
     "income": 0,
-    "profession": "农民",
-    "mbti": "ESTJ"
+    "profession": "商人",
+    "mbti": "INFJ"
   }
 ]
