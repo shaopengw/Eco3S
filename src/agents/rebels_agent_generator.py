@@ -82,7 +82,7 @@ async def generate_rebels_agents(
     await asyncio.gather(*tasks)
 
     # 确保返回的 agent_graph 包含有效叛军对象
-    if not all(isinstance(rebel, (OrdinaryRebel, RebelLeader, InformationOfficer)) for rebel in agent_graph.values()):
+    if not all(isinstance(rebel, (OrdinaryRebel, RebelLeader)) for rebel in agent_graph.values()):
         raise TypeError("agent_graph 中包含非法对象")
     
     return agent_graph  # 返回生成的叛军图
