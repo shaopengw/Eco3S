@@ -1,102 +1,102 @@
 [
   {
     "gender": "女性",
-    "lifespan": 27,
-    "residence": "非沿河",
-    "satisfaction": 60,
-    "health_index": 1,
-    "income": 50,
-    "profession": "农民",
-    "mbti": "ENTP"
-  },
-  {
-    "gender": "男性",
-    "lifespan": 25,
+    "lifespan": 69,
     "residence": "沿河",
-    "satisfaction": 35,
-    "health_index": 1,
+    "satisfaction": 24,
+    "health_index": 2,
     "income": 20,
     "profession": "农民",
     "mbti": "ESTJ"
   },
   {
-    "gender": "女性",
-    "lifespan": 44,
+    "gender": "男性",
+    "lifespan": 38,
     "residence": "非沿河",
-    "satisfaction": 60,
-    "health_index": 2,
-    "income": 0,
-    "profession": "其他",
-    "mbti": "ISTJ"
-  },
-  {
-    "gender": "女性",
-    "lifespan": 43,
-    "residence": "沿河",
-    "satisfaction": 27,
-    "health_index": 2,
+    "satisfaction": 45,
+    "health_index": 4,
     "income": 50,
-    "profession": "农民",
-    "mbti": "ESTJ"
+    "profession": "其他",
+    "mbti": "ISFJ"
   },
   {
     "gender": "女性",
-    "lifespan": 37,
+    "lifespan": 55,
     "residence": "沿河",
-    "satisfaction": 68,
+    "satisfaction": 69,
+    "health_index": 2,
+    "income": 5,
+    "profession": "农民",
+    "mbti": "ENTJ"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 22,
+    "residence": "沿河",
+    "satisfaction": 4,
     "health_index": 1,
     "income": 5,
-    "profession": "商人",
-    "mbti": "ESFP"
-  },
-  {
-    "gender": "女性",
-    "lifespan": 32,
-    "residence": "非沿河",
-    "satisfaction": 26,
-    "health_index": 2,
-    "income": 20,
-    "profession": "农民",
-    "mbti": "ESTJ"
-  },
-  {
-    "gender": "女性",
-    "lifespan": 59,
-    "residence": "非沿河",
-    "satisfaction": 27,
-    "health_index": 4,
-    "income": 20,
-    "profession": "农民",
+    "profession": "叛军",
     "mbti": "ISTJ"
   },
   {
     "gender": "男性",
-    "lifespan": 44,
-    "residence": "沿河",
+    "lifespan": 20,
+    "residence": "非沿河",
+    "satisfaction": 80,
+    "health_index": 2,
+    "income": 50,
+    "profession": "农民",
+    "mbti": "ENTJ"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 18,
+    "residence": "非沿河",
     "satisfaction": 81,
+    "health_index": 1,
+    "income": 5,
+    "profession": "其他",
+    "mbti": "ISFJ"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 28,
+    "residence": "非沿河",
+    "satisfaction": 30,
     "health_index": 1,
     "income": 5,
     "profession": "农民",
     "mbti": "ISFJ"
   },
   {
+    "gender": "女性",
+    "lifespan": 20,
+    "residence": "非沿河",
+    "satisfaction": 32,
+    "health_index": 1,
+    "income": 5,
+    "profession": "农民",
+    "mbti": "ESFJ"
+  },
+  {
     "gender": "男性",
-    "lifespan": 24,
+    "lifespan": 26,
     "residence": "沿河",
-    "satisfaction": 76,
+    "satisfaction": 49,
     "health_index": 2,
     "income": 10,
     "profession": "农民",
-    "mbti": "ESTJ"
+    "mbti": "INTP"
   },
   {
     "gender": "男性",
     "lifespan": 18,
     "residence": "沿河",
-    "satisfaction": 54,
-    "health_index": 2,
-    "income": 20,
+    "satisfaction": 15,
+    "health_index": 3,
+    "income": 0,
     "profession": "农民",
-    "mbti": "INFP"
+    "mbti": "ESFJ"
   }
 ]
