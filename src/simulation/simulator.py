@@ -155,6 +155,7 @@ class Simulator:
         3. 信息整理员整理讨论内容
         4. 领导者做出决策
         """
+        print(f"开始处理 {group_type} 的决策")
         # 根据群体类型获取相应的配置
         config = {
             'government': {
@@ -174,9 +175,8 @@ class Simulator:
         # 获取所有普通成员
         ordinary_members = [
             member for member in config['agents'].values()
-            if isinstance(member, config['ordinary_type']) and not isinstance(member, InformationOfficer)
+            if isinstance(member, config['ordinary_type']) and not isinstance(member, InformationOfficer) and not isinstance(member, RebelsInformationOfficer)  
         ]
-        # print(f"普通成员: {ordinary_members}")
 
         if ordinary_members and random.random() < activate_prob:
             shared_pool = list(config['agents'].values())[0].shared_pool
@@ -203,9 +203,8 @@ class Simulator:
             # 获取信息整理员和领导者
             info_officers = [
                 member for member in config['agents'].values()
-                if isinstance(member, InformationOfficer)
+                if isinstance(member, InformationOfficer) or isinstance(member, RebelsInformationOfficer)
             ]
-            # print(f"信息整理员: {info_officers}")
             leaders = [
                 member for member in config['agents'].values()
                 if isinstance(member, config['leader_type'])
@@ -247,9 +246,9 @@ class Simulator:
             },
             'rebellion': {
                 'actions': {
-                    "发动叛乱": lambda p: self.handle_rebellion(p),
-                    "招募新成员": lambda p: self.rebellion.recruit_new_members(resource_investment=p),
-                    "维持现状": lambda _: self.rebellion.do_nothing(),
+                    "stage_rebellion": lambda p: self.handle_rebellion(strength_investment=p),
+                    "recruit_members": lambda p: self.rebellion.recruit_new_members(resource_investment=p),
+                    "maintain_status": lambda p: self.rebellion.maintain_status() if p == 1 else None,
                 }
             }
         }
@@ -291,17 +290,6 @@ class Simulator:
             decision_data = parse_decision(decision)
             if not decision_data:
                 return False
-
-            # # 检查总预算支出是否超过当前预算
-            # if group_type == 'government':
-            #     total_budget = (
-            #         decision_data.get("increase_employment", 0) +
-            #         decision_data.get("maintain_canal", 0) +
-            #         decision_data.get("military_support", 0)
-            #     )
-            #     if total_budget > self.government.get_budget():
-            #         print(f"总支出 {total_budget} 超过当前预算 {self.government.get_budget()}，决策执行失败")
-            #         return False
 
             # 执行所有决策动作
             success = True
@@ -432,15 +420,15 @@ class Simulator:
         :return: 是否执行成功
         """
         # 叛军发动袭击
-        actual_strength = self.rebellion.stage_rebellion(strength_investment)
-        if actual_strength == 0:
+        if self.rebellion.strength < strength_investment:
+            print("叛军力量不足以发动叛乱。")
             return False
             
         # 政府进行镇压
-        if self.government.suppress_rebellion(actual_strength):
+        if self.government.suppress_rebellion(strength_investment):
             # 镇压成功，叛军损失大量军事力量和资源
-            strength_loss = actual_strength * 0.8  # 损失80%的投入力量
-            resource_loss = actual_strength * 0.5  # 损失50%对应的资源
+            strength_loss = strength_investment * 0.8  # 损失80%的投入力量
+            resource_loss = strength_investment * 0.5  # 损失50%对应的资源
             
             self.rebellion.strength = max(0, self.rebellion.strength - strength_loss)
             self.rebellion.resources = max(0, self.rebellion.resources - resource_loss)
@@ -449,8 +437,8 @@ class Simulator:
             return True
         else:
             # 镇压失败，叛军损失少量军事力量，获得大量资源
-            strength_loss = actual_strength * 0.2  # 损失20%的投入力量
-            resource_gain = actual_strength * 1.5  # 获得150%对应的资源
+            strength_loss = strength_investment * 0.2  # 损失20%的投入力量
+            resource_gain = strength_investment * 1.5  # 获得150%对应的资源
             
             self.rebellion.strength = max(0, self.rebellion.strength - strength_loss)
             self.rebellion.resources += resource_gain

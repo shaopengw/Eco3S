@@ -150,13 +150,6 @@ class OrdinaryRebel:
             await self.shared_pool.add_discussion(opinion)
             rebellion_log.info(f"普通叛军 {self.agent_id} 发起了新讨论：{opinion}")
 
-    def get_opinions(self):
-        """
-        获取当前叛军的所有意见
-        :return: 叛军的意见列表
-        """
-        return self.opinions
-    
 class RebelLeader:
     def __init__(self, agent_id, rebellion, shared_pool):
         self.agent_id = agent_id
@@ -203,9 +196,11 @@ class RebelLeader:
         # 使用 CAMEL 框架来做决策
         decision_prompt = (
             f"你是一个叛军头子，负责根据下属叛军的讨论和当前叛军状态做出最终决策。\n"
-            f"请从以下动作中选择一个，并提供一个参数：\n"
-            f"- 发动叛乱: 参数为 `力量投入`（整数）\n"
-            f"- 招募新成员: 参数为 `资源投入`（整数）\n"
+            f"请为以下每个动作分配参数。如果不选择某个动作，将其参数设为0。\n"
+            f"输出格式为 JSON，包含以下字段：\n"
+            f"- stage_rebellion: 发动叛乱的力量投入（整数）\n"
+            f"- recruit_members: 招募新成员的资源投入（整数）\n"
+            f"- maintain_status: 维持现状（设为1表示选择维持现状，设为0表示不选择）\n"
             f"\n"
             f"当前叛军状态：\n"
             f"力量: {self.rebellion.get_strength()}\n"
@@ -213,8 +208,8 @@ class RebelLeader:
             f"\n"
             f"普通叛军们的讨论报告：\n{summary}\n"
             f"\n"
-            f"请根据以上信息和状态作出最终决策，不要解释理由，只需简单说明你的选择，输出格式为 JSON，例如：\n"
-            f'{{"action": "发动叛乱", "params": 1000}}'
+            f"请根据以上信息和状态作出最终决策，不要解释理由，只需输出JSON格式的决策结果。例如：\n"
+            f'{{"stage_rebellion": 0, "recruit_members": 0, "maintain_status": 1}}'
         )
         
         # 获取历史上下文
@@ -322,16 +317,16 @@ class Rebellion:
         self.resources = initial_resources
         self.job_market = job_market
 
-    def attack_government_facility(self, strength_investment):
-        """
-        发动叛乱
-        :param strength_investment: 投入的力量
-        """
-        if self.strength >= strength_investment:
-            self.strength -= strength_investment * 0.1  # 力量消耗
-            print(f"叛军成功发动了叛乱，消耗了 {strength_investment * 0.1} 力量。")
-        else:
-            print("叛军力量不足以发动叛乱。")
+    # def stage_rebellion(self, strength_investment):
+    #     """
+    #     发动叛乱
+    #     :param strength_investment: 投入的力量
+    #     """
+    #     if self.strength >= strength_investment:
+    #         self.strength -= strength_investment * 0.1  # 力量消耗
+    #         print(f"叛军成功发动了叛乱，消耗了 {strength_investment * 0.1} 力量。")
+    #     else:
+    #         print("叛军力量不足以发动叛乱。")
 
     def recruit_new_members(self, resource_investment):
         """
@@ -339,13 +334,19 @@ class Rebellion:
         :param resource_investment: 投入的资源
         """
         if self.resources >= resource_investment:
-            self.strength += resource_investment * 0.1  # 假设每投入1单位资源，力量增加0.1
+            # 计算可以招募的新成员数量（假设每100两可以提供1个职位）
+            job_opportunities = int(resource_investment / 100)
+
+            # 在就业市场增加叛军职位
+            if job_opportunities > 0:
+                self.job_market.add_job("叛军", job_opportunities)
             self.resources -= resource_investment
-            print(f"叛军成功招募了新成员，力量增加了 {resource_investment * 0.1}。")
+
+            print(f"叛军成功花费{resource_investment}，发布了 {job_opportunities} 个叛军职位。")
         else:
             print("叛军资源不足以招募新成员。")
 
-    def do_nothing(self):
+    def maintain_status(self):
         """
         维持现状，获取基本收入
         """
