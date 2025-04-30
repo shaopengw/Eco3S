@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from typing import Dict, List, Set, Tuple
 from datetime import datetime
+from sklearn.cluster import KMeans
+import time
 
 class HeterogeneousGraph:
     """
@@ -375,7 +377,6 @@ class SocialNetwork:
         # 建立同事关系
         for i, j in zip(*colleague_pairs):
             self.add_relation(resident_ids[i], resident_ids[j], "colleague")
-        
         # 为每个城镇创建同乡关系超边
         for town_id, town_data in towns.towns.items():
             town_residents = town_data['residents'].keys()
@@ -387,45 +388,82 @@ class SocialNetwork:
                 town_data['hometown_group'] = hometown_group_id
                 
                 # 在同乡群组内基于距离建立家庭关系
-                area_remaining = set(town_residents)
+                area_remaining = list(town_residents)
                 
-                while len(area_remaining) >= 3:  # 确保每个家族至少有3个成员
-                    # 从剩余居民中选择一个作为家庭中心点
-                    center = random.choice(list(area_remaining))
-                    center_x, center_y = residents[center].location
+                # 使用KMeans聚类
+                if len(area_remaining) >= 6:
+                    # 提取所有居民的位置坐标
+                    resident_locations = np.array([residents[r].location for r in area_remaining])
                     
-                    # 计算其他居民到中心点的距离
-                    distances = []
-                    for resident in area_remaining:
-                        if resident != center:
-                            x, y = residents[resident].location
-                            dist = ((x - center_x) ** 2 + (y - center_y) ** 2) ** 0.5
-                            distances.append((resident, dist))
+                    # 估计家庭数量 (平均每个家庭3人)
+                    num_families = max(1, len(area_remaining) // 3)
                     
-                    # 按距离排序
-                    distances.sort(key=lambda x: x[1])
+                    # 使用KMeans聚类算法将居民分组为多个家庭
                     
-                    # 选择3-8个最近的居民组成家庭
-                    family_size = random.randint(3, min(8, len(area_remaining)))
-                    family_members = {center}  # 包含中心点
-                    for resident, _ in distances[:family_size-1]:  # -1是因为已经包含了中心点
-                        family_members.add(resident)
-                    
-                    # 创建家庭群组
-                    family_group_id = f"family_{family_id}"
-                    self.add_group(family_group_id, list(family_members))
-                    
-                    # 更新剩余居民集合
-                    area_remaining -= family_members
-                    family_id += 1
+                    try:
+                        kmeans = KMeans(n_clusters=num_families, random_state=0)
+                        clusters = kmeans.fit_predict(resident_locations)
+                        
+                        # 根据聚类结果创建家庭
+                        families = [[] for _ in range(num_families)]
+                        for i, cluster_id in enumerate(clusters):
+                            families[cluster_id].append(area_remaining[i])
+                        
+                        # 批量创建家庭群组
+                        for family_members in families:
+                            if len(family_members) >= 3:  # 确保每个家庭至少有3个成员
+                                family_group_id = f"family_{family_id}"
+                                self.add_group(family_group_id, family_members)
+                                family_id += 1
+                        
+                        # 清空剩余居民集合
+                        area_remaining = []
+                        
+                    except Exception as e:
+                        # 如果KMeans失败，回退到原始算法
+                        print(f"KMeans聚类失败: {e}")
+                        
                 
-                # 将剩余的每个居民单独作为一个家庭
-                for resident in area_remaining:
-                    # 创建单人家庭群组
-                    family_group_id = f"family_{family_id}"
-                    self.add_group(family_group_id, [resident])
-                    family_id += 1
-                
+                # # 如果居民数量较少或KMeans失败，使用原始算法
+                # if area_remaining:
+                #     area_remaining = set(area_remaining)
+                #     while len(area_remaining) >= 3:  # 确保每个家族至少有3个成员
+                #         # 从剩余居民中选择一个作为家庭中心点
+                #         center = random.choice(list(area_remaining))
+                #         center_x, center_y = residents[center].location
+                        
+                #         # 计算其他居民到中心点的距离
+                #         distances = []
+                #         for resident in area_remaining:
+                #             if resident != center:
+                #                 x, y = residents[resident].location
+                #                 dist = ((x - center_x) ** 2 + (y - center_y) ** 2) ** 0.5
+                #                 distances.append((resident, dist))
+                        
+                #         # 按距离排序
+                #         distances.sort(key=lambda x: x[1])
+                        
+                #         # 选择3-8个最近的居民组成家庭
+                #         family_size = random.randint(3, min(8, len(area_remaining)))
+                #         family_members = {center}  # 包含中心点
+                #         for resident, _ in distances[:family_size-1]:  # -1是因为已经包含了中心点
+                #             family_members.add(resident)
+                        
+                #         # 创建家庭群组
+                #         family_group_id = f"family_{family_id}"
+                #         self.add_group(family_group_id, list(family_members))
+                        
+                #         # 更新剩余居民集合
+                #         area_remaining -= family_members
+                #         family_id += 1
+                    
+                #     # 将剩余的每个居民单独作为一个家庭
+                #     for resident in area_remaining:
+                #         # 创建单人家庭群组
+                #         family_group_id = f"family_{family_id}"
+                #         self.add_group(family_group_id, [resident])
+                #         family_id += 1
+
 
     def add_new_residents(self, new_residents: dict) -> None:
         """
