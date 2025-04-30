@@ -297,7 +297,6 @@ class Government:
         # 1. 改善运河状态（运河通航能力，取值范围：[0,1]），从而降低运输成本。否则运输成本上升，政府需要支出更多的预算来完成运输。
         # 2. 提供就业机会，增加居民满意度。但是提供的就业机会仅限运河沿线地区。
         # 3. 政府预算减少：支出=预算分配+运输成本=预算分配+运河状态*河运成本系数+（1-运河状态）*海运成本系数。
-        #   河运成本系数 = 0.5，海运成本系数 = 0.1。
         if self.budget >= budget_allocation:
             # 1. 改善运河状态，维护系数与预算分配成正比
             # 假设每1000两可以提升0.1的通航能力
@@ -305,8 +304,10 @@ class Government:
             current_navigability = self.map.update_river_condition(maint_factor)
             
             # 2. 计算运输成本
+            # 基础运输成本（固定值）
+            base_transport_cost = 1000  # 基础运输成本
             # 河运成本系数 = 0.5，海运成本系数 = 0.1
-            transport_cost = (current_navigability * 0.5 + (1 - current_navigability) * 0.1) * budget_allocation
+            transport_cost = (current_navigability * 0.5 + (1 - current_navigability) * 0.1) * base_transport_cost
             
             # 3. 提供就业机会（仅限运河沿线地区）
             # 假设每100两预算可以提供1个工作岗位
@@ -353,7 +354,7 @@ class Government:
         else:
             # 叛乱失败导致就业岗位减少（假设每点叛乱强度减少1个工作岗位）
             job_loss = int(rebellion_strength)
-            self.job_market.remove_jobs(job_loss)
+            self.job_market.remove_random_jobs(job_loss)
             print(f"政府未能压制强度为 {rebellion_strength} 的叛乱，消耗军事力量 {military_consumption:.1f}，")
             print(f"地区动乱导致商业衰败，减少就业岗位 {job_loss} 个。")
             return False

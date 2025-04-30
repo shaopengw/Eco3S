@@ -27,6 +27,25 @@ class JobMarket:
             if job in self.employed_residents:
                 del self.employed_residents[job]
 
+    def remove_random_jobs(self, num):
+        """
+        随机删除指定数量的工作机会
+        :param num: 要删除的工作数量
+        :return: 实际删除的工作数量
+        """
+        # 确保删除数量不超过现有工作数量
+        num = min(num, len(self.jobs))
+        
+        # 随机选择要删除的工作
+        jobs_to_remove = random.sample(self.jobs, num)
+        
+        # 删除选中的工作
+        for job in jobs_to_remove:
+            self.jobs.remove(job)
+            if job in self.employed_residents:
+                del self.employed_residents[job]
+        return num
+
     def get_job(self, resident):
         """
         分配工作给居民
