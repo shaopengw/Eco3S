@@ -49,7 +49,7 @@ class OrdinaryGovernmentAgent:
         # 系统消息
         self.system_message = BaseMessage.make_assistant_message(
             role_name="system",
-            content="你是一位普通政府官员，负责根据个人属性和政府状态提出意见。"
+            content="你是一位政府普通官员，负责根据自身属性和政府状态提出政策建议，政策目标是维护统治的稳定性。"
         )
 
     async def generate_opinion(self):
@@ -67,11 +67,11 @@ class OrdinaryGovernmentAgent:
 
         # 构建提示信息
         prompt = (
-            f"你是一位普通清代政府官员，以下是你的个人属性：\n"
+            f"你是一位清代政府普通官员，以下是你的个人属性：\n"
             f"职能: {self.function}\n"
             f"人物性格: {self.mbti}\n"
             f"{government_status}\n"
-            f"请根据你的个人属性、当前政府状态和讨论内容，提出一句关于大运河运营的政治决策的意见。尽可能简洁，不必说明理由。"
+            f"请根据你的个人属性、当前政府状态和讨论内容，提出关于运河经营与财政预算分配的决策意见。请用一句话概括。"
         )
 
         # 使用 CAMEL 框架生成意见
@@ -116,13 +116,13 @@ class OrdinaryGovernmentAgent:
         if all_discussion:
             # 构建提示信息，让AI决定是否回应以及如何回应
             prompt = (
-                f"你是一位普通清代政府官员，以下是你的个人属性：\n"
+                f"你是一位清代政府普通官员，以下是你的个人属性：\n"
                 f"职能: {self.function}\n"
                 f"人物性格: {self.mbti}\n"
                 f"\n所有官员的观点包括：{all_discussion}\n"
-                f"\n请根据你的个人属性和立场，对这些观点发表看法。"
+                f"\n请根据你的个人属性和立场，对这些观点发表自己的看法。"
                 f"可以选择支持、反对或提出新的观点。"
-                f"请用简短的一句话回复，语气要符合清朝官员的特点。"
+                f"请用简短的一句话回复。"
             )
 
             # 使用CAMEL框架生成回应
@@ -196,26 +196,27 @@ class HighRankingGovernmentAgent:
         # TODO :政府状态删去运河维护政策支持，改为运河状态（通航比率），增加当前失业率
         #       决策内容删去提供公共服务。
         #       可以考虑决策结果可以是多个动作的组合。如果支出之和大于财政预算，则优先满足重要的（决策按照重要性排序）。
+        # TODO: (考虑)政府和叛军的决策，只计算比例， 然后系统根据现有资源自动计算绝对值。这样避免LLM输出结果超过预算。
         decision_prompt = (
-            f"你是一个高级政府官员，负责根据下属官员的讨论和当前政府状态做出最终决策。\n"
-            f"请为以下每个政策分配预算或调整参数。你需要合理分配总预算，建议保留20%-30%的预算作为储备，以应对突发事件。\n"
-            f"输出格式为 JSON，包含以下字段：\n"
-            f"- increase_employment: 提供就业的预算分配（整数）\n"
-            # f"- canal_navigability: 运河通航比率（浮点数，范围0到1，1表示完全通航，0表示完全不通航。注意：海运通航比率将自动设为1-运河通航比率）\n"
-            f"- maintain_canal: 维护运河的预算分配（整数）\n"
-            f"- military_support: 军需拨款的预算分配（整数）\n"
-            f"- tax_adjustment: 税率调整值（浮点数，范围-0.1到0.1）\n"
-            f"\n"
+            f"你是一位清代政府高级官员，负责根据下属官员的讨论和当前政府状态做出最终决策。\n"
             f"当前政府状态：\n"
             f"财政预算: {self.government.get_budget()}\n"
             f"军事力量: {self.government.get_military_strength()}\n"
             f"运河通航比率: {self.map.get_navigability()}（海运通航比率：{1-self.map.get_navigability()}）\n"
             f"当前税率: {self.government.get_tax_rate()*100:.1f}%\n"
             f"\n"
-            f"普通政府官员们的讨论报告：\n{summary}\n"
+            f"下属官员们的讨论报告：\n{summary}\n"
+            f"请你通过设置合理的税率获得财政收入，合理分配预算支出，以尽可能少的成本完成施政目标。\n"
+            f"输出格式为 JSON，包含以下字段：\n"
+            f"- increase_employment: 提供就业的预算分配（整数）\n"
+            # f"- canal_navigability: 运河通航比率（浮点数，范围0到1，1表示完全通航，0表示完全不通航。注意：海运通航比率将自动设为1-运河通航比率）\n"
+            f"- maintain_canal: 维护运河的预算分配（整数）\n"
+            f"- military_support: 军需拨款的预算分配（整数）\n"
+            f"- tax_adjustment: 税率调整值（浮点数，范围-0.1到0.1）\n"
+            f"例如：\n"
+            f'{{"increase_employment": 100000, "canal_navigability": 0.8, "military_support": 50000, "tax_adjustment": -0.02"}}'
             f"\n"
-            f"请根据以上信息和状态作出最终决策，不要解释理由，只需输出JSON格式的决策结果。记住要保留足够的预算储备。例如：\n"
-            f'{{"increase_employment": 100000, "canal_navigability": 0.8, "military_support": 50000, "tax_adjustment": -0.02}}'
+            f"请根据以上信息和状态作出最终决策，不需要解释理由，只需输出JSON格式的决策结果。请务必确认支出总额不高于当前财政预算。"
         )
 
         # 获取历史上下文
@@ -223,7 +224,7 @@ class HighRankingGovernmentAgent:
         if not openai_messages:
             openai_messages = [{
                 "role": "系统",
-                "content": "你是一个高级政府官员，你的目标是维持社会稳定，完成航运任务。其中航运包括河运和海运，河运具有提供运河沿线就业岗位的优势，但是成本相比海运高。你需要根据下属官员的讨论和当前政府状态做出最终决策。"
+                "content": "你是一个清代地方政府高级官员，你的目标是维持地方统治稳定，同时完成中央政府下达的航运任务。其中航运包括河运和海运，河运具有创造大量沿线就业岗位的优势，而海运具有成本极低的优势。"
             }]
 
         government_log.info(f"高级政府官员 {self.agent_id} 正在处理决策，提示信息：{openai_messages}")
@@ -302,23 +303,23 @@ class Government:
             # 假设每1000两可以提升0.1的通航能力
             maint_factor = min(1.0, budget_allocation / 10000)
             current_navigability = self.map.update_river_condition(maint_factor)
-            
+
             # 2. 计算运输成本
             # 基础运输成本（固定值）
             base_transport_cost = 1000  # 基础运输成本
             # 河运成本系数 = 0.5，海运成本系数 = 0.1
             transport_cost = (current_navigability * 0.5 + (1 - current_navigability) * 0.1) * base_transport_cost
-            
+
             # 3. 提供就业机会（仅限运河沿线地区）
             # 假设每100两预算可以提供1个工作岗位
             job_opportunities = int(budget_allocation / 100)
             if job_opportunities > 0:
                 self.job_market.add_job("运河维护工人", job_opportunities)
-            
+
             # 扣除总支出（预算分配+运输成本）
             total_cost = budget_allocation + transport_cost
             self.budget -= total_cost
-            
+
             print(f"政府维护运河。通航能力：{current_navigability:.2f}，总支出：{total_cost:.2f}两，新增就业岗位：{job_opportunities}个")
             return True
         else:
@@ -343,11 +344,12 @@ class Government:
         :param rebellion_strength: 叛乱的强度
         :return: 是否成功镇压叛乱（布尔值）
         """
+        # TODO : 发生叛乱这件事需要记录。
         # 无论是否镇压叛乱，都要消耗军事力量。如果成功镇压叛乱，则居民满意度不变，否则将减少就业岗位（逻辑：地区动乱，商业衰败，居民失业）
         # 计算军事力量消耗（无论成功与否都会消耗）
         military_consumption = rebellion_strength * 0.1
         self.military_strength = max(0, self.military_strength - military_consumption)
-        
+
         if self.military_strength >= rebellion_strength:
             print(f"政府成功压制了强度为 {rebellion_strength} 的叛乱，消耗军事力量 {military_consumption:.1f}。")
             return True
@@ -479,7 +481,7 @@ class InformationOfficer(OrdinaryGovernmentAgent):
         self.function = "信息整理官"
         self.system_message = BaseMessage.make_assistant_message(
             role_name="system",
-            content="你是一位政府信息整理官，负责整理和总结其他官员的讨论内容。"
+            content="你是清代政府高级官员的秘书，负责整理和总结主要官员的讨论内容。"
         )
 
     async def summarize_discussions(self) -> str:
@@ -493,7 +495,7 @@ class InformationOfficer(OrdinaryGovernmentAgent):
 
         # 构建提示信息
         prompt = (
-            f"作为信息整理官，请你整理以下{len(discussions)}条关于大运河管理的讨论内容，"
+            f"你是清代政府高级官员的秘书，请你整理以下{len(discussions)}条关于政府决策的讨论内容，"
             f"提供一个简明扼要的总结报告。\n\n"
             f"讨论内容：\n" + "\n".join([f"{i+1}. {d}" for i, d in enumerate(discussions)])
         )

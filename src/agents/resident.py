@@ -97,7 +97,7 @@ class Resident:
         self.token_counter = None
         self.context_creator = None
         self.memory = None
-        
+
         # # 初始化日志
         # self.logger = logging.getLogger(name=f"resident_{resident_id}")
         # self.logger.setLevel(logging.DEBUG)
@@ -150,10 +150,11 @@ class Resident:
         """
         接收信息（如政府政策、叛乱信息）
         """
+        # TODO: 确认基于同质图和异质图的信息传递细节是否达到预期，邻居agent信息影响目标agent的决策（观念+市场中的就业信息）
         # print("触发receive_information--------------------------------")
         self.satisfaction += 5  # 接收信息增加满意度
         resident_log.info(f"居民 {self.resident_id} 收到了信息：{message_content}。")
-    
+
         # 30% 的概率生成响应
         if random.random() < 0.8:
             # 使用 CAMEL 框架处理信息
@@ -167,33 +168,33 @@ class Resident:
                     role_at_backend=OpenAIBackendRole.USER,
                 )
             )
-            
+
             # 获取当前的上下文
             openai_messages, _ = self.memory.get_context()
             if not openai_messages:
                 openai_messages = [{
                     "role": "system",
-                    "content": "你是一个清代中国大运河附近的居民。请根据收到的信息做出回应。回应要简短，不超过20个字。",
+                    "content": "你是一个清代中国大运河沿线地区的居民。请根据你了解的信息做出回应。回应要简短，不超过20个字。",
                 }]
-            
+
             # 调用模型生成回应
             try:
                 response = await asyncio.to_thread(
                     lambda: self.model_backend.run(openai_messages)
                 )
                 response_content = response.choices[0].message.content
-                
+
                 # 随机选择一种关系类型进行传播
                 relation_types = ["friend", "colleague", "family", "hometown"]
                 selected_type = random.choice(relation_types)
-                
+
                 # 使用 asyncio.create_task 来避免阻塞
                 await asyncio.create_task(
                     self.spread_speech_in_network(response_content, selected_type)
                 )
-                
+
                 resident_log.info(f"居民 {self.resident_id} 对收到的信息做出回应：{response_content}")
-                
+
                 # 将响应记录到记忆中
                 assistant_message = BaseMessage.make_assistant_message(
                     role_name="居民",
@@ -240,7 +241,7 @@ class Resident:
         """
         # 获取当前居民状态的提示信息
         status_prompt = self.get_status_prompt()
-        
+
         action_prompt = (
             f"请根据当前状态决定下一步行动。"
             f"以下是你的当前状态：{status_prompt}\n"
@@ -294,12 +295,12 @@ class Resident:
         try:
             response = await asyncio.to_thread(self.model_backend.run, openai_messages)
             content = response.choices[0].message.content
-            
+
             decision_data = json.loads(content)
             select = decision_data.get("select")
             reason = decision_data.get("reason")
             speech = decision_data.get("speech", "")
-            
+
             resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}")
 
              # 处理迁移决定
@@ -318,7 +319,7 @@ class Resident:
                 await self.spread_speech_in_network(speech, selected_type)
 
             return select, reason
-            
+
         except Exception as e:
             resident_log.error(f"居民 {self.resident_id} 决策出错：{e}")
             return "2", "发生错误，继续当前工作"  # 默认选择继续工作
@@ -339,7 +340,7 @@ class Resident:
                             neighbor = self.social_network.residents.get(neighbor_id)
                             if neighbor:
                                 await neighbor.receive_information(speech)
-                            
+
                 elif relation_type in ["family", "hometown"]:
                     # 在超图中传播
                     groups = [edge_id for edge_id in self.social_network.hyper_graph.get_node_hyperedges(self.resident_id)
@@ -354,7 +355,7 @@ class Resident:
                                 member = self.social_network.residents.get(member_id)
                                 if member:
                                     await member.receive_information(speech)
-                
+
         except Exception as e:
             resident_log.error(f"居民 {self.resident_id} 传播信息时出错：{e}")
 
@@ -375,7 +376,7 @@ class Resident:
             f"寿命: {self.lifespan}"
         )
         return status_prompt
-    
+
     def print_resident_status(self):
         """
         打印居民状态（用于调试）
@@ -398,7 +399,7 @@ class Resident:
             self.lifespan -= 5
         else:
             self.lifespan -= 1
-        
+
         if self.lifespan <= 0:
             resident_log.info(f"居民 {self.resident_id} 的健康状况为 {self.health_index}，寿命更新为 {self.lifespan}，该居民已死亡。")
             return False
@@ -416,7 +417,7 @@ class Resident:
             'north': map.get_north_city,
             'south': map.get_south_city
         }
-        
+
         # 获取当前城镇所属的城市名称
         current_town_name = None
         for city_name, city_info in map.city_dict.items():
@@ -425,10 +426,10 @@ class Resident:
                 current_town_name = city_name
                 print(f"当前城镇名称：{current_town_name}")
                 break
-        
+
         if not current_town_name:
             return None
-            
+
         # 尝试四个方向
         tried_directions = set()
         for _ in range(4):
@@ -436,17 +437,17 @@ class Resident:
             available_directions = [d for d in directions if d not in tried_directions]
             if not available_directions:
                 break
-                
+
             direction = random.choice(available_directions)
             print(f"尝试方向：{direction}")
             tried_directions.add(direction)
-            
+
             # 获取该方向的城市
             next_city = direction_funcs[direction](current_town_name)
             print(f"下一个城市：{next_city}")
             if next_city:
                 return next_city
-        
+
         return None
 
     async def migrate_to_new_town(self, map):
@@ -456,7 +457,7 @@ class Resident:
         if not target_city:
             resident_log.info(f"居民 {self.resident_id} 未找到合适的迁移目标城市")
             return False
-        
+
         # 生成新位置和town_id
         new_location, new_town_id = map.generate_random_location(target_city)
 
@@ -464,6 +465,6 @@ class Resident:
         old_town = self.town
         self.location = new_location
         self.town = new_town_id
-        
+
         resident_log.info(f"居民 {self.resident_id} 从 {old_town} 迁移到了 {new_town_id}")
         return True
