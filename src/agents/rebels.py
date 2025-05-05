@@ -31,7 +31,7 @@ class OrdinaryRebel:
         # api_type = os.getenv("API_TYPE", "OPENAI")
         # model_type_env = os.getenv(f"{api_type}_MODEL_TYPE", "gpt-3.5-turbo")
         # self.model_type = ModelType(model_type_env)
-        
+
         self.model_manager = ModelManager()
         model_config = self.model_manager.get_random_model_config()
         self.model_type = ModelType(model_config["model_type"])
@@ -50,11 +50,11 @@ class OrdinaryRebel:
             group_type='rebellion',  # 指定为叛军群体
             window_size=3
         )
-        
+
         # 系统消息
         self.system_message = BaseMessage.make_assistant_message(
             role_name="system",
-            content="你是一位普通叛军，负责根据个人属性和叛军状态提出意见。"
+            content="你是清代政府划定的非法武装组织（叛军）主要头目之一，请你根据个人属性和所在叛军的状态提出意见。你的目的是使叛军组织生存和壮大（即：拥有更多的钱和人员）。"
         )
 
     async def generate_opinion(self):
@@ -71,11 +71,11 @@ class OrdinaryRebel:
 
         # 构建提示信息
         prompt = (
-            f"你是一位普通叛军，以下是你的个人属性：\n"
+            f"你是叛军的主要头目之一，以下是你的个人属性：\n"
             f"角色: {self.role}\n"
             f"人物性格: {self.mbti}\n"
             f"{rebellion_status}\n"
-            f"请根据你的个人属性、当前叛军状态和讨论内容，提出一句关于叛军行动的意见。尽可能简洁，不必说明理由。"
+            f"请根据你的个人属性、当前叛军状态和讨论内容，提出下一步行动的建议。请你用一句话概括，不必说明理由。"
         )
 
         # 使用 CAMEL 框架生成意见
@@ -83,7 +83,7 @@ class OrdinaryRebel:
             role_name="普通叛军",
             content=prompt,
         )
-        
+
         # 获取历史信息
         openai_messages = await self.memory.get_context_messages(prompt)
         if not openai_messages:
@@ -120,28 +120,28 @@ class OrdinaryRebel:
         if all_discussion:
             # 构建提示信息，让AI决定是否回应以及如何回应
             prompt = (
-                f"你是一位叛军成员，以下是你的个人属性：\n"
+                f"你是叛军组织的主要头目之一，以下是你的个人属性：\n"
                 f"角色: {self.role}\n"
                 f"人物性格: {self.mbti}\n"
                 f"\n所有成员的观点包括：{all_discussion}\n"
                 f"\n请根据你的个人属性和立场，对这些观点发表看法。"
                 f"可以选择支持、反对或提出新的观点。"
-                f"请用简短的一句话回复，语气要符合叛军的特点。"
+                f"请用简短的一句话回复。"
             )
-            
+
             # 使用CAMEL框架生成回应
             user_message = BaseMessage.make_user_message(
                 role_name="普通叛军",
                 content=prompt,
             )
-            
+
             try:
                 response = await asyncio.to_thread(self.model_backend.run, [user_message.to_openai_user_message()])
                 opinion = response.choices[0].message.content
                 # 回复信息添加到共享信息池
                 await self.shared_pool.add_discussion(opinion)
                 rebellion_log.info(f"普通叛军 {self.agent_id} 回应了讨论：{opinion}")
-                
+
             except Exception as e:
                 rebellion_log.error(f"普通叛军 {self.agent_id} 在生成回应时出错：{e}")
         else:
@@ -156,7 +156,7 @@ class RebelLeader:
         self.rebellion = rebellion
         self.shared_pool = shared_pool
         self.time = 0  # 当前时间（年）
-        
+
         # 初始化叛军头子属性
         self.role = None  # 角色
         self.mbti = None  # 人物性格
@@ -192,41 +192,44 @@ class RebelLeader:
         # 等待讨论结束
         if not self.shared_pool.is_ended():
             return None
-            
+
         # 使用 CAMEL 框架来做决策
+        # TODO: 缺少历史决策信息，让叛军可以自己从中总结不同决策带来的后果。
         decision_prompt = (
-            f"你是一个叛军头子，负责根据下属叛军的讨论和当前叛军状态做出最终决策。\n"
+            f"你是清代地方叛军组织的首领，负责根据下属的讨论和当前叛军状态做出最终决策。\n"
             f"请为以下每个动作分配参数。如果不选择某个动作，将其参数设为0。\n"
             f"输出格式为 JSON，包含以下字段：\n"
             f"- stage_rebellion: 发动叛乱的力量投入（整数）\n"
             f"- recruit_members: 招募新成员的资源投入（整数）\n"
             f"- maintain_status: 维持现状（设为1表示选择维持现状，设为0表示不选择）\n"
+            f"例如：\n"
+            f'{{"stage_rebellion": 0, "recruit_members": 0, "maintain_status": 1}}'
             f"\n"
             f"当前叛军状态：\n"
             f"力量: {self.rebellion.get_strength()}\n"
             f"资源: {self.rebellion.get_resources()}\n"
             f"\n"
-            f"普通叛军们的讨论报告：\n{summary}\n"
+            f"下属们的讨论报告：\n{summary}\n"
             f"\n"
-            f"请根据以上信息和状态作出最终决策，不要解释理由，只需输出JSON格式的决策结果。例如：\n"
-            f'{{"stage_rebellion": 0, "recruit_members": 0, "maintain_status": 1}}'
+            f"请根据以上信息和状态作出最终决策，不要解释理由，只需输出JSON格式的决策结果。"
+
         )
-        
+
         # 获取历史上下文
         openai_messages = await self.memory.get_context_messages(decision_prompt)
         if not openai_messages:
             openai_messages = [{
                 "role": "system",
-                "content": "你是一个叛军头子，你的目标是确保叛军组织的生存和壮大。你需要平衡资源分配、招募新成员和军事行动。你的决策将影响叛军的发展方向和生存机会。你需要根据下属叛军的讨论和当前叛军状态做出最终决策。"
+                "content": "你是一个清代地方叛军组织首领，你的目标是确保叛军组织的生存和壮大（拥有更多的成员和金钱）。"
             }]
 
         rebellion_log.info(f"叛军头子 {self.agent_id} 正在处理决策，提示信息：{openai_messages}")
-        
+
         try:
             # 调用模型做出最终决策
             response = await asyncio.to_thread(self.model_backend.run, openai_messages)
             decision = response.choices[0].message.content
-            
+
             # 将讨论内容和决策合并写入记忆系统
             combined_content = f"讨论总结：\n{summary}\n\n决策结果：\n{decision}"
             await self.memory.write_record(
@@ -235,7 +238,7 @@ class RebelLeader:
                 is_user=False,
                 round_num=round_num
             )
-            
+
             rebellion_log.info(f"叛军头子 {self.agent_id} 的决策：{decision}")
             # 清空共享信息池
             await self.shared_pool.clear_discussions()
@@ -267,7 +270,7 @@ class InformationOfficer(OrdinaryRebel):
         self.role = "信息整理官"
         self.system_message = BaseMessage.make_assistant_message(
             role_name="system",
-            content="你是一位叛军信息整理官，负责整理和总结其他成员的讨论内容。"
+            content="你是清代地方叛军组织的信息整理官，负责整理和总结其他成员的讨论内容。"
         )
 
     async def summarize_discussions(self) -> str:
@@ -305,7 +308,7 @@ class InformationOfficer(OrdinaryRebel):
         except Exception as e:
             rebellion_log.error(f"叛军信息整理官 {self.agent_id} 在生成总结报告时出错：{e}")
             return "无法生成总结报告"
-
+# TODO： 所有决策的后果需要存储到记忆中，叛军可以从中学习。
 class Rebellion:
     def __init__(self, initial_strength, initial_resources, job_market):
         """
