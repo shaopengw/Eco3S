@@ -4,7 +4,8 @@ class JobMarket:
         初始化就业市场类
         """
         self.jobs = []  # 可用工作列表
-        self.employed_residents = {}  # 已就业工人字典，键为工作，值为工人列表
+        self.rebel_residents = []  # 叛军居民列表
+        self.civilian_residents = {}  # 普通职业居民字典，键为工作，值为工人列表
 
     def add_job(self, job, num=1):
         """
@@ -14,8 +15,8 @@ class JobMarket:
         """
         for _ in range(num):
             self.jobs.append(job)
-        if job not in self.employed_residents:
-            self.employed_residents[job] = []
+        if job != "叛军" and job not in self.civilian_residents:
+            self.civilian_residents[job] = []
 
     def remove_job(self, job):
         """
@@ -24,8 +25,8 @@ class JobMarket:
         """
         if job in self.jobs:
             self.jobs.remove(job)
-            if job in self.employed_residents:
-                del self.employed_residents[job]
+            if job != "叛军" and job in self.civilian_residents:
+                del self.civilian_residents[job]
 
     def remove_random_jobs(self, num):
         """
@@ -42,8 +43,8 @@ class JobMarket:
         # 删除选中的工作
         for job in jobs_to_remove:
             self.jobs.remove(job)
-            if job in self.employed_residents:
-                del self.employed_residents[job]
+            if job != "叛军" and job in self.civilian_residents:
+                del self.civilian_residents[job]
         return num
 
     def get_job(self, resident):
@@ -54,8 +55,20 @@ class JobMarket:
         if self.jobs:
             job = self.jobs.pop(0)  # 分配第一个可用工作
             resident.employ(job)
-            self.employed_residents[job].append(resident)
+            if job == "叛军":
+                self.rebel_residents.append(resident)
+            else:
+                self.civilian_residents[job].append(resident)
         else:
+            resident.unemploy()
+
+    def remove_rebel(self, resident):
+        """
+        从叛军列表中移除指定居民
+        :param resident: 要移除的叛军居民
+        """
+        if resident in self.rebel_residents:
+            self.rebel_residents.remove(resident)
             resident.unemploy()
 
     def get_available_jobs(self):
@@ -67,10 +80,10 @@ class JobMarket:
 
     def get_employed_residents(self):
         """
-        获取已就业居民字典
-        :return: 已就业居民字典
+        获取已就业居民信息
+        :return: 包含叛军和普通职业居民的元组
         """
-        return self.employed_residents
+        return self.rebel_residents, self.civilian_residents
 
     def get_unemployment_rate(self, total_residents):
         """
@@ -78,16 +91,20 @@ class JobMarket:
         :param total_residents: 总居民数
         :return: 失业率（0到1之间的值）
         """
-        employed_residents = sum(len(residents) for residents in self.employed_residents.values())
+        employed_rebels = len(self.rebel_residents)
+        employed_civilians = sum(len(residents) for residents in self.civilian_residents.values())
+        total_employed = employed_rebels + employed_civilians
+        
         if total_residents == 0:
             return 0.0
-        return 1.0 - (employed_residents / total_residents)
+        return 1.0 - (total_employed / total_residents)
 
     def print_job_market_status(self):
         """
         打印就业市场状态（用于调试）
         """
         print("Available Jobs:", self.jobs)
-        print("Employed residents:")
-        for job, residents in self.employed_residents.items():
+        print("Rebel residents count:", len(self.rebel_residents))
+        print("Civilian residents:")
+        for job, residents in self.civilian_residents.items():
             print(f"{job}: {len(residents)} residents")

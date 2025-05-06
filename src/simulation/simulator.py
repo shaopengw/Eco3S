@@ -109,7 +109,7 @@ class Simulator:
                 'leader_type': RebelLeader,
             }
             # rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config) #叛军决策
-            
+            rebellion_decision = {"stage_rebellion": 2,"recruit_members": 0,"maintain_status": 0}
             # 统一执行决策
             if government_decision:
                 self.execute_government_decision(government_decision)
@@ -421,6 +421,8 @@ class Simulator:
         :return: 是否执行成功
         """
         # 叛军发动袭击
+        if strength_investment <= 0:
+            return False
         if self.rebellion.strength < strength_investment:
             print("叛军力量不足以发动叛乱。")
             return False
@@ -434,7 +436,18 @@ class Simulator:
             self.rebellion.strength = max(0, self.rebellion.strength - strength_loss)
             self.rebellion.resources = max(0, self.rebellion.resources - resource_loss)
             
+            # 损失叛军资源，注销叛军居民
+            rebels_to_remove = int(self.rebellion.strength * (strength_loss / self.rebellion.strength))
+            selected_rebels = random.sample(self.job_market.rebel_residents, min(rebels_to_remove, self.rebellion.strength))
+            # 注销选中的叛军居民
+            for rebel in selected_rebels:
+                resident_id = rebel.resident_id
+                self.job_market.remove_rebel(rebel)  # 从就业市场的叛军列表中移除
+                del self.residents[resident_id]  # 从居民列表中删除
+                self.population.death()  # 更新人口数量
+            
             print(f"叛军被镇压，损失军事力量 {strength_loss:.1f}，损失资源 {resource_loss:.1f}")
+            print(f"共有 {len(selected_rebels)} 名叛军居民被注销")
             return True
         else:
             # 镇压失败，叛军损失少量军事力量，获得大量资源
