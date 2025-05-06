@@ -77,7 +77,8 @@ class Resident:
         self.rebellion_risk = 0  # 参与叛乱的风险（0到100）
         self.health_index = 10  # 居民的健康状况（0到10）
         self.lifespan = 100  # 居民的寿命
-
+        self.town_job_market = None  # 添加城镇就业市场引用
+    
         # 初始化 CAMEL 框架组件
         # self.model_manager = ModelManager()
         # model_config = self.model_manager.get_random_model_config()
@@ -110,21 +111,23 @@ class Resident:
         居民就业
         :param job: 工作名称
         """
-        self.employed = True
-        self.job = job
-        self.income = 10  # 假设每份工作的收入为10
-        self.satisfaction += 10  # 就业增加满意度
-        resident_log.info(f"居民 {self.resident_id} 在 {self.location} 找到了工作：{job}。")
-
+        if self.town_job_market:
+            self.employed = True
+            self.job = job
+            self.income = 10  # 假设每份工作的收入为10
+            self.satisfaction += 10  # 就业增加满意度
+            resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 找到了工作：{job}。")
+    
     def unemploy(self):
         """
         居民失业
         """
-        self.employed = False
-        self.job = None
-        self.income = 0
-        self.satisfaction -= 20  # 失业降低满意度
-        resident_log.info(f"居民 {self.resident_id} 在 {self.location} 失业了。")
+        if self.town_job_market:
+            self.employed = False
+            self.job = None
+            self.income = 0
+            self.satisfaction -= 20  # 失业降低满意度
+            resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 失业了。")
 
     def evaluate_rebellion_risk(self):
         """

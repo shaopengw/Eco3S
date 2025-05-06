@@ -104,6 +104,10 @@ async def run_simulation(config: dict[str, Any]) -> None:
     towns = Towns(map)
     towns.initialize_resident_groups(residents)
     
+    # 打印初始化状态-----测试用
+    # print("\n初始化城镇和就业市场状态：")
+    # towns.print_towns_status()
+    
     # 初始化社交网络
     social_network = SocialNetwork()
     social_network.initialize_network(residents, towns)

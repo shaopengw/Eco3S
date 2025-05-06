@@ -109,7 +109,7 @@ class Map:
         初始化城市矩阵，矩阵的行列对应南北和东西方向，城市字典记录详细信息。
         """
         all_cities = self._prepare_cities()
-        tolerance = 5
+        tolerance = 1
 
         # 按纬度（y）分组，每组内的城市y坐标差异在容差内
         latitude_groups = self._group_cities(all_cities, 'y', tolerance)
@@ -142,6 +142,8 @@ class Map:
 
         self.city_matrix = city_matrix
         self.city_dict = city_dict
+        print(f"城市矩阵：{self.city_matrix}")
+        print(f"城市字典：{self.city_dict}")
 
 
 
@@ -165,9 +167,8 @@ class Map:
         return groups
 
     def _select_representative(self, city_group):
-        """从同组中选择离基准点最近的城市作为代表"""
-        base_x = city_group[0]['x']
-        return min(city_group, key=lambda c: abs(c['x'] - base_x))
+        """直接返回城市组中的所有城市"""
+        return city_group[0]
 
     def _group_by(self, iterable, key):
         """
