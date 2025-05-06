@@ -1,6 +1,8 @@
 import asyncio
 import json
 import random
+import pandas as pd
+import os
 from datetime import datetime, timedelta
 from colorama import Back
 from src.agents.resident_agent_generator import (generate_canal_agents)
@@ -43,6 +45,9 @@ class Simulator:
         # self.resident_groups = {}  # 按城镇分组的居民组
         self.towns = towns
         self.basic_living_cost = 10  # 每年基本生活所需值（单位：两）
+        self.average_satisfaction = 0.5  # 平均满意度（0-1）
+        self.tax_rate = 0.1  # 税率（0-1）
+        self.gdp = 0  # 国内生产总值（单位：两）
         self.results = {
             "years": [],
             "rebellions": [],
@@ -67,14 +72,15 @@ class Simulator:
             # 打印当前时间步信息
             print(Back.GREEN + f"年份:{self.time.get_current_time()}" + Back.RESET)
 
-            # 计算GDP和税收
-            current_gdp = self.calculate_gdp()
-            print(f"当前GDP: {current_gdp}")
-            tax_income = current_gdp * self.government.get_tax_rate()
-            print(f"税收收入: {tax_income}")
-            self.government.budget += tax_income  # 增加政府预算
+            # 更新属性变量
+            self.gdp = self.calculate_gdp() # 更新GDP
+            print(f"当前GDP: {self.gdp}")
+            self.tax_income = self.gdp * self.government.get_tax_rate() # 计算税收收入
+            print(f"税收收入: {self.tax_income}")
+            self.government.budget += self.tax_income  # 增加政府预算
             print(f"政府预算: {self.government.budget}")
-
+            self.average_satisfaction = self.calculate_average_satisfaction() # 更新平均满意度
+            self.population.update_birth_rate(self.average_satisfaction) # 更新出生率
 
             # 居民出生（次/年）
             if self.time.get_current_quarter() == 1:
@@ -95,14 +101,14 @@ class Simulator:
                 'ordinary_type': OrdinaryGovernmentAgent,
                 'leader_type': HighRankingGovernmentAgent,
             }
-            government_decision = await self.collect_group_decision('government', government_config)
+            # government_decision = await self.collect_group_decision('government', government_config) #政府决策
             # 收集叛军决策
             rebellion_config = {
                 'agents': self.rebels_agents,
                 'ordinary_type': OrdinaryRebel,
                 'leader_type': RebelLeader,
             }
-            rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
+            # rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config) #叛军决策
             
             # 统一执行决策
             if government_decision:
@@ -114,7 +120,8 @@ class Simulator:
             tasks = []
             for resident_name in list(self.residents.keys()):
                 resident = self.residents[resident_name]
-                # tasks.append(resident.decide_action_by_llm())  # 基于LLM的决策--测试时建议暂时注释
+                # 传入社会状态参数
+                # tasks.append(resident.decide_action_by_llm(tax_rate=self.tax_rate, basic_living_cost=self.basic_living_cost))  # 基于LLM的决策--测试时建议暂时注释
 
                 # 更新居民寿命（次/年）
                 if self.time.get_current_quarter() == 1:
@@ -127,11 +134,6 @@ class Simulator:
             if tasks:  # 只在有任务时执行
                 await asyncio.gather(*tasks)
 
-            # 更新平均满意度
-            self.average_satisfaction = self.calculate_average_satisfaction()
-            # 更新出生率
-            self.population.update_birth_rate(self.average_satisfaction)
-
             # 记录数据
             self.results["years"].append(self.time.get_current_time())
             self.results["rebellions"].append(rebellions)
@@ -139,10 +141,10 @@ class Simulator:
             self.results["population"].append(self.population.get_population())
             self.results["government_budget"].append(self.government.get_budget())
             self.results["rebellion_strength"].append(self.rebellion.get_strength())
-            self.results["average_satisfaction"].append(self.calculate_average_satisfaction())
-            self.results["tax_rate"].append(self.government.get_tax_rate())
+            self.results["average_satisfaction"].append(self.average_satisfaction)
+            self.results["tax_rate"].append(self.tax_rate)
             self.results["basic_living_cost"].append(self.basic_living_cost)
-            self.results["gdp"].append(self.calculate_gdp())
+            self.results["gdp"].append(self.gdp)
 
             # 打印当前状态
             print(f"年份: {self.time.get_current_time()}, "
@@ -322,7 +324,7 @@ class Simulator:
         保存模拟结果到CSV文件
         :param filename: 文件名
         """
-        import pandas as pd
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
         df = pd.DataFrame(self.results)
         df.to_csv(filename, index=False)
         print(f"模拟结果已保存至 {filename}")
