@@ -92,7 +92,7 @@ class Resident:
         # self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
         # self.memory = ChatHistoryMemory(self.context_creator, window_size=5)
 
-        # 这些属性将由 ResidentGroup 设置
+        # 由 ResidentGroup 设置agent属性
         self.model_backend = None
         self.token_counter = None
         self.context_creator = None
@@ -125,14 +125,6 @@ class Resident:
         self.income = 0
         self.satisfaction -= 20  # 失业降低满意度
         resident_log.info(f"居民 {self.resident_id} 在 {self.location} 失业了。")
-
-    # def migrate(self, new_location):
-    #     """
-    #     居民迁徙
-    #     :param new_location: 新位置的坐标 (x, y)
-    #     """
-    #     self.location = new_location
-    #     resident_log.info(f"居民 {self.resident_id} 迁徙到了 {new_location}。")
 
     def evaluate_rebellion_risk(self):
         """
@@ -235,44 +227,58 @@ class Resident:
             )
         )
 
-    async def decide_action_by_llm(self):
+    async def decide_action_by_llm(self, tax_rate, basic_living_cost):
         """
-        通过LLM决定居民的行动，并随机生成对政府的态度发言。
+        通过LLM决定居民的行动，并随机生成对政府的态度发言。同时更新满意度。
         """
         # 获取当前居民状态的提示信息
         status_prompt = self.get_status_prompt()
 
-        action_prompt = (
-            f"请根据当前状态决定下一步行动。"
-            f"以下是你的当前状态：{status_prompt}\n"
-            f"你可以选择以下行动之一：\n"
-            f"1. 参加叛乱\n"
-            f"2. 继续目前的工作\n"
-            f"3. 迁徙到其他位置\n"
-            f"请返回选择的数字（1、2 或 3），并解释原因。"
-            f"注意：必须返回单行的JSON字符串，格式如下：\n"
-            f'{{"select": "1", "reason": "叛乱风险已达210，环境极其危险。农民收入微薄。健康极差，生存优先。"}}'
+        # 获取社会状态信息
+        social_status = (
+            f"税率: {tax_rate*100:.1f}%\n"
+            f"基本生活所需值: {basic_living_cost}\n"
         )
 
-        speech_prompt = (
+        # 基础提示信息
+        base_prompt = (
             f"请根据当前状态决定下一步行动。"
             f"以下是你的当前状态：{status_prompt}\n"
+            f"以下是目前的社会环境：{social_status}\n"
             f"你可以选择以下行动之一：\n"
             f"1. 参加叛乱\n"
             f"2. 继续目前的工作\n"
             f"3. 迁徙到其他位置\n"
-            f"请返回选择的数字（1、2 或 3），并解释原因。"
-            f"\n同时，请根据当前状态对政府表达一个态度（积极或消极）"
-            f"态度要与满意度（{self.satisfaction}）和叛乱风险（{self.rebellion_risk}）相符。"
-            f"注意：必须返回单行的JSON字符串，格式如下：\n"
-            f'{{"select": "1", "reason": "叛乱风险已达210，环境极其危险。农民收入微薄。健康极差，生存优先。", "speech": "政府的政策让我们的生活越来越艰难。"}}'
+            f"请分析当前状况，并返回：\n"
+            f"1. 你的选择（1-3）\n"
+            f"2. 选择原因\n"
+            f"3. 对政府的新满意度（0-100），需要考虑：\n"
+            f"   - 当前收入与基本生活所需的比值\n"
+            f"   - 就业情况\n"
+            f"   - 社会环境（税率等）\n"
+            f"   - 个人健康状况\n"
         )
-        # 随机决定是否需要发言（20%的概率）
-        need_speech = random.random() < 0.2
+
+        # 根据是否需要发言选择不同的提示模板和示例
+        if need_speech:
+            prompt = (
+                f"{base_prompt}"
+                f"4. 一段对政府的态度发言\n"
+                f"注意：必须返回单行的JSON字符串，格式如下：\n"
+                f'{{"select": "1", "reason": "叛乱风险已达210，环境极其危险。农民收入微薄。健康极差，生存优先。", "satisfaction": 30, "speech": "政府的政策让我们的生活越来越艰难。"}}'
+            )
+        else:
+            prompt = (
+                f"{base_prompt}"
+                f"注意：必须返回单行的JSON字符串，格式如下：\n"
+                f'{{"select": "1", "reason": "叛乱风险已达210，环境极其危险。农民收入微薄。健康极差，生存优先。", "satisfaction": 30}}'
+            )
+
         user_msg = BaseMessage.make_user_message(
             role_name="居民",
-            content=action_prompt if not need_speech else speech_prompt
+            content=prompt
         )
+
         # 将用户消息写入记忆系统
         self.memory.write_record(
             MemoryRecord(
@@ -300,8 +306,12 @@ class Resident:
             select = decision_data.get("select")
             reason = decision_data.get("reason")
             speech = decision_data.get("speech", "")
+            # 更新满意度
+            new_satisfaction = decision_data.get("satisfaction")
+            if new_satisfaction is not None:
+                self.satisfaction = new_satisfaction
 
-            resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}")
+            resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}, 更新满意度：{new_satisfaction}")
 
              # 处理迁移决定
             if select == "3":
