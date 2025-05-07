@@ -234,6 +234,9 @@ class Resident:
         """
         通过LLM决定居民的行动，并随机生成对政府的态度发言。同时更新满意度。
         """
+        # 随机决定是否需要发言（20%的概率）
+        need_speech = random.random() < 0.2
+        
         # 获取当前居民状态的提示信息
         status_prompt = self.get_status_prompt()
 
@@ -255,7 +258,7 @@ class Resident:
             f"请分析当前状况，并返回：\n"
             f"1. 你的选择（1-3）\n"
             f"2. 选择原因\n"
-            f"3. 对政府的新满意度（0-100），需要考虑：\n"
+            f"3. 满意度变化值（-20到20之间的数字），需要考虑：\n"
             f"   - 当前收入与基本生活所需的比值\n"
             f"   - 就业情况\n"
             f"   - 社会环境（税率等）\n"
@@ -268,13 +271,13 @@ class Resident:
                 f"{base_prompt}"
                 f"4. 一段对政府的态度发言\n"
                 f"注意：必须返回单行的JSON字符串，格式如下：\n"
-                f'{{"select": "1", "reason": "叛乱风险已达210，环境极其危险。农民收入微薄。健康极差，生存优先。", "satisfaction": 30, "speech": "政府的政策让我们的生活越来越艰难。"}}'
+                f'{{"select": 你的选择, "reason": 选择原因, "satisfaction_change": 满意度变化值, "speech": 你的发言}}'
             )
         else:
             prompt = (
                 f"{base_prompt}"
                 f"注意：必须返回单行的JSON字符串，格式如下：\n"
-                f'{{"select": "1", "reason": "叛乱风险已达210，环境极其危险。农民收入微薄。健康极差，生存优先。", "satisfaction": 30}}'
+                f'{{"select": 你的选择, "reason": 选择原因, "satisfaction_change": 满意度变化值}}'
             )
 
         user_msg = BaseMessage.make_user_message(
@@ -309,12 +312,14 @@ class Resident:
             select = decision_data.get("select")
             reason = decision_data.get("reason")
             speech = decision_data.get("speech", "")
-            # 更新满意度
-            new_satisfaction = decision_data.get("satisfaction")
-            if new_satisfaction is not None:
-                self.satisfaction = new_satisfaction
+            satisfaction_change = decision_data.get("satisfaction_change")
 
-            resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}, 更新满意度：{new_satisfaction}")
+            if satisfaction_change is not None:
+                # 确保满意度在0-100范围内
+                self.satisfaction = max(0, min(100, self.satisfaction + satisfaction_change))
+                resident_log.info(f"居民 {self.resident_id} 的满意度变化：{satisfaction_change}，当前满意度：{self.satisfaction}")
+
+            resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}, 更新满意度：{self.satisfaction}")
 
              # 处理迁移决定
             if select == "3":
@@ -324,6 +329,7 @@ class Resident:
 
             # 如果有发言，在社交网络中传播
             if speech:
+                print("居民{self.resident_id}发言：{speech}")
                 # 获取所有可能的关系类型
                 relation_types = ["friend", "colleague", "family", "hometown"]
                 # 随机选择一种关系类型
