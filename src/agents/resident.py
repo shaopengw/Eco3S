@@ -129,18 +129,6 @@ class Resident:
             self.satisfaction -= 20  # 失业降低满意度
             resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 失业了。")
 
-    def evaluate_rebellion_risk(self):
-        """
-        评估参与叛乱的风险
-        """
-        if not self.employed:
-            self.rebellion_risk += 30  # 失业增加叛乱风险
-        if self.income < 50:
-            self.rebellion_risk += 20  # 低收入增加叛乱风险
-        if self.satisfaction < 50:
-            self.rebellion_risk += 50  # 低满意度增加叛乱风险
-        resident_log.info(f"居民 {self.resident_id} 的叛乱风险更新为 {self.rebellion_risk}。")
-
     async def receive_information(self, message_content):
         """
         接收信息（如政府政策、叛乱信息）
@@ -307,6 +295,7 @@ class Resident:
         try:
             response = await asyncio.to_thread(self.model_backend.run, openai_messages)
             content = response.choices[0].message.content
+            # content = "{\"select\": 3, \"reason\": \"选择3\", \"satisfaction_change\": 3}"  # 测试专用
 
             decision_data = json.loads(content)
             select = decision_data.get("select")
@@ -317,12 +306,11 @@ class Resident:
             if satisfaction_change is not None:
                 # 确保满意度在0-100范围内
                 self.satisfaction = max(0, min(100, self.satisfaction + satisfaction_change))
-                resident_log.info(f"居民 {self.resident_id} 的满意度变化：{satisfaction_change}，当前满意度：{self.satisfaction}")
 
             resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}, 更新满意度：{self.satisfaction}")
 
              # 处理迁移决定
-            if select == "3":
+            if select == 3:
                 success = await self.migrate_to_new_town(self.map)  # 使用实例变量
                 if not success:
                     resident_log.info(f"居民 {self.resident_id} 迁移失败，保持原位置")
@@ -427,47 +415,28 @@ class Resident:
 
 
     def get_random_direction_city(self, map):
-        print(f"开始选择城市：get_random_direction_city")
-        """随机选择一个方向并获取该方向的城市"""
-        directions = ['east', 'west', 'north', 'south']
-        direction_funcs = {
-            'east': map.get_east_city,
-            'west': map.get_west_city,
-            'north': map.get_north_city,
-            'south': map.get_south_city
-        }
+        """随机选择一个相邻城市进行迁移"""
+        try:
+            print("居民所在城市：" + self.town)
+            current_city_name = self.town
+            
+            if not current_city_name:
+                resident_log.info(f"居民 {self.resident_id} 无法找到当前位置对应的城市")
+                return None
 
-        # 获取当前城镇所属的城市名称
-        current_town_name = None
-        for city_name, city_info in map.city_dict.items():
-            x, y = city_info['location']
-            if f"town_{x}_{y}" == self.town:
-                current_town_name = city_name
-                print(f"当前城镇名称：{current_town_name}")
-                break
+            # 获取相连的城市
+            connected_cities = map.get_connected_cities(current_city_name)
+            if not connected_cities:
+                resident_log.info(f"城市 {current_city_name} 没有相连的城市")
+                return None
 
-        if not current_town_name:
+            # 随机选择一个相连的城市
+            next_city = random.choice(connected_cities)
+            return next_city
+            
+        except Exception as e:
+            resident_log.error(f"选择迁移目标城市时出错: {e}")
             return None
-
-        # 尝试四个方向
-        tried_directions = set()
-        for _ in range(4):
-            # 从未尝试过的方向中随机选择
-            available_directions = [d for d in directions if d not in tried_directions]
-            if not available_directions:
-                break
-
-            direction = random.choice(available_directions)
-            print(f"尝试方向：{direction}")
-            tried_directions.add(direction)
-
-            # 获取该方向的城市
-            next_city = direction_funcs[direction](current_town_name)
-            print(f"下一个城市：{next_city}")
-            if next_city:
-                return next_city
-
-        return None
 
     async def migrate_to_new_town(self, map):
         """迁移到新城镇"""
