@@ -19,8 +19,8 @@ class Map:
         self.grid = np.zeros((height, width))
         self.river_grid = np.zeros((height, width))
         self.navigability = 1.0  # 初始运河通航能力为1.0（最佳状态）
-        self.city_matrix = []
-        self.city_dict = {}
+        self.city_graph = {}  # 城市图（邻接表形式）
+        self.city_dict = {}  # 存储城市信息
         self.terrain_ruggedness = np.random.rand(height, width)
         
         # 加载城市数据
@@ -104,184 +104,47 @@ class Map:
                         if 0 <= ny < self.height and 0 <= nx < self.width:
                             self.river_grid[ny, nx] = 1
     
-    def initialize_city_matrix(self):
+    def initialize_city_graph(self, max_distance=20):
         """
-        初始化城市矩阵，矩阵的行列对应南北和东西方向，城市字典记录详细信息。
+        初始化城市图，通过计算城市间距离来建立连接
+        :param max_distance: 最大连接距离
         """
         all_cities = self._prepare_cities()
-        tolerance = 1
+        self.city_graph = {}
+        
+        # 初始化城市字典和图
+        for city in all_cities:
+            city_name = city['name']
+            self.city_dict[city_name] = {
+                'location': (city['x'], city['y']),
+                'type': city['type']
+            }
+            self.city_graph[city_name] = []
 
-        # 按纬度（y）分组，每组内的城市y坐标差异在容差内
-        latitude_groups = self._group_cities(all_cities, 'y', tolerance)
+        # 计算城市间距离并建立连接
+        for city1 in all_cities:
+            for city2 in all_cities:
+                if city1['name'] != city2['name']:
+                    distance = self._calculate_distance(
+                        (city1['x'], city1['y']),
+                        (city2['x'], city2['y'])
+                    )
+                    if distance <= max_distance:
+                        self.city_graph[city1['name']].append(city2['name'])
 
-        city_matrix = []
-        city_dict = {}
-
-        # 处理每个纬度组（矩阵的行）
-        for row_idx, lat_group in enumerate(latitude_groups):
-            # 按经度（x）分组，每组内的城市x坐标差异在容差内
-            longitude_groups = self._group_cities(lat_group, 'x', tolerance)
-
-            # 生成当前行的代表城市并排序
-            row_cities = [
-                self._select_representative(lon_group) 
-                for lon_group in longitude_groups
-                if lon_group  # 过滤空组
-            ]
-            row_cities_sorted = sorted(row_cities, key=lambda c: c['x'])
-
-            # 构建矩阵行和更新字典
-            matrix_row = [city['name'] for city in row_cities_sorted]
-            city_matrix.append(matrix_row)
-            for col_idx, city in enumerate(row_cities_sorted):
-                city_dict[city['name']] = {
-                    'matrix_pos': (row_idx, col_idx),
-                    'location': (city['x'], city['y']),
-                    'type': city['type']
-                }
-
-        self.city_matrix = city_matrix
-        self.city_dict = city_dict
-        print(f"城市矩阵：{self.city_matrix}")
-        print(f"城市字典：{self.city_dict}")
-
-
-
-    def _group_cities(self, cities, coord_key, tolerance):
-        """将城市按坐标分组，容差内归为一组，返回分组列表"""
-        if not cities:
-            return []
-        sorted_cities = sorted(cities, key=lambda c: c[coord_key])
-        groups = []
-        current_group = [sorted_cities[0]]
-        base_coord = sorted_cities[0][coord_key]
-
-        for city in sorted_cities[1:]:
-            if abs(city[coord_key] - base_coord) <= tolerance:
-                current_group.append(city)
-            else:
-                groups.append(current_group)
-                current_group = [city]
-                base_coord = city[coord_key]
-        groups.append(current_group)
-        return groups
-
-    def _select_representative(self, city_group):
-        """直接返回城市组中的所有城市"""
-        return city_group[0]
-
-    def _group_by(self, iterable, key):
+    def _calculate_distance(self, point1, point2):
         """
-        辅助函数：按指定key分组
+        计算两点间的欧几里得距离
         """
-        groups = {}
-        for item in iterable:
-            groups.setdefault(item[key], []).append(item)
-        return groups.values()
+        return math.sqrt((point1[0] - point2[0])**2 + (point1[1] - point2[1])**2)
 
-    def get_west_city(self, city_name):
+    def get_connected_cities(self, city_name):
         """
-        获取指定城市西边的最近城市
+        获取与指定城市相连的所有城市
         :param city_name: 城市名称
-        :return: 西边的城市名称，若无则返回None
+        :return: 相连城市列表
         """
-        if not hasattr(self, 'city_matrix'):
-            self.initialize_city_matrix()
-        
-        if city_name not in self.city_dict:
-            return None
-        
-        row, col = self.city_dict[city_name]['matrix_pos']
-        if col > 0:
-            return self.city_matrix[row][col-1]
-        return None
-
-    def get_east_city(self, city_name):
-        """
-        获取指定城市东边的最近城市
-        :param city_name: 城市名称
-        :return: 东边的城市名称，若无则返回None
-        """
-        if not hasattr(self, 'city_matrix'):
-            self.initialize_city_matrix()
-        
-        if city_name not in self.city_dict:
-            return None
-        
-        row, col = self.city_dict[city_name]['matrix_pos']
-        if col < len(self.city_matrix[row])-1:
-            return self.city_matrix[row][col+1]
-        return None
-
-    def get_north_city(self, city_name):
-        """
-        获取指定城市北边的最近城市
-        :param city_name: 城市名称
-        :return: 北边的城市名称，若无则返回None
-        """
-        if not hasattr(self, 'city_matrix'):
-            self.initialize_city_matrix()
-        
-        if city_name not in self.city_dict:
-            return None
-        
-        row, col = self.city_dict[city_name]['matrix_pos']
-        if row > 0:
-            # 在北边的行中寻找相同列或最近列的城市
-            north_row = self.city_matrix[row-1]
-            if col < len(north_row):
-                return north_row[col]
-            elif len(north_row) > 0:
-                return north_row[-1]  # 返回该行最东边的城市
-        return None
-
-    def get_south_city(self, city_name):
-        """
-        获取指定城市南边的最近城市
-        :param city_name: 城市名称
-        :return: 南边的城市名称，若无则返回None
-        """
-        if not hasattr(self, 'city_matrix'):
-            self.initialize_city_matrix()
-        
-        if city_name not in self.city_dict:
-            return None
-        
-        row, col = self.city_dict[city_name]['matrix_pos']
-        if row < len(self.city_matrix)-1:
-            # 在南边的行中寻找相同列或最近列的城市
-            south_row = self.city_matrix[row+1]
-            if col < len(south_row):
-                return south_row[col]
-            elif len(south_row) > 0:
-                return south_row[-1]  # 返回该行最东边的城市
-        return None
-
-    def generate_random_location(self, city_name, sigma=2.0):
-        """
-        为指定城市生成一个随机位置
-        :param city_name: 城市名称
-        :param sigma: 正态分布标准差，默认2.0
-        :return: ((x, y), town_id) 坐标元组和城镇ID
-        """
-        if city_name not in self.city_dict:
-            return None
-            
-        city_info = self.city_dict[city_name]
-        center_x, center_y = city_info['location']
-        
-        while True:
-            # 生成正态分布的偏移量
-            offset_x = int(random.gauss(0, sigma))
-            offset_y = int(random.gauss(0, sigma))
-            
-            # 计算实际位置
-            x = center_x + offset_x
-            y = center_y + offset_y
-            
-            # 确保位置在地图范围内
-            if 0 <= x < self.width and 0 <= y < self.height:
-                return (x, y), f"town_{x}_{y}"
+        return self.city_graph.get(city_name, [])
 
     def visualize_map(self):
         """
@@ -417,44 +280,38 @@ class Map:
         """
         print("River Grid:")
         print(self.river_grid)
-        print("city_matrix:", self.city_matrix)
+        print("city_graph:", self.city_graph)
         print("city_dict:", self.city_dict)
-        # 打印城市矩阵
-        self.print_city_matrix()
-
-    def print_city_matrix(self):
-        """
-        以矩阵形式可视化城市矩阵，用于测试
-        """
-        if not self.city_matrix:
-            print("城市矩阵为空")
-            return
-            
-        # 获取最大列数，用于对齐
-        max_name_length = max(
-            max(len(city) if city else 0 for city in row)
-            for row in self.city_matrix
-        )
-        
-        # 打印矩阵
-        print("\n城市矩阵 (北→南, 西→东):")
-        print("-" * (max_name_length + 4) * len(self.city_matrix[0]))
-        
-        for row in self.city_matrix:
-            # 打印每个城市，保持对齐
-            row_str = ""
-            for city in row:
-                if city:
-                    row_str += f"| {city:<{max_name_length}} "
-                else:
-                    row_str += f"| {'*':<{max_name_length}} "
-            row_str += "|"
-            print(row_str)
-            print("-" * (max_name_length + 4) * len(row))
 
     def initialize_map(self):
         self.initialize_river()
-        self.initialize_city_matrix()
+        self.initialize_city_graph()
+
+    def generate_random_location(self, city_name, sigma=2.0):
+        """
+        为指定城市生成一个随机位置
+        :param city_name: 城市名称
+        :param sigma: 正态分布标准差，默认2.0
+        :return: ((x, y), town_id) 坐标元组和城镇ID
+        """
+        if city_name not in self.city_dict:
+            return None
+            
+        city_info = self.city_dict[city_name]
+        center_x, center_y = city_info['location']
+        
+        while True:
+            # 生成正态分布的偏移量
+            offset_x = int(random.gauss(0, sigma))
+            offset_y = int(random.gauss(0, sigma))
+            
+            # 计算实际位置
+            x = center_x + offset_x
+            y = center_y + offset_y
+            
+            # 确保位置在地图范围内
+            if 0 <= x < self.width and 0 <= y < self.height:
+                return (x, y), city_name  # 返回坐标和城市名称作为town_id
 
 
 if __name__ == "__main__":
@@ -466,8 +323,4 @@ if __name__ == "__main__":
     map.print_map()
 
     # 可视化地图
-    map.visualize_map()
-
-    # 更新运河状态并重新可视化
-    # map.update_river_condition(year=1850)
     map.visualize_map()
