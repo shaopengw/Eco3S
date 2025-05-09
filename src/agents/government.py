@@ -13,43 +13,24 @@ if "sphinx" not in sys.modules:
             "%(levelname)s - %(asctime)s - %(name)s - %(message)s"))
     government_log.addHandler(file_handler)
 
-class OrdinaryGovernmentAgent:
+class OrdinaryGovernmentAgent(BaseAgent):
     def __init__(self, agent_id, government, shared_pool, model_type=None):
-        self.model_type = model_type
-        self.agent_id = agent_id
+        super().__init__(agent_id, group_type='government', window_size=3)
         self.government = government
         self.shared_pool = shared_pool
         self.time = 0  # 当前时间（年）
         self.map = government.map
-
-        # 初始化官员属性
-        self.function = None  # 职能
-        self.mbti = None  # 人物性格
-
-        # 初始化 CAMEL 框架组件
-
-        self.model_manager = ModelManager()
-        model_config = self.model_manager.get_random_model_config()
-        self.model_type = ModelType(model_config["model_type"])
-        self.model_config = ChatGPTConfig(temperature=0.7)
-        self.model_backend = ModelFactory.create(
-            model_platform=model_config["model_platform"],
-            model_type=self.model_type,
-            model_config_dict=self.model_config.as_dict(),
-        )
-        self.token_counter = OpenAITokenCounter(self.model_type)
-        self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
-        # self.memory = ChatHistoryMemory(self.context_creator, window_size=3)
-        self.memory = MemoryManager(
-            agent_id=self.agent_id,
-            model_type=self.model_type,
-            group_type='government',  # 指定为政府群体
-            window_size=3
-        )
-        # 系统消息
-        self.system_message = BaseMessage.make_assistant_message(
-            role_name="system",
-            content="你是一位政府普通官员，负责根据自身属性和政府状态提出政策建议，政策目标是维护统治的稳定性。"
+        self.function = None
+        self.mbti = None
+        self.system_message = "你是一位政府普通官员，负责根据自身属性和政府状态提出政策建议，政策目标是维护统治的稳定性。"
+        self.opinion_prompt_template = (
+            "你是一位清代政府普通官员，以下是你的个人属性：\n"
+            "职能: {role}\n"
+            "人物性格: {mbti}\n"
+            "\n所有官员的观点包括：{discussions}\n"
+            "\n请根据你的个人属性和立场，对这些观点发表自己的看法。"
+            "可以选择支持、反对或提出新的观点。"
+            "请用简短的一句话回复。"
         )
 
     async def generate_opinion(self):
@@ -73,39 +54,19 @@ class OrdinaryGovernmentAgent:
             f"{government_status}\n"
             f"请根据你的个人属性、当前政府状态和讨论内容，提出关于运河经营与财政预算分配的决策意见。请用一句话概括。"
         )
-
-        # 使用 CAMEL 框架生成意见
-        user_message = BaseMessage.make_user_message(
-            role_name="普通政府官员",
-            content=prompt,
-        )
-
-        # 获取历史信息
-        openai_messages = await self.memory.get_context_messages(prompt)
-        if not openai_messages:
-            openai_messages = [{
-                "role": self.system_message.role_name,
-                "content": self.system_message.content,
-            }] + [user_message.to_openai_user_message()]
-
-        government_log.info(f"普通政府官员 {self.agent_id} 正在生成意见，提示信息：{openai_messages}")
-
-        try:
-            # 调用模型生成意见
-            response = await asyncio.to_thread(self.model_backend.run, openai_messages)  # 异步运行模型
-            opinion = response.choices[0].message.content
-            # 决策存入个人记忆
+        government_log.info(f"普通政府官员 {self.agent_id} 正在生成意见：{prompt}")
+        opinion = await self.generate_llm_response(prompt, self.system_message)
+        if opinion:
             await self.memory.write_record(
                 role_name="普通政府官员",
                 content=f"我的意见：{opinion}",
                 is_user=False,
                 store_in_shared=False  # 不存入共享记忆
                 )
+            await self.shared_pool.add_discussion(opinion)
             government_log.info(f"普通政府官员 {self.agent_id} 生成的意见：{opinion}")
             return opinion
-        except Exception as e:
-            government_log.error(f"普通政府官员 {self.agent_id} 在生成意见时出错：{e}")
-            return "无法生成意见"
+        return "无法生成意见"
 
     async def generate_and_share_opinion(self):
         """
@@ -113,6 +74,7 @@ class OrdinaryGovernmentAgent:
         """
         # 获取最新讨论内容
         all_discussion = await self.shared_pool.get_all_discussions()
+        government_log.info(f"共享池中的讨论内容数量：{len(all_discussion)}")
         if all_discussion:
             # 构建提示信息，让AI决定是否回应以及如何回应
             prompt = (
@@ -125,28 +87,21 @@ class OrdinaryGovernmentAgent:
                 f"请用简短的一句话回复。"
             )
 
-            # 使用CAMEL框架生成回应
-            user_message = BaseMessage.make_user_message(
-                role_name="普通政府官员",
-                content=prompt,
-            )
-
             try:
-                response = await asyncio.to_thread(self.model_backend.run, [user_message.to_openai_user_message()])
-                opinion = response.choices[0].message.content
-                # 回复信息添加到共享信息池
-                await self.shared_pool.add_discussion(opinion)
-                government_log.info(f"普通官员 {self.agent_id} 回应了讨论：{opinion}")
-
+                opinion = await self.generate_llm_response(prompt, self.system_message)
+                if opinion:
+                    await self.shared_pool.add_discussion(opinion)
+                    government_log.info(f"普通官员 {self.agent_id} 回应了讨论：{opinion}")
             except Exception as e:
                 government_log.error(f"普通官员 {self.agent_id} 在生成回应时出错：{e}")
         else:
             # 如果没有讨论内容，生成新话题
-            opinion = await self.generate_opinion()
-            await self.shared_pool.add_discussion(opinion)
-            government_log.info(f"普通官员 {self.agent_id} 发起了新讨论：{opinion}")
+            print("没有讨论内容")
+            # opinion = await self.generate_opinion()
+            # await self.shared_pool.add_discussion(opinion)
+            # government_log.info(f"普通官员 {self.agent_id} 发起了新讨论：{opinion}")
 
-class HighRankingGovernmentAgent:
+class HighRankingGovernmentAgent(BaseAgent):
     def __init__(self, agent_id, government, shared_pool):
         """
         初始化高级政府官员类（决策者）
@@ -154,7 +109,7 @@ class HighRankingGovernmentAgent:
         :param government: 政府对象，用于获取政府状态
         :param model_type: 使用的模型类型（默认使用 GPT-3.5-turbo）
         """
-        self.agent_id = agent_id
+        super().__init__(agent_id, group_type='government', window_size=3)
         self.government = government
         self.shared_pool = shared_pool
         self.time = 0  # 当前时间（年）
@@ -163,27 +118,9 @@ class HighRankingGovernmentAgent:
         # 初始化官员属性
         self.function = None  # 职能
         self.mbti = None  # 人物性格
-
-        # 初始化 CAMEL 框架组件
-        # 根据API类型获取模型类型
-        self.model_manager = ModelManager()
-        model_config = self.model_manager.get_random_model_config()
-        self.model_type = ModelType(model_config["model_type"])
-        self.model_config = ChatGPTConfig(temperature=0.7)
-        self.model_backend = ModelFactory.create(
-            model_platform=model_config["model_platform"],
-            model_type=self.model_type,
-            model_config_dict=self.model_config.as_dict(),
-        )
-        self.token_counter = OpenAITokenCounter(self.model_type)
-        self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
-        # self.memory = ChatHistoryMemory(self.context_creator, window_size=5)
-        self.memory = MemoryManager(
-            agent_id=self.agent_id,
-            model_type=self.model_type,
-            group_type='government',  # 指定为政府群体
-            window_size=5
-        )
+        
+        # 系统消息
+        self.system_message = "你是一个清代地方政府高级官员，负责根据下属官员的讨论和当前政府状态做出最终决策，你的目标是维持地方统治稳定，同时完成中央政府下达的航运任务。其中航运包括河运和海运，河运具有创造大量沿线就业岗位的优势，而海运具有成本极低的优势。"
 
     async def make_decision(self, summary, round_num):
         """
@@ -214,39 +151,30 @@ class HighRankingGovernmentAgent:
             f"- military_support: 军需拨款的预算分配（整数）\n"
             f"- tax_adjustment: 税率调整值（浮点数，范围-0.1到0.1）\n"
             f"例如：\n"
-            f'{{"increase_employment": 100000, "canal_navigability": 0.8, "military_support": 50000, "tax_adjustment": -0.02"}}'
+            f'{{"increase_employment": 10000, "maintain_canal": 3000, "military_support": 5000, "tax_adjustment": -0.02"}}'
             f"\n"
             f"请根据以上信息和状态作出最终决策，不需要解释理由，只需输出JSON格式的决策结果。请务必确认支出总额不高于当前财政预算。"
         )
-
-        # 获取历史上下文
-        openai_messages = await self.memory.get_context_messages(decision_prompt)
-        if not openai_messages:
-            openai_messages = [{
-                "role": "系统",
-                "content": "你是一个清代地方政府高级官员，你的目标是维持地方统治稳定，同时完成中央政府下达的航运任务。其中航运包括河运和海运，河运具有创造大量沿线就业岗位的优势，而海运具有成本极低的优势。"
-            }]
-
-        government_log.info(f"高级政府官员 {self.agent_id} 正在处理决策，提示信息：{openai_messages}")
+        government_log.info(f"高级政府官员 {self.agent_id} 正在生成决策：{decision_prompt}")
 
         try:
             # 调用模型做出最终决策
-            response = await asyncio.to_thread(self.model_backend.run, openai_messages)
-            decision = response.choices[0].message.content
+            decision = await self.generate_llm_response(decision_prompt, self.system_message)
 
-            # 将讨论内容和决策合并写入记忆系统
-            combined_content = f"讨论总结：\n{summary}\n\n决策结果：\n{decision}"
-            await self.memory.write_record(
-                role_name="高级政府官员",
-                content=combined_content,
-                is_user=False,
-                round_num=round_num
-            )
+            if decision:
+                # 将讨论内容和决策合并写入记忆系统
+                combined_content = f"讨论总结：\n{summary}\n\n决策结果：\n{decision}"
+                await self.memory.write_record(
+                    role_name="高级政府官员",
+                    content=combined_content,
+                    is_user=False,
+                    round_num=round_num
+                )
 
-            government_log.info(f"高级政府官员 {self.agent_id} 的决策：{decision}")
-            # 清空共享信息池
-            await self.shared_pool.clear_discussions()
-            return decision
+                government_log.info(f"高级政府官员 {self.agent_id} 的决策：{decision}")
+                # 清空共享信息池
+                await self.shared_pool.clear_discussions()
+                return decision
         except Exception as e:
             government_log.error(f"高级政府官员 {self.agent_id} 在做出决策时出错：{e}")
             return "无法做出决策"
@@ -383,19 +311,6 @@ class Government:
         old_rate = self.tax_rate
         # 限制税率在 0% 到 50% 之间
         self.tax_rate = max(0.0, min(0.5, self.tax_rate + adjustment))
-
-        # # 根据税率变化调整所有居民的满意度
-        # for resident in self.residents.values():
-        #     if self.tax_rate > old_rate:
-        #         # 税率上升，满意度下降（影响更大）
-        #         resident.satisfaction -= (self.tax_rate - old_rate) * 200
-        #     else:
-        #         # 税率下降，满意度上升（影响较小）
-        #         resident.satisfaction += (old_rate - self.tax_rate) * 100
-
-        #     # 确保满意度在合理范围内
-        #     resident.satisfaction = max(0, min(100, resident.satisfaction))
-
         print(f"税率从 {old_rate*100:.1f}% 调整到 {self.tax_rate*100:.1f}%")
         return self.tax_rate
 
@@ -468,6 +383,7 @@ class government_SharedInformationPool:
         """
         async with self.lock:
             self.discussions.clear()
+            self.is_discussion_ended = False
 
     def is_ended(self) -> bool:
         """
@@ -479,10 +395,7 @@ class InformationOfficer(OrdinaryGovernmentAgent):
     def __init__(self, agent_id, government, shared_pool, model_type="gpt-3.5-turbo"):
         super().__init__(agent_id, government, shared_pool, model_type)
         self.function = "信息整理官"
-        self.system_message = BaseMessage.make_assistant_message(
-            role_name="system",
-            content="你是清代政府高级官员的秘书，负责整理和总结主要官员的讨论内容。"
-        )
+        self.system_message = "你是清代政府高级官员的秘书，负责整理和总结主要官员的讨论内容。"
 
     async def summarize_discussions(self) -> str:
         """
@@ -500,22 +413,12 @@ class InformationOfficer(OrdinaryGovernmentAgent):
             f"讨论内容：\n" + "\n".join([f"{i+1}. {d}" for i, d in enumerate(discussions)])
         )
 
-        # 使用 CAMEL 框架生成总结
-        user_message = BaseMessage.make_user_message(
-            role_name="信息整理官",
-            content=prompt,
-        )
-
-        openai_messages = [{
-            "role": self.system_message.role_name,
-            "content": self.system_message.content,
-        }, user_message.to_openai_user_message()]
-
         try:
-            response = await asyncio.to_thread(self.model_backend.run, openai_messages)
-            summary = response.choices[0].message.content
-            government_log.info(f"信息整理官 {self.agent_id} 生成的总结报告：{summary}")
-            return summary
+            summary = await self.generate_llm_response(prompt)
+            if summary:
+                government_log.info(f"信息整理官 {self.agent_id} 生成的总结报告：{summary}")
+                return summary
+            return "无法生成总结报告"
         except Exception as e:
             government_log.error(f"信息整理官 {self.agent_id} 在生成总结报告时出错：{e}")
             return "无法生成总结报告"

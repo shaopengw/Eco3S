@@ -121,7 +121,7 @@ class Simulator:
             for resident_name in list(self.residents.keys()):
                 resident = self.residents[resident_name]
                 # 传入社会状态参数
-                # tasks.append(resident.decide_action_by_llm(tax_rate=self.tax_rate, basic_living_cost=self.basic_living_cost))  # 基于LLM的决策--测试时建议暂时注释
+                tasks.append(resident.decide_action_by_llm(tax_rate=self.tax_rate, basic_living_cost=self.basic_living_cost))  # 基于LLM的决策--测试时建议暂时注释
 
                 # 更新居民寿命（次/年）
                 if self.time.get_current_quarter() == 1:
@@ -190,18 +190,20 @@ class Simulator:
             return None
 
         shared_pool = list(config['agents'].values())[0].shared_pool
+        
+        # 确保在开始新的讨论前清空共享池
+        await shared_pool.clear_discussions()
 
         # 第一轮：所有成员异步发表初始意见
         first_round_tasks = [
-            member.generate_and_share_opinion()
+            member.generate_opinion()
             for member in random.sample(ordinary_members, len(ordinary_members))
         ]
         await asyncio.gather(*first_round_tasks)
 
         # 后续轮次：基于之前的讨论内容发表见解
         for round_num in range(2, max_rounds + 1):
-            if shared_pool.is_ended():
-                break
+            print(f"第{round_num}轮决策")
 
             round_tasks = [
                 member.generate_and_share_opinion()
