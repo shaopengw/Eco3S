@@ -29,23 +29,24 @@ class ResidentSharedInformationPool:
         if category:
             return self.shared_info.get(category, {})
         return self.shared_info
-class ResidentGroup:
+class ResidentGroup(BaseAgent):
     """居民群组，用于管理同一城镇的居民"""
     def __init__(self, town_id):
+        super().__init__(agent_id=f"group_{town_id}", group_type='resident_group', window_size=5)
         self.town_id = town_id
         self.residents = {}  # resident_id -> Resident
         # 共享的 LLM 资源
-        self.model_manager = ModelManager()
-        self.model_config = self.model_manager.get_random_model_config()
-        self.model_type = ModelType(self.model_config["model_type"])
-        self.model_backend = ModelFactory.create(
-            model_platform=self.model_config["model_platform"],
-            model_type=self.model_type,
-            model_config_dict=ChatGPTConfig(temperature=0.7).as_dict(),
-        )
-        # 共享的 token 计数器和上下文创建器
-        self.token_counter = OpenAITokenCounter(self.model_type)
-        self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
+        # self.model_manager = ModelManager()
+        # self.model_config = self.model_manager.get_random_model_config()
+        # self.model_type = ModelType(self.model_config["model_type"])
+        # self.model_backend = ModelFactory.create(
+        #     model_platform=self.model_config["model_platform"],
+        #     model_type=self.model_type,
+        #     model_config_dict=ChatGPTConfig(temperature=0.7).as_dict(),
+        # )
+        # # 共享的 token 计数器和上下文创建器
+        # self.token_counter = OpenAITokenCounter(self.model_type)
+        # self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
 
     def add_resident(self, resident):
         """添加居民到群组"""
@@ -54,20 +55,25 @@ class ResidentGroup:
         resident.model_backend = self.model_backend
         resident.token_counter = self.token_counter
         resident.context_creator = self.context_creator
-        resident.memory = ChatHistoryMemory(self.context_creator, window_size=5)
+        resident.memory = MemoryManager(
+            agent_id=resident.resident_id,
+            model_type=self.model_type,
+            group_type='resident',
+            window_size=5
+        )
 
     def remove_resident(self, resident_id):
         """从群组中移除居民"""
         if resident_id in self.residents:
             del self.residents[resident_id]
 
-class Resident:
+class Resident(BaseAgent):
     def __init__(self, resident_id, job_market, shared_pool, map):
         """初始化居民"""
         self.resident_id = resident_id
         self.job_market = job_market
         self.shared_pool = shared_pool
-        self.map = map  # 添加地图对象
+        self.map = map
         self.location = None
         self.town = None  # 添加城镇属性
         self.employed = False  # 是否就业
@@ -78,33 +84,12 @@ class Resident:
         self.health_index = 10  # 居民的健康状况（0到10）
         self.lifespan = 100  # 居民的寿命
         self.town_job_market = None  # 添加城镇就业市场引用
-    
-        # 初始化 CAMEL 框架组件
-        # self.model_manager = ModelManager()
-        # model_config = self.model_manager.get_random_model_config()
-        # self.model_type = ModelType(model_config["model_type"])
-        # self.model_config = ChatGPTConfig(temperature=0.7)
-        # self.model_backend = ModelFactory.create(
-        #     model_platform=model_config["model_platform"],
-        #     model_type=self.model_type,
-        #     model_config_dict=self.model_config.as_dict(),
-        # )
-        # self.token_counter = OpenAITokenCounter(self.model_type)
-        # self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
-        # self.memory = ChatHistoryMemory(self.context_creator, window_size=5)
 
         # 由 ResidentGroup 设置agent属性
         self.model_backend = None
         self.token_counter = None
         self.context_creator = None
         self.memory = None
-
-        # # 初始化日志
-        # self.logger = logging.getLogger(name=f"resident_{resident_id}")
-        # self.logger.setLevel(logging.DEBUG)
-        # handler = logging.StreamHandler()
-        # handler.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
-        # self.logger.addHandler(handler)
 
     def employ(self, job):
         """
@@ -138,36 +123,11 @@ class Resident:
         self.satisfaction += 5  # 接收信息增加满意度
         resident_log.info(f"居民 {self.resident_id} 收到了信息：{message_content}。")
 
-        # 30% 的概率生成响应
         if random.random() < 0.8:
-            # 使用 CAMEL 框架处理信息
-            user_message = BaseMessage.make_user_message(
-                role_name="政府",
-                content=message_content,
-            )
-            self.memory.write_record(
-                MemoryRecord(
-                    message=user_message,
-                    role_at_backend=OpenAIBackendRole.USER,
-                )
-            )
-
-            # 获取当前的上下文
-            openai_messages, _ = self.memory.get_context()
-            if not openai_messages:
-                openai_messages = [{
-                    "role": "system",
-                    "content": "你是一个清代中国大运河沿线地区的居民。请根据你了解的信息做出回应。回应要简短，不超过20个字。",
-                }]
-
-            # 调用模型生成回应
-            try:
-                response = await asyncio.to_thread(
-                    lambda: self.model_backend.run(openai_messages)
-                )
-                response_content = response.choices[0].message.content
-
-                # 随机选择一种关系类型进行传播
+            system_message = "你是一个清代中国大运河沿线地区的居民。请根据你了解的信息做出回应。回应要简短，不超过20个字。"
+            response_content = await self.generate_llm_response(message_content)
+            
+            if response_content:
                 relation_types = ["friend", "colleague", "family", "hometown"]
                 selected_type = random.choice(relation_types)
 
@@ -175,48 +135,18 @@ class Resident:
                 await asyncio.create_task(
                     self.spread_speech_in_network(response_content, selected_type)
                 )
-
                 resident_log.info(f"居民 {self.resident_id} 对收到的信息做出回应：{response_content}")
-
-                # 将响应记录到记忆中
-                assistant_message = BaseMessage.make_assistant_message(
-                    role_name="居民",
-                    content=response_content,
-                )
-                self.memory.write_record(
-                    MemoryRecord(
-                        message=assistant_message,
-                        role_at_backend=OpenAIBackendRole.ASSISTANT,
-                    )
-                )
-            except Exception as e:
-                resident_log.error(f"居民 {self.resident_id} 生成回应时出错：{e}")
 
     async def process_information(self):
         """
         处理接收到的信息并生成响应
         """
-        openai_messages, _ = self.memory.get_context()
-        if not openai_messages:
-            openai_messages = [{
-                "role": "system",
-                "content": "你是一个清代中国大运河附近的居民。请根据收到的信息做出回应。",
-            }]
-
-        response = await self.model_backend.run(openai_messages)
-        resident_log.info(f"居民 {self.resident_id} 的回应：{response.choices[0].message.content}")
-
-        # 将响应记录到记忆中
-        assistant_message = BaseMessage.make_assistant_message(
-            role_name="居民",
-            content=response.choices[0].message.content,
-        )
-        self.memory.write_record(
-            MemoryRecord(
-                message=assistant_message,
-                role_at_backend=OpenAIBackendRole.ASSISTANT,
-            )
-        )
+        prompt = "请根据收到的信息做出回应。"
+        response = await self.generate_llm_response(prompt)
+        if response:
+            resident_log.info(f"居民 {self.resident_id} 的回应：{response}")
+            return response
+        return None
 
     async def decide_action_by_llm(self, tax_rate, basic_living_cost):
         """
@@ -253,51 +183,21 @@ class Resident:
             f"   - 个人健康状况\n"
         )
 
-        # 根据是否需要发言选择不同的提示模板和示例
-        if need_speech:
-            prompt = (
-                f"{base_prompt}"
-                f"4. 一段对政府的态度发言\n"
-                f"注意：必须返回单行的JSON字符串，格式如下：\n"
-                f'{{"select": 你的选择, "reason": 选择原因, "satisfaction_change": 满意度变化值, "speech": 你的发言}}'
-            )
-        else:
-            prompt = (
-                f"{base_prompt}"
-                f"注意：必须返回单行的JSON字符串，格式如下：\n"
-                f'{{"select": 你的选择, "reason": 选择原因, "satisfaction_change": 满意度变化值}}'
-            )
-
-        user_msg = BaseMessage.make_user_message(
-            role_name="居民",
-            content=prompt
+        prompt = base_prompt + (
+            f"4. 一段对政府的态度发言\n"
+            f"注意：必须返回单行的JSON字符串，格式如下：\n"
+            f'{{"select": 你的选择, "reason": 选择原因, "satisfaction_change": 满意度变化值, "speech": 你的发言}}'
+            if need_speech else
+            f"注意：必须返回单行的JSON字符串，格式如下：\n"
+            f'{{"select": 你的选择, "reason": 选择原因, "satisfaction_change": 满意度变化值}}'
         )
 
-        # 将用户消息写入记忆系统
-        self.memory.write_record(
-            MemoryRecord(
-                message=user_msg,
-                role_at_backend=OpenAIBackendRole.USER,
-            )
-        )
-        # 获取当前的上下文
-        openai_messages, _ = self.memory.get_context()
-        # 如果上下文为空，加入系统消息
-        if not openai_messages:
-            openai_messages = [{
-                "role": "system",
-                "content": "你是一个模拟中的居民。请根据当前状态决定下一步行动。",
-            }] + [user_msg.to_openai_user_message()]
-
-        resident_log.info(f"居民 {self.resident_id} 正在决定行动，提示信息：{openai_messages}")
-
-        # 调用模型进行推理
         try:
-            response = await asyncio.to_thread(self.model_backend.run, openai_messages)
-            content = response.choices[0].message.content
-            # content = "{\"select\": 3, \"reason\": \"选择3\", \"satisfaction_change\": 3}"  # 测试专用
+            response = await self.generate_llm_response(prompt)
+            if not response:
+                return "2", "发生错误，继续当前工作"
 
-            decision_data = json.loads(content)
+            decision_data = json.loads(response)
             select = decision_data.get("select")
             reason = decision_data.get("reason")
             speech = decision_data.get("speech", "")

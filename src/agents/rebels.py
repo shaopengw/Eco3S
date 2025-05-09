@@ -12,49 +12,26 @@ if "sphinx" not in sys.modules:
             "%(levelname)s - %(asctime)s - %(name)s - %(message)s"))
     rebellion_log.addHandler(file_handler)
 
-class OrdinaryRebel:
+class OrdinaryRebel(BaseAgent):
     def __init__(self, agent_id, rebellion, shared_pool, model_type=None):
-        """
-        初始化普通叛军类
-        """
-        self.agent_id = agent_id
+        super().__init__(agent_id, group_type='rebellion', window_size=3)
         self.rebellion = rebellion
         self.shared_pool = shared_pool
         self.opinions = []  # 收集意见
         self.time = 0  # 当前时间（年）
-
-        # 初始化叛军属性
         self.role = None  # 角色
         self.mbti = None  # 人物性格
-        # 初始化 CAMEL 框架组件
 
-        # api_type = os.getenv("API_TYPE", "OPENAI")
-        # model_type_env = os.getenv(f"{api_type}_MODEL_TYPE", "gpt-3.5-turbo")
-        # self.model_type = ModelType(model_type_env)
-
-        self.model_manager = ModelManager()
-        model_config = self.model_manager.get_random_model_config()
-        self.model_type = ModelType(model_config["model_type"])
-        self.model_config = ChatGPTConfig(temperature=0.7)
-        self.model_backend = ModelFactory.create(
-            model_platform=model_config["model_platform"],
-            model_type=self.model_type,
-            model_config_dict=self.model_config.as_dict(),
-        )
-        self.token_counter = OpenAITokenCounter(self.model_type)
-        self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
-        # self.memory = ChatHistoryMemory(self.context_creator, window_size=3)
-        self.memory = MemoryManager(
-            agent_id=self.agent_id,
-            model_type=self.model_type,
-            group_type='rebellion',  # 指定为叛军群体
-            window_size=3
-        )
-
-        # 系统消息
-        self.system_message = BaseMessage.make_assistant_message(
-            role_name="system",
-            content="你是清代政府划定的非法武装组织（叛军）主要头目之一，请你根据个人属性和所在叛军的状态提出意见。你的目的是使叛军组织生存和壮大（即：拥有更多的钱和人员）。"
+        self.system_message = "你是清代政府划定的非法武装组织（叛军）主要头目之一，请你根据个人属性和所在叛军的状态提出意见。你的目的是使叛军组织生存和壮大（即：拥有更多的钱和人员）。"
+        
+        self.opinion_prompt_template = (
+            "你是叛军组织的主要头目之一，以下是你的个人属性：\n"
+            "角色: {role}\n"
+            "人物性格: {mbti}\n"
+            "\n所有成员的观点包括：{discussions}\n"
+            "\n请根据你的个人属性和立场，对这些观点发表看法。"
+            "可以选择支持、反对或提出新的观点。"
+            "请用简短的一句话回复。"
         )
 
     async def generate_opinion(self):
@@ -78,27 +55,8 @@ class OrdinaryRebel:
             f"请根据你的个人属性、当前叛军状态和讨论内容，提出下一步行动的建议。请你用一句话概括，不必说明理由。"
         )
 
-        # 使用 CAMEL 框架生成意见
-        user_message = BaseMessage.make_user_message(
-            role_name="普通叛军",
-            content=prompt,
-        )
-
-        # 获取历史信息
-        openai_messages = await self.memory.get_context_messages(prompt)
-        if not openai_messages:
-            openai_messages = [{
-                "role": self.system_message.role_name,
-                "content": self.system_message.content,
-            }] + [user_message.to_openai_user_message()]
-
-        rebellion_log.info(f"普通叛军 {self.agent_id} 正在生成意见，提示信息：{openai_messages}")
-
-        try:
-            # 调用模型生成意见
-            response = await asyncio.to_thread(self.model_backend.run, openai_messages)  # 异步运行模型
-            opinion = response.choices[0].message.content
-            # 决策存入个人记忆
+        opinion = await self.generate_llm_response(prompt, self.system_message)
+        if opinion:
             await self.memory.write_record(
                 role_name="普通叛军",
                 content=f"我的意见：{opinion}",
@@ -107,9 +65,7 @@ class OrdinaryRebel:
             )
             rebellion_log.info(f"普通叛军 {self.agent_id} 生成的意见：{opinion}")
             return opinion
-        except Exception as e:
-            rebellion_log.error(f"普通叛军 {self.agent_id} 在生成意见时出错：{e}")
-            return "无法生成意见"
+        return "无法生成意见"
 
     async def generate_and_share_opinion(self):
         """
@@ -118,7 +74,6 @@ class OrdinaryRebel:
         # 获取所有讨论内容
         all_discussion = await self.shared_pool.get_all_discussions()
         if all_discussion:
-            # 构建提示信息，让AI决定是否回应以及如何回应
             prompt = (
                 f"你是叛军组织的主要头目之一，以下是你的个人属性：\n"
                 f"角色: {self.role}\n"
@@ -129,19 +84,11 @@ class OrdinaryRebel:
                 f"请用简短的一句话回复。"
             )
 
-            # 使用CAMEL框架生成回应
-            user_message = BaseMessage.make_user_message(
-                role_name="普通叛军",
-                content=prompt,
-            )
-
             try:
-                response = await asyncio.to_thread(self.model_backend.run, [user_message.to_openai_user_message()])
-                opinion = response.choices[0].message.content
-                # 回复信息添加到共享信息池
-                await self.shared_pool.add_discussion(opinion)
-                rebellion_log.info(f"普通叛军 {self.agent_id} 回应了讨论：{opinion}")
-
+                opinion = await self.generate_llm_response(prompt, self.system_message)
+                if opinion:
+                    await self.shared_pool.add_discussion(opinion)
+                    rebellion_log.info(f"普通叛军 {self.agent_id} 回应了讨论：{opinion}")
             except Exception as e:
                 rebellion_log.error(f"普通叛军 {self.agent_id} 在生成回应时出错：{e}")
         else:
@@ -150,9 +97,9 @@ class OrdinaryRebel:
             await self.shared_pool.add_discussion(opinion)
             rebellion_log.info(f"普通叛军 {self.agent_id} 发起了新讨论：{opinion}")
 
-class RebelLeader:
+class RebelLeader(BaseAgent):
     def __init__(self, agent_id, rebellion, shared_pool):
-        self.agent_id = agent_id
+        super().__init__(agent_id, group_type='rebellion', window_size=3)
         self.rebellion = rebellion
         self.shared_pool = shared_pool
         self.time = 0  # 当前时间（年）
@@ -160,27 +107,9 @@ class RebelLeader:
         # 初始化叛军头子属性
         self.role = None  # 角色
         self.mbti = None  # 人物性格
-
-        # 初始化模型管理器
-        self.model_manager = ModelManager()
-        model_config = self.model_manager.get_random_model_config()
-        self.model_type = ModelType(model_config["model_type"])
-        self.model_config = ChatGPTConfig(temperature=0.7)
-        self.model_backend = ModelFactory.create(
-            model_platform=model_config["model_platform"],
-            model_type=self.model_type,
-            model_config_dict=self.model_config.as_dict(),
-        )
-        # 初始化记忆系统
-        self.token_counter = OpenAITokenCounter(self.model_type)
-        self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
-        # self.memory = ChatHistoryMemory(self.context_creator, window_size=5)
-        self.memory = MemoryManager(
-            agent_id=self.agent_id,
-            model_type=self.model_type,
-            group_type='rebellion',  # 指定为叛军群体
-            window_size=5
-        )
+        
+        # 系统消息
+        self.system_message = "你是一个清代地方叛军组织首领，你的目标是确保叛军组织的生存和壮大（拥有更多的成员和金钱）。"
 
     async def make_decision(self, summary, round_num):
         """
@@ -197,6 +126,12 @@ class RebelLeader:
         # TODO: 缺少历史决策信息，让叛军可以自己从中总结不同决策带来的后果。
         decision_prompt = (
             f"你是清代地方叛军组织的首领，负责根据下属的讨论和当前叛军状态做出最终决策。\n"
+            f"当前叛军状态：\n"
+            f"力量: {self.rebellion.get_strength()}\n"
+            f"资源: {self.rebellion.get_resources()}\n"
+            f"\n"
+            f"下属们的讨论报告：\n{summary}\n"
+            f"\n"
             f"请为以下每个动作分配参数。如果不选择某个动作，将其参数设为0。\n"
             f"输出格式为 JSON，包含以下字段：\n"
             f"- stage_rebellion: 发动叛乱的力量投入（整数）\n"
@@ -205,44 +140,27 @@ class RebelLeader:
             f"例如：\n"
             f'{{"stage_rebellion": 0, "recruit_members": 0, "maintain_status": 1}}'
             f"\n"
-            f"当前叛军状态：\n"
-            f"力量: {self.rebellion.get_strength()}\n"
-            f"资源: {self.rebellion.get_resources()}\n"
-            f"\n"
-            f"下属们的讨论报告：\n{summary}\n"
-            f"\n"
             f"请根据以上信息和状态作出最终决策，不要解释理由，只需输出JSON格式的决策结果。"
-
         )
-
-        # 获取历史上下文
-        openai_messages = await self.memory.get_context_messages(decision_prompt)
-        if not openai_messages:
-            openai_messages = [{
-                "role": "system",
-                "content": "你是一个清代地方叛军组织首领，你的目标是确保叛军组织的生存和壮大（拥有更多的成员和金钱）。"
-            }]
-
-        rebellion_log.info(f"叛军头子 {self.agent_id} 正在处理决策，提示信息：{openai_messages}")
 
         try:
             # 调用模型做出最终决策
-            response = await asyncio.to_thread(self.model_backend.run, openai_messages)
-            decision = response.choices[0].message.content
+            decision = await self.generate_llm_response(decision_prompt, self.system_message)
 
-            # 将讨论内容和决策合并写入记忆系统
-            combined_content = f"讨论总结：\n{summary}\n\n决策结果：\n{decision}"
-            await self.memory.write_record(
-                role_name="叛军头子",
-                content=combined_content,
-                is_user=False,
-                round_num=round_num
-            )
+            if decision:
+                # 将讨论内容和决策合并写入记忆系统
+                combined_content = f"讨论总结：\n{summary}\n\n决策结果：\n{decision}"
+                await self.memory.write_record(
+                    role_name="叛军头子",
+                    content=combined_content,
+                    is_user=False,
+                    round_num=round_num
+                )
 
-            rebellion_log.info(f"叛军头子 {self.agent_id} 的决策：{decision}")
-            # 清空共享信息池
-            await self.shared_pool.clear_discussions()
-            return decision
+                rebellion_log.info(f"叛军头子 {self.agent_id} 的决策：{decision}")
+                # 清空共享信息池
+                await self.shared_pool.clear_discussions()
+                return decision
         except Exception as e:
             rebellion_log.error(f"叛军头子 {self.agent_id} 在做出决策时出错：{e}")
             return "无法做出决策"
@@ -265,13 +183,9 @@ class InformationOfficer(OrdinaryRebel):
         :param shared_pool: 共享信息池
         :param model_type: 模型类型，默认为 None
         """
-        super().__init__(agent_id, rebellion, shared_pool)  # 移除 model_type 参数
-        self.model_type = model_type
+        super().__init__(agent_id, rebellion, shared_pool)
         self.role = "信息整理官"
-        self.system_message = BaseMessage.make_assistant_message(
-            role_name="system",
-            content="你是清代地方叛军组织的信息整理官，负责整理和总结其他成员的讨论内容。"
-        )
+        self.system_message = "你是清代地方叛军组织的信息整理官，负责整理和总结其他成员的讨论内容。"
 
     async def summarize_discussions(self) -> str:
         """
@@ -289,22 +203,12 @@ class InformationOfficer(OrdinaryRebel):
             f"讨论内容：\n" + "\n".join([f"{i+1}. {d}" for i, d in enumerate(discussions)])
         )
 
-        # 使用 CAMEL 框架生成总结
-        user_message = BaseMessage.make_user_message(
-            role_name="信息整理官",
-            content=prompt,
-        )
-
-        openai_messages = [{
-            "role": self.system_message.role_name,
-            "content": self.system_message.content,
-        }, user_message.to_openai_user_message()]
-
         try:
-            response = await asyncio.to_thread(self.model_backend.run, openai_messages)
-            summary = response.choices[0].message.content
-            rebellion_log.info(f"叛军信息整理官 {self.agent_id} 生成的总结报告：{summary}")
-            return summary
+            summary = await self.generate_llm_response(prompt)
+            if summary:
+                rebellion_log.info(f"叛军信息整理官 {self.agent_id} 生成的总结报告：{summary}")
+                return summary
+            return "无法生成总结报告"
         except Exception as e:
             rebellion_log.error(f"叛军信息整理官 {self.agent_id} 在生成总结报告时出错：{e}")
             return "无法生成总结报告"
