@@ -48,6 +48,7 @@ class Simulator:
         self.average_satisfaction = 0.5  # 平均满意度（0-1）
         self.tax_rate = 0.1  # 税率（0-1）
         self.gdp = 0  # 国内生产总值（单位：两）
+        self.rebellion_records = 0
         self.results = {
             "years": [],
             "rebellions": [],
@@ -89,9 +90,6 @@ class Simulator:
                 await self.integrate_new_residents(new_residents)
                 self.population.birth(new_count)
 
-            # 初始化叛乱计数器
-            rebellions = 0
-
             # 收集政府和叛军的决策
             government_decision = None
             rebellion_decision = None
@@ -109,7 +107,7 @@ class Simulator:
                 'leader_type': RebelLeader,
             }
             # rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config) #叛军决策
-            rebellion_decision = {"stage_rebellion": 2,"recruit_members": 0,"maintain_status": 0}
+            rebellion_decision = '{"stage_rebellion": 2,"recruit_members": 0,"maintain_status": 0}'
             # 统一执行决策
             if government_decision:
                 self.execute_government_decision(government_decision)
@@ -121,7 +119,7 @@ class Simulator:
             for resident_name in list(self.residents.keys()):
                 resident = self.residents[resident_name]
                 # 传入社会状态参数
-                tasks.append(resident.decide_action_by_llm(tax_rate=self.tax_rate, basic_living_cost=self.basic_living_cost))  # 基于LLM的决策--测试时建议暂时注释
+                # tasks.append(resident.decide_action_by_llm(tax_rate=self.tax_rate, basic_living_cost=self.basic_living_cost))  # 基于LLM的决策--测试时建议暂时注释
 
                 # 更新居民寿命（次/年）
                 if self.time.get_current_quarter() == 1:
@@ -136,7 +134,7 @@ class Simulator:
 
             # 记录数据
             self.results["years"].append(self.time.get_current_time())
-            self.results["rebellions"].append(rebellions)
+            self.results["rebellions"].append(self.rebellion_records)
             self.results["unemployment_rate"].append(self.job_market.get_unemployment_rate(len(self.residents)))
             self.results["population"].append(self.population.get_population())
             self.results["government_budget"].append(self.government.get_budget())
@@ -148,7 +146,7 @@ class Simulator:
 
             # 打印当前状态
             print(f"年份: {self.time.get_current_time()}, "
-                  f"叛乱次数: {rebellions}, "
+                  f"叛乱次数: {self.rebellion_records}, "
                   f"人口数量: {self.population.get_population()}, "
                   f"平均满意度: {self.results['average_satisfaction'][-1]:.2f}, "
                   f"税率: {self.results['tax_rate'][-1]*100:.1f}%, "
@@ -405,7 +403,7 @@ class Simulator:
         计算GDP：所有居民工资总和减去基本生活所需值总和
         :return: GDP值（浮点数）
         """
-        # TODO: GDP按照收入法计算：增加值＝劳动者报酬＋生产税净额＋固定资产折旧＋营业盈余 ，不必减去基本生活所需值
+        # GDP按照收入法计算：增加值＝劳动者报酬＋生产税净额＋固定资产折旧＋营业盈余 ，不必减去基本生活所需值
         if not self.residents:
             return 0.0
         # 计算所有居民的工资总和
@@ -428,7 +426,7 @@ class Simulator:
         if self.rebellion.strength < strength_investment:
             print("叛军力量不足以发动叛乱。")
             return False
-            
+            self.rebellion_records += 1
         # 政府进行镇压
         if self.government.suppress_rebellion(strength_investment):
             # 镇压成功，叛军损失大量军事力量和资源
