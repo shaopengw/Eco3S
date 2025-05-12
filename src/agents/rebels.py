@@ -57,12 +57,6 @@ class OrdinaryRebel(BaseAgent):
 
         opinion = await self.generate_llm_response(prompt, self.system_message)
         if opinion:
-            await self.memory.write_record(
-                role_name="普通叛军",
-                content=f"我的意见：{opinion}",
-                is_user=False,
-                store_in_shared=False  # 不存入共享记忆
-            )
             rebellion_log.info(f"普通叛军 {self.agent_id} 生成的意见：{opinion}")
             return opinion
         return "无法生成意见"
@@ -148,15 +142,6 @@ class RebelLeader(BaseAgent):
             decision = await self.generate_llm_response(decision_prompt, self.system_message)
 
             if decision:
-                # 将讨论内容和决策合并写入记忆系统
-                combined_content = f"讨论总结：\n{summary}\n\n决策结果：\n{decision}"
-                await self.memory.write_record(
-                    role_name="叛军头子",
-                    content=combined_content,
-                    is_user=False,
-                    round_num=round_num
-                )
-
                 rebellion_log.info(f"叛军头子 {self.agent_id} 的决策：{decision}")
                 # 清空共享信息池
                 await self.shared_pool.clear_discussions()

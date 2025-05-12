@@ -54,7 +54,6 @@ class OrdinaryGovernmentAgent(BaseAgent):
             f"{government_status}\n"
             f"请根据你的个人属性、当前政府状态和讨论内容，提出关于运河经营与财政预算分配的决策意见。请用一句话概括。"
         )
-        government_log.info(f"普通政府官员 {self.agent_id} 正在生成意见：{prompt}")
         opinion = await self.generate_llm_response(prompt, self.system_message)
         if opinion:
             await self.memory.write_record(
@@ -74,7 +73,6 @@ class OrdinaryGovernmentAgent(BaseAgent):
         """
         # 获取最新讨论内容
         all_discussion = await self.shared_pool.get_all_discussions()
-        government_log.info(f"共享池中的讨论内容数量：{len(all_discussion)}")
         if all_discussion:
             # 构建提示信息，让AI决定是否回应以及如何回应
             prompt = (
@@ -155,22 +153,12 @@ class HighRankingGovernmentAgent(BaseAgent):
             f"\n"
             f"请根据以上信息和状态作出最终决策，不需要解释理由，只需输出JSON格式的决策结果。请务必确认支出总额不高于当前财政预算。"
         )
-        government_log.info(f"高级政府官员 {self.agent_id} 正在生成决策：{decision_prompt}")
 
         try:
             # 调用模型做出最终决策
             decision = await self.generate_llm_response(decision_prompt, self.system_message)
 
             if decision:
-                # 将讨论内容和决策合并写入记忆系统
-                combined_content = f"讨论总结：\n{summary}\n\n决策结果：\n{decision}"
-                await self.memory.write_record(
-                    role_name="高级政府官员",
-                    content=combined_content,
-                    is_user=False,
-                    round_num=round_num
-                )
-
                 government_log.info(f"高级政府官员 {self.agent_id} 的决策：{decision}")
                 # 清空共享信息池
                 await self.shared_pool.clear_discussions()

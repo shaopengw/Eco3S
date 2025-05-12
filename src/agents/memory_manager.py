@@ -94,6 +94,7 @@ class PersonalMemory:
             if summary:
                 self.longterm_memory.append(summary)
                 self.record_count = 0  # 重置计数器
+                # self.chat_history.clear()  # 清空历史记录
 
 class MemoryManager:
     def __init__(self, agent_id, model_type, group_type='default', window_size=5, summary_interval=5):
@@ -196,7 +197,7 @@ class MemoryManager:
         if longterm_memory:
             context.append({
                 "role": "system",
-                "content": "历史记忆总结：" + "\n".join(longterm_memory[-2:])  # 只使用最近的2条总结
+                "content": "历史记忆总结：" + "\n".join(longterm_memory[-1:])
             })
         
         # 处理短期记忆

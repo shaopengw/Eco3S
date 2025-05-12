@@ -1,7 +1,7 @@
 simulation:
   api_type: openai
   start_year: 1650
-  end_year: 1651
+  end_year: 1650
   time_step: "quarter"  # 时间步长为季度
   map_width: 100         # 地图大小为100x100
   map_height: 150   
