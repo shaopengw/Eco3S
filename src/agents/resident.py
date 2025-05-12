@@ -80,7 +80,6 @@ class Resident(BaseAgent):
         self.job = None  # 当前工作
         self.income = 0  # 收入
         self.satisfaction = 100  # 对政府的满意度（0到100）
-        self.rebellion_risk = 0  # 参与叛乱的风险（0到100）
         self.health_index = 10  # 居民的健康状况（0到10）
         self.lifespan = 100  # 居民的寿命
         self.town_job_market = None  # 添加城镇就业市场引用
@@ -278,7 +277,6 @@ class Resident(BaseAgent):
             f"工作: {self.job}\n"
             f"收入: {self.income}\n"
             f"满意度: {self.satisfaction}\n"
-            f"叛乱风险: {self.rebellion_risk}\n"
             f"健康状况: {self.health_index}\n"
             f"寿命: {self.lifespan}"
         )
@@ -293,7 +291,6 @@ class Resident(BaseAgent):
         resident_log.info(f"  工作：{self.job}")
         resident_log.info(f"  收入：{self.income}")
         resident_log.info(f"  满意度：{self.satisfaction}")
-        resident_log.info(f"  叛乱风险：{self.rebellion_risk}")
         resident_log.info(f"  健康状况：{self.health_index}")
         resident_log.info(f"  寿命：{self.lifespan}")
 

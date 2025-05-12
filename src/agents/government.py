@@ -41,16 +41,16 @@ class OrdinaryGovernmentAgent(BaseAgent):
         # 获取当前政府状态
         government_status = (
             f"当前政府状态：\n"
-            f"财政预算: {self.government.get_budget()}\n"
-            f"军事力量: {self.government.get_military_strength()}\n"
-            f"运河通航比率: {self.map.get_navigability()}（海运通航比率：{1-self.map.get_navigability()}）\n"
+            f"财政预算: {self.government.get_budget()},"
+            f"军事力量: {self.government.get_military_strength()},"
+            f"运河通航比率: {self.map.get_navigability()}（海运通航比率：{1-self.map.get_navigability()}）"
         )
 
         # 构建提示信息
         prompt = (
             f"你是一位清代政府普通官员，以下是你的个人属性：\n"
-            f"职能: {self.function}\n"
-            f"人物性格: {self.mbti}\n"
+            f"职能: {self.function},"
+            f"人物性格: {self.mbti},"
             f"{government_status}\n"
             f"请根据你的个人属性、当前政府状态和讨论内容，提出关于运河经营与财政预算分配的决策意见。请用一句话概括。"
         )
@@ -79,9 +79,9 @@ class OrdinaryGovernmentAgent(BaseAgent):
             # 构建提示信息，让AI决定是否回应以及如何回应
             prompt = (
                 f"你是一位清代政府普通官员，以下是你的个人属性：\n"
-                f"职能: {self.function}\n"
-                f"人物性格: {self.mbti}\n"
-                f"\n所有官员的观点包括：{all_discussion}\n"
+                f"\n职能: {self.function}"
+                f"\n人物性格: {self.mbti}"
+                f"\n所有官员的观点包括：{all_discussion}"
                 f"\n请根据你的个人属性和立场，对这些观点发表自己的看法。"
                 f"可以选择支持、反对或提出新的观点。"
                 f"请用简短的一句话回复。"

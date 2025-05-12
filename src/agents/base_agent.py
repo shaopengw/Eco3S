@@ -23,6 +23,7 @@ class BaseAgent:
             group_type=group_type,
             window_size=window_size
         )
+        self.memory.set_agent(self)  # 设置agent引用
         self.system_message = None
 
     async def generate_llm_response(self, prompt, system_message=None):
@@ -33,6 +34,7 @@ class BaseAgent:
         )
 
         openai_messages = await self.memory.get_context_messages(prompt)
+        print("-------总提示信息-----------",openai_messages)
         if not openai_messages:
             messages = []
             if system_message or self.system_message:
