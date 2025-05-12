@@ -107,7 +107,7 @@ class Simulator:
                 'leader_type': RebelLeader,
             }
             # rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config) #叛军决策
-            rebellion_decision = '{"stage_rebellion": 2,"recruit_members": 0,"maintain_status": 0}'
+            # rebellion_decision = '{"stage_rebellion": 2,"recruit_members": 0,"maintain_status": 0}'
             # 统一执行决策
             if government_decision:
                 self.execute_government_decision(government_decision)
