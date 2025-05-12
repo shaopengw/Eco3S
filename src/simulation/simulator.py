@@ -99,14 +99,15 @@ class Simulator:
                 'ordinary_type': OrdinaryGovernmentAgent,
                 'leader_type': HighRankingGovernmentAgent,
             }
-            # government_decision = await self.collect_group_decision('government', government_config) #政府决策
+            government_decision, government_summary = await self.collect_group_decision('government', government_config)
+            
             # 收集叛军决策
             rebellion_config = {
                 'agents': self.rebels_agents,
                 'ordinary_type': OrdinaryRebel,
                 'leader_type': RebelLeader,
             }
-            # rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config) #叛军决策
+            rebellion_decision, rebellion_summary = await self.collect_group_decision('rebellion', rebellion_config)
             # rebellion_decision = '{"stage_rebellion": 2,"recruit_members": 0,"maintain_status": 0}'
             # 统一执行决策
             if government_decision:
@@ -152,6 +153,25 @@ class Simulator:
                   f"税率: {self.results['tax_rate'][-1]*100:.1f}%, "
                   f"基本生活所需值: {self.basic_living_cost}, "
                   f"GDP: {self.results['gdp'][-1]:.2f}")
+
+            # 在时间步结束前，总结本次决策结果
+            if government_decision or rebellion_decision:
+                changes_summary = self.summarize_time_step_results()
+                # 存储到政府和叛军的记忆中
+                if government_decision:
+                    await self.store_decision_memory(
+                        'government', 
+                        government_decision,
+                        government_summary,
+                        changes_summary
+                    )
+                if rebellion_decision:
+                    await self.store_decision_memory(
+                        'rebellion', 
+                        rebellion_decision,
+                        rebellion_summary,
+                        changes_summary
+                    )
 
             # 推进时间
             self.time.step()
@@ -221,12 +241,12 @@ class Simulator:
 
         # 处理讨论结果
         if info_officers and leaders and shared_pool.is_ended():
-            summary = await info_officers[0].summarize_discussions()
-            if summary:
-                decision = await leaders[0].make_decision(summary, self.time.get_current_time())
-                return decision
+            discussion_summary = await info_officers[0].summarize_discussions()
+            if discussion_summary:
+                decision = await leaders[0].make_decision(discussion_summary, self.time.get_current_time())
+                return decision, discussion_summary
 
-        return None
+        return None, None
 
     def execute_government_decision(self, decision):
         """执行政府决策"""
@@ -459,3 +479,76 @@ class Simulator:
             
             print(f"叛军袭击成功，损失军事力量 {strength_loss:.1f}，获得资源 {resource_gain:.1f}")
             return True
+
+    def summarize_time_step_results(self):
+        """总结当前时间步的各项指标变化"""
+        current_idx = len(self.results["years"]) - 1
+        if current_idx <= 0:
+            return {}
+        
+        # 计算各项指标的变化率
+        changes = {
+            "人口变化率": self._calculate_change_rate("population", current_idx),
+            "GDP变化率": self._calculate_change_rate("gdp", current_idx),
+            "政府预算变化率": self._calculate_change_rate("government_budget", current_idx),
+            "叛军力量变化率": self._calculate_change_rate("rebellion_strength", current_idx),
+            "平均满意度变化": self._calculate_change_rate("average_satisfaction", current_idx),
+            "失业率变化": self._calculate_change_rate("unemployment_rate", current_idx),
+            "叛乱次数变化": self.results["rebellions"][current_idx] - self.results["rebellions"][current_idx-1],
+        }
+        
+        return changes
+
+    def _calculate_change_rate(self, metric, current_idx):
+        """计算指定指标的变化率"""
+        if current_idx <= 0:
+            return 0
+        current = self.results[metric][current_idx]
+        previous = self.results[metric][current_idx-1]
+        if previous == 0:
+            return 0 if current == 0 else 1
+        return (current - previous) / previous
+
+    async def store_decision_memory(self, group_type, decision, discussion_summary, changes_summary):
+        """
+        存储决策记忆
+        :param group_type: 群体类型
+        :param decision: 决策内容
+        :param discussion_summary: 讨论总结
+        :param changes_summary: 变化率总结
+        """
+        # 将决策内容和结果格式化为字符串
+        memory_content = (
+            f"时间: {self.time.get_current_time()}\n"
+            f"讨论总结: {discussion_summary}\n"
+            f"决策内容: {decision}\n"
+            f"执行结果:\n"
+            f"- 人口变化率: {changes_summary.get('人口变化率', 0):.2%}\n"
+            f"- GDP变化率: {changes_summary.get('GDP变化率', 0):.2%}\n"
+            f"- 政府预算变化率: {changes_summary.get('政府预算变化率', 0):.2%}\n"
+            f"- 叛军力量变化率: {changes_summary.get('叛军力量变化率', 0):.2%}\n"
+            f"- 平均满意度变化: {changes_summary.get('平均满意度变化', 0):.2%}\n"
+            f"- 失业率变化: {changes_summary.get('失业率变化', 0):.2%}\n"
+            f"- 叛乱次数变化: {changes_summary.get('叛乱次数变化', 0)}"
+        )
+        
+        if group_type == 'government':
+            # 存储到所有政府官员的记忆中
+            for official in self.government_officials.values():
+                await official.memory.write_record(
+                    role_name=official.__class__.__name__,
+                    content=memory_content,
+                    is_user=False,
+                    round_num=self.time.get_current_time(),
+                    store_in_shared=True
+                )
+        
+        elif group_type == 'rebellion':
+            # 存储到所有叛军成员的记忆中
+            for rebel in self.rebels_agents.values():
+                await rebel.memory.write_record(
+                    role_name=rebel.__class__.__name__,
+                    content=memory_content,
+                    is_user=False,
+                    round_num=self.time.get_current_time(),
+                    store_in_shared=True                )
