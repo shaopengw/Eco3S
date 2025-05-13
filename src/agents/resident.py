@@ -82,7 +82,7 @@ class Resident(BaseAgent):
         self.satisfaction = 100  # 对政府的满意度（0到100）
         self.health_index = 10  # 居民的健康状况（0到10）
         self.lifespan = 100  # 居民的寿命
-        self.town_job_market = None  # 添加城镇就业市场引用
+        self.towns_manager = None  # 添加Towns实例的引用
 
         # 由 ResidentGroup 设置agent属性
         self.model_backend = None
@@ -292,6 +292,42 @@ class Resident(BaseAgent):
         resident_log.info(f"  健康状况：{self.health_index}")
         resident_log.info(f"  寿命：{self.lifespan}")
 
+    def handle_death(self):
+        """
+        处理居民死亡的逻辑
+        """
+        if self.lifespan <= 0:
+            # 从就业市场中移除
+            if self.employed and self.job and self.town:
+                # 获取城镇的就业市场
+                if self.towns_manager and self.town in self.towns_manager.towns:
+                    town_job_market = self.towns_manager.get_town_job_market(self.town)
+                    if town_job_market:
+                        town_job_market.remove_resident(self.resident_id, self.job)
+                self.employed = False
+                self.job = None
+            
+            # 从城镇居民列表中移除
+            if self.town and self.towns_manager:
+                town_data = self.towns_manager.towns[self.town]
+                if self.resident_id in town_data['residents']:
+                    del town_data['residents'][self.resident_id]
+                if town_data['resident_group']:
+                    town_data['resident_group'].remove_resident(self.resident_id)
+
+            # 从社交网络中移除（如果存在）
+            if hasattr(self, 'social_network'):
+                # 从异质图中移除
+                if hasattr(self.social_network, 'hetero_graph'):
+                    self.social_network.hetero_graph.remove_node(self.resident_id)
+                # 从超图中移除
+                if hasattr(self.social_network, 'hyper_graph'):
+                    self.social_network.hyper_graph.remove_node(self.resident_id)
+
+            resident_log.info(f"居民 {self.resident_id} 已死亡。")
+            return True
+        return False
+
     def update_lifespan(self):
         """
         检查健康状况并更新寿命
@@ -303,10 +339,10 @@ class Resident(BaseAgent):
             self.lifespan -= 1
 
         if self.lifespan <= 0:
-            resident_log.info(f"居民 {self.resident_id} 的健康状况为 {self.health_index}，寿命更新为 {self.lifespan}，该居民已死亡。")
-            return False
+            return self.handle_death()
         else:
             resident_log.info(f"居民 {self.resident_id} 的健康状况为 {self.health_index}，寿命更新为 {self.lifespan}。")
+            return False
 
 
     def get_random_direction_city(self, map):
