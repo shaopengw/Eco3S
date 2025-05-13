@@ -95,23 +95,21 @@ class Resident(BaseAgent):
         居民就业
         :param job: 工作名称
         """
-        if self.town_job_market:
-            self.employed = True
-            self.job = job
-            self.income = 10  # 假设每份工作的收入为10
-            self.satisfaction += 10  # 就业增加满意度
-            resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 找到了工作：{job}。")
+        self.employed = True
+        self.job = job
+        self.income = 10  # 假设每份工作的收入为10
+        self.satisfaction += 10  # 就业增加满意度
+        resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 找到了工作：{job}。")
     
     def unemploy(self):
         """
         居民失业
         """
-        if self.town_job_market:
-            self.employed = False
-            self.job = None
-            self.income = 0
-            self.satisfaction -= 20  # 失业降低满意度
-            resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 失业了。")
+        self.employed = False
+        self.job = None
+        self.income = 0
+        self.satisfaction -= 20  # 失业降低满意度
+        resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 失业了。")
 
     async def receive_information(self, message_content):
         """

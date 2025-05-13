@@ -1,11 +1,47 @@
+import random
 class JobMarket:
-    def __init__(self):
+    def __init__(self, town_type="非沿河", initial_jobs_count=100):
         """
         初始化就业市场类
+        :param town_type: 城镇类型（"沿河"或"非沿河"）
+        :param initial_jobs_count: 初始工作总数
         """
-        self.jobs = []  # 可用工作列表
-        self.rebel_residents = []  # 叛军居民列表
-        self.civilian_residents = {}  # 普通职业居民字典，键为工作，值为工人列表
+        self.town_type = town_type
+        self.jobs_info = {
+            "农民": {"total": 0, "employed": []},
+            "商人": {"total": 0, "employed": []},
+            "叛军": {"total": 0, "employed": []},
+            "官员及士兵": {"total": 0, "employed": []},
+            "其他": {"total": 0, "employed": []}
+        }
+        
+        # 根据城镇类型初始化工作数量
+        self._initialize_jobs(initial_jobs_count)
+    
+    def _initialize_jobs(self, total_count):
+        """
+        根据比例初始化各类工作的数量
+        :param total_count: 总工作数量
+        """
+        professions_ratio = {
+            "农民": {"沿河": [0.5, 0.6], "非沿河": [0.7, 0.8]},
+            "商人": {"沿河": [0.1, 0.15], "非沿河": [0.0, 0.05]},
+            "叛军": {"沿河": [0.01, 0.1], "非沿河": [0.01, 0.02]},
+            "官员及士兵": {"沿河": [0.05, 0.08], "非沿河": [0.02, 0.03]},
+            "其他": {"沿河": [0.1, 0.2], "非沿河": [0.1, 0.15]}
+        }
+        
+        remaining_count = total_count
+        for job, ratios in professions_ratio.items():
+            ratio_range = ratios[self.town_type]
+            # 使用随机比例
+            ratio = random.uniform(ratio_range[0], ratio_range[1])
+            job_count = int(total_count * ratio)
+            self.jobs_info[job]["total"] = job_count
+            remaining_count -= job_count
+        
+        # 将剩余的工作分配给农民
+        self.jobs_info["农民"]["total"] += remaining_count
 
     def add_job(self, job, num=1):
         """
@@ -13,77 +49,47 @@ class JobMarket:
         :param job: 工作名称
         :param num: 添加该工作的数量，默认为1
         """
-        for _ in range(num):
-            self.jobs.append(job)
-        if job != "叛军" and job not in self.civilian_residents:
-            self.civilian_residents[job] = []
+        if job in self.jobs_info:
+            self.jobs_info[job]["total"] += num
 
     def remove_job(self, job):
         """
         移除工作机会
         :param job: 工作名称
         """
-        if job in self.jobs:
-            self.jobs.remove(job)
-            if job != "叛军" and job in self.civilian_residents:
-                del self.civilian_residents[job]
-
-    def remove_random_jobs(self, num):
-        """
-        随机删除指定数量的工作机会
-        :param num: 要删除的工作数量
-        :return: 实际删除的工作数量
-        """
-        # 确保删除数量不超过现有工作数量
-        num = min(num, len(self.jobs))
-        
-        # 随机选择要删除的工作
-        jobs_to_remove = random.sample(self.jobs, num)
-        
-        # 删除选中的工作
-        for job in jobs_to_remove:
-            self.jobs.remove(job)
-            if job != "叛军" and job in self.civilian_residents:
-                del self.civilian_residents[job]
-        return num
+        if job in self.jobs_info and self.jobs_info[job]["total"] > 0:
+            self.jobs_info[job]["total"] -= 1
 
     def get_job(self, resident):
         """
         分配工作给居民
         :param resident: 居民对象
         """
-        if self.jobs:
-            job = self.jobs.pop(0)  # 分配第一个可用工作
+        available_jobs = [job for job, info in self.jobs_info.items() 
+                         if len(info["employed"]) < info["total"]]
+        
+        if available_jobs:
+            # 随机选择一个可用工作
+            job = random.choice(available_jobs)
+            self.jobs_info[job]["employed"].append(resident.resident_id)
             resident.employ(job)
-            if job == "叛军":
-                self.rebel_residents.append(resident)
-            else:
-                self.civilian_residents[job].append(resident)
         else:
-            resident.unemploy()
-
-    def remove_rebel(self, resident):
-        """
-        从叛军列表中移除指定居民
-        :param resident: 要移除的叛军居民
-        """
-        if resident in self.rebel_residents:
-            self.rebel_residents.remove(resident)
             resident.unemploy()
 
     def get_available_jobs(self):
         """
         获取当前可用工作列表
-        :return: 可用工作列表
+        :return: 可用工作及其剩余数量的字典
         """
-        return self.jobs
+        return {job: info["total"] - len(info["employed"]) 
+                for job, info in self.jobs_info.items()}
 
     def get_employed_residents(self):
         """
         获取已就业居民信息
-        :return: 包含叛军和普通职业居民的元组
+        :return: 职业及其从业人员ID的字典
         """
-        return self.rebel_residents, self.civilian_residents
+        return {job: info["employed"] for job, info in self.jobs_info.items()}
 
     def get_unemployment_rate(self, total_residents):
         """
@@ -91,9 +97,7 @@ class JobMarket:
         :param total_residents: 总居民数
         :return: 失业率（0到1之间的值）
         """
-        employed_rebels = len(self.rebel_residents)
-        employed_civilians = sum(len(residents) for residents in self.civilian_residents.values())
-        total_employed = employed_rebels + employed_civilians
+        total_employed = sum(len(info["employed"]) for info in self.jobs_info.values())
         
         if total_residents == 0:
             return 0.0
@@ -103,8 +107,7 @@ class JobMarket:
         """
         打印就业市场状态（用于调试）
         """
-        print("Available Jobs:", self.jobs)
-        print("Rebel residents count:", len(self.rebel_residents))
-        print("Civilian residents:")
-        for job, residents in self.civilian_residents.items():
-            print(f"{job}: {len(residents)} residents")
+        print(f"\n城镇类型: {self.town_type}")
+        for job, info in self.jobs_info.items():
+            print(f"{job}: 总数 {info['total']}, 已就业 {len(info['employed'])}, "
+                  f"空缺 {info['total'] - len(info['employed'])}")

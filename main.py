@@ -97,7 +97,6 @@ async def run_simulation(config: dict[str, Any]) -> None:
     residents = await generate_canal_agents(
         resident_info_path=resident_info_path,
         map=map,
-        job_market=job_market,
     )
 
     # 初始化居民群组

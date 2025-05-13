@@ -31,10 +31,11 @@ class Simulator:
         :param population: 人口对象
         :param social_network: 社会网络对象
         :param residents: 居民列表
+        :param towns: 城镇对象
         """
         self.map = map
         self.time = time
-        self.job_market = job_market
+        # self.job_market = job_market  # 移除全局就业市场
         self.government = government
         self.government_officials = government_officials
         self.rebellion = rebellion
@@ -42,7 +43,6 @@ class Simulator:
         self.population = population
         self.social_network = social_network
         self.residents = residents
-        # self.resident_groups = {}  # 按城镇分组的居民组
         self.towns = towns
         self.basic_living_cost = 10  # 每年基本生活所需值（单位：两）
         self.average_satisfaction = 0.5  # 平均满意度（0-1）
@@ -73,6 +73,10 @@ class Simulator:
             # 打印当前时间步信息
             print(Back.GREEN + f"年份:{self.time.get_current_time()}" + Back.RESET)
 
+            # 打印所有城镇的就业市场状态---测试用
+            # print("\n=== 各城镇就业市场状态 ===")
+            # self.towns.print_towns_status()
+
             # 更新属性变量
             self.gdp = self.calculate_gdp() # 更新GDP
             print(f"当前GDP: {self.gdp}")
@@ -99,7 +103,7 @@ class Simulator:
                 'ordinary_type': OrdinaryGovernmentAgent,
                 'leader_type': HighRankingGovernmentAgent,
             }
-            government_decision, government_summary = await self.collect_group_decision('government', government_config)
+            # government_decision, government_summary = await self.collect_group_decision('government', government_config)
             
             # 收集叛军决策
             rebellion_config = {
@@ -107,7 +111,7 @@ class Simulator:
                 'ordinary_type': OrdinaryRebel,
                 'leader_type': RebelLeader,
             }
-            rebellion_decision, rebellion_summary = await self.collect_group_decision('rebellion', rebellion_config)
+            # rebellion_decision, rebellion_summary = await self.collect_group_decision('rebellion', rebellion_config)
             # rebellion_decision = '{"stage_rebellion": 2,"recruit_members": 0,"maintain_status": 0}'
             # 统一执行决策
             if government_decision:
@@ -136,7 +140,9 @@ class Simulator:
             # 记录数据
             self.results["years"].append(self.time.get_current_time())
             self.results["rebellions"].append(self.rebellion_records)
-            self.results["unemployment_rate"].append(self.job_market.get_unemployment_rate(len(self.residents)))
+            # 计算总体失业率（所有城镇的平均值）
+            total_unemployment_rate = self.calculate_total_unemployment_rate()
+            self.results["unemployment_rate"].append(total_unemployment_rate)
             self.results["population"].append(self.population.get_population())
             self.results["government_budget"].append(self.government.get_budget())
             self.results["rebellion_strength"].append(self.rebellion.get_strength())
@@ -360,7 +366,6 @@ class Simulator:
         new_residents = await generate_canal_agents(
             resident_info_path=new_resident_info_path,
             map=self.map,
-            job_market=self.job_market,
         )
 
         # 分配新ID
@@ -417,6 +422,13 @@ class Simulator:
         print(f"基本生活所需值调整为: {self.basic_living_cost}")
         return self.basic_living_cost
 
+    # TODO：需要完善
+    def calculate_total_unemployment_rate(self):
+        """
+        计算所有城镇的平均失业率
+        :return: 平均失业率（浮点数）
+        """
+        return 0.0
 
     def calculate_gdp(self):
         """

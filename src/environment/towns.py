@@ -2,6 +2,7 @@ from collections import defaultdict
 from typing import Dict, List, Any
 from src.agents.resident import ResidentGroup
 from src.environment.job_market import JobMarket
+import random
 
 class Towns:
     def __init__(self, map):
@@ -26,17 +27,46 @@ class Towns:
             }
             self.towns[town_id]['info'] = town_info
             self.towns[town_id]['resident_group'] = ResidentGroup(town_id)
-            self.towns[town_id]['job_market'] = JobMarket()  # 为每个城镇创建独立的就业市场
-    
+            
+            # 根据城镇类型初始化就业市场
+            town_type = "沿河" if city_info['type'] == 'canal' else "非沿河"
+            # 设置初始工作数量为居民数量的90%
+            resident_count = len(self.towns[town_id].get('residents', {}))
+            initial_jobs_count = int(resident_count * 0.9) if resident_count > 0 else 100
+            self.towns[town_id]['job_market'] = JobMarket(town_type=town_type, initial_jobs_count=initial_jobs_count)
+
     def initialize_resident_groups(self, residents: Dict[int, 'Resident']):
         """
-        根据居民的town属性初始化居民群组
+        根据居民的town属性初始化居民群组并分配工作
         :param residents: 居民字典，key为居民ID，value为居民对象
         """
-        # 根据居民的town属性进行分组
+        # 根据居民的town属性进行分组并同时分配工作
         for resident_id, resident in residents.items():
             if resident.town and resident_id not in self.towns[resident.town]['residents']:
-                self.add_resident(resident, resident.town)
+                # 获取正确的town_id格式
+                town_id = None
+                for tid, town_data in self.towns.items():
+                    if town_data['info']['name'] == resident.town:
+                        town_id = tid
+                        break
+                
+                if town_id:
+                    # 添加居民到城镇
+                    self.add_resident(resident, town_id)
+                    resident.town = town_id  # 更新居民的town为正确的town_id
+                    
+                    # 计算当前城镇的就业率
+                    town_data = self.towns[town_id]
+                    current_employed = sum(len(info["employed"]) for info in town_data['job_market'].jobs_info.values())
+                    total_residents = len(town_data['residents'])
+                    employment_rate = current_employed / total_residents if total_residents > 0 else 0
+                    
+                    # 如果就业率低于90%，尝试为该居民分配工作
+                    if employment_rate < 0.9:
+                        if town_data['job_market']:
+                            town_data['job_market'].get_job(resident)
+                        else:
+                            print(f"警告: 城镇 {town_data['info']['name']} ({town_id}) 没有就业市场")
     
     def add_resident(self, resident, town_id):
         """添加居民到指定城镇"""
@@ -79,7 +109,8 @@ class Towns:
     def print_towns_status(self):
         """打印所有城镇状态"""
         for town_id, town_data in self.towns.items():
-            print(f"\n城镇 {town_data['info']['name']} ({town_id}) 状态:")
+            town_name = town_data.get('info', {}).get('name', '未命名')
+            print(f"\n城镇 {town_name} ({town_id}) 状态:")
             print(f"位置: {town_data['info']['location']}")
             print(f"类型: {town_data['info']['type']}")
             print(f"居民数量: {len(town_data['residents'])}")
