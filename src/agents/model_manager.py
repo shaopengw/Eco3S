@@ -1,6 +1,10 @@
 from .shared_imports import *
 import random
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 class ModelManager:
     """统一的模型管理器，用于管理不同的模型 API"""
     def __init__(self):
