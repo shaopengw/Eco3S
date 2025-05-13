@@ -111,3 +111,23 @@ class JobMarket:
         for job, info in self.jobs_info.items():
             print(f"{job}: 总数 {info['total']}, 已就业 {len(info['employed'])}, "
                   f"空缺 {info['total'] - len(info['employed'])}")
+
+    def remove_resident(self, resident_id, job_type=None):
+        """
+        从就业市场中删除指定居民的信息
+        :param resident_id: 居民ID
+        :param job_type: 工作类型，如果不指定则搜索所有工作类型
+        :return: 是否成功删除
+        """
+        if job_type and job_type in self.jobs_info:
+            # 如果指定了工作类型，直接从该类型中删除
+            if resident_id in self.jobs_info[job_type]["employed"]:
+                self.jobs_info[job_type]["employed"].remove(resident_id)
+                return True
+        else:
+            # 如果没有指定工作类型，搜索所有工作类型
+            for job_info in self.jobs_info.values():
+                if resident_id in job_info["employed"]:
+                    job_info["employed"].remove(resident_id)
+                    return True
+        return False
