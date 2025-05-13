@@ -4,26 +4,19 @@ import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from openai import OpenAI
-
 from pathlib import Path
 import yaml
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 # 加载配置文件
 config_path = Path(__file__).parent.parent.parent / 'config' / 'simulation_config.yaml'
 with open(config_path, 'r') as f:
     config = yaml.safe_load(f)
 
-# 根据配置初始化客户端
-if config['api_settings']['api_type'] == 'openai':
-    client = OpenAI(
-        api_key=os.getenv("OPENAI_API_KEY"),
-        base_url=config['api_settings'].get('base_url')
-    )
-elif config['api_settings']['api_type'] == 'deepseek':
-    client = OpenAI(
-        api_key=os.getenv("DEEPSEEK_API_KEY"),
-        base_url="https://api.deepseek.com"
-    )
+
 
 # 职能比例
 function_ratio = [0.02, 0.65, 0.22, 0.07]  # 漕运、行政、军事、经济管理
