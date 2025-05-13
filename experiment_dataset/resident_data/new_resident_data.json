@@ -1,1 +1,11 @@
-[]
+[
+  {
+    "gender": "男性",
+    "lifespan": 28,
+    "residence": "沿河",
+    "satisfaction": 71,
+    "health_index": 4,
+    "income": 50,
+    "mbti": "ENFP"
+  }
+]

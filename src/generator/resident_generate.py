@@ -115,7 +115,7 @@ def generate_resident_profile():
             satisfaction = get_random_satisfaction()
             health_index = get_random_health_index()
             income = get_random_income()
-            profession = get_random_profession(residence)
+            # profession = get_random_profession(residence)
             mbti = get_random_mbti()
 
             profile = {
@@ -125,7 +125,7 @@ def generate_resident_profile():
                 "satisfaction": satisfaction,
                 "health_index": health_index,
                 "income": income,
-                "profession": profession,
+                # "profession": profession,
                 "mbti": mbti,
             }
             print(f"Generated profile: {profile}")
