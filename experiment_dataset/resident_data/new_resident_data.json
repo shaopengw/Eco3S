@@ -1,11 +1,11 @@
 [
   {
     "gender": "男性",
-    "lifespan": 28,
+    "lifespan": 49,
     "residence": "沿河",
-    "satisfaction": 71,
-    "health_index": 4,
-    "income": 50,
-    "mbti": "ENFP"
+    "satisfaction": 76,
+    "health_index": 2,
+    "income": 0,
+    "mbti": "ESTJ"
   }
 ]

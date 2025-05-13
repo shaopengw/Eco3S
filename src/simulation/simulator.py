@@ -35,7 +35,6 @@ class Simulator:
         """
         self.map = map
         self.time = time
-        # self.job_market = job_market  # 移除全局就业市场
         self.government = government
         self.government_officials = government_officials
         self.rebellion = rebellion
@@ -103,7 +102,7 @@ class Simulator:
                 'ordinary_type': OrdinaryGovernmentAgent,
                 'leader_type': HighRankingGovernmentAgent,
             }
-            # government_decision, government_summary = await self.collect_group_decision('government', government_config)
+            government_decision, government_summary = await self.collect_group_decision('government', government_config)
             
             # 收集叛军决策
             rebellion_config = {
@@ -111,8 +110,9 @@ class Simulator:
                 'ordinary_type': OrdinaryRebel,
                 'leader_type': RebelLeader,
             }
-            # rebellion_decision, rebellion_summary = await self.collect_group_decision('rebellion', rebellion_config)
+            rebellion_decision, rebellion_summary = await self.collect_group_decision('rebellion', rebellion_config)
             # rebellion_decision = '{"stage_rebellion": 2,"recruit_members": 0,"maintain_status": 0}'
+            # rebellion_summary = '一致决定发动叛乱'
             # 统一执行决策
             if government_decision:
                 self.execute_government_decision(government_decision)
@@ -124,14 +124,14 @@ class Simulator:
             for resident_name in list(self.residents.keys()):
                 resident = self.residents[resident_name]
                 # 传入社会状态参数
-                # tasks.append(resident.decide_action_by_llm(tax_rate=self.tax_rate, basic_living_cost=self.basic_living_cost))  # 基于LLM的决策--测试时建议暂时注释
+                tasks.append(resident.decide_action_by_llm(tax_rate=self.tax_rate, basic_living_cost=self.basic_living_cost))  # 基于LLM的决策--测试时建议暂时注释
 
                 # 更新居民寿命（次/年）
                 if self.time.get_current_quarter() == 1:
-                    if resident.update_lifespan() == 0:
-                        del self.residents[resident_name]  # 从居民列表中删除逝世的居民
+                    if resident.update_lifespan():
+                        del self.residents[resident_name]
                         self.population.death()
-                        continue  # 如果居民已死亡，跳过添加任务
+                        continue
 
             # 并发执行所有居民的行为
             if tasks:  # 只在有任务时执行
@@ -458,7 +458,10 @@ class Simulator:
         if self.rebellion.strength < strength_investment:
             print("叛军力量不足以发动叛乱。")
             return False
-            self.rebellion_records += 1
+        
+        self.rebellion_records += 1
+        print(f"叛军发动第 {self.rebellion_records} 次叛乱")
+        
         # 政府进行镇压
         if self.government.suppress_rebellion(strength_investment):
             # 镇压成功，叛军损失大量军事力量和资源
@@ -470,16 +473,29 @@ class Simulator:
             
             # 损失叛军资源，注销叛军居民
             rebels_to_remove = int(self.rebellion.strength * (strength_loss / self.rebellion.strength))
-            selected_rebels = random.sample(self.job_market.rebel_residents, min(rebels_to_remove, self.rebellion.strength))
-            # 注销选中的叛军居民
-            for rebel in selected_rebels:
-                resident_id = rebel.resident_id
-                self.job_market.remove_rebel(rebel)  # 从就业市场的叛军列表中移除
-                del self.residents[resident_id]  # 从居民列表中删除
-                self.population.death()  # 更新人口数量
+            
+            # 从所有城镇中收集叛军居民
+            all_rebel_residents = []
+            for town_data in self.towns.towns.values():
+                town_job_market = town_data.get('job_market')
+                if town_job_market:
+                    rebel_residents = [resident_id for resident_id in town_job_market.jobs_info["叛军"]["employed"]]
+                    all_rebel_residents.extend(rebel_residents)
+            
+            # 从收集到的叛军中随机选择要移除的人数
+            if all_rebel_residents:
+                selected_rebels = random.sample(all_rebel_residents, min(rebels_to_remove, len(all_rebel_residents)))
+                # 注销选中的叛军居民
+                for rebel_id in selected_rebels:
+                    if rebel_id in self.residents:
+                        resident = self.residents[rebel_id]
+                        resident.handle_death()
+                        del self.residents[rebel_id]
+                        self.population.death()
+                        print(f"叛军 {rebel_id} 战死，失去生命")
             
             print(f"叛军被镇压，损失军事力量 {strength_loss:.1f}，损失资源 {resource_loss:.1f}")
-            print(f"共有 {len(selected_rebels)} 名叛军居民被注销")
+            print(f"共有 {len(selected_rebels)} 名叛军居民死亡")
             return True
         else:
             # 镇压失败，叛军损失少量军事力量，获得大量资源
