@@ -8,6 +8,7 @@ from src.environment.map import Map
 async def generate_canal_agents(
     resident_info_path: str,  # 居民信息文件的路径
     map: Map,  # 地图对象，用于分配居民的位置
+    initial_population: int = 10,  # 初始人口数量
     agent_graph: Optional[Dict[int, Resident]] = None,  # 居民图，默认为空
     shared_pool: Optional[ResidentSharedInformationPool] = None, # 共享资源池，默认为空
     resident_id_mapping: Optional[Dict[int, int]] = None,  # 居民 ID 与 Agent ID 的映射关系，默认为空
@@ -25,6 +26,10 @@ async def generate_canal_agents(
     # 读取居民信息文件
     with open(resident_info_path, "r", encoding="utf-8", errors='ignore') as file:
         resident_info = json.load(file)
+        # 确保不超过文件中的数据总量
+        initial_population = min(initial_population, len(resident_info))
+        # 只取需要的数量
+        resident_info = resident_info[:initial_population]
 
     async def process_resident(i, resident_data):
         # 居民的唯一标识符

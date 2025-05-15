@@ -341,7 +341,7 @@ class Resident(BaseAgent):
         if self.lifespan <= 0:
             return self.handle_death()
         else:
-            resident_log.info(f"居民 {self.resident_id} 的健康状况为 {self.health_index}，寿命更新为 {self.lifespan}。")
+            # resident_log.info(f"居民 {self.resident_id} 的健康状况为 {self.health_index}，寿命更新为 {self.lifespan}。")
             return False
 
 
