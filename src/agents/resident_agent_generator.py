@@ -31,7 +31,7 @@ async def generate_canal_agents(
         resident_id = i + 1
 
         # 获取位置和城镇ID
-        location, town_id = assign_resident_location(resident_data, map)
+        location, town_name = assign_resident_location(resident_data, map)
         
         # 创建居民对象
         resident = Resident(
@@ -46,7 +46,7 @@ async def generate_canal_agents(
         resident.satisfaction = resident_data["satisfaction"]
         resident.health_index = resident_data["health_index"]  # 健康状况
         resident.lifespan = resident_data["lifespan"]  # 寿命
-        resident.town = town_id
+        resident.town = town_name
         resident.location = location
 
         # 将居民添加到居民图
@@ -70,7 +70,7 @@ def assign_resident_location(resident_data, map):
     分配居民的位置和所属城镇
     :param resident_data: 居民数据字典，包含"residence"字段
     :param map: Map类实例
-    :return: ((x, y), town_id) 坐标元组和城镇ID
+    :return: ((x, y), town_name) 坐标元组和城市名称
     """
     # 从城市字典中随机选择一个城市
     canal_cities = [name for name, info in map.city_dict.items() if info['type'] == 'canal']
@@ -79,10 +79,11 @@ def assign_resident_location(resident_data, map):
     if resident_data["residence"] == "沿河":
         if not canal_cities:
             return None
-        city_name = random.choice(canal_cities)
+        town_name = random.choice(canal_cities)
     else:
         if not non_canal_cities:
             return None
-        city_name = random.choice(non_canal_cities)
+        town_name = random.choice(non_canal_cities)
     
-    return map.generate_random_location(city_name)
+    location = map.generate_random_location(town_name)
+    return location, town_name

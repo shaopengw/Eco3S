@@ -31,9 +31,9 @@ class ResidentSharedInformationPool:
         return self.shared_info
 class ResidentGroup(BaseAgent):
     """居民群组，用于管理同一城镇的居民"""
-    def __init__(self, town_id):
-        super().__init__(agent_id=f"group_{town_id}", group_type='resident_group', window_size=5)
-        self.town_id = town_id
+    def __init__(self, town_name):
+        super().__init__(agent_id=f"group_{town_name}", group_type='resident_group', window_size=5)
+        self.town_name = town_name
         self.residents = {}  # resident_id -> Resident
         # 共享的 LLM 资源
         # self.model_manager = ModelManager()
@@ -284,7 +284,7 @@ class Resident(BaseAgent):
         """
         打印居民状态（用于调试）
         """
-        resident_log.info(f"居民 {self.resident_id} 在 {self.location} 的状态：")
+        resident_log.info(f"居民 {self.resident_id} 在 {self.town} 的 {self.location} 的状态：")
         resident_log.info(f"  是否就业：{self.employed}")
         resident_log.info(f"  工作：{self.job}")
         resident_log.info(f"  收入：{self.income}")
@@ -349,16 +349,16 @@ class Resident(BaseAgent):
         """随机选择一个相邻城市进行迁移"""
         try:
             print("居民所在城市：" + self.town)
-            current_city_name = self.town
+            current_town_name = self.town
             
-            if not current_city_name:
+            if not current_town_name:
                 resident_log.info(f"居民 {self.resident_id} 无法找到当前位置对应的城市")
                 return None
 
             # 获取相连的城市
-            connected_cities = map.get_connected_cities(current_city_name)
+            connected_cities = map.get_connected_cities(current_town_name)
             if not connected_cities:
-                resident_log.info(f"城市 {current_city_name} 没有相连的城市")
+                resident_log.info(f"城市 {current_town_name} 没有相连的城市")
                 return None
 
             # 随机选择一个相连的城市
@@ -377,13 +377,13 @@ class Resident(BaseAgent):
             resident_log.info(f"居民 {self.resident_id} 未找到合适的迁移目标城市")
             return False
 
-        # 生成新位置和town_id
-        new_location, new_town_id = map.generate_random_location(target_city)
+        # 生成新位置
+        new_location, new_town_name = map.generate_random_location(target_city)
 
         # 更新居民信息
         old_town = self.town
         self.location = new_location
-        self.town = new_town_id
+        self.town = new_town_name
 
-        resident_log.info(f"居民 {self.resident_id} 从 {old_town} 迁移到了 {new_town_id}")
+        resident_log.info(f"居民 {self.resident_id} 从 {old_town} 迁移到了 {new_town_name}")
         return True

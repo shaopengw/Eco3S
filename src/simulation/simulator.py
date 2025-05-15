@@ -72,10 +72,6 @@ class Simulator:
             # 打印当前时间步信息
             print(Back.GREEN + f"年份:{self.time.get_current_time()}" + Back.RESET)
 
-            # 打印所有城镇的就业市场状态---测试用
-            # print("\n=== 各城镇就业市场状态 ===")
-            # self.towns.print_towns_status()
-
             # 更新属性变量
             self.gdp = self.calculate_gdp() # 更新GDP
             print(f"当前GDP: {self.gdp}")
@@ -102,7 +98,7 @@ class Simulator:
                 'ordinary_type': OrdinaryGovernmentAgent,
                 'leader_type': HighRankingGovernmentAgent,
             }
-            government_decision, government_summary = await self.collect_group_decision('government', government_config)
+            # government_decision, government_summary = await self.collect_group_decision('government', government_config)
             
             # 收集叛军决策
             rebellion_config = {
@@ -110,7 +106,7 @@ class Simulator:
                 'ordinary_type': OrdinaryRebel,
                 'leader_type': RebelLeader,
             }
-            rebellion_decision, rebellion_summary = await self.collect_group_decision('rebellion', rebellion_config)
+            # rebellion_decision, rebellion_summary = await self.collect_group_decision('rebellion', rebellion_config)
             # rebellion_decision = '{"stage_rebellion": 2,"recruit_members": 0,"maintain_status": 0}'
             # rebellion_summary = '一致决定发动叛乱'
             # 统一执行决策
@@ -124,7 +120,7 @@ class Simulator:
             for resident_name in list(self.residents.keys()):
                 resident = self.residents[resident_name]
                 # 传入社会状态参数
-                tasks.append(resident.decide_action_by_llm(tax_rate=self.tax_rate, basic_living_cost=self.basic_living_cost))  # 基于LLM的决策--测试时建议暂时注释
+                # tasks.append(resident.decide_action_by_llm(tax_rate=self.tax_rate, basic_living_cost=self.basic_living_cost))  # 基于LLM的决策--测试时建议暂时注释
 
                 # 更新居民寿命（次/年）
                 if self.time.get_current_quarter() == 1:
@@ -136,6 +132,10 @@ class Simulator:
             # 并发执行所有居民的行为
             if tasks:  # 只在有任务时执行
                 await asyncio.gather(*tasks)
+                
+            # for resident_name in list(self.residents.keys()):
+            #     resident = self.residents[resident_name]
+            #     resident.print_resident_status()
 
             # 记录数据
             self.results["years"].append(self.time.get_current_time())
