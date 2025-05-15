@@ -292,15 +292,18 @@ class Map:
         为指定城市生成一个随机位置
         :param city_name: 城市名称
         :param sigma: 正态分布标准差，默认2.0
-        :return: ((x, y), town_id) 坐标元组和城镇ID
+        :return: (x, y) 坐标元组
         """
         if city_name not in self.city_dict:
             return None
-            
+                
         city_info = self.city_dict[city_name]
         center_x, center_y = city_info['location']
         
-        while True:
+        attempts = 0
+        max_attempts = 100  # 防止无限循环
+        
+        while attempts < max_attempts:
             # 生成正态分布的偏移量
             offset_x = int(random.gauss(0, sigma))
             offset_y = int(random.gauss(0, sigma))
@@ -311,7 +314,12 @@ class Map:
             
             # 确保位置在地图范围内
             if 0 <= x < self.width and 0 <= y < self.height:
-                return (x, y), city_name  # 返回坐标和城市名称作为town_id
+                return (x, y)
+                
+            attempts += 1
+            
+        # 如果多次尝试都失败，返回城市中心点
+        return (center_x, center_y)
 
 
 if __name__ == "__main__":

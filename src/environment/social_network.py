@@ -378,11 +378,11 @@ class SocialNetwork:
         for i, j in zip(*colleague_pairs):
             self.add_relation(resident_ids[i], resident_ids[j], "colleague")
         # 为每个城镇创建同乡关系超边
-        for town_id, town_data in towns.towns.items():
+        for town_name, town_data in towns.towns.items():
             town_residents = town_data['residents'].keys()
             if town_residents:
                 # 创建同乡关系超边
-                hometown_group_id = f"hometown_{town_id}"
+                hometown_group_id = f"hometown_{town_name}"
                 self.add_group(hometown_group_id, list(town_residents))
                 # 将超边ID存储到城镇数据中
                 town_data['hometown_group'] = hometown_group_id
