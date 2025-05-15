@@ -97,12 +97,13 @@ async def run_simulation(config: dict[str, Any]) -> None:
     residents = await generate_canal_agents(
         resident_info_path=resident_info_path,
         map=map,
+        initial_population=config["simulation"]["initial_population"],
     )
 
-    # 初始化居民群组
-    towns = Towns(map)
+    # 初始化城镇
+    towns = Towns(map=map,initial_population=config["simulation"]["initial_population"],)
     towns.initialize_resident_groups(residents)
-    
+
     # 打印初始化状态-----测试用
     # print("\n初始化城镇和就业市场状态：")
     # towns.print_towns_status()

@@ -5,17 +5,26 @@ from src.environment.job_market import JobMarket
 import random
 
 class Towns:
-    def __init__(self, map):
+    def __init__(self, map, initial_population=10):
         self.towns = defaultdict(lambda: {
             'info': {},
             'residents': {},
             'resident_group': None,
             'job_market': None
         })
-        self.initialize_towns(map)
+        self.initialize_towns(map, initial_population)
 
-    def initialize_towns(self, map):
+    def initialize_towns(self, map, initial_population):
         """初始化所有城镇信息"""
+        # 首先计算城镇总数
+        total_towns = len(map.city_dict)
+        if total_towns == 0:
+            print("警告: 地图中没有城镇")
+            return
+        
+        # 计算每个城镇的初始人口
+        residents_per_town = initial_population / total_towns
+        
         for city_name, city_info in map.city_dict.items():
             x, y = city_info['location']
             # 确保坐标在有效范围内
@@ -39,10 +48,7 @@ class Towns:
             
             # 根据城镇类型初始化就业市场
             town_type = "沿河" if city_info['type'] == 'canal' else "非沿河"
-            # 设置初始工作数量为居民数量的90%
-            resident_count = len(self.towns[city_name].get('residents', {}))
-            initial_jobs_count = int(resident_count * 0.9) if resident_count > 0 else 100
-            self.towns[city_name]['job_market'] = JobMarket(town_type=town_type, initial_jobs_count=initial_jobs_count)
+            self.towns[city_name]['job_market'] = JobMarket(town_type=town_type, initial_jobs_count= residents_per_town)
 
     def initialize_resident_groups(self, residents: Dict[int, 'Resident']):
         """

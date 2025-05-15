@@ -26,15 +26,6 @@ health_indices = [1, 2, 3, 4]
 # 收入范围（以清代的普通民众收入假设为基础）
 income_range = [0, 5, 10, 20, 50]  # 假设收入等级：0, 5, 10, 20, 50（两白银）
 
-# 职业及其分布比例
-professions = {
-    "农民": {"沿河": [0.5, 0.6], "非沿河": [0.7, 0.8]},
-    "商人": {"沿河": [0.1, 0.15], "非沿河": [0.0, 0.05]},
-    "叛军": {"沿河": [0.01, 0.1], "非沿河": [0.01, 0.02]},
-    "官员及士兵": {"沿河": [0.05, 0.08], "非沿河": [0.02, 0.03]},
-    "其他": {"沿河": [0.1, 0.2], "非沿河": [0.1, 0.15]}
-}
-
 # MBT及其分布比例
 p_mbti = [
     0.12625, 0.11625, 0.02125, 0.03125, 0.05125, 0.07125, 0.04625, 0.04125,
@@ -89,17 +80,6 @@ def get_random_health_index():
 def get_random_income():
     return random.choice(income_range)
 
-# 获取随机职业
-def get_random_profession(residence):
-    # 根据居住地选择职业类型
-    residence_key = "沿河" if residence == "沿河" else "非沿河"
-    
-    # 随机选择一个职业
-    profession_choice = random.choices(list(professions.keys()), 
-                                      [sum(professions[profession][residence_key]) for profession in professions])[0]
-
-    return profession_choice
-
 # 随机生成性格特征
 def get_random_mbti():
     return random.choices(mbti_types, p_mbti)[0]
@@ -115,7 +95,6 @@ def generate_resident_profile():
             satisfaction = get_random_satisfaction()
             health_index = get_random_health_index()
             income = get_random_income()
-            # profession = get_random_profession(residence)
             mbti = get_random_mbti()
 
             profile = {
@@ -125,10 +104,9 @@ def generate_resident_profile():
                 "satisfaction": satisfaction,
                 "health_index": health_index,
                 "income": income,
-                # "profession": profession,
                 "mbti": mbti,
             }
-            print(f"Generated profile: {profile}")
+            # print(f"Generated profile: {profile}")
             return profile
             
         # except Exception as e:
@@ -160,7 +138,7 @@ def save_resident_data(resident_data, filename):
         json.dump(resident_data, f, ensure_ascii=False, indent=2)
 
 if __name__ == "__main__":
-    N = 10 # 目标数据量
+    N = 10000 # 目标数据量
     resident_data = generate_resident_data(N)
     output_path = 'experiment_dataset/resident_data/resident_data.json'
     save_resident_data(resident_data, output_path)
