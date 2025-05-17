@@ -31,17 +31,22 @@ class JobMarket:
             "其他": {"沿河": [0.1, 0.2], "非沿河": [0.1, 0.15]}
         }
         
-        remaining_count = total_count
+        # 首先为每种工作分配一个基础岗位
+        remaining_count = total_count - len(professions_ratio)
+        for job in professions_ratio:
+            self.jobs_info[job]["total"] = 1
+        
+        # 然后按比例分配剩余岗位
         for job, ratios in professions_ratio.items():
             ratio_range = ratios[self.town_type]
-            # 使用随机比例
             ratio = random.uniform(ratio_range[0], ratio_range[1])
-            job_count = int(total_count * ratio)
-            self.jobs_info[job]["total"] = job_count
-            remaining_count -= job_count
+            additional_jobs = int(remaining_count * ratio)
+            self.jobs_info[job]["total"] += additional_jobs
+            remaining_count -= additional_jobs
         
         # 将剩余的工作分配给农民
-        self.jobs_info["农民"]["total"] += remaining_count
+        if remaining_count > 0:
+            self.jobs_info["农民"]["total"] += remaining_count
 
     def add_job(self, job, num=1):
         """
@@ -60,7 +65,36 @@ class JobMarket:
         if job in self.jobs_info and self.jobs_info[job]["total"] > 0:
             self.jobs_info[job]["total"] -= 1
 
-    def get_job(self, resident):
+    def assign_specific_job(self, resident, job_type):
+        """
+        分配指定职业给指定居民
+        :param resident: 居民对象
+        :param job_type: 指定的职业类型
+        :return: 是否成功分配工作（布尔值）
+        """
+        # 检查职业类型是否存在
+        if job_type not in self.jobs_info:
+            print(f"错误：不存在的职业类型 {job_type}")
+            return False
+            
+        # 检查该职业是否还有空缺
+        if len(self.jobs_info[job_type]["employed"]) >= self.jobs_info[job_type]["total"]:
+            print(f"错误：{job_type} 职位已满")
+            return False
+            
+        # 如果居民已经在其他职业就业，先移除原有工作
+        for job, info in self.jobs_info.items():
+            if resident.resident_id in info["employed"]:
+                info["employed"].remove(resident.resident_id)
+                break
+                
+        # 分配新工作
+        self.jobs_info[job_type]["employed"].append(resident.resident_id)
+        resident.employ(job_type)
+        print(f"成功将居民 {resident.resident_id} 分配到 {job_type} 职位")
+        return True
+
+    def assign_job(self, resident):
         """
         分配工作给居民
         :param resident: 居民对象
@@ -177,3 +211,15 @@ class JobMarket:
                     info["employed"].remove(employee)
             
         print(f"已随机减少 {num_jobs} 个工作岗位")
+
+    def get_vacant_jobs(self):
+        """
+        获取所有空工作岗位的名称和数量
+        :return: 字典，键为工作名称，值为空缺数量
+        """
+        vacant_jobs = {}
+        for job_type, info in self.jobs_info.items():
+            vacant_count = info["total"] - len(info["employed"])
+            if vacant_count > 0:
+                vacant_jobs[job_type] = vacant_count
+        return vacant_jobs
