@@ -13,7 +13,7 @@ async def test_resident_migration():
     map = Map(width=100, height=100)
     # 加载城市数据
 
-    map.initialize_city_matrix()
+    map.initialize_town_matrix()
     
     # 初始化工作市场和共享信息池
     job_market = JobMarket()
@@ -28,8 +28,8 @@ async def test_resident_migration():
     )
     
     # 为居民分配初始位置
-    initial_city = list(map.city_dict.keys())[0]  # 获取第一个城市
-    initial_location, initial_town_id = map.generate_random_location(initial_city)
+    initial_town = list(map.town_dict.keys())[0]  # 获取第一个城市
+    initial_location, initial_town_id = map.generate_random_location(initial_town)
     resident.location = initial_location
     resident.town = initial_town_id
     

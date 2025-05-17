@@ -131,3 +131,49 @@ class JobMarket:
                     job_info["employed"].remove(resident_id)
                     return True
         return False
+    def get_job_statistics(self, job_type):
+        """
+        获取指定职业的统计信息
+        """
+        if job_type in self.jobs_info:
+            total_positions = self.jobs_info[job_type]["total"]
+            current_employed = len(self.jobs_info[job_type]["employed"])    
+            return total_positions, current_employed
+        return None
+
+    def remove_random_jobs(self, num_jobs):
+        """
+        随机减少指定数量的工作岗位
+        :param num_jobs: 需要减少的工作岗位数量
+        """
+        # 获取所有职业类型的当前总工作数量
+        total_jobs = sum(info["total"] for info in self.jobs_info.values())
+        
+        # 如果要减少的数量大于现有工作数量，则调整为现有数量
+        num_jobs = min(num_jobs, total_jobs)
+        
+        # 按比例分配每个职业要减少的数量
+        remaining_jobs = num_jobs
+        for job_type, info in self.jobs_info.items():
+            if remaining_jobs <= 0:
+                break
+                
+            # 计算该职业应该减少的数量（按比例）
+            job_ratio = info["total"] / total_jobs if total_jobs > 0 else 0
+            jobs_to_remove = min(int(num_jobs * job_ratio), info["total"], remaining_jobs)
+            
+            # 减少该职业的工作数量
+            info["total"] = max(0, info["total"] - jobs_to_remove)
+            remaining_jobs -= jobs_to_remove
+            
+            # 如果减少后的工作数量小于当前就业人数，需要随机解雇一些员工
+            if len(info["employed"]) > info["total"]:
+                # 需要解雇的人数
+                num_to_layoff = len(info["employed"]) - info["total"]
+                # 随机选择要解雇的员工
+                employees_to_layoff = random.sample(info["employed"], num_to_layoff)
+                # 从就业列表中移除这些员工
+                for employee in employees_to_layoff:
+                    info["employed"].remove(employee)
+            
+        print(f"已随机减少 {num_jobs} 个工作岗位")

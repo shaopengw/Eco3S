@@ -17,38 +17,42 @@ class Towns:
     def initialize_towns(self, map, initial_population):
         """初始化所有城镇信息"""
         # 首先计算城镇总数
-        total_towns = len(map.city_dict)
+        total_towns = len(map.town_dict)
         if total_towns == 0:
             print("警告: 地图中没有城镇")
             return
         
-        # 计算每个城镇的初始人口
-        residents_per_town = initial_population / total_towns
+        # 计算每个城镇的初始人口，确保为整数
+        residents_per_town = int(initial_population / total_towns)
+        # 处理除不尽的情况，将剩余人口分配给第一个城镇
+        remaining_residents = initial_population - (residents_per_town * total_towns)
         
-        for city_name, city_info in map.city_dict.items():
-            x, y = city_info['location']
+        for i, (town_name, town_info) in enumerate(map.town_dict.items()):
+            x, y = town_info['location']
             # 确保坐标在有效范围内
             if not (0 <= x < map.width and 0 <= y < map.height):
-                print(f"警告: 城市 {city_name} 的坐标 ({x}, {y}) 超出地图范围")
+                print(f"警告: 城市 {town_name} 的坐标 ({x}, {y}) 超出地图范围")
                 continue
                 
             town_info = {
-                'name': city_name,
-                'location': city_info['location'],
-                'type': city_info['type']
+                'name': town_name,
+                'location': town_info['location'],
+                'type': town_info['type']
             }
             
             # 检查位置信息是否完整
-            if None in city_info['location']:
-                print(f"警告: 城市 {city_name} 的位置信息不完整")
+            if None in town_info['location']:
+                print(f"警告: 城市 {town_name} 的位置信息不完整")
                 continue
                 
-            self.towns[city_name]['info'] = town_info
-            self.towns[city_name]['resident_group'] = ResidentGroup(city_name)
+            self.towns[town_name]['info'] = town_info
+            self.towns[town_name]['resident_group'] = ResidentGroup(town_name)
             
             # 根据城镇类型初始化就业市场
-            town_type = "沿河" if city_info['type'] == 'canal' else "非沿河"
-            self.towns[city_name]['job_market'] = JobMarket(town_type=town_type, initial_jobs_count= residents_per_town)
+            town_type = "沿河" if town_info['type'] == 'canal' else "非沿河"
+            # 为第一个城镇添加剩余人口
+            current_town_population = residents_per_town + (remaining_residents if i == 0 else 0)
+            self.towns[town_name]['job_market'] = JobMarket(town_type=town_type, initial_jobs_count=current_town_population)
 
     def initialize_resident_groups(self, residents: Dict[int, 'Resident']):
         """
@@ -128,3 +132,30 @@ class Towns:
             print(f"居民数量: {len(town_data['residents'])}")
             print("就业市场状态:")
             town_data['job_market'].print_job_market_status()
+
+    def remove_jobs_across_towns(self, total_jobs_to_remove):
+        """
+        将要减少的岗位均匀分布给所有城镇
+        :param total_jobs_to_remove: 需要减少的总岗位数量
+        """
+        # 获取所有城镇数量
+        total_towns = len(self.towns)
+        if total_towns == 0:
+            print("警告: 没有可用的城镇")
+            return
+
+        # 计算每个城镇需要减少的岗位数量，确保为整数
+        jobs_per_town = int(total_jobs_to_remove / total_towns)
+        # 处理除不尽的情况，将剩余岗位分配给第一个城镇
+        remaining_jobs = total_jobs_to_remove - (jobs_per_town * total_towns)
+
+        # 遍历所有城镇并减少岗位
+        for i, (town_name, town_data) in enumerate(self.towns.items()):
+            if town_data['job_market']:
+                # 为第一个城镇添加剩余岗位
+                current_town_jobs = jobs_per_town + (remaining_jobs if i == 0 else 0)
+                town_data['job_market'].remove_random_jobs(current_town_jobs)
+            else:
+                print(f"警告: 城镇 {town_name} 没有就业市场")
+
+        print(f"已在所有城镇中均匀减少总计 {total_jobs_to_remove} 个工作岗位")
