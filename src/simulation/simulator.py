@@ -107,7 +107,7 @@ class Simulator:
                 'leader_type': RebelLeader,
             }
             # rebellion_decision, rebellion_summary = await self.collect_group_decision('rebellion', rebellion_config)
-            # rebellion_decision = '{"stage_rebellion": 2,"recruit_members": 0,"maintain_status": 0}'
+            # rebellion_decision = '{"stage_rebellion": 2,"recruit_members": 0,"maintain_status": 0,"target_town": "杭州"}'
             # rebellion_summary = '一致决定发动叛乱'
             # 统一执行决策
             if government_decision:
@@ -136,6 +136,7 @@ class Simulator:
             # for resident_name in list(self.residents.keys()):
             #     resident = self.residents[resident_name]
             #     resident.print_resident_status()
+            # self.get_rebels_statistics()
 
             # 记录数据
             self.results["years"].append(self.time.get_current_time())
@@ -204,6 +205,11 @@ class Simulator:
         """
         print(f"开始收集 {group_type} 的决策")
         
+        # 如果是叛军决策，获取各城镇叛军统计信息
+        towns_stats = None
+        if group_type == 'rebellion':
+            towns_stats = self.get_rebels_statistics()
+        
         # 获取所有普通成员
         ordinary_members = [
             member for member in config['agents'].values()
@@ -249,7 +255,10 @@ class Simulator:
         if info_officers and leaders and shared_pool.is_ended():
             discussion_summary = await info_officers[0].summarize_discussions()
             if discussion_summary:
-                decision = await leaders[0].make_decision(discussion_summary, self.time.get_current_time())
+                if group_type == 'rebellion':
+                    decision = await leaders[0].make_decision(discussion_summary, self.time.get_current_time(), towns_stats)
+                else:
+                    decision = await leaders[0].make_decision(discussion_summary, self.time.get_current_time())
                 return decision, discussion_summary
 
         return None, None
@@ -281,7 +290,7 @@ class Simulator:
             },
             'rebellion': {
                 'actions': {
-                    "stage_rebellion": lambda p: self.handle_rebellion(strength_investment=p),
+                    "stage_rebellion": lambda p, t: self.handle_rebellion(strength_investment=p, target_town=t),
                     "recruit_members": lambda p: self.rebellion.recruit_new_members(resource_investment=p),
                     "maintain_status": lambda p: self.rebellion.maintain_status() if p == 1 else None,
                 }
@@ -331,11 +340,17 @@ class Simulator:
             for action, param in decision_data.items():
                 if action in config[group_type]['actions']:
                     try:
-                        config[group_type]['actions'][action](param)
+                        if action == "stage_rebellion":
+                            # 处理叛乱决策
+                            strength = param
+                            target = decision_data.get('target_town', '')
+                            config[group_type]['actions'][action](strength, target)
+                        else:
+                            config[group_type]['actions'][action](param)
                     except Exception as e:
                         print(f"执行决策 {action} 时出错：{e}")
                         success = False
-                else:
+                elif action != "target_town":
                     print(f"未知的决策动作：{action}")
                     success = False
 
@@ -446,10 +461,11 @@ class Simulator:
         return gdp
 
 
-    def handle_rebellion(self, strength_investment):
+    def handle_rebellion(self, strength_investment, target_town=None):
         """
         处理叛军袭击事件
         :param strength_investment: 叛军投入的力量
+        :param target_town: 目标城镇名称
         :return: 是否执行成功
         """
         # 叛军发动袭击
@@ -459,11 +475,26 @@ class Simulator:
             print("叛军力量不足以发动叛乱。")
             return False
         
+        # 验证目标城镇
+        if target_town and target_town not in self.towns.towns:
+            print(f"目标城镇 {target_town} 不存在")
+            return False
+            
         self.rebellion_records += 1
-        print(f"叛军发动第 {self.rebellion_records} 次叛乱")
+        print(f"叛军在 {target_town or '未指定城镇'} 发动第 {self.rebellion_records} 次叛乱")
         
-        # 政府进行镇压
-        if self.government.suppress_rebellion(strength_investment):
+        # 获取目标城镇的官兵数量作为额外防御力量
+        town_defense = 0
+        if target_town:
+            town_data = self.towns.towns[target_town]
+            if town_data.get('job_market'):
+                town_defense = len(town_data['job_market'].jobs_info["官员及士兵"]["employed"])
+        
+        # 计算军事力量消耗（无论成功与否都会消耗）
+        military_consumption = (strength_investment + town_defense) * 0.1
+        self.government.military_strength = max(0, self.government.military_strength - military_consumption)
+        
+        if self.government.military_strength >= (strength_investment + town_defense):
             # 镇压成功，叛军损失大量军事力量和资源
             strength_loss = strength_investment * 0.8  # 损失80%的投入力量
             resource_loss = strength_investment * 0.5  # 损失50%对应的资源
@@ -474,13 +505,13 @@ class Simulator:
             # 损失叛军资源，注销叛军居民
             rebels_to_remove = int(self.rebellion.strength * (strength_loss / self.rebellion.strength))
             
-            # 从所有城镇中收集叛军居民
+            # 从目标城镇中选择要移除的叛军
             all_rebel_residents = []
-            for town_data in self.towns.towns.values():
-                town_job_market = town_data.get('job_market')
-                if town_job_market:
-                    rebel_residents = [resident_id for resident_id in town_job_market.jobs_info["叛军"]["employed"]]
-                    all_rebel_residents.extend(rebel_residents)
+            if target_town:
+                town_data = self.towns.towns[target_town]
+                if town_data.get('job_market'):
+                    target_rebels = [resident_id for resident_id in town_data['job_market'].jobs_info["叛军"]["employed"]]
+                    all_rebel_residents.extend(target_rebels)
             
             # 从收集到的叛军中随机选择要移除的人数
             if all_rebel_residents:
@@ -494,6 +525,7 @@ class Simulator:
                         self.population.death()
                         print(f"叛军 {rebel_id} 战死，失去生命")
             
+            print(f"政府成功压制了强度为 {strength_investment} 的叛乱，消耗军事力量 {military_consumption:.1f}。")
             print(f"叛军被镇压，损失军事力量 {strength_loss:.1f}，损失资源 {resource_loss:.1f}")
             print(f"共有 {len(selected_rebels)} 名叛军居民死亡")
             return True
@@ -505,7 +537,13 @@ class Simulator:
             self.rebellion.strength = max(0, self.rebellion.strength - strength_loss)
             self.rebellion.resources += resource_gain
             
+            # 镇压叛乱失败导致就业岗位减少（每点叛乱强度减少1个工作岗位）
+            job_loss = int(strength_investment)
+            self.towns.remove_jobs_across_towns(job_loss)
+            
+            print(f"政府未能压制强度为 {strength_investment} 的叛乱，消耗军事力量 {military_consumption:.1f}，")
             print(f"叛军袭击成功，损失军事力量 {strength_loss:.1f}，获得资源 {resource_gain:.1f}")
+            print(f"地区动乱导致商业衰败，减少就业岗位 {job_loss} 个。")
             return True
 
     def summarize_time_step_results(self):
@@ -580,3 +618,31 @@ class Simulator:
                     is_user=False,
                     round_num=self.time.get_current_time(),
                     store_in_shared=True                )
+
+    def get_rebels_statistics(self):
+        """
+        返回每个城市的叛军和官员数量统计
+        :return: 包含城镇统计信息的列表，每个元素为字典，包含城镇名、叛军数和官员数
+        """
+        total_rebels = 0
+        stats = []
+        
+        for town_name, town_data in self.towns.towns.items():
+            town_job_market = town_data.get('job_market')
+            if town_job_market:
+                # 获取叛军统计
+                rebel_total, rebel_count = town_job_market.get_job_statistics("叛军")
+                # 获取官员统计
+                official_total, official_count = town_job_market.get_job_statistics("官员及士兵")
+                total_rebels += rebel_count
+                
+                # 添加到统计列表
+                stats.append({
+                    "town_name": town_name,
+                    "rebel_count": rebel_count,
+                    "official_count": official_count
+                })
+                print(f"城镇 {stats} ")
+        
+        print(f"\n总叛军人数: {total_rebels}")
+        return stats

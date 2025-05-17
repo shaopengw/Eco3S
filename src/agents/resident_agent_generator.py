@@ -78,17 +78,17 @@ def assign_resident_location(resident_data, map):
     :return: ((x, y), town_name) 坐标元组和城市名称
     """
     # 从城市字典中随机选择一个城市
-    canal_cities = [name for name, info in map.city_dict.items() if info['type'] == 'canal']
-    non_canal_cities = [name for name, info in map.city_dict.items() if info['type'] == 'non_canal']
+    canal_towns = [name for name, info in map.town_dict.items() if info['type'] == 'canal']
+    non_canal_towns = [name for name, info in map.town_dict.items() if info['type'] == 'non_canal']
     
     if resident_data["residence"] == "沿河":
-        if not canal_cities:
+        if not canal_towns:
             return None
-        town_name = random.choice(canal_cities)
+        town_name = random.choice(canal_towns)
     else:
-        if not non_canal_cities:
+        if not non_canal_towns:
             return None
-        town_name = random.choice(non_canal_cities)
+        town_name = random.choice(non_canal_towns)
     
     location = map.generate_random_location(town_name)
     return location, town_name

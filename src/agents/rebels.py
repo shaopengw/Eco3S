@@ -105,34 +105,48 @@ class RebelLeader(BaseAgent):
         # 系统消息
         self.system_message = "你是一个清代地方叛军组织首领，你的目标是确保叛军组织的生存和壮大（拥有更多的成员和金钱）。"
 
-    async def make_decision(self, summary, round_num):
+    async def make_decision(self, summary, round_num, towns_stats):
         """
         根据普通叛军的讨论作出决策
         :param summary: 普通叛军的讨论报告
-        :param round_num: 当前轮次
         :return: 决策结果
         """
         # 等待讨论结束
         if not self.shared_pool.is_ended():
             return None
 
+        # 分析各城镇的力量对比
+        towns_analysis = []
+        for town in towns_stats:
+            rebel_count = town['rebel_count']
+            official_count = town['official_count']
+            towns_analysis.append(f"{town['town_name']}: 叛军{rebel_count}人，官兵{official_count}人")
+
         # 使用 CAMEL 框架来做决策
-        # TODO: 缺少历史决策信息，让叛军可以自己从中总结不同决策带来的后果。
+        # 历史决策信息，让叛军可以自己从中总结不同决策带来的后果。
         decision_prompt = (
             f"你是清代地方叛军组织的首领，负责根据下属的讨论和当前叛军状态做出最终决策。\n"
             f"当前叛军状态：\n"
             f"力量: {self.rebellion.get_strength()}\n"
             f"资源: {self.rebellion.get_resources()}\n"
             f"\n"
+            f"各城镇力量分布：\n" + "\n".join(towns_analysis) + "\n"
+            f"\n"
             f"下属们的讨论报告：\n{summary}\n"
             f"\n"
             f"请为以下每个动作分配参数。如果不选择某个动作，将其参数设为0。\n"
+            f"在做决策时，请考虑：\n"
+            f"1. 各城镇叛军和官兵的力量对比\n"
+            f"2. 选择叛军力量较强或官兵力量较弱的城镇发动叛乱\n"
+            f"3. 需要增加叛军力量的城镇优先招募新成员\n"
+            f"\n"
             f"输出格式为 JSON，包含以下字段：\n"
             f"- stage_rebellion: 发动叛乱的力量投入（整数）\n"
             f"- recruit_members: 招募新成员的资源投入（整数）\n"
             f"- maintain_status: 维持现状（设为1表示选择维持现状，设为0表示不选择）\n"
+            f"- target_town: 行动目标城镇名称（字符串）\n"
             f"例如：\n"
-            f'{{"stage_rebellion": 0, "recruit_members": 0, "maintain_status": 1}}'
+            f'{{"stage_rebellion": 100, "recruit_members": 500, "maintain_status": 0, "target_town": "杭州"}}'
             f"\n"
             f"请根据以上信息和状态作出最终决策，不要解释理由，只需输出JSON格式的决策结果。"
         )
@@ -208,17 +222,6 @@ class Rebellion:
         self.strength = initial_strength
         self.resources = initial_resources
         self.job_market = job_market
-
-    # def stage_rebellion(self, strength_investment):
-    #     """
-    #     发动叛乱
-    #     :param strength_investment: 投入的力量
-    #     """
-    #     if self.strength >= strength_investment:
-    #         self.strength -= strength_investment * 0.1  # 力量消耗
-    #         print(f"叛军成功发动了叛乱，消耗了 {strength_investment * 0.1} 力量。")
-    #     else:
-    #         print("叛军力量不足以发动叛乱。")
 
     def recruit_new_members(self, resource_investment):
         """

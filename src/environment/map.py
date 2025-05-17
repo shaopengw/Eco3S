@@ -7,7 +7,7 @@ import math
 import random
 
 class Map:
-    def __init__(self, width, height, data_file='src\environment\cities_data.json'):
+    def __init__(self, width, height, data_file='src/environment/towns_data.json'):
         """
         初始化地图
         :param width: 地图宽度
@@ -19,12 +19,12 @@ class Map:
         self.grid = np.zeros((height, width))
         self.river_grid = np.zeros((height, width))
         self.navigability = 1.0  # 初始运河通航能力为1.0（最佳状态）
-        self.city_graph = {}  # 城市图（邻接表形式）
-        self.city_dict = {}  # 存储城市信息
+        self.town_graph = {}  # 城市图（邻接表形式）
+        self.town_dict = {}  # 存储城市信息
         self.terrain_ruggedness = np.random.rand(height, width)
         
         # 加载城市数据
-        self.load_city_data(data_file)
+        self.load_town_data(data_file)
         
         # 计算地图边界（中国大致经纬度范围）
         self.min_longitude = 109
@@ -32,7 +32,7 @@ class Map:
         self.min_latitude = 30.0
         self.max_latitude = 41.0
 
-    def load_city_data(self, data_file):
+    def load_town_data(self, data_file):
         """
         从JSON文件加载城市数据
         :param data_file: JSON文件路径
@@ -40,25 +40,25 @@ class Map:
         try:
             with open(data_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)     
-            self.city_data = data
+            self.town_data = data
             
         except Exception as e:
             print(f"加载城市数据失败: {e}")
             # 提供默认数据
-            self.city_data = {
-                "canal_cities": [],
-                "other_cities": []
+            self.town_data = {
+                "canal_towns": [],
+                "other_towns": []
             }
 
-    def _prepare_cities(self):
+    def _prepare_towns(self):
         """转换原始城市数据为带坐标的列表"""
-        cities = []
-        for city in self.city_data['canal_cities'] + self.city_data['other_cities']:
-            x = self.longitude_to_x(city['longitude'])
-            y = self.latitude_to_y(city['latitude'])
-            city_type = 'canal' if city in self.city_data['canal_cities'] else 'non_canal'
-            cities.append({'x': x, 'y': y, 'name': city['name'], 'type': city_type})
-        return cities
+        towns = []
+        for town in self.town_data['canal_towns'] + self.town_data['other_towns']:
+            x = self.longitude_to_x(town['longitude'])
+            y = self.latitude_to_y(town['latitude'])
+            town_type = 'canal' if town in self.town_data['canal_towns'] else 'non_canal'
+            towns.append({'x': x, 'y': y, 'name': town['name'], 'type': town_type})
+        return towns
 
     def longitude_to_x(self, longitude):
         """
@@ -82,10 +82,10 @@ class Map:
         
         # 获取运河城市坐标点
         river_points = []
-        for city in self.city_data['canal_cities']:
-            x = self.longitude_to_x(city['longitude'])
-            y = self.latitude_to_y(city['latitude'])
-            river_points.append((x, y, city['name']))
+        for town in self.town_data['canal_towns']:
+            x = self.longitude_to_x(town['longitude'])
+            y = self.latitude_to_y(town['latitude'])
+            river_points.append((x, y, town['name']))
         
         # 连接各个点形成运河
         for i in range(len(river_points) - 1):
@@ -104,33 +104,33 @@ class Map:
                         if 0 <= ny < self.height and 0 <= nx < self.width:
                             self.river_grid[ny, nx] = 1
     
-    def initialize_city_graph(self, max_distance=20):
+    def initialize_town_graph(self, max_distance=20):
         """
         初始化城市图，通过计算城市间距离来建立连接
         :param max_distance: 最大连接距离
         """
-        all_cities = self._prepare_cities()
-        self.city_graph = {}
+        all_towns = self._prepare_towns()
+        self.town_graph = {}
         
         # 初始化城市字典和图
-        for city in all_cities:
-            city_name = city['name']
-            self.city_dict[city_name] = {
-                'location': (city['x'], city['y']),
-                'type': city['type']
+        for town in all_towns:
+            town_name = town['name']
+            self.town_dict[town_name] = {
+                'location': (town['x'], town['y']),
+                'type': town['type']
             }
-            self.city_graph[city_name] = []
+            self.town_graph[town_name] = []
 
         # 计算城市间距离并建立连接
-        for city1 in all_cities:
-            for city2 in all_cities:
-                if city1['name'] != city2['name']:
+        for town1 in all_towns:
+            for town2 in all_towns:
+                if town1['name'] != town2['name']:
                     distance = self._calculate_distance(
-                        (city1['x'], city1['y']),
-                        (city2['x'], city2['y'])
+                        (town1['x'], town1['y']),
+                        (town2['x'], town2['y'])
                     )
                     if distance <= max_distance:
-                        self.city_graph[city1['name']].append(city2['name'])
+                        self.town_graph[town1['name']].append(town2['name'])
 
     def _calculate_distance(self, point1, point2):
         """
@@ -138,13 +138,13 @@ class Map:
         """
         return math.sqrt((point1[0] - point2[0])**2 + (point1[1] - point2[1])**2)
 
-    def get_connected_cities(self, city_name):
+    def get_connected_towns(self, town_name):
         """
         获取与指定城市相连的所有城市
-        :param city_name: 城市名称
+        :param town_name: 城市名称
         :return: 相连城市列表
         """
-        return self.city_graph.get(city_name, [])
+        return self.town_graph.get(town_name, [])
 
     def visualize_map(self):
         """
@@ -161,22 +161,22 @@ class Map:
         plt.scatter(river_x, river_y, color='blue', label='The Canal', s=10)
 
         # 准备城市数据
-        canal_cities = []
-        other_cities = []
-        for city_name in self.city_dict:
-            city_info = self.city_dict[city_name]
-            if city_info['type'] == 'canal':
-                canal_cities.append((city_info['location'][0], city_info['location'][1], city_name))
+        canal_towns = []
+        other_towns = []
+        for town_name in self.town_dict:
+            town_info = self.town_dict[town_name]
+            if town_info['type'] == 'canal':
+                canal_towns.append((town_info['location'][0], town_info['location'][1], town_name))
             else:
-                other_cities.append((city_info['location'][0], city_info['location'][1], city_name))
+                other_towns.append((town_info['location'][0], town_info['location'][1], town_name))
 
         # 绘制运河城市和名称标注
-        if canal_cities:
-            canal_x = [city[0] for city in canal_cities]
-            canal_y = [city[1] for city in canal_cities]
+        if canal_towns:
+            canal_x = [town[0] for town in canal_towns]
+            canal_y = [town[1] for town in canal_towns]
             plt.scatter(canal_x, canal_y, color='red', label='Canal Towns', s=50, marker='s')
             
-            for x, y, name in canal_cities:
+            for x, y, name in canal_towns:
                 plt.annotate(name, 
                             xy=(x, y),
                             xytext=(5, 5), 
@@ -186,12 +186,12 @@ class Map:
                             bbox=dict(facecolor='white', edgecolor='none', alpha=0.7))
         
         # 绘制非运河城市和名称标注
-        if other_cities:
-            other_x = [city[0] for city in other_cities]
-            other_y = [city[1] for city in other_cities]
-            plt.scatter(other_x, other_y, color='green', label='Other Cities', s=50, marker='^')
+        if other_towns:
+            other_x = [town[0] for town in other_towns]
+            other_y = [town[1] for town in other_towns]
+            plt.scatter(other_x, other_y, color='green', label='Other towns', s=50, marker='^')
             
-            for x, y, name in other_cities:
+            for x, y, name in other_towns:
                 plt.annotate(name, 
                             xy=(x, y),
                             xytext=(5, 5), 
@@ -258,9 +258,9 @@ class Map:
         :return: 市场城镇的位置列表
         """
         towns = []
-        for city in self.city_dict:
-            if self.city_dict[city]['type'] == 'canal':
-                towns.append(self.city_dict[city]['location'])
+        for town in self.town_dict:
+            if self.town_dict[town]['type'] == 'canal':
+                towns.append(self.town_dict[town]['location'])
         return towns
 
     def get_non_river_towns(self):
@@ -269,9 +269,9 @@ class Map:
         :return: 非沿河城市的位置列表
         """
         towns = []
-        for city in self.city_dict:
-            if self.city_dict[city]['type'] == 'non_canal':
-                towns.append(self.city_dict[city]['location'])
+        for town in self.town_dict:
+            if self.town_dict[town]['type'] == 'non_canal':
+                towns.append(self.town_dict[town]['location'])
         return towns
     
     def print_map(self):
@@ -280,25 +280,25 @@ class Map:
         """
         print("River Grid:")
         print(self.river_grid)
-        print("city_graph:", self.city_graph)
-        print("city_dict:", self.city_dict)
+        print("town_graph:", self.town_graph)
+        print("town_dict:", self.town_dict)
 
     def initialize_map(self):
         self.initialize_river()
-        self.initialize_city_graph()
+        self.initialize_town_graph()
 
-    def generate_random_location(self, city_name, sigma=2.0):
+    def generate_random_location(self, town_name, sigma=2.0):
         """
         为指定城市生成一个随机位置
-        :param city_name: 城市名称
+        :param town_name: 城市名称
         :param sigma: 正态分布标准差，默认2.0
         :return: (x, y) 坐标元组
         """
-        if city_name not in self.city_dict:
+        if town_name not in self.town_dict:
             return None
                 
-        city_info = self.city_dict[city_name]
-        center_x, center_y = city_info['location']
+        town_info = self.town_dict[town_name]
+        center_x, center_y = town_info['location']
         
         attempts = 0
         max_attempts = 100  # 防止无限循环

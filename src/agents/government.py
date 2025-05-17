@@ -254,29 +254,6 @@ class Government:
         else:
             print("政府因预算限制未支持军事力量。")
 
-    def suppress_rebellion(self, rebellion_strength):
-        """
-        镇压叛乱
-        :param rebellion_strength: 叛乱的强度
-        :return: 是否成功镇压叛乱（布尔值）
-        """
-        #发生叛乱这件事需要记录。
-        # 无论是否镇压叛乱，都要消耗军事力量。如果成功镇压叛乱，则居民满意度不变，否则将减少就业岗位（逻辑：地区动乱，商业衰败，居民失业）
-        # 计算军事力量消耗（无论成功与否都会消耗）
-        military_consumption = rebellion_strength * 0.1
-        self.military_strength = max(0, self.military_strength - military_consumption)
-
-        if self.military_strength >= rebellion_strength:
-            print(f"政府成功压制了强度为 {rebellion_strength} 的叛乱，消耗军事力量 {military_consumption:.1f}。")
-            return True
-        else:
-            # 叛乱失败导致就业岗位减少（假设每点叛乱强度减少1个工作岗位）
-            job_loss = int(rebellion_strength)
-            self.job_market.remove_random_jobs(job_loss)
-            print(f"政府未能压制强度为 {rebellion_strength} 的叛乱，消耗军事力量 {military_consumption:.1f}，")
-            print(f"地区动乱导致商业衰败，减少就业岗位 {job_loss} 个。")
-            return False
-
     def get_budget(self):
         """
         获取当前预算

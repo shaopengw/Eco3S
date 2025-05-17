@@ -345,7 +345,7 @@ class Resident(BaseAgent):
             return False
 
 
-    def get_random_direction_city(self, map):
+    def get_random_direction_town(self, map):
         """随机选择一个相邻城市进行迁移"""
         try:
             print("居民所在城市：" + self.town)
@@ -356,14 +356,14 @@ class Resident(BaseAgent):
                 return None
 
             # 获取相连的城市
-            connected_cities = map.get_connected_cities(current_town_name)
-            if not connected_cities:
+            connected_towns = map.get_connected_towns(current_town_name)
+            if not connected_towns:
                 resident_log.info(f"城市 {current_town_name} 没有相连的城市")
                 return None
 
             # 随机选择一个相连的城市
-            next_city = random.choice(connected_cities)
-            return next_city
+            next_town = random.choice(connected_towns)
+            return next_town
             
         except Exception as e:
             resident_log.error(f"选择迁移目标城市时出错: {e}")
@@ -372,13 +372,13 @@ class Resident(BaseAgent):
     async def migrate_to_new_town(self, map):
         """迁移到新城镇"""
         # 获取目标城市
-        target_city = self.get_random_direction_city(map)
-        if not target_city:
+        target_town = self.get_random_direction_town(map)
+        if not target_town:
             resident_log.info(f"居民 {self.resident_id} 未找到合适的迁移目标城市")
             return False
 
         # 生成新位置
-        new_location, new_town_name = map.generate_random_location(target_city)
+        new_location, new_town_name = map.generate_random_location(target_town)
 
         # 更新居民信息
         old_town = self.town
