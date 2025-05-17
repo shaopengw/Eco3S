@@ -161,14 +161,26 @@ class Resident(BaseAgent):
             f"基本生活所需值: {basic_living_cost}\n"
         )
 
+        # 如果是未就业居民，获取当前城镇的空缺岗位信息
+        job_market_info = ""
+        if not self.employed and self.town and self.job_market:
+            vacant_jobs = self.job_market.get_vacant_jobs()
+            if vacant_jobs:
+                job_market_info = "以下是当前可用工作岗位：\n" + "\n".join(
+                    f"- {job}: {count}个空缺" for job, count in vacant_jobs.items()
+                )
+            else:
+                job_market_info = "当前没有可用的工作岗位。\n"
+
         # 基础提示信息
         base_prompt = (
             f"请根据当前状态决定下一步行动。"
             f"以下是你的当前状态：{status_prompt}\n"
             f"以下是目前的社会环境：{social_status}\n"
+            f"{job_market_info}"
             f"你可以选择以下行动之一：\n"
             f"1. 参加叛乱\n"
-            f"2. 继续目前的工作\n"
+            f"2. {'寻找工作' if not self.employed else '继续目前的工作'}\n"
             f"3. 迁徙到其他位置\n"
             f"请分析当前状况，并返回：\n"
             f"1. 你的选择（1-3）\n"
@@ -206,16 +218,12 @@ class Resident(BaseAgent):
 
             resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}, 更新满意度：{self.satisfaction}")
 
-             # 处理迁移决定
-            if select == 3:
-                success = await self.migrate_to_new_town(self.map)  # 使用实例变量
-                if not success:
-                    resident_log.info(f"居民 {self.resident_id} 迁移失败，保持原位置")
+            # 执行决策
+            await self.execute_decision(select)
 
             # 如果有发言，在社交网络中传播
             if speech:
-                print("居民{self.resident_id}发言：{speech}")
-                # 获取所有可能的关系类型
+                print(f"居民 {self.resident_id} 发言：{speech}")
                 relation_types = ["friend", "colleague", "family", "hometown"]
                 # 随机选择一种关系类型
                 selected_type = random.choice(relation_types)
@@ -227,6 +235,42 @@ class Resident(BaseAgent):
         except Exception as e:
             resident_log.error(f"居民 {self.resident_id} 决策出错：{e}")
             return "2", "发生错误，继续当前工作"  # 默认选择继续工作
+
+    async def execute_decision(self, select):
+        """
+        执行居民的决策
+        """
+        try:
+            if select == 1:
+                resident_log.info(f"居民 {self.resident_id} 决定参加叛乱")
+                self.job_market.assign_specific_job(self, "叛军")
+                return True
+            
+            elif select == 2:
+                if not self.employed and self.town and self.job_market:
+                    # 80%的概率能够成功就业
+                    if random.random() < 0.8 :
+                        self.job_market.assign_job(self)
+                        return True
+                    resident_log.info(f"居民 {self.resident_id} 求职失败")
+                    return False
+                resident_log.info(f"居民 {self.resident_id} 继续当前工作：{self.job}")
+                return True
+            
+            elif select == 3:
+                # 迁移到新城镇
+                success = await self.migrate_to_new_town(self.map)
+                if not success:
+                    resident_log.info(f"居民 {self.resident_id} 迁移失败，保持原位置")
+                return success
+            
+            else:
+                resident_log.error(f"居民 {self.resident_id} 的选择无效：{select}")
+                return False
+
+        except Exception as e:
+            resident_log.error(f"居民 {self.resident_id} 执行决策时出错：{e}")
+            return False
 
     async def spread_speech_in_network(self, speech: str, relation_type: str):
         """
@@ -348,7 +392,6 @@ class Resident(BaseAgent):
     def get_random_direction_town(self, map):
         """随机选择一个相邻城市进行迁移"""
         try:
-            print("居民所在城市：" + self.town)
             current_town_name = self.town
             
             if not current_town_name:
@@ -387,3 +430,12 @@ class Resident(BaseAgent):
 
         resident_log.info(f"居民 {self.resident_id} 从 {old_town} 迁移到了 {new_town_name}")
         return True
+
+    def set_town(self, town_name, towns_manager):
+        """
+        设置居民所在的城镇和towns_manager
+        """
+        self.town = town_name
+        self.towns_manager = towns_manager
+        if self.towns_manager and self.town:
+            self.job_market = self.towns_manager.get_town_job_market(self.town)

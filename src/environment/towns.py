@@ -59,8 +59,6 @@ class Towns:
         根据居民的town属性初始化居民群组并分配工作
         :param residents: 居民字典，key为居民ID，value为居民对象
         """
-
-
         # 根据居民的town属性进行分组并同时分配工作
         for resident_id, resident in residents.items():
             if resident.town:
@@ -79,7 +77,7 @@ class Towns:
                     # 如果就业率低于90%，尝试为该居民分配工作
                     if employment_rate < 0.9:
                         if town_data['job_market']:
-                            town_data['job_market'].get_job(resident)
+                            town_data['job_market'].assign_job(resident)
                         else:
                             print(f"警告: 城镇 {town_data['info']['name']} 没有就业市场")
                 else:
