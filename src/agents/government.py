@@ -177,7 +177,7 @@ class HighRankingGovernmentAgent(BaseAgent):
         government_log.info(f"  人物性格：{self.mbti}")
 
 class Government:
-    def __init__(self, map, job_market, initial_budget, time):
+    def __init__(self, map, job_market, military_strength, initial_budget, time):
         """
         初始化政府类
         :param map: 地图对象，用于获取地理信息
@@ -187,7 +187,7 @@ class Government:
         self.map = map
         self.job_market = job_market
         self.budget = initial_budget
-        self.military_strength = 100  # 初始军事力量
+        self.military_strength = military_strength
         self.time = time
         self.tax_rate = 0.1  # 初始税率为 10%
         self.residents = {}  # 添加居民引用

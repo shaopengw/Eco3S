@@ -60,35 +60,6 @@ async def run_simulation(config: dict[str, Any]) -> None:
     # 初始化就业市场
     job_market = JobMarket()
 
-    # 初始化政府
-    government = Government(
-        map=map,
-        job_market=job_market,
-        initial_budget=config["simulation"]["government_budget"],
-        time=time,
-    )
-
-    # 初始化政府官员
-    government_info_path = config["data"]["government_info_path"]  # 政府官员信息文件路径
-    government_officials = await generate_government_agents(
-        government_info_path=government_info_path,
-        government=government,
-    )
-
-    # 初始化叛军
-    rebellion = Rebellion(
-        initial_strength=config["simulation"]["rebellion_initial_strength"],
-        initial_resources=config["simulation"]["rebellion_initial_resources"],
-        job_market=job_market,
-    )
-
-    # 初始化叛军成员
-    rebellion_info_path = config["data"]["rebellion_info_path"]  # 叛军信息文件路径
-    rebels_agents = await generate_rebels_agents(
-        rebellion_info_path=rebellion_info_path,
-        rebellion=rebellion,
-    )
-
     # 初始化人口
     population = Population(initial_population=config["simulation"]["initial_population"])
 
@@ -117,6 +88,48 @@ async def run_simulation(config: dict[str, Any]) -> None:
         social_network.visualize()
     except Exception as e:
         print(f"社交网络可视化失败：{e}")
+
+    # 计算所有城镇的总叛军和官兵数量
+    total_rebels = 0
+    total_military = 0
+    for city_name, town_data in towns.towns.items():
+        job_market = town_data['job_market']
+        if job_market:
+            # 获取已就业的叛军和官兵数量
+            rebels_count = len(job_market.jobs_info["叛军"]["employed"])
+            military_count = len(job_market.jobs_info["官员及士兵"]["employed"])
+            total_rebels += rebels_count
+            total_military += military_count
+
+    # 初始化政府
+    government = Government(
+        map=map,
+        job_market=job_market,
+        military_strength=total_military,
+        initial_budget=config["simulation"]["government_budget"],
+        time=time,
+    )
+
+    # 初始化政府官员
+    government_info_path = config["data"]["government_info_path"]  # 政府官员信息文件路径
+    government_officials = await generate_government_agents(
+        government_info_path=government_info_path,
+        government=government,
+    )
+
+    # 初始化叛军
+    rebellion = Rebellion(
+        initial_strength=total_rebels,
+        initial_resources=config["simulation"]["rebellion_initial_resources"],
+        job_market=job_market,
+    )
+
+    # 初始化叛军成员
+    rebellion_info_path = config["data"]["rebellion_info_path"]  # 叛军信息文件路径
+    rebels_agents = await generate_rebels_agents(
+        rebellion_info_path=rebellion_info_path,
+        rebellion=rebellion,
+    )
 
     # 初始化模拟器
     simulator = Simulator(
