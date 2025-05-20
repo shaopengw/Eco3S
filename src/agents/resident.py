@@ -90,16 +90,25 @@ class Resident(BaseAgent):
         self.context_creator = None
         self.memory = None
 
-    def employ(self, job):
+    def employ(self, job, salary=None):
         """
         居民就业
         :param job: 工作名称
+        :param salary: 工作工资，如果未指定则使用职业默认工资
         """
         self.employed = True
         self.job = job
-        self.income = 10  # 假设每份工作的收入为10
+        
+        # 如果指定了工资，使用指定的工资；否则从就业市场获取该职业的标准工资
+        if salary is not None:
+            self.income = salary
+        elif self.job_market and job in self.job_market.jobs_info:
+            self.income = self.job_market.jobs_info[job]["salary"]
+        else:
+            self.income = 0
+            
         self.satisfaction += 10  # 就业增加满意度
-        resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 找到了工作：{job}。")
+        resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 找到了工作：{job}，工资：{self.income}。")
     
     def unemploy(self):
         """
@@ -190,15 +199,20 @@ class Resident(BaseAgent):
             f"   - 就业情况\n"
             f"   - 社会环境（税率等）\n"
             f"   - 个人健康状况\n"
+            f"如果选择寻找工作（选择2），还需要提供：\n"
+            f"4. 期望职业（可选：农民、商人、叛军、官员及士兵、其他）\n"
+            f"5. 可接受的最低工资（数字）\n"
         )
 
         prompt = base_prompt + (
-            f"4. 一段对政府的态度发言\n"
+            f"6. 一段对政府的态度发言\n"
             f"注意：必须返回单行的JSON字符串，格式如下：\n"
-            f'{{"select": 你的选择, "reason": 选择原因, "satisfaction_change": 满意度变化值, "speech": 你的发言}}'
+            f'{{"select": 你的选择, "reason": 选择原因, "satisfaction_change": 满意度变化值, '
+            f'"desired_job": 期望职业, "min_salary": 最低工资, "speech": 你的发言}}'
             if need_speech else
             f"注意：必须返回单行的JSON字符串，格式如下：\n"
-            f'{{"select": 你的选择, "reason": 选择原因, "satisfaction_change": 满意度变化值}}'
+            f'{{"select": 你的选择, "reason": 选择原因, "satisfaction_change": 满意度变化值, '
+            f'"desired_job": 期望职业, "min_salary": 最低工资}}'
         )
 
         try:
@@ -211,15 +225,25 @@ class Resident(BaseAgent):
             reason = decision_data.get("reason")
             speech = decision_data.get("speech", "")
             satisfaction_change = decision_data.get("satisfaction_change")
+            desired_job = decision_data.get("desired_job")
+            min_salary = decision_data.get("min_salary")
 
             if satisfaction_change is not None:
                 # 确保满意度在0-100范围内
                 self.satisfaction = max(0, min(100, self.satisfaction + satisfaction_change))
 
-            resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}, 更新满意度：{self.satisfaction}")
+            resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}, "
+                            if desired_job is None and min_salary is None else f"期望职业：{desired_job}, 最低工资：{min_salary}, "
+                            f"更新满意度：{self.satisfaction}")
 
             # 执行决策
-            await self.execute_decision(select)
+            if select == 2 and not self.employed:
+                # 如果选择找工作，则传入期望职业和最低工资
+                job_request = await self.execute_decision(select, desired_job, min_salary)
+                if isinstance(job_request, dict):
+                    return job_request  # 返回求职信息
+            else:
+                await self.execute_decision(select)
 
             # 如果有发言，在社交网络中传播
             if speech:
@@ -236,7 +260,7 @@ class Resident(BaseAgent):
             resident_log.error(f"居民 {self.resident_id} 决策出错：{e}")
             return "2", "发生错误，继续当前工作"  # 默认选择继续工作
 
-    async def execute_decision(self, select):
+    async def execute_decision(self, select, desired_job=None, min_salary=None):
         """
         执行居民的决策
         """
@@ -247,13 +271,14 @@ class Resident(BaseAgent):
                 return True
             
             elif select == 2:
-                if not self.employed and self.town and self.job_market:
-                    # 80%的概率能够成功就业
-                    if random.random() < 0.8 :
-                        self.job_market.assign_job(self)
-                        return True
-                    resident_log.info(f"居民 {self.resident_id} 求职失败")
-                    return False
+                if not self.employed and desired_job and min_salary:
+                    # 返回求职信息
+                    return {
+                        "town": self.town, 
+                        "desired_job": desired_job, 
+                        "min_salary": min_salary,
+                        "resident_id": self.resident_id 
+                    }
                 resident_log.info(f"居民 {self.resident_id} 继续当前工作：{self.job}")
                 return True
             

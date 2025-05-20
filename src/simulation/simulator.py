@@ -4,6 +4,7 @@ import random
 import pandas as pd
 import os
 from datetime import datetime, timedelta
+from collections import defaultdict
 from colorama import Back
 from src.agents.resident_agent_generator import (generate_canal_agents)
 from src.agents.government import (
@@ -117,6 +118,9 @@ class Simulator:
 
             # 居民行为
             tasks = []
+            # 清空上一轮的求职信息
+            town_job_requests = defaultdict(list)
+            
             for resident_name in list(self.residents.keys()):
                 resident = self.residents[resident_name]
                 # 传入社会状态参数
@@ -129,9 +133,35 @@ class Simulator:
                         self.population.death()
                         continue
 
-            # 并发执行所有居民的行为
+            # 并发执行所有居民的行为并收集结果
             if tasks:  # 只在有任务时执行
-                await asyncio.gather(*tasks)
+                results = await asyncio.gather(*tasks)
+                
+                # 处理返回的结果
+                for result in results:
+                    if isinstance(result, dict) and "town" in result:
+                        town_job_requests[result["town"]].append({
+                            "desired_job": result["desired_job"],
+                            "min_salary": result["min_salary"],
+                            "resident_id": result.get("resident_id")  # 添加居民ID
+                        })
+            
+            # 处理所有城镇的求职信息
+            if town_job_requests:
+                hiring_results = self.towns.process_town_job_requests(town_job_requests)
+                print("\n求职处理结果汇总：")
+                for town_name, hired_residents in hiring_results.items():
+                    print(f"城镇 {town_name} 成功录用了 {len(hired_residents)} 名居民")
+            
+            # 打印每个城镇的求职信息统计
+            for town, requests in town_job_requests.items():
+                print(f"\n城镇 {town} 的求职信息:")
+                job_counts = {}
+                for req in requests:
+                    job = req["desired_job"]
+                    job_counts[job] = job_counts.get(job, 0) + 1
+                for job, count in job_counts.items():
+                    print(f"- {job}: {count}人求职")
                 
             # for resident_name in list(self.residents.keys()):
             #     resident = self.residents[resident_name]
