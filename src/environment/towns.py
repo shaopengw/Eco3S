@@ -78,6 +78,7 @@ class Towns:
                     if employment_rate < 0.9:
                         if town_data['job_market']:
                             town_data['job_market'].assign_job(resident)
+                            # print(f"居民 {resident_id} 尝试为城镇 {town_name} 分配工作")
                         else:
                             print(f"警告: 城镇 {town_data['info']['name']} 没有就业市场")
                 else:
@@ -157,3 +158,36 @@ class Towns:
                 print(f"警告: 城镇 {town_name} 没有就业市场")
 
         print(f"已在所有城镇中均匀减少总计 {total_jobs_to_remove} 个工作岗位")
+
+    def process_town_job_requests(self, town_job_requests):
+        """
+        处理城镇的求职信息
+        :param town_job_requests: 字典，键为城镇名称，值为该城镇的求职请求列表
+        """
+        results = {}
+        for town_name, requests in town_job_requests.items():
+            if town_name not in self.towns:
+                print(f"警告：城镇 {town_name} 不存在")
+                continue
+                
+            job_market = self.towns[town_name]['job_market']
+            if not job_market:
+                print(f"警告：城镇 {town_name} 没有就业市场")
+                continue
+            
+            # 为每个请求添加居民对象信息
+            complete_requests = []
+            for request in requests:
+                resident_id = request.get("resident_id")
+                if resident_id in self.towns[town_name]['residents']:
+                    resident = self.towns[town_name]['residents'][resident_id]
+                    complete_requests.append({
+                        "resident": resident,
+                        "desired_job": request["desired_job"],
+                        "min_salary": request["min_salary"]
+                    })
+            # 处理该城镇的所有求职申请
+            hired_residents = job_market.process_job_applications(complete_requests)
+            results[town_name] = hired_residents
+            
+        return results
