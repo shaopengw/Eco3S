@@ -166,6 +166,7 @@ class JobMarket:
                     job_info["employed"].remove(resident_id)
                     return True
         return False
+
     def get_job_statistics(self, job_type):
         """
         获取指定职业的统计信息
