@@ -118,7 +118,7 @@ class Resident(BaseAgent):
         self.job = None
         self.income = 0
         self.satisfaction -= 20  # 失业降低满意度
-        resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 失业了。")
+        resident_log.info(f"居民 {self.resident_id} 失去了城镇 {self.town} 的工作。")
 
     async def receive_information(self, message_content):
         """
@@ -190,7 +190,7 @@ class Resident(BaseAgent):
             f"你可以选择以下行动之一：\n"
             f"1. 参加叛乱\n"
             f"2. {'寻找工作' if not self.employed else '继续目前的工作'}\n"
-            f"3. 迁徙到其他位置\n"
+            f"3. 迁徙到其他位置（警告：迁移将导致失去当前工作，需要在新城镇重新寻找工作）\n"
             f"请分析当前状况，并返回：\n"
             f"1. 你的选择（1-3）\n"
             f"2. 选择原因\n"
@@ -366,23 +366,11 @@ class Resident(BaseAgent):
         处理居民死亡的逻辑
         """
         if self.lifespan <= 0:
-            # 从就业市场中移除
-            if self.employed and self.job and self.town:
-                # 获取城镇的就业市场
-                if self.towns_manager and self.town in self.towns_manager.towns:
-                    town_job_market = self.towns_manager.get_town_job_market(self.town)
-                    if town_job_market:
-                        town_job_market.remove_resident(self.resident_id, self.job)
+            # 从就业市场和城镇中移除
+            if self.town and self.towns_manager:
+                self.towns_manager.remove_resident_in_town(self.resident_id, self.town, self.job)
                 self.employed = False
                 self.job = None
-            
-            # 从城镇居民列表中移除
-            if self.town and self.towns_manager:
-                town_data = self.towns_manager.towns[self.town]
-                if self.resident_id in town_data['residents']:
-                    del town_data['residents'][self.resident_id]
-                if town_data['resident_group']:
-                    town_data['resident_group'].remove_resident(self.resident_id)
 
             # 从社交网络中移除（如果存在）
             if hasattr(self, 'social_network'):
@@ -446,14 +434,26 @@ class Resident(BaseAgent):
             return False
 
         # 生成新位置
-        new_location, new_town_name = map.generate_random_location(target_town)
+        new_location = map.generate_random_location(target_town)
+
+        # 保存旧城镇信息
+        old_town = self.town
+        old_job = self.job
+
+        # 从原城镇中移除居民
+        if self.towns_manager and old_town:
+            self.towns_manager.remove_resident_in_town(self.resident_id, old_town, old_job)
 
         # 更新居民信息
-        old_town = self.town
         self.location = new_location
-        self.town = new_town_name
+        self.town = target_town
+        self.unemploy()
+        
+        # 将居民添加到新城镇
+        if self.towns_manager:
+            self.towns_manager.add_resident(self, target_town)
 
-        resident_log.info(f"居民 {self.resident_id} 从 {old_town} 迁移到了 {new_town_name}")
+        resident_log.info(f"居民 {self.resident_id} 从 {old_town} 迁移到了 {target_town}")
         return True
 
     def set_town(self, town_name, towns_manager):

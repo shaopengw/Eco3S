@@ -90,6 +90,7 @@ class Towns:
         if self.towns[town_name]['resident_group'] is None:
             self.towns[town_name]['resident_group'] = ResidentGroup(town_name)
         self.towns[town_name]['resident_group'].add_resident(resident)
+        resident.set_town(town_name, self)
 
     def get_nearest_town(self, location):
         """获取最近的城镇名称"""
@@ -191,3 +192,31 @@ class Towns:
             results[town_name] = hired_residents
             
         return results
+
+    def remove_resident_in_town(self, resident_id, town_name, job_type=None):
+        """
+        处理居民删除逻辑
+        :param resident_id: 居民ID
+        :param town_name: 城镇名称
+        :param job_type: 工作类型（可选）
+        :return: 是否成功删除
+        """
+        if town_name not in self.towns:
+            print(f"警告：城镇 {town_name} 不存在")
+            return False
+            
+        town_data = self.towns[town_name]
+        
+        # 从就业市场中移除
+        if town_data['job_market']:
+            town_data['job_market'].remove_resident(resident_id, job_type)
+            
+        # 从城镇居民列表中移除
+        if resident_id in town_data['residents']:
+            del town_data['residents'][resident_id]
+            
+        # 从居民群组中移除
+        if town_data['resident_group']:
+            town_data['resident_group'].remove_resident(resident_id)
+            
+        return True

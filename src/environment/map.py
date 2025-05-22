@@ -142,9 +142,12 @@ class Map:
         """
         获取与指定城市相连的所有城市
         :param town_name: 城市名称
-        :return: 相连城市列表
+        :return: 相连城市列表，如果城市不存在则返回None
         """
-        return self.town_graph.get(town_name, [])
+        if town_name not in self.town_dict:
+            print(f"警告：城市 {town_name} 不存在")
+            return None
+        return self.town_graph.get(town_name, []).copy()
 
     def visualize_map(self):
         """
@@ -278,8 +281,7 @@ class Map:
         """
         打印地图（用于调试）
         """
-        print("River Grid:")
-        print(self.river_grid)
+        print("River Grid:", self.river_grid)
         print("town_graph:", self.town_graph)
         print("town_dict:", self.town_dict)
 
