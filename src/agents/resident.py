@@ -118,7 +118,7 @@ class Resident(BaseAgent):
         self.job = None
         self.income = 0
         self.satisfaction -= 20  # 失业降低满意度
-        resident_log.info(f"居民 {self.resident_id} 失去了城镇 {self.town} 的工作。")
+        resident_log.info(f"居民 {self.resident_id} 目前无业")
 
     async def receive_information(self, message_content):
         """
@@ -188,10 +188,10 @@ class Resident(BaseAgent):
             f"以下是目前的社会环境：{social_status}\n"
             f"{job_market_info}"
             f"你可以选择以下行动之一：\n"
-            f"1. 参加叛乱\n"
-            f"2. {'寻找工作' if not self.employed else '继续目前的工作'}\n"
-            f"3. 迁徙到其他位置（警告：迁移将导致失去当前工作，需要在新城镇重新寻找工作）\n"
-            f"请分析当前状况，并返回：\n"
+            f"1. 参加叛乱（警告：这是一个极端且危险的选择，可能导致生命危险，只有在生活极度困难且其他选择都无法解决问题时才考虑）\n"
+            f"2. {'寻找工作（仅限失业状态可选）' if not self.employed else '继续目前的工作'}\n"
+            f"3. 迁徙到其他位置（当前位置无法维持生计时可以考虑，但会失去当前工作，需要在新城镇重新寻找工作）\n"
+            f"请仔细分析当前状况，优先考虑稳定和安全的选择，并返回：\n"
             f"1. 你的选择（1-3）\n"
             f"2. 选择原因\n"
             f"3. 满意度变化值（-20到20之间的数字），需要考虑：\n"
@@ -199,20 +199,22 @@ class Resident(BaseAgent):
             f"   - 就业情况\n"
             f"   - 社会环境（税率等）\n"
             f"   - 个人健康状况\n"
-            f"如果选择寻找工作（选择2），还需要提供：\n"
-            f"4. 期望职业（可选：农民、商人、叛军、官员及士兵、其他）\n"
-            f"5. 可接受的最低工资（数字）\n"
+            f"{'' if self.employed else '如果选择寻找工作（选择2），还需要提供：'}\n"
+            f"{'' if self.employed else '4. 期望职业（可选：农民、商人、官员及士兵、其他）'}\n"
+            f"{'' if self.employed else '5. 可接受的最低工资（数字）'}"
+        )
+
+        # 修改JSON格式字符串的构建方式
+        json_format = (
+            '{"select": 你的选择, "reason": 选择原因, "satisfaction_change": 满意度变化值'
+            + (', "desired_job": 期望职业, "min_salary": 最低工资' if not self.employed else '')
+            + (', "speech": 你的发言}' if need_speech else '}')
         )
 
         prompt = base_prompt + (
-            f"6. 一段对政府的态度发言\n"
-            f"注意：必须返回单行的JSON字符串，格式如下：\n"
-            f'{{"select": 你的选择, "reason": 选择原因, "satisfaction_change": 满意度变化值, '
-            f'"desired_job": 期望职业, "min_salary": 最低工资, "speech": 你的发言}}'
-            if need_speech else
-            f"注意：必须返回单行的JSON字符串，格式如下：\n"
-            f'{{"select": 你的选择, "reason": 选择原因, "satisfaction_change": 满意度变化值, '
-            f'"desired_job": 期望职业, "min_salary": 最低工资}}'
+            "6. 一段对政府的态度发言\n"
+            "注意：必须返回单行的JSON字符串，格式如下：\n"
+            + json_format
         )
 
         try:
@@ -232,9 +234,12 @@ class Resident(BaseAgent):
                 # 确保满意度在0-100范围内
                 self.satisfaction = max(0, min(100, self.satisfaction + satisfaction_change))
 
-            resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}, "
-                            if desired_job is None and min_salary is None else f"期望职业：{desired_job}, 最低工资：{min_salary}, "
-                            f"更新满意度：{self.satisfaction}")
+            # 记录居民的决策信息
+            if desired_job is None and min_salary is None:
+                resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}, 更新满意度：{self.satisfaction}")
+            else:
+                resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}, 期望职业：{desired_job}, 最低工资：{min_salary}, 更新满意度：{self.satisfaction}")
+
 
             # 执行决策
             if select == 2 and not self.employed:
@@ -265,13 +270,24 @@ class Resident(BaseAgent):
         执行居民的决策
         """
         try:
-            if select == 1:
-                resident_log.info(f"居民 {self.resident_id} 决定参加叛乱")
-                self.job_market.assign_specific_job(self, "叛军")
-                return True
+            if select == 1:  # 参加叛乱
+                # 添加更严格的条件判断
+                if (self.satisfaction < 20 and  # 满意度极低
+                    self.health_index < 3 and  # 健康状况极差
+                    ((not self.employed and self.income < self.job_market.jobs_info["农民"]["salary"] * 0.3) or  # 失业且收入极低
+                     (self.employed and self.income < basic_living_cost * 0.5))):  # 或有工作但收入无法维持基本生活
+                    resident_log.info(f"居民 {self.resident_id} 因生活极度困难，被迫参加叛乱")
+                    self.job_market.assign_specific_job(self, "叛军")
+                    return True
+                else:
+                    resident_log.info(f"居民 {self.resident_id} 暂时放弃参加叛乱的想法，继续寻找其他出路")
+                    return False
             
-            elif select == 2:
-                if not self.employed and desired_job and min_salary:
+            elif select == 2:  # 寻找工作或继续工作
+                if self.employed:
+                    resident_log.info(f"居民 {self.resident_id} 已有工作：{self.job}，继续目前工作")
+                    return True
+                elif desired_job and min_salary:
                     # 返回求职信息
                     return {
                         "town": self.town, 
@@ -279,7 +295,6 @@ class Resident(BaseAgent):
                         "min_salary": min_salary,
                         "resident_id": self.resident_id 
                     }
-                resident_log.info(f"居民 {self.resident_id} 继续当前工作：{self.job}")
                 return True
             
             elif select == 3:

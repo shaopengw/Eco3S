@@ -68,19 +68,13 @@ class Towns:
                     # 添加居民到城镇
                     self.add_resident(resident, town_name)
 
-                    # 计算当前城镇的就业率
+                    # 分配工作
                     town_data = self.towns[town_name]
-                    current_employed = sum(len(info["employed"]) for info in town_data['job_market'].jobs_info.values())
-                    total_residents = len(town_data['residents'])
-                    employment_rate = current_employed / total_residents if total_residents > 0 else 0
-                    
-                    # 如果就业率低于90%，尝试为该居民分配工作
-                    if employment_rate < 0.9:
-                        if town_data['job_market']:
-                            town_data['job_market'].assign_job(resident)
-                            # print(f"居民 {resident_id} 尝试为城镇 {town_name} 分配工作")
-                        else:
-                            print(f"警告: 城镇 {town_data['info']['name']} 没有就业市场")
+                    if town_data['job_market']:
+                        town_data['job_market'].assign_job(resident)
+                        # print(f"居民 {resident_id} 尝试为城镇 {town_name} 分配工作")
+                    else:
+                        print(f"警告: 城镇 {town_data['info']['name']} 没有就业市场")
                 else:
                     print(f"警告: 无法找到居民 {resident_id} 所在的城镇 {resident.town}")
     

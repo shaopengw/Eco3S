@@ -33,23 +33,32 @@ class JobMarket:
             "其他": {"沿河": [0.1, 0.2], "非沿河": [0.1, 0.15]}
         }
         
+        # 确保总岗位数不小于职业类型数
+        total_count = max(total_count, len(professions_ratio))
+        
         # 首先为每种工作分配一个基础岗位
         remaining_count = total_count - len(professions_ratio)
         for job in professions_ratio:
             self.jobs_info[job]["total"] = 1
         
-        # 然后按比例分配剩余岗位
+        # 然后按比例分配剩余岗位，保留一部分给农民
+        reserved_for_farmers = int(remaining_count * 0.2)  # 预留20%给农民
+        remaining_for_others = remaining_count - reserved_for_farmers
+        
+        allocated_count = 0
         for job, ratios in professions_ratio.items():
+            if job == "农民":
+                continue
             ratio_range = ratios[self.town_type]
             ratio = random.uniform(ratio_range[0], ratio_range[1])
-            additional_jobs = int(remaining_count * ratio)
+            additional_jobs = max(0, int(remaining_for_others * ratio))
             self.jobs_info[job]["total"] += additional_jobs
-            remaining_count -= additional_jobs
+            allocated_count += additional_jobs
         
-        # 将剩余的工作分配给农民
-        if remaining_count > 0:
-            self.jobs_info["农民"]["total"] += remaining_count
-
+        # 将所有剩余的工作分配给农民，确保非负
+        remaining_jobs = max(0, remaining_count - allocated_count)
+        self.jobs_info["农民"]["total"] += remaining_jobs + reserved_for_farmers
+    
     def add_job(self, job, num=1):
         """
         添加工作机会
