@@ -153,7 +153,7 @@ class Simulator:
                 for town_name, hired_residents in hiring_results.items():
                     print(f"城镇 {town_name} 成功录用了 {len(hired_residents)} 名居民")
             
-            # 打印每个城镇的求职信息统计
+            # 打印每个城镇的求职信息统计--测试用
             for town, requests in town_job_requests.items():
                 print(f"\n城镇 {town} 的求职信息:")
                 job_counts = {}
@@ -163,16 +163,35 @@ class Simulator:
                 for job, count in job_counts.items():
                     print(f"- {job}: {count}人求职")
                 
-            # for resident_name in list(self.residents.keys()):
-            #     resident = self.residents[resident_name]
-            #     resident.print_resident_status()
+                # 打印该城镇的就业市场详细信息
+                job_market = self.towns.towns[town]['job_market']
+                if job_market:
+                    print(f"\n城镇 {town} 的就业市场状态：")
+                    for job_type, info in job_market.jobs_info.items():
+                        total_positions = info["total_positions"]
+                        employed_count = len(info["employed"])
+                        vacant_positions = total_positions - employed_count
+                        print(f"- {job_type}:")
+                        print(f"  总岗位数: {total_positions}")
+                        print(f"  已雇佣: {employed_count}")
+                        print(f"  空缺岗位: {vacant_positions}")
+                        print(f"  平均工资: {info['salary']:.2f}")
+            
+            # 打印每个城镇的当前人数统计---测试用
+            # print("\n各城镇当前人口统计：")
+            # for town_name, town_data in self.towns.towns.items():
+            #     resident_count = len(town_data['residents'])
+            #     print(f"城镇 {town_name}: {resident_count}人")
+        
+            for resident_name in list(self.residents.keys()):  #测试用-展示居民情况
+                resident = self.residents[resident_name]
+                resident.print_resident_status()
             # self.get_rebels_statistics()
 
+            total_unemployment_rate = self.calculate_total_unemployment_rate()
             # 记录数据
             self.results["years"].append(self.time.get_current_time())
             self.results["rebellions"].append(self.rebellion_records)
-            # 计算总体失业率（所有城镇的平均值）
-            total_unemployment_rate = self.calculate_total_unemployment_rate()
             self.results["unemployment_rate"].append(total_unemployment_rate)
             self.results["population"].append(self.population.get_population())
             self.results["government_budget"].append(self.government.get_budget())
@@ -186,6 +205,7 @@ class Simulator:
             print(f"年份: {self.time.get_current_time()}, "
                   f"叛乱次数: {self.rebellion_records}, "
                   f"人口数量: {self.population.get_population()}, "
+                  f"失业率: {self.results['unemployment_rate'][-1]:.2f}, "
                   f"平均满意度: {self.results['average_satisfaction'][-1]:.2f}, "
                   f"税率: {self.results['tax_rate'][-1]*100:.1f}%, "
                   f"基本生活所需值: {self.basic_living_cost}, "
@@ -424,6 +444,9 @@ class Simulator:
 
     async def integrate_new_residents(self, new_residents):
         """将新居民整合到系统中"""
+        if not new_residents:
+            return
+
         # 更新全局居民列表
         self.residents.update(new_residents)
         print(f"{len(new_residents)} 名新居民已出生")
@@ -467,13 +490,33 @@ class Simulator:
         print(f"基本生活所需值调整为: {self.basic_living_cost}")
         return self.basic_living_cost
 
-    # TODO：需要完善
     def calculate_total_unemployment_rate(self):
         """
         计算所有城镇的平均失业率
         :return: 平均失业率（浮点数）
         """
-        return 0.0
+        total_residents = 0
+        total_employed = 0
+        
+        # 遍历所有城镇
+        for town_name, town_data in self.towns.towns.items():
+            # 获取该城镇的居民总数
+            residents_count = len(town_data['residents'])
+            total_residents += residents_count
+            
+            # 获取该城镇的就业市场
+            job_market = town_data['job_market']
+            if job_market:
+                # 计算该城镇的就业人数（所有职业的就业人数之和）
+                town_employed = sum(len(info["employed"]) for info in job_market.jobs_info.values())
+                total_employed += town_employed
+        
+        # 计算总体失业率
+        if total_residents == 0:
+            return 0.0
+        
+        unemployment_rate = 1.0 - (total_employed / total_residents)
+        return unemployment_rate
 
     def calculate_gdp(self):
         """
