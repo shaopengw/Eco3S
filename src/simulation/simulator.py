@@ -99,7 +99,7 @@ class Simulator:
                 'ordinary_type': OrdinaryGovernmentAgent,
                 'leader_type': HighRankingGovernmentAgent,
             }
-            # government_decision, government_summary = await self.collect_group_decision('government', government_config)
+            government_decision, government_summary = await self.collect_group_decision('government', government_config)
             
             # 收集叛军决策
             rebellion_config = {
@@ -107,7 +107,7 @@ class Simulator:
                 'ordinary_type': OrdinaryRebel,
                 'leader_type': RebelLeader,
             }
-            # rebellion_decision, rebellion_summary = await self.collect_group_decision('rebellion', rebellion_config)
+            rebellion_decision, rebellion_summary = await self.collect_group_decision('rebellion', rebellion_config)
             # rebellion_decision = '{"stage_rebellion": 2,"recruit_members": 0,"maintain_status": 0,"target_town": "杭州"}'
             # rebellion_summary = '一致决定发动叛乱'
             # 统一执行决策
@@ -162,31 +162,28 @@ class Simulator:
                     job_counts[job] = job_counts.get(job, 0) + 1
                 for job, count in job_counts.items():
                     print(f"- {job}: {count}人求职")
-                
-                # 打印该城镇的就业市场详细信息
-                job_market = self.towns.towns[town]['job_market']
-                if job_market:
-                    print(f"\n城镇 {town} 的就业市场状态：")
-                    for job_type, info in job_market.jobs_info.items():
-                        total_positions = info["total_positions"]
-                        employed_count = len(info["employed"])
-                        vacant_positions = total_positions - employed_count
-                        print(f"- {job_type}:")
-                        print(f"  总岗位数: {total_positions}")
-                        print(f"  已雇佣: {employed_count}")
-                        print(f"  空缺岗位: {vacant_positions}")
-                        print(f"  平均工资: {info['salary']:.2f}")
             
-            # 打印每个城镇的当前人数统计---测试用
-            # print("\n各城镇当前人口统计：")
-            # for town_name, town_data in self.towns.towns.items():
-            #     resident_count = len(town_data['residents'])
-            #     print(f"城镇 {town_name}: {resident_count}人")
-        
-            for resident_name in list(self.residents.keys()):  #测试用-展示居民情况
-                resident = self.residents[resident_name]
-                resident.print_resident_status()
+            # 打印城镇详细状态---测试用
+            # print("\n各城镇详细状态：")
+            # self.towns.print_towns_status()
+                
+            # for resident_name in list(self.residents.keys()):  #测试用-展示居民情况
+            #     resident = self.residents[resident_name]
+            #     resident.print_resident_status()
             # self.get_rebels_statistics()
+
+            # 在每年第一季度进行工资结算
+            if self.time.get_current_quarter() == 1:
+                rebel_salary, other_salary = self.calculate_total_salaries()
+                # 从叛军资源中扣除工资
+                self.rebellion.resources = max(0, self.rebellion.resources - rebel_salary)
+                # 从政府预算中扣除工资
+                self.government.budget = max(0, self.government.budget - other_salary)
+                # print(f"\n年度工资支出:")
+                # print(f"叛军工资总支出: {rebel_salary:.2f}")
+                # print(f"其他职业工资总支出: {other_salary:.2f}")
+                # print(f"叛军剩余资源: {self.rebellion.resources:.2f}")
+                # print(f"政府剩余预算: {self.government.budget:.2f}")
 
             total_unemployment_rate = self.calculate_total_unemployment_rate()
             # 记录数据
@@ -704,9 +701,9 @@ class Simulator:
             town_job_market = town_data.get('job_market')
             if town_job_market:
                 # 获取叛军统计
-                rebel_total, rebel_count = town_job_market.get_job_statistics("叛军")
+                rebel_total, rebel_count, salary = town_job_market.get_job_statistics("叛军")
                 # 获取官员统计
-                official_total, official_count = town_job_market.get_job_statistics("官员及士兵")
+                official_total, official_count, salary = town_job_market.get_job_statistics("官员及士兵")
                 total_rebels += rebel_count
                 
                 # 添加到统计列表
@@ -715,7 +712,19 @@ class Simulator:
                     "rebel_count": rebel_count,
                     "official_count": official_count
                 })
-                print(f"城镇 {stats} ")
-        
-        print(f"\n总叛军人数: {total_rebels}")
         return stats
+
+    def calculate_total_salaries(self):
+        """
+        计算所有城镇的叛军和其他职业总工资
+        :return: (叛军总工资, 其他职业总工资)
+        """
+        total_rebel_salary = 0
+        total_other_salary = 0
+        
+        for town_name, town_data in self.towns.towns.items():
+            if town_data.get('job_market'):
+                total_rebel_salary += town_data['job_market'].get_rebel_total_salary()
+                total_other_salary += town_data['job_market'].get_other_total_salary()
+        
+        return total_rebel_salary, total_other_salary

@@ -176,7 +176,8 @@ class Resident(BaseAgent):
             vacant_jobs = self.job_market.get_vacant_jobs()
             if vacant_jobs:
                 job_market_info = "以下是当前可用工作岗位：\n" + "\n".join(
-                    f"- {job}: {count}个空缺" for job, count in vacant_jobs.items()
+                    f"- {job}: {count}个空缺, 基础工资：{self.job_market.jobs_info[job]['base_salary']}"
+                    for job, count in vacant_jobs.items()
                 )
             else:
                 job_market_info = "当前没有可用的工作岗位。\n"
@@ -271,6 +272,12 @@ class Resident(BaseAgent):
         """
         try:
             if select == 1:  # 参加叛乱
+                # 首先检查叛军职位是否已满
+                total_positions, current_employed = self.job_market.get_job_statistics("叛军")
+                if total_positions <= current_employed:
+                    resident_log.info(f"居民 {self.resident_id} 想参加叛乱但叛军已满员")
+                    return False
+                
                 # 添加更严格的条件判断
                 if (self.satisfaction < 20 and  # 满意度极低
                     self.health_index < 3 and  # 健康状况极差
