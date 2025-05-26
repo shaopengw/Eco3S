@@ -220,8 +220,7 @@ class JobMarket:
                 # 从就业列表中移除这些员工
                 for employee in employees_to_layoff:
                     info["employed"].remove(employee)
-            
-        print(f"已随机减少 {num_jobs} 个工作岗位")
+        # print(f"已随机减少 {num_jobs} 个工作岗位")
 
     def get_vacant_jobs(self):
         """

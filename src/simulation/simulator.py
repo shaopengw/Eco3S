@@ -99,7 +99,7 @@ class Simulator:
                 'ordinary_type': OrdinaryGovernmentAgent,
                 'leader_type': HighRankingGovernmentAgent,
             }
-            government_decision, government_summary = await self.collect_group_decision('government', government_config)
+            # government_decision, government_summary = await self.collect_group_decision('government', government_config)
             
             # 收集叛军决策
             rebellion_config = {
@@ -107,7 +107,7 @@ class Simulator:
                 'ordinary_type': OrdinaryRebel,
                 'leader_type': RebelLeader,
             }
-            rebellion_decision, rebellion_summary = await self.collect_group_decision('rebellion', rebellion_config)
+            # rebellion_decision, rebellion_summary = await self.collect_group_decision('rebellion', rebellion_config)
             # rebellion_decision = '{"stage_rebellion": 2,"recruit_members": 0,"maintain_status": 0,"target_town": "杭州"}'
             # rebellion_summary = '一致决定发动叛乱'
             # 统一执行决策
@@ -280,8 +280,7 @@ class Simulator:
 
         # 后续轮次：基于之前的讨论内容发表见解
         for round_num in range(2, max_rounds + 1):
-            print(f"第{round_num}轮决策")
-
+            # print(f"第{round_num}轮决策")
             round_tasks = [
                 member.generate_and_share_opinion()
                 for member in random.sample(ordinary_members, len(ordinary_members))
