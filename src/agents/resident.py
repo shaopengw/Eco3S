@@ -70,6 +70,7 @@ class ResidentGroup(BaseAgent):
 class Resident(BaseAgent):
     def __init__(self, resident_id, job_market, shared_pool, map):
         """初始化居民"""
+        super().__init__(agent_id=resident_id, group_type='resident', window_size=3)
         self.resident_id = resident_id
         self.job_market = job_market
         self.shared_pool = shared_pool
@@ -125,7 +126,7 @@ class Resident(BaseAgent):
         接收信息（如政府政策、叛乱信息）
         """
         # TODO: 确认基于同质图和异质图的信息传递细节是否达到预期，邻居agent信息影响目标agent的决策（观念+市场中的就业信息）
-        # print("触发receive_information--------------------------------")
+        print("触发receive_information--------------------------------")
         self.satisfaction += 5  # 接收信息增加满意度
         resident_log.info(f"居民 {self.resident_id} 收到了信息：{message_content}。")
 
@@ -253,11 +254,12 @@ class Resident(BaseAgent):
 
             # 如果有发言，在社交网络中传播
             if speech:
-                print(f"居民 {self.resident_id} 发言：{speech}")
+                resident_log.info(f"居民 {self.resident_id} 发言：{speech}")
                 relation_types = ["friend", "colleague", "family", "hometown"]
                 # 随机选择一种关系类型
                 selected_type = random.choice(relation_types)
                 # 在社交网络中传播信息
+                print(f"居民 {self.resident_id} 选择了关系类型：{selected_type},开始传播言论。---------------")
                 await self.spread_speech_in_network(speech, selected_type)
 
             return select, reason

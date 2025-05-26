@@ -1,92 +1,11 @@
 [
   {
     "gender": "男性",
-    "lifespan": 28,
+    "lifespan": 35,
     "residence": "沿河",
-    "satisfaction": 48,
-    "health_index": 2,
-    "income": 0,
-    "mbti": "ENFP"
-  },
-  {
-    "gender": "女性",
-    "lifespan": 72,
-    "residence": "非沿河",
-    "satisfaction": 49,
-    "health_index": 2,
-    "income": 0,
-    "mbti": "ESTJ"
-  },
-  {
-    "gender": "男性",
-    "lifespan": 21,
-    "residence": "非沿河",
-    "satisfaction": 52,
+    "satisfaction": 7,
     "health_index": 2,
     "income": 5,
-    "mbti": "ENFP"
-  },
-  {
-    "gender": "男性",
-    "lifespan": 62,
-    "residence": "沿河",
-    "satisfaction": 4,
-    "health_index": 3,
-    "income": 10,
-    "mbti": "ENTJ"
-  },
-  {
-    "gender": "男性",
-    "lifespan": 20,
-    "residence": "沿河",
-    "satisfaction": 89,
-    "health_index": 2,
-    "income": 20,
-    "mbti": "ENFJ"
-  },
-  {
-    "gender": "女性",
-    "lifespan": 27,
-    "residence": "沿河",
-    "satisfaction": 84,
-    "health_index": 4,
-    "income": 5,
-    "mbti": "ESTP"
-  },
-  {
-    "gender": "男性",
-    "lifespan": 29,
-    "residence": "沿河",
-    "satisfaction": 2,
-    "health_index": 2,
-    "income": 5,
-    "mbti": "ISFP"
-  },
-  {
-    "gender": "男性",
-    "lifespan": 27,
-    "residence": "沿河",
-    "satisfaction": 62,
-    "health_index": 2,
-    "income": 20,
-    "mbti": "ENFP"
-  },
-  {
-    "gender": "男性",
-    "lifespan": 55,
-    "residence": "沿河",
-    "satisfaction": 13,
-    "health_index": 1,
-    "income": 50,
-    "mbti": "ESTJ"
-  },
-  {
-    "gender": "女性",
-    "lifespan": 22,
-    "residence": "沿河",
-    "satisfaction": 79,
-    "health_index": 2,
-    "income": 50,
-    "mbti": "INTJ"
+    "mbti": "INTP"
   }
 ]
