@@ -140,11 +140,16 @@ class Simulator:
                 # 处理返回的结果
                 for result in results:
                     if isinstance(result, dict) and "town" in result:
-                        town_job_requests[result["town"]].append({
-                            "desired_job": result["desired_job"],
-                            "min_salary": result["min_salary"],
-                            "resident_id": result.get("resident_id")  # 添加居民ID
-                        })
+                        # 处理求职请求
+                        town_job_requests[result["town"]].append(result)
+                    elif isinstance(result, tuple) and len(result) == 4:
+                        # 处理带有发言的决策结果
+                        select, reason, speech, relation_type = result
+                        for resident_id, resident in self.residents.items():
+                            if resident.resident_id == select:  # 使用select作为ID匹配
+                                # 处理发言传播
+                                await self.spread_speech_in_network(resident_id, speech, relation_type)
+                                break
             
             # 处理所有城镇的求职信息
             if town_job_requests:
@@ -727,3 +732,45 @@ class Simulator:
                 total_other_salary += town_data['job_market'].get_other_total_salary()
         
         return total_rebel_salary, total_other_salary
+    
+    async def spread_speech_in_network(self, resident_id, speech, relation_type):
+        """
+        在社交网络中传播发言
+        """
+        try:
+            resident = self.residents.get(resident_id)
+            if not resident:
+                return
+
+            if relation_type in ["friend", "colleague"]:
+                # 在异质图中传播
+                neighbors = self.social_network.hetero_graph.get_neighbors(resident_id)
+                for neighbor_id in neighbors:
+                    if self.social_network.hetero_graph.graph[resident_id][neighbor_id]["type"] == relation_type:
+                        neighbor = self.residents.get(neighbor_id)
+                        if neighbor:
+                            response = await neighbor.receive_information(speech)
+                            if response:
+                                response_content, response_type = response
+                                # 递归传播邻居的回应
+                                await self.spread_speech_in_network(neighbor_id, response_content, response_type)
+
+            elif relation_type in ["family", "hometown"]:
+                # 在超图中传播
+                groups = [edge_id for edge_id in self.social_network.hyper_graph.get_node_hyperedges(resident_id)
+                        if edge_id.startswith(relation_type)]
+                if groups:
+                    selected_group = random.choice(groups)
+                    members = self.social_network.hyper_graph.get_hyperedge_nodes(selected_group)
+                    for member_id in members:
+                        if member_id != resident_id:
+                            # 获取群组成员对象并调用其receive_information方法
+                            member = self.residents.get(member_id)
+                            if member:
+                                response = await member.receive_information(speech)
+                                if response:
+                                    response_content, response_type = response
+                                    # 递归传播成员的回应
+                                    await self.spread_speech_in_network(member_id, response_content, response_type)
+        except Exception as e:
+            print(f"传播信息时出错：{e}")

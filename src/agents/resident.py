@@ -34,7 +34,7 @@ class ResidentGroup(BaseAgent):
     def __init__(self, town_name):
         super().__init__(agent_id=f"group_{town_name}", group_type='resident_group', window_size=5)
         self.town_name = town_name
-        self.residents = {}  # resident_id -> Resident
+        self.residents = {}
         # 共享的 LLM 资源
         # self.model_manager = ModelManager()
         # self.model_config = self.model_manager.get_random_model_config()
@@ -125,42 +125,59 @@ class Resident(BaseAgent):
         """
         接收信息（如政府政策、叛乱信息）
         """
-        # TODO: 确认基于同质图和异质图的信息传递细节是否达到预期，邻居agent信息影响目标agent的决策（观念+市场中的就业信息）
-        print("触发receive_information--------------------------------")
         self.satisfaction += 5  # 接收信息增加满意度
-        resident_log.info(f"居民 {self.resident_id} 收到了信息：{message_content}。")
+        # resident_log.info(f"居民 {self.resident_id} 收到了信息：{message_content}。")
 
-        if random.random() < 0.8:
-            system_message = "你是一个清代中国大运河沿线地区的居民。请根据你了解的信息做出回应。回应要简短，不超过20个字。"
-            response_content = await self.generate_llm_response(message_content)
+        # 将收到的信息存入记忆
+        await self.memory.write_record(
+            role_name="其他居民",
+            content=message_content,
+            is_user=True
+        )
+
+        # 从配置中获取回应概率，默认为0.8
+        response_prob = global_config.get("simulation", {}).get("response_probability", 0.8)
+        if random.random() < response_prob:
+            # 获取当前状态
+            status_prompt = self.get_status_prompt()
+            
+            # 构建回应提示词
+            prompt = (
+                f"你是一个清代中国大运河沿线地区的居民。\n"
+                f"以下是你的当前状态：\n{status_prompt}\n"
+                f"你收到了一条信息：{message_content}\n"
+                f"请根据你的状态和收到的信息做出回应。回应要简短，不超过20个字。\n"
+                f"注意：\n"
+                f"1. 如果信息涉及政策，要考虑对自己的影响\n"
+                f"2. 如果信息涉及叛乱，要考虑自己的处境\n"
+                f"3. 回应要符合自己的身份和立场"
+            )
+            
+            response_content = await self.generate_llm_response(prompt)
             
             if response_content:
                 relation_types = ["friend", "colleague", "family", "hometown"]
                 selected_type = random.choice(relation_types)
-
-                # 使用 asyncio.create_task 来避免阻塞
-                await asyncio.create_task(
-                    self.spread_speech_in_network(response_content, selected_type)
+                resident_log.info(f"居民 {self.resident_id} 对收到的信息「{message_content}」做出回应：{response_content}")
+                
+                # 将自己的回应存入记忆
+                await self.memory.write_record(
+                    role_name=self.resident_id,
+                    content=f"对信息「{message_content}」的回应：{response_content}",
+                    is_user=False
                 )
-                resident_log.info(f"居民 {self.resident_id} 对收到的信息做出回应：{response_content}")
+                
+                return response_content, selected_type
 
-    async def process_information(self):
-        """
-        处理接收到的信息并生成响应
-        """
-        prompt = "请根据收到的信息做出回应。"
-        response = await self.generate_llm_response(prompt)
-        if response:
-            resident_log.info(f"居民 {self.resident_id} 的回应：{response}")
-            return response
         return None
 
     async def decide_action_by_llm(self, tax_rate, basic_living_cost):
         """
         通过LLM决定居民的行动，并随机生成对政府的态度发言。同时更新满意度。
         """
-        # 随机决定是否需要发言（20%的概率）
-        need_speech = random.random() < 0.2
+        # 从全局配置获取发言概率
+        speech_prob = global_config.get("simulation", {}).get("speech_probability", 0.2)
+        need_speech = random.random() < speech_prob
         
         # 获取当前居民状态的提示信息
         status_prompt = self.get_status_prompt()
@@ -252,15 +269,13 @@ class Resident(BaseAgent):
             else:
                 await self.execute_decision(select)
 
-            # 如果有发言，在社交网络中传播
+            # 如果有发言，返回发言信息和关系类型
             if speech:
                 resident_log.info(f"居民 {self.resident_id} 发言：{speech}")
                 relation_types = ["friend", "colleague", "family", "hometown"]
                 # 随机选择一种关系类型
                 selected_type = random.choice(relation_types)
-                # 在社交网络中传播信息
-                print(f"居民 {self.resident_id} 选择了关系类型：{selected_type},开始传播言论。---------------")
-                await self.spread_speech_in_network(speech, selected_type)
+                return select, reason, speech, selected_type
 
             return select, reason
 
@@ -320,41 +335,6 @@ class Resident(BaseAgent):
         except Exception as e:
             resident_log.error(f"居民 {self.resident_id} 执行决策时出错：{e}")
             return False
-
-    async def spread_speech_in_network(self, speech: str, relation_type: str):
-        """
-        在社交网络中传播发言
-        """
-        try:
-            if hasattr(self, 'social_network'):
-                if relation_type in ["friend", "colleague"]:
-                    # 在异质图中传播
-                    neighbors = self.social_network.hetero_graph.get_neighbors(self.resident_id)
-                    for neighbor_id in neighbors:
-                        if self.social_network.hetero_graph.graph[self.resident_id][neighbor_id]["type"] == relation_type:
-                            resident_log.info(f"居民 {self.resident_id} 向邻居 {neighbor_id} 传播信息：{speech}")
-                            # 获取邻居居民对象并调用其receive_information方法
-                            neighbor = self.social_network.residents.get(neighbor_id)
-                            if neighbor:
-                                await neighbor.receive_information(speech)
-
-                elif relation_type in ["family", "hometown"]:
-                    # 在超图中传播
-                    groups = [edge_id for edge_id in self.social_network.hyper_graph.get_node_hyperedges(self.resident_id)
-                            if edge_id.startswith(relation_type)]
-                    if groups:
-                        selected_group = random.choice(groups)
-                        resident_log.info(f"居民 {self.resident_id} 在群组 {selected_group} 中传播信息：{speech}")
-                        members = self.social_network.hyper_graph.get_hyperedge_nodes(selected_group)
-                        for member_id in members:
-                            if member_id != self.resident_id:
-                                # 获取群组成员对象并调用其receive_information方法
-                                member = self.social_network.residents.get(member_id)
-                                if member:
-                                    await member.receive_information(speech)
-
-        except Exception as e:
-            resident_log.error(f"居民 {self.resident_id} 传播信息时出错：{e}")
 
     def get_status_prompt(self):
         """
@@ -424,7 +404,6 @@ class Resident(BaseAgent):
         else:
             # resident_log.info(f"居民 {self.resident_id} 的健康状况为 {self.health_index}，寿命更新为 {self.lifespan}。")
             return False
-
 
     def get_random_direction_town(self, map):
         """随机选择一个相邻城市进行迁移"""
