@@ -8,6 +8,7 @@ from typing import Dict, List, Set, Tuple
 from datetime import datetime
 from sklearn.cluster import KMeans
 import time
+import asyncio
 
 class HeterogeneousGraph:
     """
@@ -43,14 +44,6 @@ class HeterogeneousGraph:
             if edge_type is None or self.graph[node_id][neighbor]["type"] == edge_type:
                 neighbors.append(neighbor)
         return neighbors
-
-    def spread_information(self, node_id, message, edge_type=None):
-        """
-        模拟信息在某种边类型下的传播。
-        """
-        neighbors = self.get_neighbors(node_id, edge_type)
-        for neighbor in neighbors:
-            print(f"节点 {neighbor} 收到了来自节点 {node_id} 的信息：{message}")
 
     def visualize(self):
         """
@@ -173,15 +166,6 @@ class Hypergraph:
         :param hyperedge_id: 要移除的超边的唯一标识符。
         """
         self.hypergraph.remove_edges(hyperedge_id)
-    
-    def spread_information_in_group(self, edge_id, message):
-        """
-        模拟信息在某个超边中的传播。
-        """
-        members = self.get_hyperedge_nodes(edge_id)
-        for member in members:
-            # 这里需要补充信息传播的逻辑
-            print(f"节点 {member} 在超边 {edge_id} 中收到了信息：{message}")
 
     def visualize(self):
         """
@@ -219,18 +203,96 @@ class SocialNetwork:
         """
         self.hyper_graph.add_hyperedge(group_id, members)
 
-    def spread_information(self, resident_id: int, message: str, relation_type: str):
+    async def spread_information(self, resident_id: int, message: str, relation_type: str, visited_nodes: Set[int] = None) -> None:
         """
-        在异质图中传播信息
+        在异质图中传播信息，支持并发执行
         :param resident_id: 发送信息的居民ID
         :param message: 信息内容
         :param relation_type: 关系类型
+        :param visited_nodes: 已访问的节点集合，用于防止循环传播
         """
+        if visited_nodes is None:
+            visited_nodes = set()
+
         neighbors = self.hetero_graph.get_neighbors(resident_id, relation_type)
+        # 创建所有邻居的receive_information任务
+        tasks = []
         for neighbor in neighbors:
-            # 这里可以调用每个邻居的receive_information方法
-            if neighbor in self.residents:
-                self.residents[neighbor].receive_information(message)
+            if neighbor not in visited_nodes and neighbor in self.residents:
+                tasks.append(self.residents[neighbor].receive_information(message))
+        
+        # 并发执行所有接收任务
+        if tasks:
+            responses = await asyncio.gather(*tasks)
+            # 并发处理所有有效的回应
+            response_tasks = []
+            for neighbor, response in zip(neighbors, responses):
+                if response:
+                    response_content, response_type = response
+                    response_tasks.append(
+                        self.spread_speech_in_network(neighbor, response_content, response_type, visited_nodes)
+                    )
+            if response_tasks:
+                await asyncio.gather(*response_tasks)
+
+    async def spread_information_in_group(self, group_id: str, message: str, visited_nodes: set = None):
+        """
+        在超图的群组中并发传播信息
+        :param group_id: 群组ID
+        :param message: 信息内容
+        :param visited_nodes: 已访问的节点集合，用于防止循环传播
+        """
+        if visited_nodes is None:
+            visited_nodes = set()
+            
+        members = self.hyper_graph.get_hyperedge_nodes(group_id)
+        
+        tasks = []
+        for member in members:
+            if member not in visited_nodes and member in self.residents:
+                tasks.append(self.residents[member].receive_information(message))
+        
+        # 并发执行所有接收任务
+        if tasks:
+            responses = await asyncio.gather(*tasks)
+            # 并发处理所有有效的回应
+            response_tasks = []
+            for member, response in zip(members, responses):
+                if response:
+                    response_content, response_type = response
+                    response_tasks.append(
+                        self.spread_speech_in_network(member, response_content, response_type, visited_nodes)
+                    )
+            if response_tasks:
+                await asyncio.gather(*response_tasks)
+
+    async def spread_speech_in_network(self, resident_id: int, speech: str, relation_type: str, visited_nodes: Set[int] = None) -> None:
+        """在社交网络中递归传播发言"""
+        try:
+            if visited_nodes is None:
+                visited_nodes = set()
+            
+            if resident_id in visited_nodes:
+                return
+            
+            visited_nodes.add(resident_id)
+            
+            resident = self.residents.get(resident_id)
+            if not resident:
+                return
+
+            if relation_type in ["friend", "colleague"]:
+                await self.spread_information(resident_id, speech, relation_type, visited_nodes)
+                
+            elif relation_type in ["family", "hometown"]:
+                # 在超图中并发传播
+                groups = self.get_resident_groups(resident_id, relation_type)
+                if groups:
+                    selected_group = random.choice(groups)
+                    await self.spread_information_in_group(selected_group, speech, visited_nodes)
+                    
+        except Exception as e:
+            print(f"在社交网络中传播发言时出错：{e}")
 
     def get_resident_groups(self, resident_id: int, group_type: str) -> List[str]:
         """
@@ -245,16 +307,6 @@ class SocialNetwork:
                 groups.append(edge_id)
         return groups
 
-    def spread_information_in_group(self, group_id: str, message: str):
-        """
-        在超图的群组中传播信息
-        :param group_id: 群组ID
-        :param message: 信息内容
-        """
-        members = self.hyper_graph.get_hyperedge_nodes(group_id)
-        for member in members:
-            if member in self.residents:
-                self.residents[member].receive_information(message)
     def visualize(self):
         """
         可视化社交网络，同时显示异质图和超图的可视化图片，并添加边框和间距。

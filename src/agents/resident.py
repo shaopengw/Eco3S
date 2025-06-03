@@ -135,8 +135,8 @@ class Resident(BaseAgent):
             is_user=True
         )
 
-        # 从配置中获取回应概率，默认为0.8
-        response_prob = global_config.get("simulation", {}).get("response_probability", 0.8)
+        # 从配置中获取回应概率
+        response_prob = global_config.get("simulation", {}).get("response_probability")
         if random.random() < response_prob:
             # 获取当前状态
             status_prompt = self.get_status_prompt()
@@ -402,19 +402,31 @@ class Resident(BaseAgent):
 
     def update_health_index(self, basic_living_cost):
         """根据收入和满意度等因素更新健康状况"""
+        # 叛军职业的额外健康影响
+        if self.job == "叛军":
+            self.health_index -= 2  # 叛军生活艰苦，健康快速下降
+
         # 基于收入的健康影响
         if self.income <= 0:
             self.health_index -= 2  # 无收入严重影响健康
         elif self.income < basic_living_cost:
             self.health_index -= 1  # 收入不足影响健康
         elif self.income >= basic_living_cost * 2:
-            self.health_index = min(10, self.health_index + 1)  # 高收入有助于健康恢复
+            # 高收入恢复健康
+            if self.job == "叛军":  #叛军恢复较少
+                self.health_index = min(10, self.health_index + 0.5)
+            else:
+                self.health_index = min(10, self.health_index + 1)
 
         # 基于满意度的健康影响
         if self.satisfaction < 30:
             self.health_index -= 1  # 低满意度影响健康
         elif self.satisfaction > 80:
-            self.health_index = min(10, self.health_index + 1)  # 高满意度有助于健康
+            # 高满意度恢复健康
+            if self.job == "叛军":  #叛军恢复较少
+                self.health_index = min(10, self.health_index + 0.5)
+            else:
+                self.health_index = min(10, self.health_index + 1)
         
         # 确保健康指数在0-10范围内
         self.health_index = max(0, min(10, self.health_index))
