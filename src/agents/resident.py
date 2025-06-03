@@ -389,6 +389,36 @@ class Resident(BaseAgent):
             return True
         return False
 
+    def update_resident_status(self, basic_living_cost):
+        """
+        更新居民状况，包括健康状况和寿命
+        如果居民死亡则返回True，否则返回False
+        """
+        # 先更新健康状况
+        self.update_health_index(basic_living_cost)
+        
+        # 根据健康状况更新寿命
+        return self.update_lifespan()
+
+    def update_health_index(self, basic_living_cost):
+        """根据收入和满意度等因素更新健康状况"""
+        # 基于收入的健康影响
+        if self.income <= 0:
+            self.health_index -= 2  # 无收入严重影响健康
+        elif self.income < basic_living_cost:
+            self.health_index -= 1  # 收入不足影响健康
+        elif self.income >= basic_living_cost * 2:
+            self.health_index = min(10, self.health_index + 1)  # 高收入有助于健康恢复
+
+        # 基于满意度的健康影响
+        if self.satisfaction < 30:
+            self.health_index -= 1  # 低满意度影响健康
+        elif self.satisfaction > 80:
+            self.health_index = min(10, self.health_index + 1)  # 高满意度有助于健康
+        
+        # 确保健康指数在0-10范围内
+        self.health_index = max(0, min(10, self.health_index))
+
     def update_lifespan(self):
         """
         检查健康状况并更新寿命

@@ -99,7 +99,7 @@ class Simulator:
                 'ordinary_type': OrdinaryGovernmentAgent,
                 'leader_type': HighRankingGovernmentAgent,
             }
-            # government_decision, government_summary = await self.collect_group_decision('government', government_config)
+            government_decision, government_summary = await self.collect_group_decision('government', government_config)
             
             # 收集叛军决策
             rebellion_config = {
@@ -107,7 +107,7 @@ class Simulator:
                 'ordinary_type': OrdinaryRebel,
                 'leader_type': RebelLeader,
             }
-            # rebellion_decision, rebellion_summary = await self.collect_group_decision('rebellion', rebellion_config)
+            rebellion_decision, rebellion_summary = await self.collect_group_decision('rebellion', rebellion_config)
             # rebellion_decision = '{"stage_rebellion": 2,"recruit_members": 0,"maintain_status": 0,"target_town": "杭州"}'
             # rebellion_summary = '一致决定发动叛乱'
             # 统一执行决策
@@ -124,11 +124,11 @@ class Simulator:
             for resident_name in list(self.residents.keys()):
                 resident = self.residents[resident_name]
                 # 传入社会状态参数
-                tasks.append(resident.decide_action_by_llm(tax_rate=self.tax_rate, basic_living_cost=self.basic_living_cost))  # 基于LLM的决策--测试时建议暂时注释
+                # tasks.append(resident.decide_action_by_llm(tax_rate=self.tax_rate, basic_living_cost=self.basic_living_cost))  # 基于LLM的决策--测试时建议暂时注释
 
                 # 更新居民寿命（次/年）
                 if self.time.get_current_quarter() == 1:
-                    if resident.update_lifespan():
+                    if resident.update_resident_status(self.basic_living_cost):
                         del self.residents[resident_name]
                         self.population.death()
                         continue
@@ -181,7 +181,7 @@ class Simulator:
             if self.time.get_current_quarter() == 1:
                 rebel_salary, other_salary = self.calculate_total_salaries()
                 # 从叛军资源中扣除工资
-                self.rebellion.resources = max(0, self.rebellion.resources - rebel_salary)
+                # self.rebellion.resources = max(0, self.rebellion.resources - rebel_salary)
                 # 从政府预算中扣除工资
                 self.government.budget = max(0, self.government.budget - other_salary)
                 # print(f"\n年度工资支出:")
@@ -564,14 +564,19 @@ class Simulator:
             if town_data.get('job_market'):
                 town_defense = len(town_data['job_market'].jobs_info["官员及士兵"]["employed"])
         
-        # 计算军事力量消耗（无论成功与否都会消耗）
-        military_consumption = (strength_investment + town_defense) * 0.1
+        # 计算军事力量消耗（基于双方力量差距）
+        total_rebel_strength = strength_investment + town_defense
+        strength_ratio = self.government.military_strength / total_rebel_strength if total_rebel_strength > 0 else float('inf')
+        
+        # 政府军力消耗基于力量比计算
+        military_consumption = total_rebel_strength / (1 + strength_ratio)
         self.government.military_strength = max(0, self.government.military_strength - military_consumption)
         
-        if self.government.military_strength >= (strength_investment + town_defense):
-            # 镇压成功，叛军损失大量军事力量和资源
-            strength_loss = strength_investment * 0.8  # 损失80%的投入力量
-            resource_loss = strength_investment * 0.5  # 损失50%对应的资源
+        if self.government.military_strength >= total_rebel_strength:
+            # 镇压成功，叛军损失基于力量差距计算
+            strength_ratio_factor = min(1, strength_ratio)  # 限制最大比例为1
+            strength_loss = strength_investment * strength_ratio_factor
+            resource_loss = strength_investment * strength_ratio_factor
             
             self.rebellion.strength = max(0, self.rebellion.strength - strength_loss)
             self.rebellion.resources = max(0, self.rebellion.resources - resource_loss)
@@ -604,15 +609,18 @@ class Simulator:
             print(f"共有 {len(selected_rebels)} 名叛军居民死亡")
             return True
         else:
-            # 镇压失败，叛军损失少量军事力量，获得大量资源
-            strength_loss = strength_investment * 0.2  # 损失20%的投入力量
-            resource_gain = strength_investment * 1.5  # 获得150%对应的资源
+            # 镇压失败，叛军损失基于力量差距计算
+            inverse_ratio = total_rebel_strength / self.government.military_strength if self.government.military_strength > 0 else float('inf')
+            inverse_ratio_factor = 1 / (1 + inverse_ratio)  # 转换为0-1之间的值
+            
+            strength_loss = strength_investment * inverse_ratio_factor
+            resource_gain = strength_investment * (1 + (1 - inverse_ratio_factor))  # 资源获得与损失成反比
             
             self.rebellion.strength = max(0, self.rebellion.strength - strength_loss)
             self.rebellion.resources += resource_gain
             
-            # 镇压叛乱失败导致就业岗位减少（每点叛乱强度减少1个工作岗位）
-            job_loss = int(strength_investment)
+            # 镇压叛乱失败导致就业岗位减少（基于叛乱成功程度）
+            job_loss = int(strength_investment * (1 - inverse_ratio_factor))
             self.towns.remove_jobs_across_towns(job_loss)
             
             print(f"政府未能压制强度为 {strength_investment} 的叛乱，消耗军事力量 {military_consumption:.1f}，")

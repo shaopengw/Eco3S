@@ -5,7 +5,7 @@ simulation:
   time_step: "quarter"  # 时间步长为季度
   map_width: 100         # 地图大小
   map_height: 150    
-  initial_population: 5  # 初始人口数量
+  initial_population: 20  # 初始人口数量
   government_budget: 1000000 # 政府预算
   rebellion_initial_strength: 100  # 叛乱初始力量
   rebellion_initial_resources: 500  # 叛乱初始资源
@@ -14,7 +14,7 @@ simulation:
   max_retry_attempts: 3  # 最大重试次数
   retry_delay: 1.0       # 重试延迟时间（秒）
   speech_probability: 0.2  # 居民发言概率
-  response_probability: 0.8  # 居民回应概率
+  response_probability: 0.5  # 居民回应概率
 
 data:
   resident_info_path: "experiment_dataset/resident_data/resident_data.json"  # 居民信息文件路径
