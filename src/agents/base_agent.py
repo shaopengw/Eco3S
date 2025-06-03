@@ -9,7 +9,7 @@ class BaseAgent:
         self.model_manager = ModelManager()
         model_config = self.model_manager.get_random_model_config()
         self.model_type = ModelType(model_config["model_type"])
-        self.model_config = ChatGPTConfig(temperature=0.7)
+        self.model_config = ChatGPTConfig(temperature=0.9)
         self.model_backend = ModelFactory.create(
             model_platform=model_config["model_platform"],
             model_type=self.model_type,

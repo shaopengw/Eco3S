@@ -5,8 +5,14 @@ class Population:
         :param initial_population: 初始人口数量
         """
         self.population = initial_population
-        self.birth_rate = 0.1  # 出生率
-        self.death_rate = 0.1  # 死亡率
+        # 从配置文件读取出生率
+        try:
+            import yaml
+            with open('config/simulation_config.yaml', 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+                self.birth_rate = config['simulation'].get('birth_rate', 0.01)
+        except Exception as e:
+            logging.warning(f"读取重试配置失败")
 
     def update_birth_rate(self, satisfaction):
         """
@@ -64,4 +70,3 @@ class Population:
         """
         print(f"Current Population: {self.population}")
         print(f"Birth Rate: {self.birth_rate * 100}%")
-        print(f"Death Rate: {self.death_rate * 100}%")
