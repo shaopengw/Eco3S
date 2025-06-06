@@ -78,7 +78,13 @@ async def run_simulation(config: dict[str, Any]) -> None:
     # 初始化社交网络
     social_network = SocialNetwork()
     social_network.initialize_network(residents, towns)
-
+    
+    # 为每个城镇的居民群组设置社交网络
+    for town_name, town_data in towns.towns.items():
+        resident_group = town_data.get('resident_group')
+        if resident_group:
+            resident_group.set_social_network(social_network)
+    
     # 可视化社交网络
     try:
         social_network.visualize()

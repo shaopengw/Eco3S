@@ -5,7 +5,7 @@ from camel.models import ModelFactory
 from camel.types import ModelPlatformType, ModelType, OpenAIBackendRole
 from camel.utils import OpenAITokenCounter
 from datetime import datetime
-from typing import List
+from typing import List, Dict, Optional
 import sys
 import logging
 import os

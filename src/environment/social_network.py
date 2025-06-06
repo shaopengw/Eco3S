@@ -4,11 +4,11 @@ import hypernetx as hnx
 import networkx as nx
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import Dict, List, Set, Tuple
+from typing import List
 from datetime import datetime
 from sklearn.cluster import KMeans
-import time
 import asyncio
+import math
 
 class HeterogeneousGraph:
     """
@@ -179,7 +179,7 @@ class Hypergraph:
 class SocialNetwork:
     """
     结合异质图和超图，构建社交网络。
-    """
+    """ 
     def __init__(self):
         self.hetero_graph = HeterogeneousGraph()
         self.hyper_graph = Hypergraph()
@@ -203,22 +203,26 @@ class SocialNetwork:
         """
         self.hyper_graph.add_hyperedge(group_id, members)
 
-    async def spread_information(self, resident_id: int, message: str, relation_type: str, visited_nodes: Set[int] = None) -> None:
+    async def spread_information(self, resident_id: int, message: str, relation_type: str, current_depth: int = 1, max_depth: int = 3):
         """
         在异质图中传播信息，支持并发执行
         :param resident_id: 发送信息的居民ID
         :param message: 信息内容
         :param relation_type: 关系类型
-        :param visited_nodes: 已访问的节点集合，用于防止循环传播
+        :param current_depth: 当前传播层数
+        :param max_depth: 最大传播层数
         """
-        if visited_nodes is None:
-            visited_nodes = set()
-
+        if current_depth > max_depth:
+            return
+            
         neighbors = self.hetero_graph.get_neighbors(resident_id, relation_type)
-        # 创建所有邻居的receive_information任务
+        # 随机选择30%-70%的邻居节点
+        selected_count = random.randint(max(1, int(len(neighbors) * 0.3)), max(1, int(len(neighbors) * 0.7)))
+        selected_neighbors = random.sample(neighbors, min(selected_count, len(neighbors)))
+        
         tasks = []
-        for neighbor in neighbors:
-            if neighbor not in visited_nodes and neighbor in self.residents:
+        for neighbor in selected_neighbors:
+            if neighbor in self.residents:
                 tasks.append(self.residents[neighbor].receive_information(message))
         
         # 并发执行所有接收任务
@@ -230,26 +234,30 @@ class SocialNetwork:
                 if response:
                     response_content, response_type = response
                     response_tasks.append(
-                        self.spread_speech_in_network(neighbor, response_content, response_type, visited_nodes)
+                        self.spread_speech_in_network(neighbor, response_content, response_type, current_depth + 1)
                     )
             if response_tasks:
                 await asyncio.gather(*response_tasks)
 
-    async def spread_information_in_group(self, group_id: str, message: str, visited_nodes: set = None):
+    async def spread_information_in_group(self, group_id: str, message: str, current_depth: int = 1, max_depth: int = 3):
         """
         在超图的群组中并发传播信息
         :param group_id: 群组ID
         :param message: 信息内容
-        :param visited_nodes: 已访问的节点集合，用于防止循环传播
+        :param current_depth: 当前传播层数
+        :param max_depth: 最大传播层数
         """
-        if visited_nodes is None:
-            visited_nodes = set()
+        if current_depth > max_depth:
+            return
             
         members = self.hyper_graph.get_hyperedge_nodes(group_id)
+        # 随机选择30%-70%的群组成员
+        selected_count = random.randint(max(1, int(len(members) * 0.3)), max(1, int(len(members) * 0.7)))
+        selected_members = random.sample(members, min(selected_count, len(members)))
         
         tasks = []
-        for member in members:
-            if member not in visited_nodes and member in self.residents:
+        for member in selected_members:
+            if member in self.residents:
                 tasks.append(self.residents[member].receive_information(message))
         
         # 并发执行所有接收任务
@@ -261,35 +269,37 @@ class SocialNetwork:
                 if response:
                     response_content, response_type = response
                     response_tasks.append(
-                        self.spread_speech_in_network(member, response_content, response_type, visited_nodes)
+                        self.spread_speech_in_network(member, response_content, response_type, current_depth + 1)
                     )
             if response_tasks:
                 await asyncio.gather(*response_tasks)
 
-    async def spread_speech_in_network(self, resident_id: int, speech: str, relation_type: str, visited_nodes: Set[int] = None) -> None:
-        """在社交网络中递归传播发言"""
+    async def spread_speech_in_network(self, resident_id: int, speech: str, relation_type: str, current_depth: int = 1, max_depth: int = 3):
+        """在社交网络中递归传播发言
+        :param resident_id: 发送信息的居民ID
+        :param speech: 发言内容
+        :param relation_type: 关系类型
+        :param current_depth: 当前传播层数
+        :param max_depth: 最大传播层数
+        """
         try:
-            if visited_nodes is None:
-                visited_nodes = set()
-            
-            if resident_id in visited_nodes:
+            if current_depth > max_depth:
                 return
-            
-            visited_nodes.add(resident_id)
-            
+                
             resident = self.residents.get(resident_id)
             if not resident:
                 return
 
             if relation_type in ["friend", "colleague"]:
-                await self.spread_information(resident_id, speech, relation_type, visited_nodes)
+                # 在异质图中并发传播
+                await self.spread_information(resident_id, speech, relation_type, current_depth, max_depth)
                 
             elif relation_type in ["family", "hometown"]:
                 # 在超图中并发传播
                 groups = self.get_resident_groups(resident_id, relation_type)
                 if groups:
                     selected_group = random.choice(groups)
-                    await self.spread_information_in_group(selected_group, speech, visited_nodes)
+                    await self.spread_information_in_group(selected_group, speech, current_depth, max_depth)
                     
         except Exception as e:
             print(f"在社交网络中传播发言时出错：{e}")
@@ -383,7 +393,6 @@ class SocialNetwork:
             
         except Exception as e:
             print(f"社交网络可视化失败：{e}")
-        
 
     def initialize_network(self, residents: dict, towns) -> None:
         """
@@ -474,48 +483,6 @@ class SocialNetwork:
                     except Exception as e:
                         # 如果KMeans失败，回退到原始算法
                         print(f"KMeans聚类失败: {e}")
-                        
-                
-                # # 如果居民数量较少或KMeans失败，使用原始算法
-                # if area_remaining:
-                #     area_remaining = set(area_remaining)
-                #     while len(area_remaining) >= 3:  # 确保每个家族至少有3个成员
-                #         # 从剩余居民中选择一个作为家庭中心点
-                #         center = random.choice(list(area_remaining))
-                #         center_x, center_y = residents[center].location
-                        
-                #         # 计算其他居民到中心点的距离
-                #         distances = []
-                #         for resident in area_remaining:
-                #             if resident != center:
-                #                 x, y = residents[resident].location
-                #                 dist = ((x - center_x) ** 2 + (y - center_y) ** 2) ** 0.5
-                #                 distances.append((resident, dist))
-                        
-                #         # 按距离排序
-                #         distances.sort(key=lambda x: x[1])
-                        
-                #         # 选择3-8个最近的居民组成家庭
-                #         family_size = random.randint(3, min(8, len(area_remaining)))
-                #         family_members = {center}  # 包含中心点
-                #         for resident, _ in distances[:family_size-1]:  # -1是因为已经包含了中心点
-                #             family_members.add(resident)
-                        
-                #         # 创建家庭群组
-                #         family_group_id = f"family_{family_id}"
-                #         self.add_group(family_group_id, list(family_members))
-                        
-                #         # 更新剩余居民集合
-                #         area_remaining -= family_members
-                #         family_id += 1
-                    
-                #     # 将剩余的每个居民单独作为一个家庭
-                #     for resident in area_remaining:
-                #         # 创建单人家庭群组
-                #         family_group_id = f"family_{family_id}"
-                #         self.add_group(family_group_id, [resident])
-                #         family_id += 1
-
 
     def add_new_residents(self, new_residents: dict) -> None:
         """
@@ -573,3 +540,64 @@ class SocialNetwork:
             #     family_id = len([edge for edge in self.hyper_graph.get_hyperedges() if edge.startswith("family_")])
             #     family_group_id = f"family_{family_id}"
             #     self.add_group(family_group_id, [resident_id])
+
+    def calculate_speech_probability(self, node_id: int, population: int) -> float:
+        """
+        计算节点的发言概率
+        :param node_id: 节点ID
+        :return: 发言概率值(0-1)
+        """
+        # n = population
+
+        # # 获取节点的度中心性
+        # centrality = nx.degree_centrality(self.hetero_graph.graph)[node_id]
+        
+        # # 使用 sigmoid 函数进行归一化：f(x) = 1 / (1 + e^(-k(x-x0)))
+        # # 动态调整sigmoid函数参数：k 控制曲线陡度，x0 控制中心点
+        # # k: 随着节点数增加而增加，使得大规模网络中的差异更明显
+        # k = 5 + 5 * (n / 100)  # 当n=100时k=10，n越大k越大
+        
+        # # x0: 随着节点数增加而减小，因为大规模网络中的度中心性普遍较小
+        # x0 = 0.1 * (100 / n)  # 当n=100时x0=0.1，n越大x0越小
+
+        # prob = 1 / (1 + math.exp(-k * (centrality - x0)))
+        # print(f"度中心性: {centrality:.3f}, 发言概率: {prob:.3f}")
+        # return prob
+
+        try:
+            degree = self.get_node_degree(node_id)
+            max_degree = self.get_max_degree()
+            normalized_degree = degree / max_degree
+            # print(f"节点 {node_id} 的度发言概率为{degree}/{max_degree}={normalized_degree}")
+            
+            # speech_probability = 1 / (1 + math.exp(-10 * (normalized_degree - 0.5)))
+            # print(f"节点 {node_id} 的度发言概率为{degree}/{max_degree}={normalized_degree}，经过归一化后为 {speech_probability}")
+            return normalized_degree
+        except ValueError:
+            return 0.0
+
+    def get_node_degree(self, node_id: int) -> float:
+        """获取指定节点的度数
+        :param node_id: 节点ID
+        :return: 节点的度数
+        :raises ValueError: 如果节点不存在
+        """
+        if node_id not in self.hetero_graph.graph.nodes:
+            raise ValueError(f"节点 {node_id} 不存在")
+        
+        # 获取节点的所有边
+        degree = self.hetero_graph.graph.degree(node_id)
+        return degree
+
+    def get_max_degree(self) -> float:
+        """获取图中的最大度数
+        :return: 最大度数
+        :raises ValueError: 如果图为空
+        """
+        if not self.hetero_graph.graph.nodes:
+            raise ValueError("图为空")
+        
+        # 获取所有节点的度数
+        degrees = dict(self.hetero_graph.graph.degree())
+        max_degree = max(degrees.values())
+        return max_degree
