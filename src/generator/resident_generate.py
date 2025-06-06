@@ -7,9 +7,9 @@ from datetime import datetime
 gender_ratio = [0.351, 0.636]  # 女：男
 genders = ['女性', '男性']
 
-# 寿命比例
-lifespan_ratio = [0.45, 0.35, 0.15, 0.05]  # 18-29, 30-49, 50-64, 65+ 的比例
-lifespan_groups = ['18-29', '30-49', '50-64', '65+']
+# 寿命比例（剩余寿命）
+lifespan_ratio = [0.45, 0.35, 0.15, 0.05]
+lifespan_groups = ['10-19', '20-39', '40-54', '55+'] # 仅考虑劳动力群体
 
 # 居住地
 residence_ratio = [0.7, 0.3]  # 70% 在沿河，30% 在非沿河地区

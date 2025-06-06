@@ -1,8 +1,7 @@
 from collections import defaultdict
-from typing import Dict, List, Any
+from typing import Dict
 from src.agents.resident import ResidentGroup
 from src.environment.job_market import JobMarket
-import random
 
 class Towns:
     def __init__(self, map, initial_population=10):

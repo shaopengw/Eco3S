@@ -29,24 +29,14 @@ class ResidentSharedInformationPool:
         if category:
             return self.shared_info.get(category, {})
         return self.shared_info
+
 class ResidentGroup(BaseAgent):
     """居民群组，用于管理同一城镇的居民"""
     def __init__(self, town_name):
         super().__init__(agent_id=f"group_{town_name}", group_type='resident_group', window_size=5)
         self.town_name = town_name
         self.residents = {}
-        # 共享的 LLM 资源
-        # self.model_manager = ModelManager()
-        # self.model_config = self.model_manager.get_random_model_config()
-        # self.model_type = ModelType(self.model_config["model_type"])
-        # self.model_backend = ModelFactory.create(
-        #     model_platform=self.model_config["model_platform"],
-        #     model_type=self.model_type,
-        #     model_config_dict=ChatGPTConfig(temperature=0.7).as_dict(),
-        # )
-        # # 共享的 token 计数器和上下文创建器
-        # self.token_counter = OpenAITokenCounter(self.model_type)
-        # self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
+        self.social_network = None
 
     def add_resident(self, resident):
         """添加居民到群组"""
@@ -61,10 +51,18 @@ class ResidentGroup(BaseAgent):
             group_type='resident',
             window_size=5
         )
+        # 设置居民所属的群组
+        resident.set_group(self)
+
+    def set_social_network(self, social_network):
+        """设置群组的社交网络"""
+        self.social_network = social_network
 
     def remove_resident(self, resident_id):
         """从群组中移除居民"""
         if resident_id in self.residents:
+            resident = self.residents[resident_id]
+            resident.set_group(None)  # 清除居民的群组引用
             del self.residents[resident_id]
 
 class Resident(BaseAgent):
@@ -76,20 +74,29 @@ class Resident(BaseAgent):
         self.shared_pool = shared_pool
         self.map = map
         self.location = None
-        self.town = None  # 添加城镇属性
+        self.town = None  # 城镇属性
         self.employed = False  # 是否就业
         self.job = None  # 当前工作
         self.income = 0  # 收入
         self.satisfaction = 100  # 对政府的满意度（0到100）
         self.health_index = 10  # 居民的健康状况（0到10）
         self.lifespan = 100  # 居民的寿命
-        self.towns_manager = None  # 添加Towns实例的引用
+        self.towns_manager = None  # Towns实例的引用
+        self.group = None  # 所属群组的引用
 
         # 由 ResidentGroup 设置agent属性
         self.model_backend = None
         self.token_counter = None
         self.context_creator = None
         self.memory = None
+
+    def set_group(self, group):
+        """设置居民所属的群组"""
+        self.group = group
+
+    def get_social_network(self):
+        """通过群组获取社交网络"""
+        return self.group.social_network if self.group else None
 
     def employ(self, job, salary=None):
         """
@@ -171,14 +178,17 @@ class Resident(BaseAgent):
 
         return None
 
-    async def decide_action_by_llm(self, tax_rate, basic_living_cost):
+    async def decide_action_by_llm(self, tax_rate, basic_living_cost, population):
         """
         通过LLM决定居民的行动，并随机生成对政府的态度发言。同时更新满意度。
         """
-        # 从全局配置获取发言概率
-        speech_prob = global_config.get("simulation", {}).get("speech_probability", 0.2)
+        # 发言概率基于节点在社交网络中的度值
+        speech_prob = 0.0
+        social_network = self.get_social_network()
+        if social_network:
+            speech_prob = social_network.calculate_speech_probability(self.resident_id, population)
         need_speech = random.random() < speech_prob
-        
+
         # 获取当前居民状态的提示信息
         status_prompt = self.get_status_prompt()
 
@@ -211,29 +221,25 @@ class Resident(BaseAgent):
             f"2. {'寻找工作（仅限失业状态可选）' if not self.employed else '继续目前的工作'}\n"
             f"3. 迁徙到其他位置（当前位置无法维持生计时可以考虑，但会失去当前工作，需要在新城镇重新寻找工作）\n"
             f"请仔细分析当前状况，优先考虑稳定和安全的选择，并返回：\n"
-            f"1. 你的选择（1-3）\n"
-            f"2. 选择原因\n"
-            f"3. 满意度变化值（-20到20之间的数字），需要考虑：\n"
+            f"你的选择（1-3）\n"
+            f"选择原因\n"
+            f"满意度变化值（-20到20之间的数字），需要考虑：\n"
             f"   - 当前收入与基本生活所需的比值\n"
             f"   - 就业情况\n"
             f"   - 社会环境（税率等）\n"
             f"   - 个人健康状况\n"
             f"{'' if self.employed else '如果选择寻找工作（选择2），还需要提供：'}\n"
-            f"{'' if self.employed else '4. 期望职业（可选：农民、商人、官员及士兵、其他）'}\n"
-            f"{'' if self.employed else '5. 可接受的最低工资（数字）'}"
+            f"{'' if self.employed else '期望职业（可选：农民、商人、官员及士兵、其他）'}\n"
+            f"{'' if self.employed else '可接受的最低工资（数字）'}\n"
+            f"{'一段对政府的态度发言' if need_speech else ''}"
         )
 
-        # 修改JSON格式字符串的构建方式
-        json_format = (
-            '{"select": 你的选择, "reason": 选择原因, "satisfaction_change": 满意度变化值'
+        # 规范输出
+        prompt = base_prompt + (
+             "注意：必须返回单行的JSON字符串，格式如下，必须严格按照格式填写：\n"
+            + '{"select": 你的选择, "reason": 选择原因, "satisfaction_change": 满意度变化值'
             + (', "desired_job": 期望职业, "min_salary": 最低工资' if not self.employed else '')
             + (', "speech": 你的发言}' if need_speech else '}')
-        )
-
-        prompt = base_prompt + (
-            "6. 一段对政府的态度发言\n"
-            "注意：必须返回单行的JSON字符串，格式如下：\n"
-            + json_format
         )
 
         try:
@@ -281,6 +287,7 @@ class Resident(BaseAgent):
 
         except Exception as e:
             resident_log.error(f"居民 {self.resident_id} 决策出错：{e}")
+            resident_log.error(f"居民 {self.resident_id} 返回内容：{response}")
             return "2", "发生错误，继续当前工作"  # 默认选择继续工作
 
     async def execute_decision(self, select, desired_job=None, min_salary=None):
@@ -377,13 +384,12 @@ class Resident(BaseAgent):
                 self.job = None
 
             # 从社交网络中移除（如果存在）
-            if hasattr(self, 'social_network'):
+            social_network = self.get_social_network()
+            if social_network:
                 # 从异质图中移除
-                if hasattr(self.social_network, 'hetero_graph'):
-                    self.social_network.hetero_graph.remove_node(self.resident_id)
+                social_network.hetero_graph.remove_node(self.resident_id)
                 # 从超图中移除
-                if hasattr(self.social_network, 'hyper_graph'):
-                    self.social_network.hyper_graph.remove_node(self.resident_id)
+                social_network.hyper_graph.remove_node(self.resident_id)
 
             resident_log.info(f"居民 {self.resident_id} 已死亡。")
             return True

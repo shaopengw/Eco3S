@@ -1,9 +1,5 @@
-import json
-import asyncio
-from typing import Dict, Optional
-from src.agents.government import OrdinaryGovernmentAgent, HighRankingGovernmentAgent, government_SharedInformationPool, InformationOfficer
-# from src.environment.job_market import JobMarket
-from src.agents.government import Government
+from .shared_imports import *
+from src.agents.government import Government, OrdinaryGovernmentAgent, HighRankingGovernmentAgent, government_SharedInformationPool, InformationOfficer
 
 async def generate_government_agents(
     government_info_path: str,  # 政府官员信息文件的路径

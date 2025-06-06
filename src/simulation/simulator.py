@@ -90,31 +90,32 @@ class Simulator:
                 await self.integrate_new_residents(new_residents)
                 self.population.birth(new_count)
 
-            # 收集政府和叛军的决策
-            government_decision = None
-            rebellion_decision = None
-            # 收集政府决策
-            government_config = {
-                'agents': self.government_officials,
-                'ordinary_type': OrdinaryGovernmentAgent,
-                'leader_type': HighRankingGovernmentAgent,
-            }
-            government_decision, government_summary = await self.collect_group_decision('government', government_config)
-            
-            # 收集叛军决策
-            rebellion_config = {
-                'agents': self.rebels_agents,
-                'ordinary_type': OrdinaryRebel,
-                'leader_type': RebelLeader,
-            }
-            rebellion_decision, rebellion_summary = await self.collect_group_decision('rebellion', rebellion_config)
-            # rebellion_decision = '{"stage_rebellion": 2,"recruit_members": 0,"maintain_status": 0,"target_town": "杭州"}'
-            # rebellion_summary = '一致决定发动叛乱'
-            # 统一执行决策
-            if government_decision:
-                self.execute_government_decision(government_decision)
-            if rebellion_decision:
-                self.execute_rebellion_decision(rebellion_decision)
+            # 收集政府和叛军的决策（每年第一季度）
+            if self.time.get_current_quarter() == 1:
+                government_decision = None
+                rebellion_decision = None
+                # 收集政府决策
+                government_config = {
+                    'agents': self.government_officials,
+                    'ordinary_type': OrdinaryGovernmentAgent,
+                    'leader_type': HighRankingGovernmentAgent,
+                }
+                government_decision, government_summary = await self.collect_group_decision('government', government_config)
+                
+                # 收集叛军决策
+                rebellion_config = {
+                    'agents': self.rebels_agents,
+                    'ordinary_type': OrdinaryRebel,
+                    'leader_type': RebelLeader,
+                }
+                rebellion_decision, rebellion_summary = await self.collect_group_decision('rebellion', rebellion_config)
+                # rebellion_decision = '{"stage_rebellion": 2,"recruit_members": 0,"maintain_status": 0,"target_town": "杭州"}'
+                # rebellion_summary = '一致决定发动叛乱'
+                # 统一执行决策
+                if government_decision:
+                    self.execute_government_decision(government_decision)
+                if rebellion_decision:
+                    self.execute_rebellion_decision(rebellion_decision)
 
             # 居民行为
             tasks = []
@@ -124,7 +125,7 @@ class Simulator:
             for resident_name in list(self.residents.keys()):
                 resident = self.residents[resident_name]
                 # 传入社会状态参数
-                tasks.append(resident.decide_action_by_llm(tax_rate=self.tax_rate, basic_living_cost=self.basic_living_cost))  # 基于LLM的决策--测试时建议暂时注释
+                tasks.append(resident.decide_action_by_llm(self.tax_rate,self.basic_living_cost,self.population.get_population()))  # 基于LLM的决策--测试时建议暂时注释
 
                 # 更新居民寿命（次/年）
                 if self.time.get_current_quarter() == 1:
@@ -178,6 +179,13 @@ class Simulator:
             #     resident.print_resident_status()
             # self.get_rebels_statistics()
 
+            # 社交网络类————测试
+            # self.social_network.print_speech_probability()
+            # for resident_name in list(self.residents.keys()):
+            #     resident = self.residents[resident_name]
+            #     social_network = resident.get_social_network()
+            #     social_network.calculate_speech_probability(resident.resident_id, self.population.get_population())
+
             # 在每年第一季度进行工资结算
             if self.time.get_current_quarter() == 1:
                 rebel_salary, other_salary = self.calculate_total_salaries()
@@ -185,11 +193,6 @@ class Simulator:
                 # self.rebellion.resources = max(0, self.rebellion.resources - rebel_salary)
                 # 从政府预算中扣除工资
                 self.government.budget = max(0, self.government.budget - other_salary)
-                # print(f"\n年度工资支出:")
-                # print(f"叛军工资总支出: {rebel_salary:.2f}")
-                # print(f"其他职业工资总支出: {other_salary:.2f}")
-                # print(f"叛军剩余资源: {self.rebellion.resources:.2f}")
-                # print(f"政府剩余预算: {self.government.budget:.2f}")
 
             total_unemployment_rate = self.calculate_total_unemployment_rate()
             # 记录数据
