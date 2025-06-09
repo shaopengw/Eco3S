@@ -415,7 +415,7 @@ class SocialNetwork:
         
         # 生成朋友关系矩阵（幂律分布）
         # friend_matrix = np.random.random((n, n))
-        gamma = 2.5 
+        gamma = 1.5
         friend_matrix = np.random.power(a=gamma, size=(n, n))
         friend_matrix = (friend_matrix + friend_matrix.T) / 2  # 确保对称
         np.fill_diagonal(friend_matrix, 0)  # 对角线置0
@@ -593,7 +593,6 @@ class SocialNetwork:
         """
         绘制异质图中节点度分布的可视化表格，横坐标为度数，纵坐标为人数。
         """
-        print("正在绘制社交网络节点度分布...")
         degrees = [self.hetero_graph.graph.degree(n) for n in self.hetero_graph.graph.nodes]
         degree_count = {}
         for d in degrees:
@@ -606,11 +605,11 @@ class SocialNetwork:
         plt.ylabel('人数')
         plt.title('社交网络节点度分布')
         plt.xticks(x)
+        plt.yticks(range(0, max(y) + 1))
         plt.tight_layout()
-        plt.show()
         # 保存高清图片
         save_dir = "experiment_dataset/social_network_data"
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
         save_path = os.path.join(save_dir, f"degree_distribution_{current_time}.png")
         plt.savefig(save_path, dpi=300, bbox_inches='tight', pad_inches=0.5)
-        print(f"社交网络图已保存至：{save_path}")
+        print(f"社交网络节点度分布表已保存至：{save_path}")

@@ -38,4 +38,3 @@ try:
     load_global_config()
 except Exception as e:
     print(f"Warning: Failed to load global config: {e}")
-    global_config = {"simulation": {"speech_probability": 0.2}}  # 默认配置

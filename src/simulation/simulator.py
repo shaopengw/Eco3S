@@ -45,9 +45,10 @@ class Simulator:
         self.residents = residents
         self.towns = towns
         self.basic_living_cost = 10  # 每年基本生活所需值（单位：两）
-        self.average_satisfaction = 0.5  # 平均满意度（0-1）
+        self.average_satisfaction = None  # 平均满意度（0-1）
         self.tax_rate = 0.1  # 税率（0-1）
         self.gdp = 0  # 国内生产总值（单位：两）
+        self.transport_cost = population.get_population() # 基础运输成本-与人口数相关
         self.rebellion_records = 0
         self.results = {
             "years": [],
@@ -100,7 +101,7 @@ class Simulator:
                     'ordinary_type': OrdinaryGovernmentAgent,
                     'leader_type': HighRankingGovernmentAgent,
                 }
-                # government_decision, government_summary = await self.collect_group_decision('government', government_config)
+                government_decision, government_summary = await self.collect_group_decision('government', government_config)
                 
                 # 收集叛军决策
                 rebellion_config = {
@@ -311,9 +312,9 @@ class Simulator:
             discussion_summary = await info_officers[0].summarize_discussions()
             if discussion_summary:
                 if group_type == 'rebellion':
-                    decision = await leaders[0].make_decision(discussion_summary, self.time.get_current_time(), towns_stats)
+                    decision = await leaders[0].make_decision(discussion_summary, towns_stats)
                 else:
-                    decision = await leaders[0].make_decision(discussion_summary, self.time.get_current_time())
+                    decision = await leaders[0].make_decision(discussion_summary, self.transport_cost)
                 return decision, discussion_summary
 
         return None, None
@@ -333,25 +334,6 @@ class Simulator:
         :param group_type: 群体类型，'government' 或 'rebellion'
         :return: 是否执行成功
         """
-        # 定义决策配置
-        config = {
-            'government': {
-                'actions': {
-                    "increase_employment": lambda p: self.government.provide_jobs(budget_allocation=p),
-                    "maintain_canal": lambda p: self.government.maintain_canal(budget_allocation=p),
-                    "military_support": lambda p: self.government.support_military(budget_allocation=p),
-                    "tax_adjustment": lambda p: self.government.adjust_tax_rate(p),
-                }
-            },
-            'rebellion': {
-                'actions': {
-                    "stage_rebellion": lambda p, t: self.handle_rebellion(strength_investment=p, target_town=t),
-                    "recruit_members": lambda p: self.rebellion.recruit_new_members(resource_investment=p),
-                    "maintain_status": lambda p: self.rebellion.maintain_status() if p == 1 else None,
-                }
-            }
-        }
-
         def extract_json_from_text(text):
             """从文本中提取JSON内容"""
             import re
@@ -378,7 +360,6 @@ class Simulator:
 
                     if attempt < max_retries - 1:
                         print(f"决策内容格式错误，第{attempt + 1}次重试...")
-                        # 这里可以添加重新调用LLM的逻辑
                         continue
                     else:
                         print("达到最大重试次数，决策执行失败")
@@ -392,20 +373,38 @@ class Simulator:
 
             # 执行所有决策动作
             success = True
-            for action, param in decision_data.items():
-                if action in config[group_type]['actions']:
-                    try:
-                        if action == "stage_rebellion":
-                            # 处理叛乱决策
-                            strength = param
-                            target = decision_data.get('target_town', '')
-                            config[group_type]['actions'][action](strength, target)
-                        else:
-                            config[group_type]['actions'][action](param)
-                    except Exception as e:
-                        print(f"执行决策 {action} 时出错：{e}")
-                        success = False
-                elif action != "target_town":
+            
+            # 政府决策处理
+            if group_type == "government":
+                if "increase_employment" in decision_data:
+                    self.government.provide_jobs(budget_allocation=decision_data["increase_employment"])
+                if "transport_investment" in decision_data:
+                    ratio = decision_data.get('transport_ratio', 0.5)
+                    self.government.handle_transport_investment(
+                        transport_investment=decision_data["transport_investment"], 
+                        transport_ratio=ratio
+                    )
+                if "military_support" in decision_data:
+                    self.government.support_military(budget_allocation=decision_data["military_support"])
+                if "tax_adjustment" in decision_data:
+                    self.government.adjust_tax_rate(decision_data["tax_adjustment"])
+            
+            # 叛军决策处理
+            elif group_type == "rebellion":
+                if "stage_rebellion" in decision_data:
+                    strength = decision_data["stage_rebellion"]
+                    target = decision_data.get('target_town', '')
+                    self.handle_rebellion(strength_investment=strength, target_town=target)
+                if "recruit_members" in decision_data:
+                    self.rebellion.recruit_new_members(resource_investment=decision_data["recruit_members"])
+                if "maintain_status" in decision_data and decision_data["maintain_status"] == 1:
+                    self.rebellion.maintain_status()
+            
+            # 检查是否有未知动作
+            for action in decision_data:
+                if action not in ["increase_employment", "transport_investment", "transport_ratio", 
+                                "military_support", "tax_adjustment", "stage_rebellion", 
+                                "recruit_members", "maintain_status", "target_town"]:
                     print(f"未知的决策动作：{action}")
                     success = False
 

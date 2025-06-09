@@ -105,7 +105,7 @@ class RebelLeader(BaseAgent):
         # 系统消息
         self.system_message = "你是一个清代地方叛军组织首领，你的目标是确保叛军组织的生存和壮大（拥有更多的成员和金钱）。"
 
-    async def make_decision(self, summary, round_num, towns_stats):
+    async def make_decision(self, summary, towns_stats):
         """
         根据普通叛军的讨论作出决策
         :param summary: 普通叛军的讨论报告
