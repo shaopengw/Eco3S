@@ -413,15 +413,18 @@ class SocialNetwork:
         # 使用矩阵方式建立朋友和同事关系
         n = len(resident_ids)
         
-        # 生成朋友关系矩阵
-        friend_matrix = np.random.random((n, n))
+        # 生成朋友关系矩阵（幂律分布）
+        # friend_matrix = np.random.random((n, n))
+        gamma = 2.5 
+        friend_matrix = np.random.power(a=gamma, size=(n, n))
         friend_matrix = (friend_matrix + friend_matrix.T) / 2  # 确保对称
         np.fill_diagonal(friend_matrix, 0)  # 对角线置0
         threshold = np.percentile(friend_matrix[np.triu_indices(n, 1)], 100 * (1 - 3/n))
         friend_matrix = (friend_matrix > threshold).astype(int)
 
-        # 生成同事关系矩阵
-        colleague_matrix = np.random.random((n, n))
+        # 生成同事关系矩阵（幂律分布）
+        # colleague_matrix = np.random.random((n, n))
+        colleague_matrix = np.random.power(a=gamma, size=(n, n))
         colleague_matrix = (colleague_matrix + colleague_matrix.T) / 2
         np.fill_diagonal(colleague_matrix, 0)
         threshold = np.percentile(colleague_matrix[np.triu_indices(n, 1)], 100 * (1 - 3/n))
@@ -547,28 +550,12 @@ class SocialNetwork:
         :param node_id: 节点ID
         :return: 发言概率值(0-1)
         """
-        # n = population
-
-        # # 获取节点的度中心性
-        # centrality = nx.degree_centrality(self.hetero_graph.graph)[node_id]
-        
-        # # 使用 sigmoid 函数进行归一化：f(x) = 1 / (1 + e^(-k(x-x0)))
-        # # 动态调整sigmoid函数参数：k 控制曲线陡度，x0 控制中心点
-        # # k: 随着节点数增加而增加，使得大规模网络中的差异更明显
-        # k = 5 + 5 * (n / 100)  # 当n=100时k=10，n越大k越大
-        
-        # # x0: 随着节点数增加而减小，因为大规模网络中的度中心性普遍较小
-        # x0 = 0.1 * (100 / n)  # 当n=100时x0=0.1，n越大x0越小
-
-        # prob = 1 / (1 + math.exp(-k * (centrality - x0)))
-        # print(f"度中心性: {centrality:.3f}, 发言概率: {prob:.3f}")
-        # return prob
 
         try:
             degree = self.get_node_degree(node_id)
             max_degree = self.get_max_degree()
             normalized_degree = degree / max_degree
-            # print(f"节点 {node_id} 的度发言概率为{degree}/{max_degree}={normalized_degree}")
+            print(f"节点 {node_id} 的度发言概率为{degree}/{max_degree}={normalized_degree}")
             
             # speech_probability = 1 / (1 + math.exp(-10 * (normalized_degree - 0.5)))
             # print(f"节点 {node_id} 的度发言概率为{degree}/{max_degree}={normalized_degree}，经过归一化后为 {speech_probability}")
@@ -601,3 +588,29 @@ class SocialNetwork:
         degrees = dict(self.hetero_graph.graph.degree())
         max_degree = max(degrees.values())
         return max_degree
+
+    def plot_degree_distribution(self):
+        """
+        绘制异质图中节点度分布的可视化表格，横坐标为度数，纵坐标为人数。
+        """
+        print("正在绘制社交网络节点度分布...")
+        degrees = [self.hetero_graph.graph.degree(n) for n in self.hetero_graph.graph.nodes]
+        degree_count = {}
+        for d in degrees:
+            degree_count[d] = degree_count.get(d, 0) + 1
+        x = sorted(degree_count.keys())
+        y = [degree_count[k] for k in x]
+        plt.figure(figsize=(8, 5))
+        plt.bar(x, y, color='skyblue')
+        plt.xlabel('度数')
+        plt.ylabel('人数')
+        plt.title('社交网络节点度分布')
+        plt.xticks(x)
+        plt.tight_layout()
+        plt.show()
+        # 保存高清图片
+        save_dir = "experiment_dataset/social_network_data"
+        current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+        save_path = os.path.join(save_dir, f"degree_distribution_{current_time}.png")
+        plt.savefig(save_path, dpi=300, bbox_inches='tight', pad_inches=0.5)
+        print(f"社交网络图已保存至：{save_path}")

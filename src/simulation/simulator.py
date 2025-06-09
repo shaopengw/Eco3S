@@ -100,7 +100,7 @@ class Simulator:
                     'ordinary_type': OrdinaryGovernmentAgent,
                     'leader_type': HighRankingGovernmentAgent,
                 }
-                government_decision, government_summary = await self.collect_group_decision('government', government_config)
+                # government_decision, government_summary = await self.collect_group_decision('government', government_config)
                 
                 # 收集叛军决策
                 rebellion_config = {
@@ -108,7 +108,7 @@ class Simulator:
                     'ordinary_type': OrdinaryRebel,
                     'leader_type': RebelLeader,
                 }
-                rebellion_decision, rebellion_summary = await self.collect_group_decision('rebellion', rebellion_config)
+                # rebellion_decision, rebellion_summary = await self.collect_group_decision('rebellion', rebellion_config)
                 # rebellion_decision = '{"stage_rebellion": 2,"recruit_members": 0,"maintain_status": 0,"target_town": "杭州"}'
                 # rebellion_summary = '一致决定发动叛乱'
                 # 统一执行决策
@@ -125,7 +125,7 @@ class Simulator:
             for resident_name in list(self.residents.keys()):
                 resident = self.residents[resident_name]
                 # 传入社会状态参数
-                tasks.append(resident.decide_action_by_llm(self.tax_rate,self.basic_living_cost,self.population.get_population()))  # 基于LLM的决策--测试时建议暂时注释
+                # tasks.append(resident.decide_action_by_llm(self.tax_rate,self.basic_living_cost,self.population.get_population()))  # 基于LLM的决策--测试时建议暂时注释
 
                 # 更新居民寿命（次/年）
                 if self.time.get_current_quarter() == 1:
@@ -180,7 +180,6 @@ class Simulator:
             # self.get_rebels_statistics()
 
             # 社交网络类————测试
-            # self.social_network.print_speech_probability()
             # for resident_name in list(self.residents.keys()):
             #     resident = self.residents[resident_name]
             #     social_network = resident.get_social_network()
@@ -241,6 +240,7 @@ class Simulator:
 
         self.end_time = datetime.now()  # 记录模拟结束时间
         self.display_total_simulation_time()
+        self.social_network.plot_degree_distribution()
         # self.social_network.visualize()
 
     def display_total_simulation_time(self):

@@ -90,6 +90,10 @@ async def run_simulation(config: dict[str, Any]) -> None:
         social_network.visualize()
     except Exception as e:
         print(f"社交网络可视化失败：{e}")
+    try:
+        social_network.plot_degree_distribution()
+    except Exception as e:
+        print(f"社交网络节点度分布可视化失败：{e}")
 
     # 计算所有城镇的总叛军和官兵数量
     total_rebels = 0
