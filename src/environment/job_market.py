@@ -302,3 +302,26 @@ class JobMarket:
             if job_type != "叛军":
                 other_total += sum(salary for salary in info["employed"].values())
         return other_total
+
+    def add_random_jobs(self, num_jobs):
+        """
+        随机增加指定数量的工作岗位（除叛军外）
+        :param num_jobs: 需要增加的工作岗位数量
+        """
+        # 获取除叛军外的所有职业类型
+        available_jobs = [job for job in self.jobs_info.keys() if job != "叛军"]
+        
+        # 计算每个职业平均分配的岗位数
+        jobs_per_profession = num_jobs // len(available_jobs)
+        remaining_jobs = num_jobs % len(available_jobs)
+        
+        # 为每个职业分配基础岗位数
+        for job in available_jobs:
+            self.jobs_info[job]["total"] += jobs_per_profession
+        
+        # 随机分配剩余的岗位
+        if remaining_jobs > 0:
+            selected_jobs = random.sample(available_jobs, remaining_jobs)
+            for job in selected_jobs:
+                self.jobs_info[job]["total"] += 1
+    

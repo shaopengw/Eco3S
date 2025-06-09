@@ -107,12 +107,14 @@ async def run_simulation(config: dict[str, Any]) -> None:
             total_rebels += rebels_count
             total_military += military_count
 
+    initial_population = config["simulation"]["initial_population"]
+
     # 初始化政府
     government = Government(
         map=map,
         job_market=job_market,
         military_strength=total_military,
-        initial_budget=config["simulation"]["government_budget"],
+        initial_budget=initial_population * 10,
         time=time,
     )
 
@@ -126,7 +128,7 @@ async def run_simulation(config: dict[str, Any]) -> None:
     # 初始化叛军
     rebellion = Rebellion(
         initial_strength=total_rebels,
-        initial_resources=config["simulation"]["rebellion_initial_resources"],
+        initial_resources=total_rebels * 10,
         job_market=job_market,
     )
 

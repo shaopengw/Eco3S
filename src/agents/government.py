@@ -120,7 +120,7 @@ class HighRankingGovernmentAgent(BaseAgent):
         # 系统消息
         self.system_message = "你是一个清代地方政府高级官员，负责根据下属官员的讨论和当前政府状态做出最终决策，你的目标是维持地方统治稳定，同时完成中央政府下达的航运任务。其中航运包括河运和海运，河运具有创造大量沿线就业岗位的优势，而海运具有成本极低的优势。"
 
-    async def make_decision(self, summary, round_num):
+    async def make_decision(self, summary, transport_cost):
         """
         根据普通政府官员的讨论作出决策
         :return: 决策结果
@@ -129,30 +129,34 @@ class HighRankingGovernmentAgent(BaseAgent):
         if not self.shared_pool.is_ended():
             return None
         # 政府状态删去运河维护政策支持，改为运河状态（通航比率），增加当前失业率
-        #       决策内容删去提供公共服务。
-        #       可以考虑决策结果可以是多个动作的组合。如果支出之和大于财政预算，则优先满足重要的（决策按照重要性排序）。
+        #       决策为多个动作的组合。如果支出之和大于财政预算，则优先满足重要的（决策按照重要性排序）。
         # TODO: (考虑)政府和叛军的决策，只计算比例， 然后系统根据现有资源自动计算绝对值。这样避免LLM输出结果超过预算。
+        # ... existing code ...
+
+        river_price = transport_cost * (2 - self.map.get_navigability())  # 通航值越低价格越高，最低为基础价格
+        river_price = max(river_price, transport_cost)
+        sea_price = transport_cost / 5
+
         decision_prompt = (
             f"你是一位清代政府高级官员，负责根据下属官员的讨论和当前政府状态做出最终决策。\n"
             f"当前政府状态：\n"
             f"财政预算: {self.government.get_budget()}\n"
             f"军事力量: {self.government.get_military_strength()}\n"
-            f"运河通航比率: {self.map.get_navigability()}（海运通航比率：{1-self.map.get_navigability()}）\n"
+            f"河运价格: {river_price:.2f},海运价格： {sea_price:.2f}。注意：海运便宜但无法提供岗位，河运更贵但能提供就业岗位，加强民生。\n"
             f"当前税率: {self.government.get_tax_rate()*100:.1f}%\n"
             f"\n"
             f"下属官员们的讨论报告：\n{summary}\n"
-            f"请你通过设置合理的税率获得财政收入，合理分配预算支出，以尽可能少的成本完成施政目标。\n"
-            f"输出格式为 JSON，包含以下字段：\n"
-            f"- increase_employment: 提供就业的预算分配（整数）\n"
-            # f"- canal_navigability: 运河通航比率（浮点数，范围0到1，1表示完全通航，0表示完全不通航。注意：海运通航比率将自动设为1-运河通航比率）\n"
-            f"- maintain_canal: 维护运河的预算分配（整数）\n"
-            f"- military_support: 军需拨款的预算分配（整数）\n"
-            f"- tax_adjustment: 税率调整值（浮点数，范围-0.1到0.1）\n"
-            f"例如：\n"
-            f'{{"increase_employment": 10000, "maintain_canal": 3000, "military_support": 5000, "tax_adjustment": -0.02"}}'
             f"\n"
-            f"请根据以上信息和状态作出最终决策，不需要解释理由，只需输出JSON格式的决策结果。请务必确认支出总额不高于当前财政预算。"
-        )
+            f"你需要通过设置合理的税率获得财政收入，合理分配预算支出，以尽可能少的成本完成施政目标。不需要解释理由，务必确认支出总额不高于当前财政预算。输出为 JSON，严格遵守以下格式：\n"
+            # f"- increase_employment: 提供就业的预算分配（整数）\n"
+            # # f"- canal_navigability: 运河通航比率（浮点数，范围0到1，1表示完全通航，0表示完全不通航。注意：海运通航比率将自动设为1-运河通航比率）\n"
+            # f"- maintain_canal: 维护运河的预算分配（整数）\n"
+            # f"- military_support: 军需拨款的预算分配（整数）\n"
+            # f"- tax_adjustment: 税率调整值（浮点数，范围-0.1到0.1）\n"
+            # f"例如：\n"
+            # f'{{"increase_employment": 提供就业的预算分配（整数）, "maintain_canal": 维护运河的预算分配（整数）, "military_support": 军需拨款的预算分配（整数）, "tax_adjustment": 税率调整值（浮点数，范围-0.1到0.1）"}}'
+            f'{{"increase_employment": 提供就业的预算分配（整数）, "transport_ratio": 运输投入比例（浮点数，0-1，0表示全部海运，1表示全部河运）, "transport_investment": 运输总投入资金（整数）,"military_support": 军需拨款的预算分配（整数）, "tax_adjustment": 税率调整值（浮点数，范围-0.1到0.1）}}\n'
+         )
 
         try:
             # 调用模型做出最终决策
@@ -198,48 +202,47 @@ class Government:
         """
         # TODO : 提供就业机会/以工代赈，不仅限于运河沿线地区，而是均匀分布在各地区。
         if self.budget >= budget_allocation:
-            self.job_market.add_job("Canal Maintenance")
+            job_amount = int(budget_allocation / 10)
+            self.job_market.add_random_jobs(job_amount)
             self.budget -= budget_allocation
-            print("政府提供运河维护工作。")
+            print(f"政府提供{job_amount}个工作岗位。")
         else:
             print("政府预算不足以提供工作。")
 
-    def maintain_canal(self, budget_allocation):
+    def handle_transport_investment(self, transport_ratio=None, transport_investment=None):
         """
-        维护运河
-        :param budget_allocation: 预算分配
+        处理运输投资
+        :param transport_ratio: 运输投入比例（0-1）
+        :param transport_investment: 运输总投入资金
         :return: 是否维护成功
         """
         # 维护运河有三个方面的影响：
         # 1. 改善运河状态（运河通航能力，取值范围：[0,1]），从而降低运输成本。否则运输成本上升，政府需要支出更多的预算来完成运输。
         # 2. 提供就业机会，增加居民满意度。但是提供的就业机会仅限运河沿线地区。
         # 3. 政府预算减少：支出=预算分配+运输成本=预算分配+运河状态*河运成本系数+（1-运河状态）*海运成本系数。
-        if self.budget >= budget_allocation:
-            # 1. 改善运河状态，维护系数与预算分配成正比
-            # 假设每1000两可以提升0.1的通航能力
-            maint_factor = min(1.0, budget_allocation / 10000)
-            current_navigability = self.map.update_river_condition(maint_factor)
 
-            # 2. 计算运输成本
-            # 基础运输成本（固定值）
-            base_transport_cost = 1000  # 基础运输成本
-            # 河运成本系数 = 0.5，海运成本系数 = 0.1
-            transport_cost = (current_navigability * 0.5 + (1 - current_navigability) * 0.1) * base_transport_cost
-
-            # 3. 提供就业机会（仅限运河沿线地区）
-            # 假设每100两预算可以提供1个工作岗位
-            job_opportunities = int(budget_allocation / 100)
+        if self.budget >= transport_investment:
+            canal_investment = transport_ratio * transport_investment
+            river_price = transport_cost * (2 - self.map.get_navigability())
+            river_price = max(river_price, transport_cost)
+            
+            # 计算投入价格比并更新运河状态
+            investment_ratio = round(canal_investment / river_price, 2)
+            current_navigability = min(1.0, self.map.get_navigability() * investment_ratio)
+            self.map.update_river_condition(current_navigability)
+            
+            # 提供就业机会
+            job_opportunities = int(canal_investment / 100)
             if job_opportunities > 0:
                 self.job_market.add_job("运河维护工人", job_opportunities)
-
-            # 扣除总支出（预算分配+运输成本）
-            total_cost = budget_allocation + transport_cost
-            self.budget -= total_cost
-
-            print(f"政府维护运河。通航能力：{current_navigability:.2f}，总支出：{total_cost:.2f}两，新增就业岗位：{job_opportunities}个")
+            
+            # 扣除总支出
+            self.budget -= transport_investment
+            
+            print(f"政府维护运河。通航能力：{current_navigability:.2f}，总支出：{transport_investment:.2f}两，新增就业岗位：{job_opportunities}个")
             return True
         else:
-            print(f"政府预算不足（需要{budget_allocation}两），无法维护运河。")
+            print(f"政府预算不足（需要{transport_investment}两），无法维护运河。")
             return False
 
     def support_military(self, budget_allocation):
