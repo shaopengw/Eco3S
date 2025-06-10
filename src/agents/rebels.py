@@ -134,19 +134,11 @@ class RebelLeader(BaseAgent):
             f"\n"
             f"下属们的讨论报告：\n{summary}\n"
             f"\n"
-            f"请为以下每个动作分配参数。如果不选择某个动作，将其参数设为0。\n"
-            f"在做决策时，请考虑：\n"
-            f"1. 各城镇叛军和官兵的力量对比\n"
-            f"2. 选择叛军力量较强或官兵力量较弱的城镇发动叛乱\n"
-            f"3. 需要增加叛军力量的城镇优先招募新成员\n"
+            f"请为每个动作分配参数。如果不选择某个动作，将其参数设为0。\n"
+            f"在做决策时，请考虑各城镇叛军和官兵的力量对比，优先选择叛军力量较强或官兵力量较弱的城镇发动叛乱\n"
             f"\n"
-            f"输出格式为 JSON，包含以下字段：\n"
-            f"- stage_rebellion: 发动叛乱的力量投入（整数）\n"
-            f"- recruit_members: 招募新成员的资源投入（整数）\n"
-            f"- maintain_status: 维持现状（设为1表示选择维持现状，设为0表示不选择）\n"
-            f"- target_town: 行动目标城镇名称（字符串）\n"
-            f"例如：\n"
-            f'{{"stage_rebellion": 100, "recruit_members": 500, "maintain_status": 0, "target_town": "杭州"}}'
+            f"输出格式为 JSON，严格按照以下格式：\n"
+            f'{{"stage_rebellion": 发动叛乱的力量投入（整数）, "recruit_members": 招募新成员的资源投入（整数）, "maintain_status": 维持现状（设为1表示选择维持现状，设为0表示不选择）, "target_town": 发动叛乱目标城镇名称（字符串）}}'
             f"\n"
             f"请根据以上信息和状态作出最终决策，不要解释理由，只需输出JSON格式的决策结果。"
         )
