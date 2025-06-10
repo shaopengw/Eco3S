@@ -17,6 +17,12 @@ class ModelManager:
                 "url":os.getenv('OPENAI_API_BASE_URL'),
                 "api_key":os.getenv('OPENAI_API_KEY')
             },
+            # "OPENAI": {
+            #     "model_types": ["gpt-4o"],
+            #     "model_platform": ModelPlatformType.OPENAI,
+            #     "url":os.getenv('OPENAI_API_BASE_URL'),
+            #     "api_key":os.getenv('OPENAI_API_KEY')
+            # },
             # "deepseek": {
             #     "model_types": ["deepseek-chat"],
             #     "model_platform": ModelPlatformType.OPENAI_COMPATIBLE_MODEL,

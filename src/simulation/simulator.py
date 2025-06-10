@@ -194,6 +194,11 @@ class Simulator:
                 # 从政府预算中扣除工资
                 self.government.budget = max(0, self.government.budget - other_salary)
 
+                # 每3-5年更新一次社交网络
+                current_year = self.time.get_current_year()
+                if current_year % random.randint(3, 5) == 0:
+                    self.social_network.update_network_edges()  # 更新社交网络边
+
             total_unemployment_rate = self.calculate_total_unemployment_rate()
             # 记录数据
             self.results["years"].append(self.time.get_current_time())
@@ -283,7 +288,7 @@ class Simulator:
 
         # 第一轮：所有成员异步发表初始意见
         first_round_tasks = [
-            member.generate_opinion()
+            member.generate_opinion(self.transport_cost)
             for member in random.sample(ordinary_members, len(ordinary_members))
         ]
         await asyncio.gather(*first_round_tasks)
@@ -376,14 +381,15 @@ class Simulator:
             
             # 政府决策处理
             if group_type == "government":
-                if "increase_employment" in decision_data:
-                    self.government.provide_jobs(budget_allocation=decision_data["increase_employment"])
                 if "transport_investment" in decision_data:
                     ratio = decision_data.get('transport_ratio', 0.5)
                     self.government.handle_transport_investment(
-                        transport_investment=decision_data["transport_investment"], 
-                        transport_ratio=ratio
+                        transport_investment=decision_data["transport_investment"],
+                        transport_ratio=ratio,
+                        transport_cost=self.transport_cost
                     )
+                if "increase_employment" in decision_data:
+                    self.government.provide_jobs(budget_allocation=decision_data["increase_employment"])
                 if "military_support" in decision_data:
                     self.government.support_military(budget_allocation=decision_data["military_support"])
                 if "tax_adjustment" in decision_data:
@@ -393,8 +399,9 @@ class Simulator:
             elif group_type == "rebellion":
                 if "stage_rebellion" in decision_data:
                     strength = decision_data["stage_rebellion"]
-                    target = decision_data.get('target_town', '')
-                    self.handle_rebellion(strength_investment=strength, target_town=target)
+                    target = decision_data.get('target_town', None)
+                    if target:
+                        self.handle_rebellion(strength_investment=strength, target_town=target)
                 if "recruit_members" in decision_data:
                     self.rebellion.recruit_new_members(resource_investment=decision_data["recruit_members"])
                 if "maintain_status" in decision_data and decision_data["maintain_status"] == 1:

@@ -8,7 +8,6 @@ from typing import List
 from datetime import datetime
 from sklearn.cluster import KMeans
 import asyncio
-import math
 
 class HeterogeneousGraph:
     """
@@ -555,7 +554,7 @@ class SocialNetwork:
             degree = self.get_node_degree(node_id)
             max_degree = self.get_max_degree()
             normalized_degree = degree / max_degree
-            print(f"节点 {node_id} 的度发言概率为{degree}/{max_degree}={normalized_degree}")
+            # print(f"节点 {node_id} 的度发言概率为{degree}/{max_degree}={normalized_degree}")
             
             # speech_probability = 1 / (1 + math.exp(-10 * (normalized_degree - 0.5)))
             # print(f"节点 {node_id} 的度发言概率为{degree}/{max_degree}={normalized_degree}，经过归一化后为 {speech_probability}")
@@ -613,3 +612,62 @@ class SocialNetwork:
         save_path = os.path.join(save_dir, f"degree_distribution_{current_time}.png")
         plt.savefig(save_path, dpi=300, bbox_inches='tight', pad_inches=0.5)
         print(f"社交网络节点度分布表已保存至：{save_path}")
+
+    def update_network_edges(self, update_ratio=0.2):
+        """
+        随机更新社交网络中的部分边，默认每次更新20%。
+        :param update_ratio: 每次更新的边的比例（0-1之间）
+        """
+        G = self.hetero_graph.graph
+        
+        # 获取所有边
+        edges = list(G.edges(data=True))
+        m = len(edges)
+        if m == 0:
+            print(f"警告：没有找到任何边可更新")
+            return
+        
+        #计算需要更新的边数（确保至少更新1条边）
+        num_update = max(1, int(round(m * update_ratio)))
+        
+        #随机选择要删除的边并批量删除
+        edges_to_remove_data = random.sample(edges, num_update)
+        edges_to_remove = [(u, v) for u, v, d in edges_to_remove_data]
+        G.remove_edges_from(edges_to_remove)
+        
+        #准备节点列表用于随机采样
+        nodes = list(G.nodes())
+        n = len(nodes)
+        max_possible_edges = n * (n - 1) // 2
+        current_edges = G.number_of_edges()
+        
+        #检查是否还能添加新边
+        if current_edges >= max_possible_edges:
+            print("警告：图已达到最大边数，无法添加新边")
+            return
+        
+        # 生成新边
+        new_edges_list = []
+        existing_edges_set = set(G.edges())
+        max_attempts = min(1000, 10 * num_update)  # 合理限制尝试次数
+        attempts = 0
+        
+        while len(new_edges_list) < num_update and attempts < max_attempts:
+            u, v = random.sample(nodes, 2)
+            # 检查边是否已存在，集合查找更快
+            if (u, v) not in existing_edges_set and (v, u) not in existing_edges_set:
+                # 随机选择一种现有边类型，或者默认'friend'，如果图中没有边类型
+                if edges_to_remove_data:
+                    edge_type = random.choice(edges_to_remove_data)[2].get("type", "friend")
+                else:
+                    edge_type = "friend"
+                new_edges_list.append((u, v, {"type": edge_type}))
+                existing_edges_set.add((u, v))
+            attempts += 1
+        
+        # 批量添加新边
+        G.add_edges_from(new_edges_list)
+        
+        #结果统计
+        actual_ratio = len(new_edges_list) / m if m > 0 else 0
+        print(f"社交网络更新完成: 更新了{len(edges_to_remove)}条边，实际更新比例{actual_ratio:.1%}，")

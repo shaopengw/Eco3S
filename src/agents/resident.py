@@ -1,4 +1,5 @@
 from .shared_imports import *
+import re
 load_dotenv()
 
 if "sphinx" not in sys.modules:
@@ -247,7 +248,10 @@ class Resident(BaseAgent):
             if not response:
                 return "2", "发生错误，继续当前工作"
 
-            decision_data = json.loads(response)
+            # 清理LLM返回的字符串，移除可能存在的```json和```标记
+            cleaned_response = re.sub(r"^```json\s*|\s*```$", "", response, flags=re.DOTALL).strip()
+            
+            decision_data = json.loads(cleaned_response)
             select = decision_data.get("select")
             reason = decision_data.get("reason")
             speech = decision_data.get("speech", "")
