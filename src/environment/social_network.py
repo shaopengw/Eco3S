@@ -455,8 +455,9 @@ class SocialNetwork:
                 
                 # 使用KMeans聚类
                 if len(area_remaining) >= 6:
-                    # 提取所有居民的位置坐标
-                    resident_locations = np.array([residents[r].location for r in area_remaining])
+                    # 提取所有居民的位置坐标并添加微小噪声
+                    resident_locations = np.array([residents[r].location for r in area_remaining], dtype=np.float64)
+                    resident_locations += np.random.normal(0, 0.0001, resident_locations.shape)
                     
                     # 估计家庭数量 (平均每个家庭3人)
                     num_families = max(1, len(area_remaining) // 3)

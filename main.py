@@ -21,6 +21,7 @@ from src.agents.government_agent_generator import generate_government_agents
 from src.agents.rebels_agent_generator import generate_rebels_agents
 from src.generator.resident_generate import generate_resident_data, save_resident_data
 from src.environment.towns import Towns
+from src.environment.transport_economy import TransportEconomy
 from dotenv import load_dotenv
 
 # 确保 log 目录存在
@@ -62,6 +63,13 @@ async def run_simulation(config: dict[str, Any]) -> None:
 
     # 初始化人口
     population = Population(initial_population=config["simulation"]["initial_population"])
+
+    # 初始化运输经济系统
+    transport_economy = TransportEconomy(
+        transport_cost=population.get_population() / 100,
+        transport_task=config["simulation"]["transport_task"],
+        maintenance_cost_base=population.get_population() / 10,
+    )
 
     # 初始化居民
     resident_info_path = config["data"]["resident_info_path"]  # 居民信息文件路径
@@ -116,6 +124,7 @@ async def run_simulation(config: dict[str, Any]) -> None:
         military_strength=total_military,
         initial_budget=initial_population * 10,
         time=time,
+        transport_economy=transport_economy,
     )
 
     # 初始化政府官员
@@ -152,6 +161,7 @@ async def run_simulation(config: dict[str, Any]) -> None:
         social_network=social_network,
         residents=residents,
         towns=towns,
+        transport_economy=transport_economy,
     )
     
     print("初始化完成")

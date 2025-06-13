@@ -226,6 +226,10 @@ class Map:
         # 更新运河网格的状态
         self.river_grid[self.river_grid > 0] = self.navigability
         
+        # 增加通航值低于0.2的警告
+        if self.navigability < 0.2:
+            print(Back.RED + f"运河已废弃，通航能力为 {self.navigability:.2f}" + Back.RESET)
+
         return self.navigability
 
     def get_navigability(self):

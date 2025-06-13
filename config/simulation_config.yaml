@@ -7,6 +7,8 @@ simulation:
   initial_population: 10  # 初始人口数量
   birth_rate: 0.01        # 出生率
 
+  # 运河经济相关参数
+  transport_task: 100  # 运输任务（吨）
   # canal_transport_cost = 100  # 河运初始基础运输成本
   # sea_transport_cost = 20  # 海运初始基础运输成本
 
