@@ -33,14 +33,14 @@ class OrdinaryGovernmentAgent(BaseAgent):
             "请用简短的一句话回复。"
         )
 
-    async def generate_opinion(self, transport_cost):
+    async def generate_opinion(self):
         """
         生成一句关于政治决策的意见
         :return: 生成的意见内容
         """
-        river_price = transport_cost * (2 - self.map.get_navigability())  # 通航值越低价格越高，最低为基础价格
-        river_price = max(river_price, transport_cost)
-        sea_price = transport_cost / 5
+        river_price = self.government.transport_economy.river_price
+        sea_price = self.government.transport_economy.sea_price
+        
         # 获取当前政府状态
         government_status = (
             f"当前政府状态：\n"
@@ -123,7 +123,7 @@ class HighRankingGovernmentAgent(BaseAgent):
         # 系统消息
         self.system_message = "你是一个清代地方政府高级官员，负责根据下属官员的讨论和当前政府状态做出最终决策，你的目标是维持地方统治稳定，同时完成中央政府下达的航运任务。其中航运包括河运和海运，河运具有创造大量沿线就业岗位的优势，而海运具有成本极低的优势。"
 
-    async def make_decision(self, summary, transport_cost):
+    async def make_decision(self, summary):
         """
         根据普通政府官员的讨论作出决策
         :return: 决策结果
@@ -136,22 +136,23 @@ class HighRankingGovernmentAgent(BaseAgent):
         # TODO: (考虑)政府和叛军的决策，只计算比例， 然后系统根据现有资源自动计算绝对值。这样避免LLM输出结果超过预算。
         # ... existing code ...
 
-        river_price = transport_cost * (2 - self.map.get_navigability())  # 通航值越低价格越高，最低为基础价格
-        river_price = max(river_price, transport_cost)
-        sea_price = transport_cost / 5
+        river_price = self.government.transport_economy.river_price
+        sea_price = self.government.transport_economy.sea_price
+        transport_task = self.government.transport_economy.transport_task
 
         decision_prompt = (
             f"你是一位清代政府高级官员，负责根据下属官员的讨论和当前政府状态做出最终决策。\n"
             f"当前政府状态：\n"
             f"财政预算: {self.government.get_budget()}\n"
             f"军事力量: {self.government.get_military_strength()}\n"
-            f"河运价格: {river_price:.2f},海运价格： {sea_price:.2f}。注意：海运便宜但无法提供岗位，河运更贵但能提供就业岗位，加强民生。\n"
+            f"运输总任务量: {transport_task}吨,"
+            f"河运价格: {river_price:.2f}两/吨,海运价格： {sea_price:.2f}两/吨。注意：海运便宜但无法提供岗位，河运更贵且需要额外投入维护资金，但能提供就业岗位，加强民生。\n"
             f"当前税率: {self.government.get_tax_rate()*100:.1f}%\n"
             f"\n"
             f"下属官员们的讨论报告：\n{summary}\n"
             f"\n"
-            f"你需要通过设置合理的税率获得财政收入，合理分配预算支出，以尽可能少的成本完成施政目标。不需要解释理由，务必确认支出总额不高于当前财政预算。输出为 JSON，严格遵守以下格式：\n"
-            f'{{"increase_employment": 提供就业的预算分配（整数）, "transport_ratio": 运输投入比例（浮点数，0-1，0表示全部海运，1表示全部河运）, "transport_investment": 运输总投入资金（整数）,"military_support": 军需拨款的预算分配（整数）, "tax_adjustment": 税率调整值（浮点数，范围-0.1到0.1）}}\n'
+            f"你需要通过设置合理的税率获得财政收入，合理分配预算支出和运输比例，以尽可能少的成本完成施政目标。不需要解释理由，务必确认支出总额不高于当前财政预算。输出为 JSON，严格遵守以下格式：\n"
+            f'{{"increase_employment": 提供就业的预算分配（整数）, "transport_ratio": 运输投入比例（浮点数，0-1，0表示全部海运，1表示全部河运）, "maintenance_investment": 维护运河投入资金（整数，如果不维护则为0）, "military_support": 军需拨款的预算分配（整数）, "tax_adjustment": 税率调整值（浮点数，范围-0.1到0.1）}}\n'
          )
 
         try:
@@ -177,7 +178,7 @@ class HighRankingGovernmentAgent(BaseAgent):
         government_log.info(f"  人物性格：{self.mbti}")
 
 class Government:
-    def __init__(self, map, job_market, military_strength, initial_budget, time):
+    def __init__(self, map, job_market, military_strength, initial_budget, time, transport_economy):
         """
         初始化政府类
         :param map: 地图对象，用于获取地理信息
@@ -191,6 +192,7 @@ class Government:
         self.time = time
         self.tax_rate = 0.1  # 初始税率为 10%
         self.residents = {}  # 添加居民引用
+        self.transport_economy = transport_economy  # 运输经济模型引用
 
     def provide_jobs(self,budget_allocation):
         """
@@ -205,42 +207,55 @@ class Government:
         else:
             print("政府预算不足以提供工作。")
 
-    def handle_transport_investment(self, transport_ratio=None, transport_investment=None, transport_cost=None):
+    def maintain_canal(self, maintenance_investment):
         """
-        处理运输投资
-        :param transport_ratio: 运输投入比例（0-1）
-        :param transport_investment: 运输总投入资金
-        :param transport_cost: 基础运输成本
+        维护运河
+        :param maintenance_investment: 投资金额
         :return: 是否维护成功
         """
         # 维护运河有三个方面的影响：
         # 1. 改善运河状态（运河通航能力，取值范围：[0,1]），从而降低运输成本。否则运输成本上升，政府需要支出更多的预算来完成运输。
         # 2. 提供就业机会，增加居民满意度。但是提供的就业机会仅限运河沿线地区。
-        # 3. 政府预算减少：支出=预算分配+运输成本=预算分配+运河状态*河运成本系数+（1-运河状态）*海运成本系数。
+        # 3. 政府预算减少
+        # 计算改善后的通航能力
+        maintenance_ratio = maintenance_investment / self.transport_economy.maintenance_cost_base
+        current_navigability = min(1.0, self.map.get_navigability() + maintenance_ratio * 0.1)  # 假设每投入1倍维护成本改善0.1
+        
+        # 更新运河状态
+        self.map.update_river_condition(current_navigability)
+        
+        # 提供就业机会
+        job_opportunities = int(maintenance_investment / 100)
+        if job_opportunities > 0:
+            self.job_market.add_job("运河维护工人", job_opportunities)
+        
+        # 扣除支出
+        self.budget -= maintenance_investment
+        
+        print(f"政府维护运河。通航能力：{current_navigability:.2f}，支出：{maintenance_investment:.2f}两，新增就业岗位：{job_opportunities}个")
+        return True
 
-        if self.budget >= transport_investment:
-            canal_investment = transport_ratio * transport_investment
-            river_price = transport_cost * (2 - self.map.get_navigability())
-            river_price = max(river_price, transport_cost)
-            
-            # 计算投入价格比并更新运河状态
-            investment_ratio = round(canal_investment / river_price, 2)
-            current_navigability = min(1.0, self.map.get_navigability() * investment_ratio)
-            self.map.update_river_condition(current_navigability)
-            
-            # 提供就业机会
-            job_opportunities = int(canal_investment / 100)
-            if job_opportunities > 0:
-                self.job_market.add_job("运河维护工人", job_opportunities)
-            
-            # 扣除总支出
-            self.budget -= transport_investment
-            
-            print(f"政府维护运河。通航能力：{current_navigability:.2f}，总支出：{transport_investment:.2f}两，新增就业岗位：{job_opportunities}个")
-            return True
-        else:
-            print(f"政府预算不足（需要{transport_investment}两），无法维护运河。")
-            return False
+    def handle_transport_decision(self, transport_ratio):
+        """
+        处理运输决策
+        :param transport_ratio: 河运投入比例（0-1）
+        :return: 是否决策成功
+        """
+        # 计算总运输成本
+        total_cost = self.transport_economy.calculate_total_transport_cost(transport_ratio)
+        
+        # 检查预算是否充足，不足则自动调整比例
+        if self.budget < total_cost:
+            # 计算最大可负担比例
+            max_affordable_ratio = self.budget / (self.transport_economy.river_price * self.transport_economy.transport_task)
+            transport_ratio = min(transport_ratio, max_affordable_ratio)
+            print(f"预算不足，自动调整河运比例为{transport_ratio:.2f}")
+        
+        # 扣除运输成本
+        self.budget -= total_cost
+        
+        print(f"政府运输决策。河运比例：{transport_ratio:.2f}，实际支出：{total_cost:.2f}两")
+        return True
 
     def support_military(self, budget_allocation):
         """

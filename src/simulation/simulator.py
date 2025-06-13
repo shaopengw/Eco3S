@@ -17,9 +17,10 @@ from src.generator.resident_generate import generate_resident_data, save_residen
 from src.environment.social_network import SocialNetwork
 from src.agents.resident import ResidentGroup
 from src.environment.towns import Towns
+from src.environment.transport_economy import TransportEconomy
 
 class Simulator:
-    def __init__(self, map, time, job_market, government, government_officials, rebellion, rebels_agents, population, social_network, residents, towns):
+    def __init__(self, map, time, job_market, government, government_officials, rebellion, rebels_agents, population, social_network, residents, towns, transport_economy):
         """
         初始化模拟器类
         :param map: 地图对象
@@ -33,6 +34,7 @@ class Simulator:
         :param social_network: 社会网络对象
         :param residents: 居民列表
         :param towns: 城镇对象
+        :param transport_economy: 运输经济对象
         """
         self.map = map
         self.time = time
@@ -44,11 +46,13 @@ class Simulator:
         self.social_network = social_network
         self.residents = residents
         self.towns = towns
+        self.transport_economy = transport_economy
         self.basic_living_cost = 10  # 每年基本生活所需值（单位：两）
         self.average_satisfaction = None  # 平均满意度（0-1）
         self.tax_rate = 0.1  # 税率（0-1）
         self.gdp = 0  # 国内生产总值（单位：两）
-        self.transport_cost = population.get_population() # 基础运输成本-与人口数相关
+        # self.transport_cost = population.get_population() /10  # 基础运输成本-与人口数相关
+        # self.transport_task = 50 # 政府运输任务（单位：吨）
         self.rebellion_records = 0
         self.results = {
             "years": [],
@@ -186,13 +190,15 @@ class Simulator:
             #     social_network = resident.get_social_network()
             #     social_network.calculate_speech_probability(resident.resident_id, self.population.get_population())
 
-            # 在每年第一季度进行工资结算
+            # 在每年第一季度进行结算更新
             if self.time.get_current_quarter() == 1:
                 rebel_salary, other_salary = self.calculate_total_salaries()
                 # 从叛军资源中扣除工资
                 # self.rebellion.resources = max(0, self.rebellion.resources - rebel_salary)
                 # 从政府预算中扣除工资
                 self.government.budget = max(0, self.government.budget - other_salary)
+                # 计算并更新运河价格
+                self.transport_economy.calculate_river_price(self.map.get_navigability())
 
                 # 每3-5年更新一次社交网络
                 current_year = self.time.get_current_year()
@@ -288,7 +294,7 @@ class Simulator:
 
         # 第一轮：所有成员异步发表初始意见
         first_round_tasks = [
-            member.generate_opinion(self.transport_cost)
+            member.generate_opinion()
             for member in random.sample(ordinary_members, len(ordinary_members))
         ]
         await asyncio.gather(*first_round_tasks)
@@ -319,7 +325,7 @@ class Simulator:
                 if group_type == 'rebellion':
                     decision = await leaders[0].make_decision(discussion_summary, towns_stats)
                 else:
-                    decision = await leaders[0].make_decision(discussion_summary, self.transport_cost)
+                    decision = await leaders[0].make_decision(discussion_summary)
                 return decision, discussion_summary
 
         return None, None
@@ -381,13 +387,18 @@ class Simulator:
             
             # 政府决策处理
             if group_type == "government":
-                if "transport_investment" in decision_data:
-                    ratio = decision_data.get('transport_ratio', 0.5)
-                    self.government.handle_transport_investment(
-                        transport_investment=decision_data["transport_investment"],
-                        transport_ratio=ratio,
-                        transport_cost=self.transport_cost
+                # 处理运河维护投资
+                if "maintenance_investment" in decision_data:
+                    self.government.maintain_canal(
+                        maintenance_investment=decision_data["maintenance_investment"]
                     )
+                # 处理运输决策
+                if "transport_ratio" in decision_data:
+                    self.government.handle_transport_decision(
+                        transport_ratio=decision_data["transport_ratio"]
+                    )
+                if "increase_employment" in decision_data:
+                    self.government.provide_jobs(budget_allocation=decision_data["increase_employment"])
                 if "increase_employment" in decision_data:
                     self.government.provide_jobs(budget_allocation=decision_data["increase_employment"])
                 if "military_support" in decision_data:
@@ -409,7 +420,7 @@ class Simulator:
             
             # 检查是否有未知动作
             for action in decision_data:
-                if action not in ["increase_employment", "transport_investment", "transport_ratio", 
+                if action not in ["increase_employment", "transport_ratio", "maintenance_investment", 
                                 "military_support", "tax_adjustment", "stage_rebellion", 
                                 "recruit_members", "maintain_status", "target_town"]:
                     print(f"未知的决策动作：{action}")
