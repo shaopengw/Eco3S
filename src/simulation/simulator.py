@@ -20,7 +20,7 @@ from src.environment.towns import Towns
 from src.environment.transport_economy import TransportEconomy
 
 class Simulator:
-    def __init__(self, map, time, job_market, government, government_officials, rebellion, rebels_agents, population, social_network, residents, towns, transport_economy):
+    def __init__(self, map, time, job_market, government, government_officials, rebellion, rebels_agents, population, social_network, residents, towns, transport_economy, climate):
         """
         初始化模拟器类
         :param map: 地图对象
@@ -35,6 +35,7 @@ class Simulator:
         :param residents: 居民列表
         :param towns: 城镇对象
         :param transport_economy: 运输经济对象
+        :param climate: 天气对象
         """
         self.map = map
         self.time = time
@@ -47,6 +48,7 @@ class Simulator:
         self.residents = residents
         self.towns = towns
         self.transport_economy = transport_economy
+        self.climate = climate
         self.basic_living_cost = 10  # 每年基本生活所需值（单位：两）
         self.average_satisfaction = None  # 平均满意度（0-1）
         self.tax_rate = 0.1  # 税率（0-1）
@@ -77,7 +79,7 @@ class Simulator:
         while not self.time.is_end():
             # 打印当前时间步信息
             print(Back.GREEN + f"年份:{self.time.get_current_time()}" + Back.RESET)
-
+            print(f"天气影响因子：{self.climate.get_current_impact(self.time.get_current_time())}")
             # 更新属性变量
             self.gdp = self.calculate_gdp() # 更新GDP
             print(f"当前GDP: {self.gdp}")
@@ -105,7 +107,7 @@ class Simulator:
                     'ordinary_type': OrdinaryGovernmentAgent,
                     'leader_type': HighRankingGovernmentAgent,
                 }
-                government_decision, government_summary = await self.collect_group_decision('government', government_config)
+                # government_decision, government_summary = await self.collect_group_decision('government', government_config)
                 
                 # 收集叛军决策
                 rebellion_config = {
