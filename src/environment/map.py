@@ -207,15 +207,20 @@ class Map:
         plt.legend()
         plt.show()
 
-    def update_river_condition(self, maint_factor=None):
+    def update_river_condition(self, maint_factor=None, climate_impact_factor=0):
         """
         更新运河的状态
         :param maint_factor: 维护系数的变化值，范围[-1,1]，表示通航能力的增减
+        :param climate_impact_factor: 气候影响因子，范围[0,1]，表示气候对运河的负面影响
         :return: 当前运河通航能力，如果系数不合法则返回提示信息
         """
-        # 自然衰减
-        natural_decay_rate=0.1
-        self.navigability = max(0, self.navigability * (1 - natural_decay_rate))
+        # 验证气候影响因子
+        if not (0 <= climate_impact_factor <= 1):
+            return "气候影响因子必须在0到1之间"
+            
+        # 自然衰减和气候影响
+        natural_decay_rate = 0.1
+        self.navigability = max(0, self.navigability * (1 - natural_decay_rate) - climate_impact_factor * 0.1)
 
         # 如果提供了维护系数，进行增量更新
         if maint_factor is not None:

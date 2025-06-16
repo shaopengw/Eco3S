@@ -12,6 +12,7 @@ from src.environment.job_market import JobMarket
 from src.environment.population import Population
 # from src.environment.information_spread import InformationSpread
 from src.environment.social_network import SocialNetwork
+from src.environment.climate import ClimateSystem
 from src.agents.government import Government
 from src.agents.rebels import Rebellion
 from src.simulation.simulator import Simulator
@@ -148,6 +149,8 @@ async def run_simulation(config: dict[str, Any]) -> None:
         rebellion=rebellion,
     )
 
+    climate = ClimateSystem("src/environment/climate.csv")  # 气候系统
+
     # 初始化模拟器
     simulator = Simulator(
         map=map,
@@ -162,6 +165,7 @@ async def run_simulation(config: dict[str, Any]) -> None:
         residents=residents,
         towns=towns,
         transport_economy=transport_economy,
+        climate=climate,
     )
     
     print("初始化完成")
