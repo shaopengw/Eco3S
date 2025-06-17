@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import json
 import math
 import random
+from colorama import Back
 
 class Map:
     def __init__(self, width, height, data_file='src/environment/towns_data.json'):
@@ -16,7 +17,7 @@ class Map:
         self.height = height
         self.grid = np.zeros((height, width))
         self.river_grid = np.zeros((height, width))
-        self.navigability = 1.0  # 初始运河通航能力为1.0（最佳状态）
+        self.navigability = 0.8  # 初始运河通航能力
         self.town_graph = {}  # 城市图（邻接表形式）
         self.town_dict = {}  # 存储城市信息
         self.terrain_ruggedness = np.random.rand(height, width)
@@ -207,12 +208,24 @@ class Map:
         plt.legend()
         plt.show()
 
-    def update_river_condition(self, maint_factor=None, climate_impact_factor=0):
+    def update_river_condition(self, maintenance_ratio):
         """
-        更新运河的状态
-        :param maint_factor: 维护系数的变化值，范围[-1,1]，表示通航能力的增减
-        :param climate_impact_factor: 气候影响因子，范围[0,1]，表示气候对运河的负面影响
-        :return: 当前运河通航能力，如果系数不合法则返回提示信息
+        根据政府维护决策更新运河状态。
+        :param new_navigability: 维护后新的通航能力值。
+        """
+        current_navigability = min(1.0, self.get_navigability() + maintenance_ratio * 0.1)  # 假设每投入1倍维护成本改善0.1
+        self.navigability = current_navigability
+        self.river_grid[self.river_grid > 0] = self.navigability
+        
+        # 增加通航值低于0.2的警告
+        if self.navigability < 0.2:
+            print(Back.RED + f"运河已废弃，通航能力为 {self.navigability:.2f}" + Back.RESET)
+
+    def decay_river_condition_naturally(self, climate_impact_factor=0):
+        """
+        每年根据自然衰减和气候影响自然更新运河状态。
+        :param climate_impact_factor: 气候影响因子，范围[0,1]，表示气候对运河的负面影响。
+        :return: 当前运河通航能力。
         """
         # 验证气候影响因子
         if not (0 <= climate_impact_factor <= 1):
@@ -221,12 +234,6 @@ class Map:
         # 自然衰减和气候影响
         natural_decay_rate = 0.1
         self.navigability = max(0, self.navigability * (1 - natural_decay_rate) - climate_impact_factor * 0.1)
-
-        # 如果提供了维护系数，进行增量更新
-        if maint_factor is not None:
-            if not (-1 <= maint_factor <= 1):
-                return f"维护系数变化值 {maint_factor} 不在有效范围[-1,1]内"
-            self.navigability = max(0, min(1, self.navigability + maint_factor))
 
         # 更新运河网格的状态
         self.river_grid[self.river_grid > 0] = self.navigability

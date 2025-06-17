@@ -4,7 +4,7 @@ simulation:
   time_step: "quarter"  # 时间步长为季度
   map_width: 100         # 地图大小
   map_height: 150
-  initial_population: 10  # 初始人口数量
+  initial_population: 20  # 初始人口数量
   birth_rate: 0.01        # 出生率
 
   # 运河经济相关参数
@@ -21,6 +21,8 @@ data:
   resident_info_path: "experiment_dataset/resident_data/resident_data.json"  # 居民信息文件路径
   government_info_path: "experiment_dataset/government_data/official_data.json"  # 政府官员信息文件路径
   rebellion_info_path: "experiment_dataset/rebellion_data/rebels_data.json"  # 叛乱信息文件路径
+  climate_info_path: "experiment_dataset/climate_data/climate.csv"
+
 
 # api_settings:
 #   api_type: openai  # 或 deepseek

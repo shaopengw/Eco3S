@@ -9,7 +9,7 @@ class TransportEconomy:
         self.transport_cost = transport_cost  # 基础运输成本
         self.transport_task = transport_task  # 年度运输任务量
         self.maintenance_cost_base = maintenance_cost_base  # 基础维护成本
-        self.river_price = 0  # 初始化河运价格
+        self.river_price = transport_cost
         self.sea_price = self.transport_cost / 5  # 初始化海运价格
 
     def calculate_river_price(self, navigability):

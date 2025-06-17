@@ -21,6 +21,7 @@ class OrdinaryGovernmentAgent(BaseAgent):
         self.time = 0  # 当前时间（年）
         self.map = government.map
         self.function = None
+        self.faction = None
         self.mbti = None
         self.system_message = "你是一位政府普通官员，负责根据自身属性和政府状态提出政策建议，政策目标是维护统治的稳定性。"
         self.opinion_prompt_template = (
@@ -44,18 +45,21 @@ class OrdinaryGovernmentAgent(BaseAgent):
         # 获取当前政府状态
         government_status = (
             f"当前政府状态：\n"
-            f"财政预算: {self.government.get_budget()},"
-            f"军事力量: {self.government.get_military_strength()},"
-            f"河运价格: {river_price:.2f},海运价格： {sea_price:.2f}。注意：海运便宜但无法提供岗位，河运更贵但能提供就业岗位，加强民生。\n"
+            f"财政预算: {self.government.get_budget():.2f}两,\n"
+            f"军事力量: {self.government.get_military_strength():.2f},\n"
+            f"河运价格（固定）: {river_price:.2f}两/吨,海运价格（固定）： {sea_price:.2f}两/吨。注意：海运为新兴市场，便宜但无法提供岗位；河运为传统市场，更贵但能提供就业岗位，加强民生。\n"
         )
 
         # 构建提示信息
         prompt = (
             f"你是一位清代政府普通官员，以下是你的个人属性：\n"
             f"职能: {self.function},"
+            f"派别：{self.faction},"
             f"人物性格: {self.mbti},"
             f"{government_status}\n"
-            f"请根据你的个人属性、当前政府状态和讨论内容，提出关于河运海运经营与财政预算分配的决策意见。请用一句话概括。"
+            f"请根据你的个人属性以及当前政府状态和讨论内容，提出一个或多个具体决策意见，可以只关心自己职能范围内的内容：\n"
+            f"就业预算（整数）、河运比例（0-1之间的小数）、维护资金（整数）、军事拨款（整数）、税率调整（-0.1到0.1之间的小数）\n"
+            f"请用一句话概括你的建议，并给出具体的数值建议"
         )
         opinion = await self.generate_llm_response(prompt, self.system_message)
         if opinion:
@@ -81,11 +85,12 @@ class OrdinaryGovernmentAgent(BaseAgent):
             prompt = (
                 f"你是一位清代政府普通官员，以下是你的个人属性：\n"
                 f"\n职能: {self.function}"
+                f"\n派别: {self.faction}"
                 f"\n人物性格: {self.mbti}"
                 f"\n所有官员的观点包括：{all_discussion}"
-                f"\n请根据你的个人属性和立场，对这些观点发表自己的看法。"
+                f"\n请根据你的个人属性、派别和立场，对这些观点发表自己的看法。"
                 f"可以选择支持、反对或提出新的观点。"
-                f"请用简短的一句话回复。"
+                f"请用简短的一句话回复，并给出具体的数值建议"
             )
 
             try:
@@ -139,22 +144,42 @@ class HighRankingGovernmentAgent(BaseAgent):
         river_price = self.government.transport_economy.river_price
         sea_price = self.government.transport_economy.sea_price
         transport_task = self.government.transport_economy.transport_task
+        current_budget = self.government.get_budget()
+        
+        # 计算各项支出的成本基准
+        transport_cost_river = river_price * transport_task  # 全部河运成本
+        transport_cost_sea = sea_price * transport_task      # 全部海运成本
 
         decision_prompt = (
-            f"你是一位清代政府高级官员，负责根据下属官员的讨论和当前政府状态做出最终决策。\n"
-            f"当前政府状态：\n"
-            f"财政预算: {self.government.get_budget()}\n"
-            f"军事力量: {self.government.get_military_strength()}\n"
-            f"运输总任务量: {transport_task}吨,"
-            f"河运价格: {river_price:.2f}两/吨,海运价格： {sea_price:.2f}两/吨。注意：海运便宜但无法提供岗位，河运更贵且需要额外投入维护资金，但能提供就业岗位，加强民生。\n"
-            f"当前税率: {self.government.get_tax_rate()*100:.1f}%\n"
-            f"\n"
-            f"下属官员们的讨论报告：\n{summary}\n"
-            f"\n"
-            f"你需要通过设置合理的税率获得财政收入，合理分配预算支出和运输比例，以尽可能少的成本完成施政目标。不需要解释理由，务必确认支出总额不高于当前财政预算。输出为 JSON，严格遵守以下格式：\n"
-            f'{{"increase_employment": 提供就业的预算分配（整数）, "transport_ratio": 运输投入比例（浮点数，0-1，0表示全部海运，1表示全部河运）, "maintenance_investment": 维护运河投入资金（整数，如果不维护则为0）, "military_support": 军需拨款的预算分配（整数）, "tax_adjustment": 税率调整值（浮点数，范围-0.1到0.1）}}\n'
-         )
-
+            f"你是清代政府高级官员，负责根据下属讨论做出最终决策。\n\n"
+            f"当前状态：\n"
+            f"预算: {current_budget:.2f}两,军事力量: {self.government.get_military_strength():.2f},税率: {self.government.get_tax_rate()*100:.1f}%\n"
+            f"运输任务: {transport_task}吨,河运: {river_price:.2f}两/吨,海运: {sea_price:.2f}两/吨\n\n"
+            
+            f"成本计算：\n"
+            f"运输成本 = 河运比例×{transport_cost_river:.2f} + 海运比例×{transport_cost_sea:.2f}\n"
+            f"总支出 = 运输成本 + 就业预算 + 维护资金 + 军事拨款\n"
+            f"总支出必须 ≤ {current_budget:.2f}两\n\n"
+            
+            f"下属讨论：\n{summary}\n\n"
+            
+            f"请做出合理决策，确保总支出不超预算。输出JSON：\n"
+            f'{{"increase_employment": 就业预算（整数）, "transport_ratio": 河运比例（0-1）, "maintenance_investment": 维护资金（整数）, "military_support": 军事拨款（整数）, "tax_adjustment": 税率调整（-0.1到0.1）}}\n'
+        )
+        # decision_prompt = (
+        #     f"你是一位清代政府高级官员，负责根据下属官员的讨论和当前政府状态做出最终决策。\n"
+        #     f"当前政府状态：\n"
+        #     f"财政预算: {self.government.get_budget()}\n"
+        #     f"军事力量: {self.government.get_military_strength()}\n"
+        #     f"运输总任务量: {transport_task}吨,"
+        #     f"河运价格: {river_price:.2f}两/吨,海运价格： {sea_price:.2f}两/吨。注意：海运便宜但无法提供岗位，河运更贵且需要额外投入维护资金，但能提供就业岗位，加强民生。\n"
+        #     f"当前税率: {self.government.get_tax_rate()*100:.1f}%\n"
+        #     f"\n"
+        #     f"下属官员们的讨论报告：\n{summary}\n"
+        #     f"\n"
+        #     f"你需要通过设置合理的税率获得财政收入，合理分配预算支出和运输比例，以尽可能少的成本完成施政目标。不需要解释理由，务必确认支出总额不高于当前财政预算。输出为 JSON，严格遵守以下格式：\n"
+            # f'{{"increase_employment": 提供就业的预算分配（整数）, "transport_ratio": 运输投入比例（浮点数，0-1，0表示全部海运，1表示全部河运）, "maintenance_investment": 维护运河投入资金（整数，如果不维护则为0）, "military_support": 军需拨款的预算分配（整数）, "tax_adjustment": 税率调整值（浮点数，范围-0.1到0.1）}}\n'
+        #  )
         try:
             # 调用模型做出最终决策
             decision = await self.generate_llm_response(decision_prompt, self.system_message)
@@ -217,12 +242,9 @@ class Government:
         # 1. 改善运河状态（运河通航能力，取值范围：[0,1]），从而降低运输成本。否则运输成本上升，政府需要支出更多的预算来完成运输。
         # 2. 提供就业机会，增加居民满意度。但是提供的就业机会仅限运河沿线地区。
         # 3. 政府预算减少
-        # 计算改善后的通航能力
+        # 计算并更新改善后的通航能力
         maintenance_ratio = maintenance_investment / self.transport_economy.maintenance_cost_base
-        current_navigability = min(1.0, self.map.get_navigability() + maintenance_ratio * 0.1)  # 假设每投入1倍维护成本改善0.1
-        
-        # 更新运河状态
-        self.map.update_river_condition(current_navigability)
+        self.map.update_river_condition(maintenance_ratio) 
         
         # 提供就业机会
         job_opportunities = int(maintenance_investment / 100)
@@ -232,7 +254,7 @@ class Government:
         # 扣除支出
         self.budget -= maintenance_investment
         
-        print(f"政府维护运河。通航能力：{current_navigability:.2f}，支出：{maintenance_investment:.2f}两，新增就业岗位：{job_opportunities}个")
+        print(f"政府维护运河。通航能力：{self.map.get_navigability():.2f}，支出：{maintenance_investment:.2f}两，新增就业岗位：{job_opportunities}个")
         return True
 
     def handle_transport_decision(self, transport_ratio):
@@ -389,7 +411,7 @@ class InformationOfficer(OrdinaryGovernmentAgent):
         # 构建提示信息
         prompt = (
             f"你是清代政府高级官员的秘书，请你整理以下{len(discussions)}条关于政府决策的讨论内容，"
-            f"提供一个简明扼要的总结报告。\n\n"
+            f"提供一个简明扼要的总结报告。报告中应包含讨论中提及的具体数值建议，尽可能简洁。\n\n"\
             f"讨论内容：\n" + "\n".join([f"{i+1}. {d}" for i, d in enumerate(discussions)])
         )
 

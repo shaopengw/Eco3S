@@ -65,7 +65,7 @@ class Simulator:
             "rebellion_strength": [],
             "average_satisfaction": [],
             "tax_rate": [],
-            "basic_living_cost": [],
+            "river_navigability": [],
             "gdp": [],
         }
         self.start_time = None  # 用于记录模拟开始时间
@@ -79,16 +79,17 @@ class Simulator:
         while not self.time.is_end():
             # 打印当前时间步信息
             print(Back.GREEN + f"年份:{self.time.get_current_time()}" + Back.RESET)
-            print(f"天气影响因子：{self.climate.get_current_impact(self.time.get_current_time())}")
+            current_year = self.time.get_current_year()
+            start_year = self.time.get_start_time()
+            print(f"天气影响因子：{self.climate.get_current_impact(current_year,start_year)}")
             # 更新属性变量
             self.gdp = self.calculate_gdp() # 更新GDP
-            print(f"当前GDP: {self.gdp}")
             self.tax_income = self.gdp * self.government.get_tax_rate() # 计算税收收入
-            print(f"税收收入: {self.tax_income}")
             self.government.budget += self.tax_income  # 增加政府预算
-            print(f"政府预算: {self.government.budget}")
             self.average_satisfaction = self.calculate_average_satisfaction() # 更新平均满意度
             self.population.update_birth_rate(self.average_satisfaction) # 更新出生率
+            print(f"GDP：{self.gdp}，税收收入：{self.tax_income}，政府预算：{self.government.budget}")
+            print(f"河运价格：{self.transport_economy.river_price}，维护成本：{self.transport_economy.calculate_maintenance_cost(self.map.get_navigability())}")
 
             # 居民出生（次/年）
             if self.time.get_current_quarter() == 1:
@@ -107,7 +108,7 @@ class Simulator:
                     'ordinary_type': OrdinaryGovernmentAgent,
                     'leader_type': HighRankingGovernmentAgent,
                 }
-                # government_decision, government_summary = await self.collect_group_decision('government', government_config)
+                government_decision, government_summary = await self.collect_group_decision('government', government_config)
                 
                 # 收集叛军决策
                 rebellion_config = {
@@ -201,6 +202,10 @@ class Simulator:
                 self.government.budget = max(0, self.government.budget - other_salary)
                 # 计算并更新运河价格
                 self.transport_economy.calculate_river_price(self.map.get_navigability())
+                # 自然更新运河状态
+                climate_impact_factor = self.climate.get_current_impact(self.time.get_current_year(),self.time.get_start_time())
+                self.map.decay_river_condition_naturally(climate_impact_factor)
+                print(f"运河状态更新为: {self.map.get_navigability()}") 
 
                 # 每3-5年更新一次社交网络
                 current_year = self.time.get_current_year()
@@ -217,7 +222,7 @@ class Simulator:
             self.results["rebellion_strength"].append(self.rebellion.get_strength())
             self.results["average_satisfaction"].append(self.average_satisfaction)
             self.results["tax_rate"].append(self.tax_rate)
-            self.results["basic_living_cost"].append(self.basic_living_cost)
+            self.results["river_navigability"].append(self.map.get_navigability())
             self.results["gdp"].append(self.gdp)
 
             # 打印当前状态
@@ -227,7 +232,6 @@ class Simulator:
                   f"失业率: {self.results['unemployment_rate'][-1]:.2f}, "
                   f"平均满意度: {self.results['average_satisfaction'][-1]:.2f}, "
                   f"税率: {self.results['tax_rate'][-1]*100:.1f}%, "
-                  f"基本生活所需值: {self.basic_living_cost}, "
                   f"GDP: {self.results['gdp'][-1]:.2f}")
 
             # 在时间步结束前，总结本次决策结果
@@ -311,6 +315,7 @@ class Simulator:
             await asyncio.gather(*round_tasks)
 
         # 获取信息整理员和领导者
+        print(f"开始进行总结和决策")
         info_officers = [
             member for member in config['agents'].values()
             if isinstance(member, InformationOfficer) or isinstance(member, RebelsInformationOfficer)

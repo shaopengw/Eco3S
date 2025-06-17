@@ -26,27 +26,14 @@ class ClimateSystem:
             print(f"Error loading climate data: {e}")
             return []
     
-    def get_current_impact(self, current_year: int = None) -> float:
+    def get_current_impact(self, current_year: int = None, start_year: int = None) -> float:
         """
         获取当前年份的气候影响度
         :return: 气候影响度
         """
-        current_year = int(current_year[:4])-1650
+        current_year = int(current_year) - start_year
         if not self.climate_data or current_year >= len(self.climate_data):
             return 0.0
-        return self.climate_data[current_year]
-    
-    def get_canal_impact_factor(self) -> float:
-        """
-        计算对运河的影响因子
-        :return: 影响因子(0-1之间)
-        """
-        impact = self.get_current_impact()
-        abs_impact = abs(impact)
-        
-        if abs_impact < self.climate_impact_threshold:
-            return 0.0
-        
-        # 线性映射到0-1范围
-        normalized_impact = (abs_impact - self.climate_impact_threshold) / (1.0 - self.climate_impact_threshold)
-        return min(normalized_impact, 1.0)
+        current_impact = abs(self.climate_data[current_year])
+        return current_impact
+
