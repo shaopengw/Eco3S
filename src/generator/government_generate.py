@@ -13,13 +13,13 @@ load_dotenv()
 
 # 加载配置文件
 config_path = Path(__file__).parent.parent.parent / 'config' / 'simulation_config.yaml'
-with open(config_path, 'r') as f:
+with open(config_path, 'r', encoding='utf-8') as f:
     config = yaml.safe_load(f)
 
 
 
 # 职能比例
-function_ratio = [0.02, 0.65, 0.22, 0.07]  # 漕运、行政、军事、经济管理
+function_ratio = [0.25, 0.25, 0.25, 0.25]  # 漕运、行政、军事、经济管理
 functions = ['漕运', '行政', '军事', '经济管理']
 
 # MBT及其分布比例
@@ -48,6 +48,10 @@ def get_random_function():
 def get_random_mbti():
     return random.choices(mbti_types, p_mbti)[0]
 
+# 派别及其分布比例
+faction_ratio = [0.3, 0.3, 0.4]
+factions = ['河运派', '海运派', '中立派']
+
 def generate_official_profile(is_high_rank=False):
     rank = '高级官员' if is_high_rank else '普通官员'
     for attempt in range(3):
@@ -60,6 +64,10 @@ def generate_official_profile(is_high_rank=False):
                 "function": function,
                 "mbti": mbti,
             }
+            if not is_high_rank: # 只有普通官员才有派别属性
+                faction = get_random_faction()
+                official_data["faction"] = faction
+
             print(f"生成的官员信息: {official_data}")
             return official_data
         except Exception as e:
@@ -93,8 +101,12 @@ def save_official_data(official_data, filename):
     with open(filename, 'w', encoding='utf-8') as f:
         json.dump(official_data, f, ensure_ascii=False, indent=2)
 
+# 随机生成派别
+def get_random_faction():
+    return random.choices(factions, faction_ratio)[0]
+
 if __name__ == "__main__":
-    N = 3  # 目标数据量
+    N = 5 # 目标数据量
     official_data = generate_official_data(N)
     output_path = 'experiment_dataset/government_data/official_data.json'
     save_official_data(official_data, output_path)

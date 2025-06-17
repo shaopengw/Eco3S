@@ -44,11 +44,11 @@ class PersonalMemory:
         self.summary_interval = summary_interval
         self.record_count = 0
         self.summary_prompt_template = (
-            "你是一个{role}。请总结以下{count}条记忆，生成一个简洁的总结：\n"
+            "你是一个{role}。请以第一人称的视角，用更像人类思考的方式，总结以下{count}条记忆，生成一个简洁且富有个人色彩的总结：\n"
             "{memories}\n"
             "如果有更早的记忆总结，请一并考虑：\n"
             "{previous_summary}\n"
-            "请用一段话总结这些记忆的要点。"
+            "请用一段话总结这些记忆的要点，并体现出你的主观感受和思考。"
         )
     
     def write_record(self, record):

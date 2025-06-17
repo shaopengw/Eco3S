@@ -67,9 +67,9 @@ async def run_simulation(config: dict[str, Any]) -> None:
 
     # 初始化运输经济系统
     transport_economy = TransportEconomy(
-        transport_cost=population.get_population() / 100,
+        transport_cost=population.get_population() / 50,
         transport_task=config["simulation"]["transport_task"],
-        maintenance_cost_base=population.get_population() / 10,
+        maintenance_cost_base=population.get_population() / 5,
     )
 
     # 初始化居民
@@ -148,8 +148,8 @@ async def run_simulation(config: dict[str, Any]) -> None:
         rebellion_info_path=rebellion_info_path,
         rebellion=rebellion,
     )
-
-    climate = ClimateSystem("src/environment/climate.csv")  # 气候系统
+    climate_info_path = config["data"]["climate_info_path"]  # 气候信息文件路径
+    climate = ClimateSystem(climate_info_path)  # 气候系统
 
     # 初始化模拟器
     simulator = Simulator(

@@ -33,6 +33,13 @@ class Time:
         """
         return f"{self.current_year} Q{self.current_quarter}"
 
+    def get_start_time(self):
+        """
+        获取起始时间（年份和季度）
+        :return: 起始时间的字符串表示（如 "1650"）
+        """
+        return self.start_year
+
     def get_current_year(self):
         """
         获取当前年份
