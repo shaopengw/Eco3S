@@ -394,36 +394,44 @@ class Simulator:
             
             # 政府决策处理
             if group_type == "government":
-                # 处理运河维护投资
-                if "maintenance_investment" in decision_data:
-                    self.government.maintain_canal(
-                        maintenance_investment=decision_data["maintenance_investment"]
-                    )
-                # 处理运输决策
-                if "transport_ratio" in decision_data:
-                    self.government.handle_transport_decision(
-                        transport_ratio=decision_data["transport_ratio"]
-                    )
-                if "increase_employment" in decision_data:
-                    self.government.provide_jobs(budget_allocation=decision_data["increase_employment"])
-                if "increase_employment" in decision_data:
-                    self.government.provide_jobs(budget_allocation=decision_data["increase_employment"])
-                if "military_support" in decision_data:
-                    self.government.support_military(budget_allocation=decision_data["military_support"])
-                if "tax_adjustment" in decision_data:
-                    self.government.adjust_tax_rate(decision_data["tax_adjustment"])
-            
+                # 获取决策键并随机打乱顺序
+                decision_keys = list(decision_data.keys())
+                random.shuffle(decision_keys)
+
+                # 按随机顺序处理政府决策
+                for key in decision_keys:
+                    if key == "maintenance_investment":
+                        self.government.maintain_canal(
+                            maintenance_investment=decision_data["maintenance_investment"]
+                        )
+                    elif key == "transport_ratio":
+                        self.government.handle_transport_decision(
+                            transport_ratio=decision_data["transport_ratio"]
+                        )
+                    elif key == "increase_employment":
+                        self.government.provide_jobs(budget_allocation=decision_data["increase_employment"])
+                    elif key == "military_support":
+                        self.government.support_military(budget_allocation=decision_data["military_support"])
+                    elif key == "tax_adjustment":
+                        self.government.adjust_tax_rate(decision_data["tax_adjustment"])
+
             # 叛军决策处理
             elif group_type == "rebellion":
-                if "stage_rebellion" in decision_data:
-                    strength = decision_data["stage_rebellion"]
-                    target = decision_data.get('target_town', None)
-                    if target:
-                        self.handle_rebellion(strength_investment=strength, target_town=target)
-                if "recruit_members" in decision_data:
-                    self.rebellion.recruit_new_members(resource_investment=decision_data["recruit_members"])
-                if "maintain_status" in decision_data and decision_data["maintain_status"] == 1:
-                    self.rebellion.maintain_status()
+                # 获取决策键并随机打乱顺序
+                rebellion_decision_keys = list(decision_data.keys())
+                random.shuffle(rebellion_decision_keys)
+
+                # 按随机顺序处理叛军决策
+                for key in rebellion_decision_keys:
+                    if key == "stage_rebellion":
+                        strength = decision_data["stage_rebellion"]
+                        target = decision_data.get('target_town', None)
+                        if target:
+                            self.handle_rebellion(strength_investment=strength, target_town=target)
+                    elif key == "recruit_members":
+                        self.rebellion.recruit_new_members(resource_investment=decision_data["recruit_members"])
+                    elif key == "maintain_status" and decision_data["maintain_status"] == 1:
+                        self.rebellion.maintain_status()
             
             # 检查是否有未知动作
             for action in decision_data:

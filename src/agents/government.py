@@ -41,25 +41,11 @@ class OrdinaryGovernmentAgent(BaseAgent):
         """
         river_price = self.government.transport_economy.river_price
         sea_price = self.government.transport_economy.sea_price
-        
-        # 获取当前政府状态
-        government_status = (
-            f"当前政府状态：\n"
-            f"财政预算: {self.government.get_budget():.2f}两,\n"
-            f"军事力量: {self.government.get_military_strength():.2f},\n"
-            f"河运价格（固定）: {river_price:.2f}两/吨,海运价格（固定）： {sea_price:.2f}两/吨。注意：海运为新兴市场，便宜但无法提供岗位；河运为传统市场，更贵但能提供就业岗位，加强民生。\n"
-        )
-
         # 构建提示信息
         prompt = (
-            f"你是一位清代政府普通官员，以下是你的个人属性：\n"
-            f"职能: {self.function},"
-            f"派别：{self.faction},"
-            f"人物性格: {self.mbti},"
-            f"{government_status}\n"
-            f"请根据你的个人属性以及当前政府状态和讨论内容，提出一个或多个具体决策意见，可以只关心自己职能范围内的内容：\n"
-            f"就业预算（整数）、河运比例（0-1之间的小数）、维护资金（整数）、军事拨款（整数）、税率调整（-0.1到0.1之间的小数）\n"
-            f"请用一句话概括你的建议，并给出具体的数值建议"
+            f"你为清代政府{self.function}官员（{self.mbti}，{self.faction}），朝廷正议政务，请结合当前形势，立足本职，发言一句尽可能简短的中肯建议，必要时附具体数值佐证，如就业预算、河运比例、维护支出、军事拨款或税率调整等。现况："
+            f"国库有银{self.government.get_budget():.2f}两，兵力{self.government.get_military_strength():.2f}，"
+            f"河运费{river_price:.2f}两/吨，海运费{sea_price:.2f}两/吨（海运低廉但岗位少，河运高费却可养人）\n"
         )
         opinion = await self.generate_llm_response(prompt, self.system_message)
         if opinion:
@@ -81,16 +67,10 @@ class OrdinaryGovernmentAgent(BaseAgent):
         # 获取最新讨论内容
         all_discussion = await self.shared_pool.get_all_discussions()
         if all_discussion:
-            # 构建提示信息，让AI决定是否回应以及如何回应
             prompt = (
-                f"你是一位清代政府普通官员，以下是你的个人属性：\n"
-                f"\n职能: {self.function}"
-                f"\n派别: {self.faction}"
-                f"\n人物性格: {self.mbti}"
-                f"\n所有官员的观点包括：{all_discussion}"
-                f"\n请根据你的个人属性、派别和立场，对这些观点发表自己的看法。"
-                f"可以选择支持、反对或提出新的观点。"
-                f"请用简短的一句话回复，并给出具体的数值建议"
+                f"你为清代政府{self.function}官员（{self.mbti}，{self.faction}），今朝廷议政，众臣各抒己见，所言如下：\n"
+                f"{all_discussion}"
+                f"请立足本职与立场，发言一句尽可能简短的回应，可表支持、反对，或另陈己见，并酌情附上数值佐证，如河运比例、就业预算、维护支出、税率调整等。"
             )
 
             try:
@@ -163,7 +143,7 @@ class HighRankingGovernmentAgent(BaseAgent):
             
             f"下属讨论：\n{summary}\n\n"
             
-            f"请做出合理决策，确保总支出不超预算。输出JSON：\n"
+            f"请做出合理决策，确保总支出不超预算。输出JSON，无需说明理由：\n"
             f'{{"increase_employment": 就业预算（整数）, "transport_ratio": 河运比例（0-1）, "maintenance_investment": 维护资金（整数）, "military_support": 军事拨款（整数）, "tax_adjustment": 税率调整（-0.1到0.1）}}\n'
         )
         # decision_prompt = (
