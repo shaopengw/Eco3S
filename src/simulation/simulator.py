@@ -116,7 +116,7 @@ class Simulator:
                     'ordinary_type': OrdinaryRebel,
                     'leader_type': RebelLeader,
                 }
-                # rebellion_decision, rebellion_summary = await self.collect_group_decision('rebellion', rebellion_config)
+                rebellion_decision, rebellion_summary = await self.collect_group_decision('rebellion', rebellion_config)
                 # rebellion_decision = '{"stage_rebellion": 2,"recruit_members": 0,"maintain_status": 0,"target_town": "杭州"}'
                 # rebellion_summary = '一致决定发动叛乱'
                 # 统一执行决策
@@ -133,7 +133,7 @@ class Simulator:
             for resident_name in list(self.residents.keys()):
                 resident = self.residents[resident_name]
                 # 传入社会状态参数
-                # tasks.append(resident.decide_action_by_llm(self.tax_rate,self.basic_living_cost,self.population.get_population()))  # 基于LLM的决策--测试时建议暂时注释
+                tasks.append(resident.decide_action_by_llm(self.tax_rate,self.basic_living_cost,self.population.get_population()))  # 基于LLM的决策--测试时建议暂时注释
 
                 # 更新居民寿命（次/年）
                 if self.time.get_current_quarter() == 1:
@@ -235,23 +235,24 @@ class Simulator:
                   f"GDP: {self.results['gdp'][-1]:.2f}")
 
             # 在时间步结束前，总结本次决策结果
-            if government_decision or rebellion_decision:
-                changes_summary = self.summarize_time_step_results()
-                # 存储到政府和叛军的记忆中
-                if government_decision:
-                    await self.store_decision_memory(
-                        'government', 
-                        government_decision,
-                        government_summary,
-                        changes_summary
-                    )
-                if rebellion_decision:
-                    await self.store_decision_memory(
-                        'rebellion', 
-                        rebellion_decision,
-                        rebellion_summary,
-                        changes_summary
-                    )
+            if self.time.get_current_quarter() == 1:
+                if government_decision or rebellion_decision:
+                    changes_summary = self.summarize_time_step_results()
+                    # 存储到政府和叛军的记忆中
+                    if government_decision:
+                        await self.store_decision_memory(
+                            'government', 
+                            government_decision,
+                            government_summary,
+                            changes_summary
+                        )
+                    if rebellion_decision:
+                        await self.store_decision_memory(
+                            'rebellion', 
+                            rebellion_decision,
+                            rebellion_summary,
+                            changes_summary
+                        )
 
             # 推进时间
             self.time.step()
@@ -703,7 +704,7 @@ class Simulator:
         """
         # 将决策内容和结果格式化为字符串
         memory_content = (
-            f"时间: {self.time.get_current_time()}\n"
+            f"时间: {self.time.get_current_year()}\n"
             f"讨论总结: {discussion_summary}\n"
             f"决策内容: {decision}\n"
             f"执行结果:\n"

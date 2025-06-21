@@ -42,7 +42,7 @@ class BaseAgent:
         )
 
         openai_messages = await self.memory.get_context_messages(prompt)
-        print("-------总提示信息-----------",openai_messages)
+        # print("-------总提示信息-----------",openai_messages)
         if not openai_messages:
             messages = []
             if system_message or self.system_message:
