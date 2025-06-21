@@ -1,6 +1,6 @@
 simulation:
   start_year: 1650
-  end_year: 1650
+  end_year: 1655
   time_step: "quarter"  # 时间步长为季度
   map_width: 100         # 地图大小
   map_height: 150

@@ -23,16 +23,6 @@ class OrdinaryRebel(BaseAgent):
         self.mbti = None  # 人物性格
 
         self.system_message = "你是清代政府划定的非法武装组织（叛军）主要头目之一，请你根据个人属性和所在叛军的状态提出意见。你的目的是使叛军组织生存和壮大（即：拥有更多的钱和人员）。"
-        
-        self.opinion_prompt_template = (
-            "你是叛军组织的主要头目之一，以下是你的个人属性：\n"
-            "角色: {role}\n"
-            "人物性格: {mbti}\n"
-            "\n所有成员的观点包括：{discussions}\n"
-            "\n请根据你的个人属性和立场，对这些观点发表看法。"
-            "可以选择支持、反对或提出新的观点。"
-            "请用简短的一句话回复。"
-        )
 
     async def generate_opinion(self):
         """

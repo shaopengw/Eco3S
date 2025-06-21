@@ -23,16 +23,7 @@ class OrdinaryGovernmentAgent(BaseAgent):
         self.function = None
         self.faction = None
         self.mbti = None
-        self.system_message = "你是一位政府普通官员，负责根据自身属性和政府状态提出政策建议，政策目标是维护统治的稳定性。"
-        self.opinion_prompt_template = (
-            "你是一位清代政府普通官员，以下是你的个人属性：\n"
-            "职能: {role}\n"
-            "人物性格: {mbti}\n"
-            "\n所有官员的观点包括：{discussions}\n"
-            "\n请根据你的个人属性和立场，对这些观点发表自己的看法。"
-            "可以选择支持、反对或提出新的观点。"
-            "请用简短的一句话回复。"
-        )
+        self.system_message = "你为清代政府官员"
 
     async def generate_opinion(self):
         """
@@ -41,11 +32,12 @@ class OrdinaryGovernmentAgent(BaseAgent):
         """
         river_price = self.government.transport_economy.river_price
         sea_price = self.government.transport_economy.sea_price
+        transport_task = self.government.transport_economy.transport_task 
         # 构建提示信息
         prompt = (
-            f"你为清代政府{self.function}官员（{self.mbti}，{self.faction}），朝廷正议政务，请结合当前形势，立足本职，发言一句尽可能简短的中肯建议，必要时附具体数值佐证，如就业预算、河运比例、维护支出、军事拨款或税率调整等。现况："
-            f"国库有银{self.government.get_budget():.2f}两，兵力{self.government.get_military_strength():.2f}，"
-            f"河运费{river_price:.2f}两/吨，海运费{sea_price:.2f}两/吨（海运低廉但岗位少，河运高费却可养人）\n"
+            f"你为清代政府{self.function}官员（{self.mbti}，{self.faction}），朝廷正议政务，请结合当前形势，立足本职，发言一句尽可能简短的中肯建议，必要时附具体数值佐证，只含就业预算、河运比例（0-1）、维护支出、军事拨款或税率调整。现况："
+            f"国库有银{self.government.get_budget():.2f}两，兵力{self.government.get_military_strength():.2f}，税率: {self.government.get_tax_rate()*100:.1f}%"
+            f"运输任务: {transport_task}吨,河运费(不可修改){river_price:.2f}两/吨，海运费(不可修改){sea_price:.2f}两/吨（海运低廉但岗位少，河运高费却可养人）\n"
         )
         opinion = await self.generate_llm_response(prompt, self.system_message)
         if opinion:
