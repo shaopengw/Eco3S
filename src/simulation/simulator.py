@@ -51,7 +51,6 @@ class Simulator:
         self.climate = climate
         self.basic_living_cost = 10  # 每年基本生活所需值（单位：两）
         self.average_satisfaction = None  # 平均满意度（0-1）
-        self.tax_rate = 0.1  # 税率（0-1）
         self.gdp = 0  # 国内生产总值（单位：两）
         # self.transport_cost = population.get_population() /10  # 基础运输成本-与人口数相关
         # self.transport_task = 50 # 政府运输任务（单位：吨）
@@ -116,7 +115,7 @@ class Simulator:
                     'ordinary_type': OrdinaryRebel,
                     'leader_type': RebelLeader,
                 }
-                rebellion_decision, rebellion_summary = await self.collect_group_decision('rebellion', rebellion_config)
+                # rebellion_decision, rebellion_summary = await self.collect_group_decision('rebellion', rebellion_config)
                 # rebellion_decision = '{"stage_rebellion": 2,"recruit_members": 0,"maintain_status": 0,"target_town": "杭州"}'
                 # rebellion_summary = '一致决定发动叛乱'
                 # 统一执行决策
@@ -132,8 +131,9 @@ class Simulator:
             
             for resident_name in list(self.residents.keys()):
                 resident = self.residents[resident_name]
+                tax_rate = self.government.get_tax_rate()
                 # 传入社会状态参数
-                tasks.append(resident.decide_action_by_llm(self.tax_rate,self.basic_living_cost,self.population.get_population()))  # 基于LLM的决策--测试时建议暂时注释
+                tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost, self.population.get_population()))  # 基于LLM的决策--测试时建议暂时注释
 
                 # 更新居民寿命（次/年）
                 if self.time.get_current_quarter() == 1:
@@ -221,7 +221,7 @@ class Simulator:
             self.results["government_budget"].append(self.government.get_budget())
             self.results["rebellion_strength"].append(self.rebellion.get_strength())
             self.results["average_satisfaction"].append(self.average_satisfaction)
-            self.results["tax_rate"].append(self.tax_rate)
+            self.results["tax_rate"].append(self.government.get_tax_rate())
             self.results["river_navigability"].append(self.map.get_navigability())
             self.results["gdp"].append(self.gdp)
 
@@ -231,7 +231,7 @@ class Simulator:
                   f"人口数量: {self.population.get_population()}, "
                   f"失业率: {self.results['unemployment_rate'][-1]:.2f}, "
                   f"平均满意度: {self.results['average_satisfaction'][-1]:.2f}, "
-                  f"税率: {self.results['tax_rate'][-1]*100:.1f}%, "
+                  f"税率: {self.government.get_tax_rate():.2f}, "
                   f"GDP: {self.results['gdp'][-1]:.2f}")
 
             # 在时间步结束前，总结本次决策结果

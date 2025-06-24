@@ -146,14 +146,12 @@ class Resident(BaseAgent):
         # 从配置中获取回应概率
         response_prob = global_config.get("simulation", {}).get("response_probability")
         if random.random() < response_prob:
-            # 获取当前状态
-            status_prompt = self.get_status_prompt()
             
             # 构建回应提示词
             prompt = (
-                f"你是一个清代中国大运河沿线地区的居民。\n"
-                f"以下是你的当前状态：\n{status_prompt}\n"
-                f"你收到了一条信息：{message_content}\n"
+                f"你是一个清代普通{work_condition}，收入为{self.income}两，健康状况为{health_condition}。\n"
+                f"当前税率:为{tax_rate*100:.1f}%，基本生活所需为{basic_living_cost}两\n"
+                f"你听说了一条信息：{message_content}\n"
                 f"请根据你的状态和收到的信息做出回应。回应要简短，不超过20个字。\n"
                 f"注意：\n"
                 f"1. 如果信息涉及政策，要考虑对自己的影响\n"
@@ -190,15 +188,6 @@ class Resident(BaseAgent):
             speech_prob = social_network.calculate_speech_probability(self.resident_id, population)
         need_speech = random.random() < speech_prob
 
-        # 获取当前居民状态的提示信息
-        status_prompt = self.get_status_prompt()
-
-        # 获取社会状态信息
-        social_status = (
-            f"税率: {tax_rate*100:.1f}%\n"
-            f"基本生活所需值: {basic_living_cost}\n"
-        )
-
         # 如果是未就业居民，获取当前城镇的空缺岗位信息
         job_market_info = ""
         if not self.employed and self.town and self.job_market:
@@ -211,36 +200,29 @@ class Resident(BaseAgent):
             else:
                 job_market_info = "当前没有可用的工作岗位。\n"
 
+        # 构建提示词
+        health_conditions = ["", "非常差", "亚健康", "一般", "健康", "极健康"]
+        health_condition = health_conditions[self.health_index] if 1 <= self.health_index <= 5 else "未知"
+        work_condition = self.job if self.employed else "无业游民"
+
         # 基础提示信息
         base_prompt = (
-            f"请根据当前状态决定下一步行动。"
-            f"以下是你的当前状态：{status_prompt}\n"
-            f"以下是目前的社会环境：{social_status}\n"
+            f"你是一个清代普通{work_condition}，收入为{self.income}两，健康状况为{health_condition}。\n"
+            f"当前税率:为{tax_rate*100:.1f}%，基本生活所需为{basic_living_cost}两\n"
             f"{job_market_info}"
             f"你可以选择以下行动之一：\n"
-            f"1. 参加叛乱（警告：这是一个极端且危险的选择，可能导致生命危险，只有在生活极度困难且其他选择都无法解决问题时才考虑）\n"
+            f"1. 参加叛乱（极端且危险，仅在生活极度困难且无其他出路时考虑）\n"
             f"2. {'寻找工作（仅限失业状态可选）' if not self.employed else '继续目前的工作'}\n"
-            f"3. 迁徙到其他位置（当前位置无法维持生计时可以考虑，但会失去当前工作，需要在新城镇重新寻找工作）\n"
-            f"请仔细分析当前状况，优先考虑稳定和安全的选择，并返回：\n"
-            f"你的选择（1-3）\n"
-            f"选择原因\n"
-            f"满意度变化值（-20到20之间的数字），需要考虑：\n"
-            f"   - 当前收入与基本生活所需的比值\n"
-            f"   - 就业情况\n"
-            f"   - 社会环境（税率等）\n"
-            f"   - 个人健康状况\n"
-            f"{'' if self.employed else '如果选择寻找工作（选择2），还需要提供：'}\n"
-            f"{'' if self.employed else '期望职业（可选：农民、商人、官员及士兵、其他）'}\n"
-            f"{'' if self.employed else '可接受的最低工资（数字）'}\n"
-            f"{'一段对政府的态度发言' if need_speech else ''}"
+            f"3. 迁徙至他地（会失去当前工作，需重新谋生）\n"
+            f"请综合考虑收入是否足以维生、就业稳定性、税负情况及健康状况，优先选择安全稳定的选项。"
         )
 
         # 规范输出
         prompt = base_prompt + (
-             "注意：必须返回单行的JSON字符串，格式如下，必须严格按照格式填写：\n"
-            + '{"select": 你的选择, "reason": 选择原因, "satisfaction_change": 满意度变化值'
-            + (', "desired_job": 期望职业, "min_salary": 最低工资' if not self.employed else '')
-            + (', "speech": 你的发言}' if need_speech else '}')
+             "并返回单行的JSON字符串，格式如下，必须严格按照格式填写：\n"
+            + '{"select": 你的选择（1-3）, "reason": 选择原因, "satisfaction_change": 满意度变化值(-20到20)'
+            + (', "desired_job": 期望职业（可选：农民、商人、官员及士兵、其他）, "min_salary": 可接受的最低工资（数字）' if not self.employed else '')
+            + (', "speech": 一段对政府的态度发言}' if need_speech else '}')
         )
 
         try:
@@ -346,23 +328,6 @@ class Resident(BaseAgent):
         except Exception as e:
             resident_log.error(f"居民 {self.resident_id} 执行决策时出错：{e}")
             return False
-
-    def get_status_prompt(self):
-        """
-        生成当前居民状态的提示信息。
-        :return: 居民状态的字符串描述
-        """
-        status_prompt = (
-            f"居民 ID: {self.resident_id}\n"
-            f"位置: {self.location}\n"
-            f"是否就业: {self.employed}\n"
-            f"工作: {self.job}\n"
-            f"收入: {self.income}\n"
-            f"满意度: {self.satisfaction}\n"
-            f"健康状况: {self.health_index}\n"
-            f"寿命: {self.lifespan}"
-        )
-        return status_prompt
 
     def print_resident_status(self):
         """
