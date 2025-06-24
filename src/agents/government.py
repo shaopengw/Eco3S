@@ -369,7 +369,7 @@ class InformationOfficer(OrdinaryGovernmentAgent):
     def __init__(self, agent_id, government, shared_pool, model_type="gpt-3.5-turbo"):
         super().__init__(agent_id, government, shared_pool, model_type)
         self.function = "信息整理官"
-        self.system_message = "你是清代政府高级官员的秘书，负责整理和总结主要官员的讨论内容。"
+        self.system_message = "你是清代朝廷信息整理官员，负责整理和总结官员们的讨论内容。"
 
     async def summarize_discussions(self) -> str:
         """
@@ -381,16 +381,20 @@ class InformationOfficer(OrdinaryGovernmentAgent):
             return "暂无讨论内容"
 
         # 构建提示信息
+        # prompt = (
+        #     f"你是清代政府高级官员的秘书，请你整理以下{len(discussions)}条关于政府决策的讨论内容，"
+        #     f"提供一个简明扼要的总结报告。报告中应包含讨论中提及的具体数值建议，尽可能简洁。\n\n"\
+        #     f"讨论内容：\n" + "\n".join([f"{i+1}. {d}" for i, d in enumerate(discussions)])
+        # )
         prompt = (
-            f"你是清代政府高级官员的秘书，请你整理以下{len(discussions)}条关于政府决策的讨论内容，"
-            f"提供一个简明扼要的总结报告。报告中应包含讨论中提及的具体数值建议，尽可能简洁。\n\n"\
+            f"你为朝廷信息整理官员，请根据下列{len(discussions)}条朝堂讨论，用几句话简要总结，归纳核心观点，并列出所提具体数值，言简意赅:"
             f"讨论内容：\n" + "\n".join([f"{i+1}. {d}" for i, d in enumerate(discussions)])
         )
 
         try:
             summary = await self.generate_llm_response(prompt)
             if summary:
-                government_log.info(f"信息整理官 {self.agent_id} 生成的总结报告：{summary}")
+                government_log.info(f"信息整理官 {self.agent_id} 生成总结报告：{summary}")
                 return summary
             return "无法生成总结报告"
         except Exception as e:
