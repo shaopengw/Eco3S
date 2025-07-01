@@ -1,24 +1,24 @@
 [
   {
+    "rank": "高级官员",
+    "mbti": "ENTP"
+  },
+  {
     "rank": "普通官员",
+    "mbti": "INFP",
     "function": "漕运",
-    "mbti": "ISFP",
+    "faction": "海运派"
+  },
+  {
+    "rank": "普通官员",
+    "mbti": "ENFP",
+    "function": "漕运",
     "faction": "河运派"
   },
   {
     "rank": "普通官员",
-    "function": "漕运",
-    "mbti": "ISFP",
+    "mbti": "ISTJ",
+    "function": "经济管理",
     "faction": "海运派"
-  },
-  {
-    "rank": "高级官员",
-    "function": "行政",
-    "mbti": "ISTJ"
-  },
-  {    
-    "rank": "信息整理官",
-    "function": "行政",
-    "mbti": "INFJ"
   }
 ]

@@ -2,12 +2,13 @@ from .shared_imports import *
 
 class BaseAgent:
     """基础Agent类，封装共同的大模型调用逻辑"""
-    def __init__(self, agent_id, group_type, window_size=3):
+    def __init__(self, agent_id, group_type, window_size):
         self.agent_id = agent_id
         self.model_manager = ModelManager()
         model_config = self.model_manager.get_random_model_config()
         self.model_type = ModelType(model_config["model_type"])
-        self.model_config = ChatGPTConfig(temperature=0.9)
+        self.model_config = ChatGPTConfig(**model_config["model_config"])
+        # self.model_config = ChatGPTConfig(model_config["model_config"])
         self.model_backend = ModelFactory.create(
             model_platform=model_config["model_platform"],
             model_type=self.model_type,
@@ -41,9 +42,8 @@ class BaseAgent:
             content=prompt,
         )
 
-        openai_messages = await self.memory.get_context_messages(prompt)
-        print("-------总提示信息-----------",openai_messages)
-        if not openai_messages:
+        prompt_messages = await self.memory.get_context_messages(prompt)
+        if not prompt_messages:
             messages = []
             if system_message or self.system_message:
                 messages.append({
@@ -51,12 +51,12 @@ class BaseAgent:
                     "content": system_message or self.system_message
                 })
             messages.append(user_message.to_openai_user_message())
-            openai_messages = messages
-
+            prompt_messages = messages
+        print("-------总提示信息-----------",prompt_messages)
         attempts = 0
         while attempts < self.max_retry_attempts:
             try:
-                response = await asyncio.to_thread(self.model_backend.run, openai_messages)
+                response = await asyncio.to_thread(self.model_backend.run, prompt_messages)
                 content = response.choices[0].message.content
                 if content is not None:
                     return content

@@ -8,13 +8,14 @@ class JobMarket:
         :param initial_jobs_count: 初始工作总数
         """
         self.town_type = town_type
-        # 工资单位为季度
+        # 收入单位为季度
         self.jobs_info = {
-            "农民": {"total": 0, "employed": {}, "base_salary": 10},  # 基础农业劳动者工资
+            "农民": {"total": 0, "employed": {}, "base_salary": 10},  # 基础农业劳动者收入
             "商人": {"total": 0, "employed": {}, "base_salary": 30},  # 经商收入较高
-            "叛军": {"total": 0, "employed": {}, "base_salary": 15},  # 非正规收入
+            "叛军": {"total": 0, "employed": {}, "base_salary": 12},  # 非正规收入
             "官员及士兵": {"total": 0, "employed": {}, "base_salary": 25},  # 正规军饷和俸禄
-            "其他": {"total": 0, "employed": {}, "base_salary": 12}   # 其他普通职业工资
+            "运河维护工": {"total": 0, "employed": {}, "base_salary": 15},  # 运河维护收入
+            "其他": {"total": 0, "employed": {}, "base_salary": 12}   # 其他普通职业收入
         }
         
         # 根据城镇类型初始化工作数量
@@ -26,13 +27,14 @@ class JobMarket:
         :param total_count: 总工作数量
         """
         professions_ratio = {
-            "农民": {"沿河": [0.5, 0.6], "非沿河": [0.7, 0.8]},
+            "农民": {"沿河": [0.4, 0.5], "非沿河": [0.7, 0.8]},
             "商人": {"沿河": [0.1, 0.15], "非沿河": [0.0, 0.05]},
             "叛军": {"沿河": [0.01, 0.1], "非沿河": [0.01, 0.02]},
             "官员及士兵": {"沿河": [0.05, 0.08], "非沿河": [0.02, 0.03]},
-            "其他": {"沿河": [0.1, 0.2], "非沿河": [0.1, 0.15]}
+            "运河维护工": {"沿河": [0.15, 0.25], "非沿河": [0.0, 0.0]},
+            "其他": {"沿河": [0.05, 0.1], "非沿河": [0.1, 0.15]}
         }
-        
+
         # 确保总岗位数不小于职业类型数
         total_count = max(total_count, len(professions_ratio))
         
@@ -79,7 +81,7 @@ class JobMarket:
     def assign_specific_job(self, resident, job_type, actual_salary=None):
         """
         分配指定职业给指定居民
-        :param actual_salary: 实际支付的工资，如果为None则使用基础工资
+        :param actual_salary: 实际支付的居民收入，如果为None则使用基础收入
         """
         # 检查职业类型是否存在
         if job_type not in self.jobs_info:
@@ -97,10 +99,10 @@ class JobMarket:
                 del info["employed"][resident.resident_id]
                 break
                 
-        # 分配新工作，使用实际工资或基础工资
+        # 分配新工作，使用实际收入或基础收入
         salary = actual_salary if actual_salary is not None else self.jobs_info[job_type]["base_salary"]
         self.jobs_info[job_type]["employed"][resident.resident_id] = salary
-        resident.employ(job_type, salary)  # 更新居民的工作和工资信息
+        resident.employ(job_type, salary)  # 更新居民的工作和收入信息
         return True
 
     def assign_job(self, resident):
@@ -116,7 +118,7 @@ class JobMarket:
             job = random.choice(available_jobs)
             base_salary = self.jobs_info[job]["base_salary"]
             self.jobs_info[job]["employed"][resident.resident_id] = base_salary
-            resident.employ(job, base_salary)  # 更新居民的工作和工资信息
+            resident.employ(job, base_salary)  # 更新居民的工作和收入信息
         else:
             resident.unemploy()
 
@@ -139,13 +141,13 @@ class JobMarket:
         """
         计算失业率
         :param total_residents: 总居民数
-        :return: 失业率（0到1之间的值）
+        :return: 失业率（0到100之间的值）
         """
         total_employed = sum(len(info["employed"]) for info in self.jobs_info.values())
         
         if total_residents == 0:
             return 0.0
-        return 1.0 - (total_employed / total_residents)
+        return (1.0 - (total_employed / total_residents)) * 100
 
     def print_job_market_status(self):
         """
@@ -153,7 +155,7 @@ class JobMarket:
         """
         print(f"\n城镇类型: {self.town_type}")
         for job, info in self.jobs_info.items():
-            print(f"{job}:总数：{info['total']}, 已就业：{info['employed']},基本工资：{info['base_salary']}")
+            print(f"{job}:总数：{info['total']}, 已就业：{info['employed']},基本收入：{info['base_salary']}")
 
     def remove_resident(self, resident_id, job_type=None):
         """
@@ -236,9 +238,9 @@ class JobMarket:
 
     def get_job_salary(self, job_type):
         """
-        获取指定职业的工资
+        获取指定职业的收入
         :param job_type: 职业类型
-        :return: 工资金额，如果职业不存在则返回None
+        :return: 收入金额，如果职业不存在则返回None
         """
         if job_type in self.jobs_info:
             return self.jobs_info[job_type]["salary"]
@@ -247,8 +249,8 @@ class JobMarket:
     def process_job_applications(self, job_requests):
         """
         处理求职申请
-        :param job_requests: 求职申请列表，每个申请包含居民信息、期望职业和最低工资要求
-        :return: (成功录用的居民ID列表, 总工资支出)
+        :param job_requests: 求职申请列表，每个申请包含居民信息、期望职业和最低收入要求
+        :return: (成功录用的居民ID列表, 总支出)
         """
         # 按职业类型对申请进行分组
         job_type_applications = defaultdict(list)
@@ -258,7 +260,7 @@ class JobMarket:
                 job_type_applications[job_type].append(request)
         
         hired_residents = []
-        total_salary_expense = 0  # 记录总工资支出
+        total_salary_expense = 0  # 记录总支出
         
         # 处理每种职业的申请
         for job_type, applications in job_type_applications.items():
@@ -267,10 +269,10 @@ class JobMarket:
             if vacant_positions <= 0:
                 continue
             
-            # 获取该职业的基础工资
+            # 获取该职业的基础收入
             base_salary = self.jobs_info[job_type]["base_salary"]
             
-            # 所有申请者按最低工资要求排序
+            # 所有申请者按最低收入要求排序
             applications.sort(key=lambda x: x["min_salary"])
             
             # 根据空缺数量择优录取
@@ -278,8 +280,8 @@ class JobMarket:
                 if app["min_salary"] > base_salary:
                     continue
                 resident = app["resident"]
-                actual_salary = app["min_salary"]  # 使用居民要求的最低工资
-                if self.assign_specific_job(resident, job_type, actual_salary):  # 传入实际工资
+                actual_salary = app["min_salary"]  # 使用居民要求的最低收入
+                if self.assign_specific_job(resident, job_type, actual_salary):  # 传入实际收入
                     hired_residents.append(resident.resident_id)
                     total_salary_expense += actual_salary
         
@@ -287,15 +289,15 @@ class JobMarket:
 
     def get_rebel_total_salary(self):
         """
-        获取叛军总工资
-        :return: 叛军总工资
+        获取叛军总收入
+        :return: 叛军总收入
         """
         return sum(salary for salary in self.jobs_info["叛军"]["employed"].values())
     
     def get_other_total_salary(self):
         """
-        获取除叛军外其他职业的总工资
-        :return: 其他职业总工资
+        获取除叛军外其他职业的总收入
+        :return: 其他职业总收入
         """
         other_total = 0
         for job_type, info in self.jobs_info.items():

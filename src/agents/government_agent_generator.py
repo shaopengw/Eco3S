@@ -6,7 +6,6 @@ async def generate_government_agents(
     government: Government,  # 政府对象，用于关联官员
     agent_graph: Optional[Dict[int, OrdinaryGovernmentAgent]] = None,  # 官员图，默认为空
     official_id_mapping: Optional[Dict[int, int]] = None,  # 官员 ID 与 Agent ID 的映射关系，默认为空
-    model_type: str = "gpt-3.5-turbo",  # 模型类型，默认为 GPT-3.5-turbo
     shared_pool: Optional[government_SharedInformationPool] = None, # 共享资源池，默认为空
 ) -> Dict[int, OrdinaryGovernmentAgent]:
     """
@@ -17,7 +16,6 @@ async def generate_government_agents(
         government (Government): 政府对象，用于关联官员。
         agent_graph (Dict[int, OrdinaryGovernmentAgent], 可选): 官员图，默认为空。
         official_id_mapping (Dict[int, int], 可选): 官员 ID 与 Agent ID 的映射关系，默认为空。
-        model_type (str, 可选): 模型类型，默认为 "gpt-3.5-turbo"。
 
     返回:
         Dict[int, OrdinaryGovernmentAgent]: 生成的官员图。
@@ -53,21 +51,14 @@ async def generate_government_agents(
                 government=government,
                 shared_pool=shared_pool,
             )
-        elif official_data["rank"] == "信息整理官":  # 添加新的官员类型
-            official = InformationOfficer(
-                agent_id=official_id,
-                government=government,
-                model_type=model_type,
-                shared_pool=shared_pool,
-            )
         else:
             raise ValueError(f"未知的官员类型：{official_data['rank']}")
 
         # 设置官员的初始属性
-        official.function = official_data["function"]  # 职能
         official.mbti = official_data["mbti"]  # 人物性格
         # 派别属性
         if official_data["rank"] == "普通官员":
+            official.function = official_data["function"]  # 职能
             official.faction = official_data["faction"]  # 派别
 
         # 将官员添加到官员图
@@ -83,8 +74,18 @@ async def generate_government_agents(
     tasks = [process_official(i, official_data) for i, official_data in enumerate(government_info)]
     await asyncio.gather(*tasks)
 
+    # 创建一个信息整理官
+    info_officer_id = len(agent_graph) + 1
+    info_officer = InformationOfficer(
+        agent_id=info_officer_id,
+        government=government,
+        shared_pool=shared_pool,
+    )
+    agent_graph[info_officer_id] = info_officer
+    official_id_mapping[info_officer_id] = info_officer_id
+
      # 确保返回的 agent_graph 是一个包含有效官员对象的字典
-    if not all(isinstance(official, (OrdinaryGovernmentAgent, HighRankingGovernmentAgent)) for official in agent_graph.values()):
+    if not all(isinstance(official, (OrdinaryGovernmentAgent, HighRankingGovernmentAgent, InformationOfficer)) for official in agent_graph.values()):
         raise TypeError("agent_graph 中包含非法对象")
     
     return agent_graph  # 返回生成的官员图

@@ -9,7 +9,6 @@ async def generate_rebels_agents(
     rebellion: Rebellion,
     agent_graph: Optional[Dict[int, OrdinaryRebel]] = None,
     agent_id_mapping: Optional[Dict[int, int]] = None,
-    model_type: str = "gpt-3.5-turbo",
     shared_pool: Optional[rebels_SharedInformationPool] = None,
 ) -> Dict[int, OrdinaryRebel]:
     """
@@ -20,7 +19,6 @@ async def generate_rebels_agents(
         rebellion (Rebellion): 叛军对象，用于关联叛军。
         agent_graph (Dict[int, OrdinaryRebel], 可选): 叛军图，默认为空。
         agent_id_mapping (Dict[int, int], 可选): 叛军 ID 与 Agent ID 的映射关系，默认为空。
-        model_type (str, 可选): 模型类型，默认为 "gpt-3.5-turbo"。
         shared_pool (rebels_SharedInformationPool, 可选): 共享信息池，默认为空。
 
     返回:
@@ -54,19 +52,14 @@ async def generate_rebels_agents(
                 rebellion=rebellion,
                 shared_pool=shared_pool,
             )
-        elif rebel_data["rank"] == "信息整理官":  # 添加信息整理官支持
-            rebel = InformationOfficer(
-                agent_id=agent_id,
-                rebellion=rebellion,
-                model_type=model_type,
-                shared_pool=shared_pool,
-            )
         else:
             raise ValueError(f"未知的叛军类型：{rebel_data['rank']}")
 
         # 设置叛军的初始属性
-        rebel.role = rebel_data["role"]  # 角色
         rebel.mbti = rebel_data["mbti"]  # 人物性格
+        if rebel_data["rank"] == "普通叛军":
+            # 普通叛军的初始属性
+            rebel.role = rebel_data["role"]  # 角色
 
         # 将叛军添加到叛军图
         agent_graph[agent_id] = rebel
@@ -81,8 +74,18 @@ async def generate_rebels_agents(
     tasks = [process_rebel(i, rebel_data) for i, rebel_data in enumerate(rebellion_info)]
     await asyncio.gather(*tasks)
 
+    # 创建一个信息整理官
+    info_rebel_id = len(agent_graph) + 1
+    info_rebel = InformationOfficer(
+        agent_id=info_rebel_id,
+        rebellion=rebellion,
+        shared_pool=shared_pool,
+    )
+    agent_graph[info_rebel_id] = info_rebel
+    agent_id_mapping[info_rebel_id] = info_rebel_id
+
     # 确保返回的 agent_graph 包含有效叛军对象
-    if not all(isinstance(rebel, (OrdinaryRebel, RebelLeader)) for rebel in agent_graph.values()):
+    if not all(isinstance(rebel, (OrdinaryRebel, RebelLeader, InformationOfficer)) for rebel in agent_graph.values()):
         raise TypeError("agent_graph 中包含非法对象")
     
     return agent_graph  # 返回生成的叛军图

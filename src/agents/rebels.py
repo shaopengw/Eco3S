@@ -13,11 +13,10 @@ if "sphinx" not in sys.modules:
     rebellion_log.addHandler(file_handler)
 
 class OrdinaryRebel(BaseAgent):
-    def __init__(self, agent_id, rebellion, shared_pool, model_type=None):
+    def __init__(self, agent_id, rebellion, shared_pool):
         super().__init__(agent_id, group_type='rebellion', window_size=3)
         self.rebellion = rebellion
         self.shared_pool = shared_pool
-        self.opinions = []  # 收集意见
         self.time = 0  # 当前时间（年）
         self.role = None  # 角色
         self.mbti = None  # 人物性格
@@ -29,19 +28,11 @@ class OrdinaryRebel(BaseAgent):
         生成一句关于叛军行动的意见
         :return: 生成的意见内容
         """
-        # 获取当前叛军状态
-        rebellion_status = (
-            f"当前叛军状态：\n"
-            f"力量: {self.rebellion.get_strength()}\n"
-            f"资源: {self.rebellion.get_resources()}\n"
-        )
 
         # 构建提示信息
         prompt = (
-            f"你是叛军的主要头目之一，以下是你的个人属性：\n"
-            f"角色: {self.role}\n"
-            f"人物性格: {self.mbti}\n"
-            f"{rebellion_status}\n"
+            f"你是清代叛军的主要头目之一（{self.mbti}），负责{self.role}工作。\n"
+            f"当前叛军兵力{self.rebellion.get_strength()}，资源总计{self.rebellion.get_resources()}两\n"
             f"请根据你的个人属性、当前叛军状态和讨论内容，提出下一步行动的建议。请你用一句话概括，不必说明理由。"
         )
 
@@ -59,9 +50,7 @@ class OrdinaryRebel(BaseAgent):
         all_discussion = await self.shared_pool.get_all_discussions()
         if all_discussion:
             prompt = (
-                f"你是叛军组织的主要头目之一，以下是你的个人属性：\n"
-                f"角色: {self.role}\n"
-                f"人物性格: {self.mbti}\n"
+                f"你是清代叛军的主要头目之一（{self.mbti}），负责{self.role}工作。\n"
                 f"\n所有成员的观点包括：{all_discussion}\n"
                 f"\n请根据你的个人属性和立场，对这些观点发表看法。"
                 f"可以选择支持、反对或提出新的观点。"
@@ -110,27 +99,19 @@ class RebelLeader(BaseAgent):
         for town in towns_stats:
             rebel_count = town['rebel_count']
             official_count = town['official_count']
-            towns_analysis.append(f"{town['town_name']}: 叛军{rebel_count}人，官兵{official_count}人")
+            towns_analysis.append(f"{town['town_name']}: {rebel_count}：{official_count}")
 
         # 使用 CAMEL 框架来做决策
         # 历史决策信息，让叛军可以自己从中总结不同决策带来的后果。
         decision_prompt = (
             f"你是清代地方叛军组织的首领，负责根据下属的讨论和当前叛军状态做出最终决策。\n"
-            f"当前叛军状态：\n"
-            f"力量: {self.rebellion.get_strength()}\n"
-            f"资源: {self.rebellion.get_resources()}\n"
-            f"\n"
-            f"各城镇力量分布：\n" + "\n".join(towns_analysis) + "\n"
-            f"\n"
-            f"下属们的讨论报告：\n{summary}\n"
-            f"\n"
-            f"请为每个动作分配参数。如果不选择某个动作，将其参数设为0。\n"
-            f"在做决策时，请考虑各城镇叛军和官兵的力量对比，优先选择叛军力量较强或官兵力量较弱的城镇发动叛乱\n"
-            f"\n"
-            f"输出格式为 JSON，严格按照以下格式：\n"
+            f"当前叛军兵力{self.rebellion.get_strength()}，资源总计{self.rebellion.get_resources()}两\n"
+            f"各城镇力量分布（叛军：官兵）：\n" + "\n".join(towns_analysis) + "\n"
+            f"下属建议：\n{summary}\n"
+            f"在做决策时，请考虑各城镇叛军和官兵的力量对比，优先选择叛军多或官兵少的城镇出击。\n"
+            f"输出JSON，无需说明理由：\n"
             f'{{"stage_rebellion": 发动叛乱的力量投入（整数）, "recruit_members": 招募新成员的资源投入（整数）, "maintain_status": 维持现状（设为1表示选择维持现状，设为0表示不选择）, "target_town": 发动叛乱目标城镇名称（字符串）}}'
-            f"\n"
-            f"请根据以上信息和状态作出最终决策，不要解释理由，只需输出JSON格式的决策结果。"
+
         )
 
         try:
@@ -155,18 +136,11 @@ class RebelLeader(BaseAgent):
         rebellion_log.info(f"  角色：{self.role}")
         rebellion_log.info(f"  人物性格：{self.mbti}")
 
-class InformationOfficer(OrdinaryRebel):
-    def __init__(self, agent_id, rebellion, shared_pool, model_type=None):
-        """
-        初始化叛军信息整理官
-        :param agent_id: 叛军的唯一标识符
-        :param rebellion: 叛军对象
-        :param shared_pool: 共享信息池
-        :param model_type: 模型类型，默认为 None
-        """
-        super().__init__(agent_id, rebellion, shared_pool)
+class InformationOfficer(BaseAgent):
+    def __init__(self, agent_id, rebellion, shared_pool):
+        super().__init__(agent_id, group_type='rebellion', window_size=0)
+        self.shared_pool = shared_pool
         self.role = "信息整理官"
-        self.system_message = "你是清代地方叛军组织的信息整理官，负责整理和总结其他成员的讨论内容。"
 
     async def summarize_discussions(self) -> str:
         """
@@ -179,8 +153,7 @@ class InformationOfficer(OrdinaryRebel):
 
         # 构建提示信息
         prompt = (
-            f"作为叛军信息整理官，请你整理以下{len(discussions)}条讨论内容，"
-            f"提供一个简明扼要的总结报告。\n\n"
+            f"作为叛军信息整理官，请根据下列{len(discussions)}条讨论内容，用一句话尽可能简要地总结归纳核心观点，保留具体数值。"
             f"讨论内容：\n" + "\n".join([f"{i+1}. {d}" for i, d in enumerate(discussions)])
         )
 

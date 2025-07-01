@@ -1,22 +1,16 @@
 [
   {
     "rank": "叛军头子",
-    "role": "指挥官",
-    "mbti": "ISFJ"
+    "mbti": "ESTP"
   },
   {
     "rank": "普通叛军",
-    "role": "战士",
-    "mbti": "ISTJ"
+    "mbti": "INFP",
+    "role": "侦察兵"
   },
   {
     "rank": "普通叛军",
-    "role": "间谍",
-    "mbti": "ENTJ"
-  },
-  {
-    "rank": "信息整理官",
-    "role": "情报官",
-    "mbti": "INTJ"
-}
+    "mbti": "ISTP",
+    "role": "指挥官"
+  }
 ]

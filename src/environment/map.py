@@ -340,7 +340,7 @@ class Map:
 
 if __name__ == "__main__":
     # 初始化地图
-    map = Map(width=100, height=150)  # 调整尺寸以适应中国地图比例
+    map = Map(width=100, height=150)
     map.initialize_map()
 
     # 打印地图信息
