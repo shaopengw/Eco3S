@@ -14,7 +14,7 @@ if "sphinx" not in sys.modules:
     government_log.addHandler(file_handler)
 
 class OrdinaryGovernmentAgent(BaseAgent):
-    def __init__(self, agent_id, government, shared_pool, model_type=None):
+    def __init__(self, agent_id, government, shared_pool):
         super().__init__(agent_id, group_type='government', window_size=3)
         self.government = government
         self.shared_pool = shared_pool
@@ -85,7 +85,6 @@ class HighRankingGovernmentAgent(BaseAgent):
         初始化高级政府官员类（决策者）
         :param agent_id: 政府官员的唯一标识符
         :param government: 政府对象，用于获取政府状态
-        :param model_type: 使用的模型类型（默认使用 GPT-3.5-turbo）
         """
         super().__init__(agent_id, group_type='government', window_size=3)
         self.government = government
@@ -94,7 +93,6 @@ class HighRankingGovernmentAgent(BaseAgent):
         self.map = government.map
 
         # 初始化官员属性
-        self.function = None  # 职能
         self.mbti = None  # 人物性格
         
         # 系统消息
@@ -115,6 +113,7 @@ class HighRankingGovernmentAgent(BaseAgent):
 
         river_price = self.government.transport_economy.river_price
         sea_price = self.government.transport_economy.sea_price
+        maintenance_cost_base = self.government.transport_economy.maintenance_cost_base
         transport_task = self.government.transport_economy.transport_task
         current_budget = self.government.get_budget()
         
@@ -126,7 +125,7 @@ class HighRankingGovernmentAgent(BaseAgent):
             f"你是清代政府高级官员，负责根据下属讨论做出最终决策。\n\n"
             f"当前状态：\n"
             f"预算: {current_budget:.2f}两,军事力量: {self.government.get_military_strength():.2f},税率: {self.government.get_tax_rate()*100:.1f}%\n"
-            f"运输任务: {transport_task}吨,河运: {river_price:.2f}两/吨,海运: {sea_price:.2f}两/吨\n\n"
+            f"运输任务: {transport_task}吨,河运: {river_price:.2f}两/吨,海运: {sea_price:.2f}两/吨\n，维护运河基本运转需{maintenance_cost_base}两\n"
             
             f"成本计算：\n"
             f"运输成本 = 河运比例×{transport_cost_river:.2f} + 海运比例×{transport_cost_sea:.2f}\n"
@@ -138,20 +137,6 @@ class HighRankingGovernmentAgent(BaseAgent):
             f"请做出合理决策，确保总支出不超预算。输出JSON，无需说明理由：\n"
             f'{{"increase_employment": 就业预算（整数）, "transport_ratio": 河运比例（0-1）, "maintenance_investment": 维护资金（整数）, "military_support": 军事拨款（整数）, "tax_adjustment": 税率调整（-0.1到0.1）}}\n'
         )
-        # decision_prompt = (
-        #     f"你是一位清代政府高级官员，负责根据下属官员的讨论和当前政府状态做出最终决策。\n"
-        #     f"当前政府状态：\n"
-        #     f"财政预算: {self.government.get_budget()}\n"
-        #     f"军事力量: {self.government.get_military_strength()}\n"
-        #     f"运输总任务量: {transport_task}吨,"
-        #     f"河运价格: {river_price:.2f}两/吨,海运价格： {sea_price:.2f}两/吨。注意：海运便宜但无法提供岗位，河运更贵且需要额外投入维护资金，但能提供就业岗位，加强民生。\n"
-        #     f"当前税率: {self.government.get_tax_rate()*100:.1f}%\n"
-        #     f"\n"
-        #     f"下属官员们的讨论报告：\n{summary}\n"
-        #     f"\n"
-        #     f"你需要通过设置合理的税率获得财政收入，合理分配预算支出和运输比例，以尽可能少的成本完成施政目标。不需要解释理由，务必确认支出总额不高于当前财政预算。输出为 JSON，严格遵守以下格式：\n"
-            # f'{{"increase_employment": 提供就业的预算分配（整数）, "transport_ratio": 运输投入比例（浮点数，0-1，0表示全部海运，1表示全部河运）, "maintenance_investment": 维护运河投入资金（整数，如果不维护则为0）, "military_support": 军需拨款的预算分配（整数）, "tax_adjustment": 税率调整值（浮点数，范围-0.1到0.1）}}\n'
-        #  )
         try:
             # 调用模型做出最终决策
             decision = await self.generate_llm_response(decision_prompt, self.system_message)
@@ -171,7 +156,6 @@ class HighRankingGovernmentAgent(BaseAgent):
         """
         government_log.info(f"高级政府官员 {self.agent_id} 的状态：")
         government_log.info(f"  当前时间：{self.time}年")
-        government_log.info(f"  职能：{self.function}")
         government_log.info(f"  人物性格：{self.mbti}")
 
 class Government:
@@ -221,7 +205,7 @@ class Government:
         # 提供就业机会
         job_opportunities = int(maintenance_investment / 100)
         if job_opportunities > 0:
-            self.job_market.add_job("运河维护工人", job_opportunities)
+            self.job_market.add_job("运河维护工", job_opportunities)
         
         # 扣除支出
         self.budget -= maintenance_investment
@@ -365,11 +349,13 @@ class government_SharedInformationPool:
         """
         return self.is_discussion_ended
 
-class InformationOfficer(OrdinaryGovernmentAgent):
-    def __init__(self, agent_id, government, shared_pool, model_type="gpt-3.5-turbo"):
-        super().__init__(agent_id, government, shared_pool, model_type)
-        self.function = "信息整理官"
-        self.system_message = "你是清代朝廷信息整理官员，负责整理和总结官员们的讨论内容。"
+class InformationOfficer(BaseAgent):
+    def __init__(self, agent_id, government, shared_pool):
+        super().__init__(agent_id, group_type='government', window_size=0)
+        self.shared_pool = shared_pool
+        self.memory = None
+        self.system_message = "你是清代朝廷信息整理官员。"
+
 
     async def summarize_discussions(self) -> str:
         """
@@ -379,20 +365,14 @@ class InformationOfficer(OrdinaryGovernmentAgent):
         discussions = await self.shared_pool.get_all_discussions()
         if not discussions:
             return "暂无讨论内容"
-
-        # 构建提示信息
-        # prompt = (
-        #     f"你是清代政府高级官员的秘书，请你整理以下{len(discussions)}条关于政府决策的讨论内容，"
-        #     f"提供一个简明扼要的总结报告。报告中应包含讨论中提及的具体数值建议，尽可能简洁。\n\n"\
-        #     f"讨论内容：\n" + "\n".join([f"{i+1}. {d}" for i, d in enumerate(discussions)])
-        # )
+        
         prompt = (
-            f"你为朝廷信息整理官员，请根据下列{len(discussions)}条朝堂讨论，用几句话简要总结，归纳核心观点，并列出所提具体数值，言简意赅:"
+            f"你为朝廷信息整理官员，请根据下列{len(discussions)}条朝堂讨论，用一句话尽可能简要地总结归纳核心观点，保留具体数值。"
             f"讨论内容：\n" + "\n".join([f"{i+1}. {d}" for i, d in enumerate(discussions)])
         )
 
         try:
-            summary = await self.generate_llm_response(prompt)
+            summary = await self.generate_llm_response(prompt, self.system_message)
             if summary:
                 government_log.info(f"信息整理官 {self.agent_id} 生成总结报告：{summary}")
                 return summary

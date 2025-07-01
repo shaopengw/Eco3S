@@ -3,15 +3,11 @@ import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
-# 叛军等级比例
-rank_ratio = [0.8, 0.2]  # 普通叛军、叛军头子
-ranks = ['普通叛军', '叛军头子']
+# 职能比例
+role_ratio = [0.25, 0.25, 0.25, 0.25]
+functions = ['军事', '行政', '情报', '后勤']
 
-# 角色比例
-role_ratio = [0.3, 0.2, 0.2, 0.1, 0.1, 0.1]
-roles = ['侦察兵', '指挥官', '战士', '谋士', '间谍', '后勤']
-
-# MBT及其分布比例
+# MBTI及其分布比例
 p_mbti = [
     0.12625, 0.11625, 0.02125, 0.03125, 0.05125, 0.07125, 0.04625, 0.04125,
     0.04625, 0.06625, 0.07125, 0.03625, 0.10125, 0.11125, 0.03125, 0.03125
@@ -21,11 +17,7 @@ mbti_types = [
     "ESFP", "ENFP", "ENTP", "ESTJ", "ESFJ", "ENFJ", "ENTJ"
 ]
 
-# 随机生成叛军等级
-def get_random_rank():
-    return random.choices(ranks, rank_ratio)[0]
-
-# 随机生成角色
+# 随机生成职能
 def get_random_role():
     return random.choices(roles, role_ratio)[0]
 
@@ -38,14 +30,16 @@ def generate_rebel_profile(is_leader=False):
     rank = '叛军头子' if is_leader else '普通叛军'
     for attempt in range(3):
         try:
-            role = get_random_role()
             mbti = get_random_mbti()
             # 构建叛军属性
             rebel_data = {
                 "rank": rank,
-                "role": role,
                 "mbti": mbti,
             }
+            if not is_leader:
+                role = get_random_role()
+                rebel_data["role"] = role
+
             print(f"生成的叛军信息: {rebel_data}")
             return rebel_data
         except Exception as e:

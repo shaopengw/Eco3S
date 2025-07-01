@@ -32,7 +32,7 @@ class SharedVectorDB:
         return self.vector_db.retrieve(query, limit=limit)
 
 class PersonalMemory:
-    def __init__(self, window_size=3, summary_interval=3):
+    def __init__(self, window_size, summary_interval=3,group_type='default'):
         """
         个人记忆系统
         :param window_size: 短期记忆窗口大小
@@ -43,13 +43,19 @@ class PersonalMemory:
         self.window_size = window_size
         self.summary_interval = summary_interval
         self.record_count = 0
-        self.summary_prompt_template = (
-            "你是一个{role}。请以第一人称的视角，用更像人类思考的方式，总结以下{count}条记忆，生成一个简洁且富有个人色彩的总结：\n"
-            "{memories}\n"
-            "如果有更早的记忆总结，请一并考虑：\n"
-            "{previous_summary}\n"
-            "请用一段话总结这些记忆的要点，并体现出你的主观感受和思考。"
-        )
+
+        if group_type == 'government':
+            self.summary_prompt_template = (
+                "你是清代{role}。用一句话总结这几年的施政重点、主要决策、产生的效果，以及从中得到的经验教训。\n"
+            )
+        elif group_type =='rebellion':  # rebellion
+            self.summary_prompt_template = (
+                "你是清代{role}。用一句话总结这几年的行动策略、主要行动、产生的效果，以及从中得到的经验教训。\n"
+            )
+        else:
+            self.summary_prompt_template = (
+                "你是清代{role}。用一句话总结这几年的行动、产生的效果，以及从中得到的经验教训。\n"
+            )
     
     def write_record(self, record):
         """写入记录到个人历史"""
@@ -78,15 +84,12 @@ class PersonalMemory:
                 for record in recent_records if hasattr(record, 'memory_record')
             ])
             
-            # 获取之前的总结
-            previous_summary = self.longterm_memory[-1] if self.longterm_memory else ""
-            
             # 构建提示词
             prompt = self.summary_prompt_template.format(
                 role=role_name,
                 count=self.summary_interval,
                 memories=memories_text,
-                previous_summary=previous_summary
+                # previous_summary=previous_summary
             )
             
             # 生成总结
@@ -116,7 +119,7 @@ class MemoryManager:
         # 使用群体特定的共享向量数据库（暂时保留但不使用）
         self.shared_memory = SharedVectorDB(group_type)
         # 初始化个人记忆系统
-        self.personal_memory = PersonalMemory(window_size, summary_interval)
+        self.personal_memory = PersonalMemory(window_size, summary_interval,group_type)
         
         self.window_size = window_size
         self.agent = None  # 存储对应的agent引用

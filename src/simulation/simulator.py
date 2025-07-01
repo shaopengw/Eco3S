@@ -107,7 +107,7 @@ class Simulator:
                     'ordinary_type': OrdinaryGovernmentAgent,
                     'leader_type': HighRankingGovernmentAgent,
                 }
-                government_decision, government_summary = await self.collect_group_decision('government', government_config)
+                government_decision = await self.collect_group_decision('government', government_config)
                 
                 # 收集叛军决策
                 rebellion_config = {
@@ -115,7 +115,7 @@ class Simulator:
                     'ordinary_type': OrdinaryRebel,
                     'leader_type': RebelLeader,
                 }
-                # rebellion_decision, rebellion_summary = await self.collect_group_decision('rebellion', rebellion_config)
+                rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
                 # rebellion_decision = '{"stage_rebellion": 2,"recruit_members": 0,"maintain_status": 0,"target_town": "杭州"}'
                 # rebellion_summary = '一致决定发动叛乱'
                 # 统一执行决策
@@ -229,7 +229,7 @@ class Simulator:
             print(f"年份: {self.time.get_current_time()}, "
                   f"叛乱次数: {self.rebellion_records}, "
                   f"人口数量: {self.population.get_population()}, "
-                  f"失业率: {self.results['unemployment_rate'][-1]:.2f}, "
+                  f"失业率: {self.results['unemployment_rate'][-1]:.2f}%, "
                   f"平均满意度: {self.results['average_satisfaction'][-1]:.2f}, "
                   f"税率: {self.government.get_tax_rate():.2f}, "
                   f"GDP: {self.results['gdp'][-1]:.2f}")
@@ -243,14 +243,12 @@ class Simulator:
                         await self.store_decision_memory(
                             'government', 
                             government_decision,
-                            government_summary,
                             changes_summary
                         )
                     if rebellion_decision:
                         await self.store_decision_memory(
                             'rebellion', 
                             rebellion_decision,
-                            rebellion_summary,
                             changes_summary
                         )
 
@@ -270,7 +268,7 @@ class Simulator:
             total_time = self.end_time - self.start_time
             print(f"总模拟时间: {total_time}")
 
-    async def collect_group_decision(self, group_type, config, max_rounds=3):
+    async def collect_group_decision(self, group_type, config, max_rounds=2):
         """
         收集群体决策
         :param group_type: 群体类型
@@ -316,7 +314,6 @@ class Simulator:
             await asyncio.gather(*round_tasks)
 
         # 获取信息整理员和领导者
-        print(f"开始进行总结和决策")
         info_officers = [
             member for member in config['agents'].values()
             if isinstance(member, InformationOfficer) or isinstance(member, RebelsInformationOfficer)
@@ -334,9 +331,9 @@ class Simulator:
                     decision = await leaders[0].make_decision(discussion_summary, towns_stats)
                 else:
                     decision = await leaders[0].make_decision(discussion_summary)
-                return decision, discussion_summary
+                return decision
 
-        return None, None
+        return None
 
     def execute_government_decision(self, decision):
         """执行政府决策"""
@@ -553,18 +550,18 @@ class Simulator:
         if total_residents == 0:
             return 0.0
         
-        unemployment_rate = 1.0 - (total_employed / total_residents)
+        unemployment_rate = (1.0 - (total_employed / total_residents)) * 100
         return unemployment_rate
 
     def calculate_gdp(self):
         """
-        计算GDP：所有居民工资总和减去基本生活所需值总和
+        计算GDP：所有居民收入总和减去基本生活所需值总和
         :return: GDP值（浮点数）
         """
         # GDP按照收入法计算：增加值＝劳动者报酬＋生产税净额＋固定资产折旧＋营业盈余 ，不必减去基本生活所需值
         if not self.residents:
             return 0.0
-        # 计算所有居民的工资总和
+        # 计算所有居民的收入总和
         total_income = sum(resident.income for resident in self.residents.values())
         # total_basic_cost = self.basic_living_cost * len(self.residents)
         # gdp = total_income - total_basic_cost
@@ -694,7 +691,7 @@ class Simulator:
             return 0 if current == 0 else 1
         return (current - previous) / previous
 
-    async def store_decision_memory(self, group_type, decision, discussion_summary, changes_summary):
+    async def store_decision_memory(self, group_type, decision, changes_summary):
         """
         存储决策记忆
         :param group_type: 群体类型
@@ -705,38 +702,39 @@ class Simulator:
         # 将决策内容和结果格式化为字符串
         memory_content = (
             f"时间: {self.time.get_current_year()}\n"
-            f"讨论总结: {discussion_summary}\n"
             f"决策内容: {decision}\n"
             f"执行结果:\n"
-            f"- 人口变化率: {changes_summary.get('人口变化率', 0):.2%}\n"
+            # f"- 人口变化率: {changes_summary.get('人口变化率', 0):.2%}\n"
             f"- GDP变化率: {changes_summary.get('GDP变化率', 0):.2%}\n"
             f"- 政府预算变化率: {changes_summary.get('政府预算变化率', 0):.2%}\n"
             f"- 叛军力量变化率: {changes_summary.get('叛军力量变化率', 0):.2%}\n"
             f"- 平均满意度变化: {changes_summary.get('平均满意度变化', 0):.2%}\n"
             f"- 失业率变化: {changes_summary.get('失业率变化', 0):.2%}\n"
-            f"- 叛乱次数变化: {changes_summary.get('叛乱次数变化', 0)}"
+            f"- 叛乱次数: {changes_summary.get('叛乱次数', 0)}"
         )
         
         if group_type == 'government':
             # 存储到所有政府官员的记忆中
             for official in self.government_officials.values():
-                await official.memory.write_record(
-                    role_name=official.__class__.__name__,
-                    content=memory_content,
-                    is_user=False,
-                    round_num=self.time.get_current_time(),
-                    store_in_shared=True
-                )
+                if not isinstance(official, InformationOfficer):
+                    await official.memory.write_record(
+                        role_name=official.__class__.__name__,
+                        content=memory_content,
+                        is_user=False,
+                        round_num=self.time.get_current_time(),
+                        store_in_shared=True
+                    )
         
         elif group_type == 'rebellion':
             # 存储到所有叛军成员的记忆中
             for rebel in self.rebels_agents.values():
-                await rebel.memory.write_record(
-                    role_name=rebel.__class__.__name__,
-                    content=memory_content,
-                    is_user=False,
-                    round_num=self.time.get_current_time(),
-                    store_in_shared=True                )
+                if not isinstance(rebel, InformationOfficer):
+                    await rebel.memory.write_record(
+                        role_name=rebel.__class__.__name__,
+                        content=memory_content,
+                        is_user=False,
+                        round_num=self.time.get_current_time(),
+                        store_in_shared=True                )
 
     def get_rebels_statistics(self):
         """
@@ -765,8 +763,8 @@ class Simulator:
 
     def calculate_total_salaries(self):
         """
-        计算所有城镇的叛军和其他职业总工资
-        :return: (叛军总工资, 其他职业总工资)
+        计算所有城镇的叛军和其他职业总收入
+        :return: (叛军总收入, 其他职业总收入)
         """
         total_rebel_salary = 0
         total_other_salary = 0

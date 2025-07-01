@@ -53,6 +53,7 @@ async def generate_canal_agents(
         resident.lifespan = resident_data["lifespan"]  # 寿命
         resident.town = town_name
         resident.location = location
+        resident.mbti = resident_data["mbti"]
 
         # 将居民添加到居民图
         agent_graph[resident_id] = resident

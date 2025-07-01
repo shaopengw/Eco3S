@@ -34,7 +34,7 @@ class ResidentSharedInformationPool:
 class ResidentGroup(BaseAgent):
     """居民群组，用于管理同一城镇的居民"""
     def __init__(self, town_name):
-        super().__init__(agent_id=f"group_{town_name}", group_type='resident_group', window_size=5)
+        super().__init__(agent_id=f"group_{town_name}", group_type='resident_group', window_size=3)
         self.town_name = town_name
         self.residents = {}
         self.social_network = None
@@ -79,11 +79,12 @@ class Resident(BaseAgent):
         self.employed = False  # 是否就业
         self.job = None  # 当前工作
         self.income = 0  # 收入
-        self.satisfaction = 100  # 对政府的满意度（0到100）
-        self.health_index = 10  # 居民的健康状况（0到10）
-        self.lifespan = 100  # 居民的寿命
+        self.satisfaction = 0  # 对政府的满意度（0到100）
+        self.health_index = 0 # 居民的健康状况（1到5）
+        self.lifespan = 0  # 居民的寿命
         self.towns_manager = None  # Towns实例的引用
         self.group = None  # 所属群组的引用
+        self.mbti = None
 
         # 由 ResidentGroup 设置agent属性
         self.model_backend = None
@@ -103,12 +104,12 @@ class Resident(BaseAgent):
         """
         居民就业
         :param job: 工作名称
-        :param salary: 工作工资，如果未指定则使用职业默认工资
+        :param salary: 工作收入，如果未指定则使用职业默认收入
         """
         self.employed = True
         self.job = job
         
-        # 如果指定了工资，使用指定的工资；否则从就业市场获取该职业的标准工资
+        # 如果指定了收入，使用指定的收入；否则从就业市场获取该职业的标准收入
         if salary is not None:
             self.income = salary
         elif self.job_market and job in self.job_market.jobs_info:
@@ -117,7 +118,7 @@ class Resident(BaseAgent):
             self.income = 0
             
         self.satisfaction += 10  # 就业增加满意度
-        resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 找到了工作：{job}，工资：{self.income}。")
+        resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 找到了工作：{job}，收入：{self.income}。")
     
     def unemploy(self):
         """
@@ -143,20 +144,21 @@ class Resident(BaseAgent):
             is_user=True
         )
 
+        # 构建提示词
+        health_conditions = ["", "健康状况非常差", "亚健康", "一般健康", "健康", "极健康"]
+        health_condition = health_conditions[self.health_index] if 1 <= self.health_index <= 5 else "未知"
+        work_condition = self.job if self.employed else "无业游民"
+
         # 从配置中获取回应概率
         response_prob = global_config.get("simulation", {}).get("response_probability")
         if random.random() < response_prob:
             
             # 构建回应提示词
             prompt = (
-                f"你是一个清代普通{work_condition}，收入为{self.income}两，健康状况为{health_condition}。\n"
-                f"当前税率:为{tax_rate*100:.1f}%，基本生活所需为{basic_living_cost}两\n"
+                f"你是一个清代普通{work_condition}，收入为{self.income}两，{health_condition}。\n"
+                # f"当前税率:为{tax_rate*100:.1f}%，基本生活所需为{basic_living_cost}两\n"
                 f"你听说了一条信息：{message_content}\n"
-                f"请根据你的状态和收到的信息做出回应。回应要简短，不超过20个字。\n"
-                f"注意：\n"
-                f"1. 如果信息涉及政策，要考虑对自己的影响\n"
-                f"2. 如果信息涉及叛乱，要考虑自己的处境\n"
-                f"3. 回应要符合自己的身份和立场"
+                f"请用不超过20字回应，表达你的真实感受与想法，让这句话值得传开。"
             )
             
             response_content = await self.generate_llm_response(prompt)
@@ -194,35 +196,35 @@ class Resident(BaseAgent):
             vacant_jobs = self.job_market.get_vacant_jobs()
             if vacant_jobs:
                 job_market_info = "以下是当前可用工作岗位：\n" + "\n".join(
-                    f"- {job}: {count}个空缺, 基础工资：{self.job_market.jobs_info[job]['base_salary']}"
+                    f"- {job}: {count}个空缺, 基础收入：{self.job_market.jobs_info[job]['base_salary']}"
                     for job, count in vacant_jobs.items()
                 )
             else:
                 job_market_info = "当前没有可用的工作岗位。\n"
 
         # 构建提示词
-        health_conditions = ["", "非常差", "亚健康", "一般", "健康", "极健康"]
+        health_conditions = ["", "健康状况非常差", "亚健康", "一般健康", "健康", "极健康"]
         health_condition = health_conditions[self.health_index] if 1 <= self.health_index <= 5 else "未知"
         work_condition = self.job if self.employed else "无业游民"
 
         # 基础提示信息
         base_prompt = (
-            f"你是一个清代普通{work_condition}，收入为{self.income}两，健康状况为{health_condition}。\n"
+            f"你是一个清代普通{work_condition}({self.mbti})，收入为{self.income}两，{health_condition}，目前满意度为{self.satisfaction}。\n"
             f"当前税率:为{tax_rate*100:.1f}%，基本生活所需为{basic_living_cost}两\n"
             f"{job_market_info}"
             f"你可以选择以下行动之一：\n"
-            f"1. 参加叛乱（极端且危险，仅在生活极度困难且无其他出路时考虑）\n"
+            f"1. 参加叛乱\n"
             f"2. {'寻找工作（仅限失业状态可选）' if not self.employed else '继续目前的工作'}\n"
             f"3. 迁徙至他地（会失去当前工作，需重新谋生）\n"
-            f"请综合考虑收入是否足以维生、就业稳定性、税负情况及健康状况，优先选择安全稳定的选项。"
+            f"请综合考虑收入是否足以维生、就业稳定性、税负情况及健康状况等因素，选择最适合自己的行动。"
         )
 
         # 规范输出
         prompt = base_prompt + (
              "并返回单行的JSON字符串，格式如下，必须严格按照格式填写：\n"
             + '{"select": 你的选择（1-3）, "reason": 选择原因, "satisfaction_change": 满意度变化值(-20到20)'
-            + (', "desired_job": 期望职业（可选：农民、商人、官员及士兵、其他）, "min_salary": 可接受的最低工资（数字）' if not self.employed else '')
-            + (', "speech": 一段对政府的态度发言}' if need_speech else '}')
+            + (', "desired_job": 期望职业（可选：农民、商人、官员及士兵、其他）, "min_salary": 可接受的最低收入（数字）' if not self.employed else '')
+            + (', "speech": 一句有传播力的态度言论，允许负面、质疑或愤怒情绪。}' if need_speech else '}')
         )
 
         try:
@@ -249,12 +251,12 @@ class Resident(BaseAgent):
             if desired_job is None and min_salary is None:
                 resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}, 更新满意度：{self.satisfaction}")
             else:
-                resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}, 期望职业：{desired_job}, 最低工资：{min_salary}, 更新满意度：{self.satisfaction}")
+                resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}, 期望职业：{desired_job}, 最低收入：{min_salary}, 更新满意度：{self.satisfaction}")
 
 
             # 执行决策
             if select == 2 and not self.employed:
-                # 如果选择找工作，则传入期望职业和最低工资
+                # 如果选择找工作，则传入期望职业和最低收入
                 job_request = await self.execute_decision(select, desired_job, min_salary)
                 if isinstance(job_request, dict):
                     return job_request  # 返回求职信息
@@ -283,22 +285,13 @@ class Resident(BaseAgent):
         try:
             if select == 1:  # 参加叛乱
                 # 首先检查叛军职位是否已满
-                total_positions, current_employed = self.job_market.get_job_statistics("叛军")
+                total_positions, current_employed,_ = self.job_market.get_job_statistics("叛军")
+                
                 if total_positions <= current_employed:
                     resident_log.info(f"居民 {self.resident_id} 想参加叛乱但叛军已满员")
                     return False
-                
-                # 添加更严格的条件判断
-                if (self.satisfaction < 20 and  # 满意度极低
-                    self.health_index < 3 and  # 健康状况极差
-                    ((not self.employed and self.income < self.job_market.jobs_info["农民"]["salary"] * 0.3) or  # 失业且收入极低
-                     (self.employed and self.income < basic_living_cost * 0.5))):  # 或有工作但收入无法维持基本生活
-                    resident_log.info(f"居民 {self.resident_id} 因生活极度困难，被迫参加叛乱")
-                    self.job_market.assign_specific_job(self, "叛军")
-                    return True
-                else:
-                    resident_log.info(f"居民 {self.resident_id} 暂时放弃参加叛乱的想法，继续寻找其他出路")
-                    return False
+                self.job_market.assign_specific_job(self, "叛军")
+                return True
             
             elif select == 2:  # 寻找工作或继续工作
                 if self.employed:
@@ -340,6 +333,7 @@ class Resident(BaseAgent):
         resident_log.info(f"  满意度：{self.satisfaction}")
         resident_log.info(f"  健康状况：{self.health_index}")
         resident_log.info(f"  寿命：{self.lifespan}")
+        resident_log.info(f"  mbti：{self.mbti}")
 
     def handle_death(self):
         """
@@ -404,7 +398,7 @@ class Resident(BaseAgent):
                 self.health_index = min(10, self.health_index + 1)
         
         # 确保健康指数在0-10范围内
-        self.health_index = max(0, min(10, self.health_index))
+        self.health_index = int(max(0, min(10, self.health_index)))
 
     def update_lifespan(self):
         """

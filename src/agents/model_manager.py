@@ -31,7 +31,12 @@ class ModelManager:
             # },
             
         }
-        self.model_config = ChatGPTConfig(temperature=0.7)
+        # 统一模型配置
+        self.model_config = {
+            "temperature": 1.0,
+            "max_tokens": 2048,
+            "top_p": 0.9,
+        }
 
     def get_random_model_config(self):
         """随机获取一个模型配置"""
@@ -40,5 +45,6 @@ class ModelManager:
         model_type = random.choice(api_info["model_types"])
         return {
             "model_platform": api_info["model_platform"],
-            "model_type": model_type
+            "model_type": model_type,
+            "model_config": self.model_config
         }
