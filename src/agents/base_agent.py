@@ -35,24 +35,30 @@ class BaseAgent:
         except Exception as e:
             logging.warning(f"读取重试配置失败，使用默认值：{e}")
 
-    async def generate_llm_response(self, prompt, system_message=None):
+    async def generate_llm_response(self, prompt):
         """生成大模型回应的通用方法"""
-        user_message = BaseMessage.make_user_message(
-            role_name=self.__class__.__name__,
-            content=prompt,
-        )
+        prompt_messages = []
 
-        prompt_messages = await self.memory.get_context_messages(prompt)
-        if not prompt_messages:
-            messages = []
-            if system_message or self.system_message:
-                messages.append({
-                    "role": "system",
-                    "content": system_message or self.system_message
-                })
-            messages.append(user_message.to_openai_user_message())
-            prompt_messages = messages
-        print("-------总提示信息-----------",prompt_messages)
+        if self.memory:
+            prompt_messages = await self.memory.get_context_messages()
+
+        # 添加当前提示词
+        user_message = {
+            "role": "user",
+            "content": prompt
+        }
+        prompt_messages.append(user_message)
+
+        messages = []
+        if self.system_message:
+            messages.append({
+                "role": "system",
+                "content": self.system_message
+            })
+        messages.extend(prompt_messages)
+
+        print("-------总提示信息-----------",messages)
+
         attempts = 0
         while attempts < self.max_retry_attempts:
             try:

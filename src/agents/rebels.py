@@ -20,23 +20,29 @@ class OrdinaryRebel(BaseAgent):
         self.time = 0  # 当前时间（年）
         self.role = None  # 角色
         self.mbti = None  # 人物性格
-
-        self.system_message = "你是清代政府划定的非法武装组织（叛军）主要头目之一，请你根据个人属性和所在叛军的状态提出意见。你的目的是使叛军组织生存和壮大（即：拥有更多的钱和人员）。"
-
+        self.system_message = None  # 系统提示词
+    
+    def update_system_message(self):
+        """
+        更新系统提示词，包含居民当前的状态信息
+        """
+        mbti_description = mbti_descriptions.get(self.mbti, "未知")
+        self.system_message = (
+            f"你是清代叛军的主要头目之一，负责{self.role}工作，你{mbti_description}，叛军正密谋下一步行动。\n"
+        )
+    
     async def generate_opinion(self):
         """
         生成一句关于叛军行动的意见
         :return: 生成的意见内容
         """
-
         # 构建提示信息
         prompt = (
-            f"你是清代叛军的主要头目之一（{self.mbti}），负责{self.role}工作。\n"
             f"当前叛军兵力{self.rebellion.get_strength()}，资源总计{self.rebellion.get_resources()}两\n"
             f"请根据你的个人属性、当前叛军状态和讨论内容，提出下一步行动的建议。请你用一句话概括，不必说明理由。"
         )
-
-        opinion = await self.generate_llm_response(prompt, self.system_message)
+        self.update_system_message()
+        opinion = await self.generate_llm_response(prompt)
         if opinion:
             rebellion_log.info(f"普通叛军 {self.agent_id} 生成的意见：{opinion}")
             return opinion
@@ -50,15 +56,13 @@ class OrdinaryRebel(BaseAgent):
         all_discussion = await self.shared_pool.get_all_discussions()
         if all_discussion:
             prompt = (
-                f"你是清代叛军的主要头目之一（{self.mbti}），负责{self.role}工作。\n"
-                f"\n所有成员的观点包括：{all_discussion}\n"
-                f"\n请根据你的个人属性和立场，对这些观点发表看法。"
-                f"可以选择支持、反对或提出新的观点。"
-                f"请用简短的一句话回复。"
+                f"\n众人各抒己见，所言如下：{all_discussion}\n"
+                f"请立足本职与立场，发言一句尽可能简短的回应，可表支持、反对，或另陈己见。"
             )
 
             try:
-                opinion = await self.generate_llm_response(prompt, self.system_message)
+                self.update_system_message()
+                opinion = await self.generate_llm_response(prompt)
                 if opinion:
                     await self.shared_pool.add_discussion(opinion)
                     rebellion_log.info(f"普通叛军 {self.agent_id} 回应了讨论：{opinion}")
@@ -80,9 +84,17 @@ class RebelLeader(BaseAgent):
         # 初始化叛军头子属性
         self.role = None  # 角色
         self.mbti = None  # 人物性格
-        
         # 系统消息
-        self.system_message = "你是一个清代地方叛军组织首领，你的目标是确保叛军组织的生存和壮大（拥有更多的成员和金钱）。"
+        self.system_message = None
+    
+    def update_system_message(self):
+        """
+        更新系统提示词，包含居民当前的状态信息
+        """
+        mbti_description = mbti_descriptions.get(self.mbti, "未知")
+        self.system_message = (
+            f"你是清代叛军组织的首领，{mbti_description}，你的目标是确保叛军组织的生存和壮大（拥有更多的成员和金钱）。叛军正密谋下一步行动。\n"
+        )
 
     async def make_decision(self, summary, towns_stats):
         """
@@ -99,7 +111,8 @@ class RebelLeader(BaseAgent):
         for town in towns_stats:
             rebel_count = town['rebel_count']
             official_count = town['official_count']
-            towns_analysis.append(f"{town['town_name']}: {rebel_count}：{official_count}")
+            if rebel_count > 0:  # 只有当叛军数量大于0时才添加到提示词中
+                towns_analysis.append(f"{town['town_name']}: {rebel_count}：{official_count}")
 
         # 使用 CAMEL 框架来做决策
         # 历史决策信息，让叛军可以自己从中总结不同决策带来的后果。
@@ -116,7 +129,8 @@ class RebelLeader(BaseAgent):
 
         try:
             # 调用模型做出最终决策
-            decision = await self.generate_llm_response(decision_prompt, self.system_message)
+            self.update_system_message()
+            decision = await self.generate_llm_response(decision_prompt)
 
             if decision:
                 rebellion_log.info(f"叛军头子 {self.agent_id} 的决策：{decision}")

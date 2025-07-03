@@ -222,7 +222,46 @@ class JobMarket:
                 # 从就业列表中移除这些员工
                 for employee in employees_to_layoff:
                     info["employed"].remove(employee)
-        # print(f"已随机减少 {num_jobs} 个工作岗位")
+        # print(f"已随机减少 {num_jobs} 个工作岗位").
+
+    def adjust_canal_maintenance_jobs(self, change_rate, residents):
+        """
+        根据运河状态的变化率调整运河维护工的数量
+        :param change_rate: 运河状态的变化率（-1到1之间的值）
+        """
+        # 只处理沿河城镇
+        if self.town_type != "沿河":
+            return
+
+        # 只处理负变化率的情况
+        if change_rate >= 0:
+            return
+            
+        # 获取当前运河维护工的数量
+        current_jobs = self.jobs_info["运河维护工"]["total"]
+        # 减少工作数量（按比例，最少减少1个）
+        reduction = max(1, int(current_jobs * abs(change_rate)))
+        new_jobs = max(0, current_jobs - reduction)
+        self.jobs_info["运河维护工"]["total"] = new_jobs
+        
+        # 如果当前就业人数超过新的总数，需要解雇一些工人
+        employed_count = len(self.jobs_info["运河维护工"]["employed"])
+        if employed_count > new_jobs:
+            # 随机选择要解雇的工人
+            workers_to_layoff_ids = random.sample(
+                list(self.jobs_info["运河维护工"]["employed"].keys()),
+                employed_count - new_jobs
+            )
+            # 解雇工人
+            for resident_id in workers_to_layoff_ids:
+                # 从传入的residents列表中找到对应的居民对象
+                resident = residents.get(resident_id)
+                if resident:
+                    self.remove_resident(resident.resident_id, "运河维护工")
+                    resident.unemploy()
+                else:
+                    print(f"警告: 未找到ID为 {resident_id} 的居民对象，无法解雇。")
+
 
     def get_vacant_jobs(self):
         """

@@ -166,8 +166,7 @@ class MemoryManager:
         # 暂时不使用共享记忆
         if store_in_shared:
             pass
-
-    async def get_context_messages(self, current_prompt):
+    async def get_context_messages(self):
         """获取上下文消息"""
         # 获取短期记忆（最近的记录）
         try:
@@ -210,13 +209,6 @@ class MemoryManager:
                 context.append(cleaned_msg)
                 seen_contents.add(cleaned_msg["content"])
         
-        # 添加当前提示词
-        user_message = {
-            "role": "user",
-            "content": current_prompt
-        }
-        context.append(user_message)
-            
         return context
 
     async def clear(self):
