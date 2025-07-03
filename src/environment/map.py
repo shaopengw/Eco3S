@@ -228,19 +228,18 @@ class Map:
         :return: 当前运河通航能力。
         """
         # 验证气候影响因子
-        if not (0 <= climate_impact_factor <= 1):
-            return "气候影响因子必须在0到1之间"
+        # if not (0 <= climate_impact_factor <= 1):
+        #     return "气候影响因子必须在0到1之间"
             
         # 自然衰减和气候影响
         natural_decay_rate = 0.1
-        self.navigability = max(0, self.navigability * (1 - natural_decay_rate) - climate_impact_factor * 0.1)
+        old_navigability = self.navigability
+        self.navigability = max(0, self.navigability * (1 - natural_decay_rate) - climate_impact_factor)
 
         # 更新运河网格的状态
         self.river_grid[self.river_grid > 0] = self.navigability
-        
-        # 增加通航值低于0.2的警告
-        if self.navigability < 0.2:
-            print(Back.RED + f"运河已废弃，通航能力为 {self.navigability:.2f}" + Back.RESET)
+
+        print(f"运河自然衰减:{old_navigability}* (1 - {natural_decay_rate}) - {climate_impact_factor} = {self.navigability:.2f}")
 
         return self.navigability
 

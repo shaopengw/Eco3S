@@ -23,7 +23,16 @@ class OrdinaryGovernmentAgent(BaseAgent):
         self.function = None
         self.faction = None
         self.mbti = None
-        self.system_message = "你为清代政府官员"
+        self.system_message = None
+
+    def update_system_message(self):
+        """
+        更新系统提示词，包含居民当前的状态信息
+        """
+        mbti_description = mbti_descriptions.get(self.mbti, "未知")
+        self.system_message = (
+            f"你为清代政府{self.function}官员，负责{self.faction}工作，你{mbti_description}，朝廷正议政务。\n"
+        )
 
     async def generate_opinion(self):
         """
@@ -32,14 +41,15 @@ class OrdinaryGovernmentAgent(BaseAgent):
         """
         river_price = self.government.transport_economy.river_price
         sea_price = self.government.transport_economy.sea_price
-        transport_task = self.government.transport_economy.transport_task 
+        transport_task = self.government.transport_economy.transport_task
         # 构建提示信息
         prompt = (
-            f"你为清代政府{self.function}官员（{self.mbti}，{self.faction}），朝廷正议政务，请结合当前形势，立足本职，发言一句尽可能简短的中肯建议，必要时附具体数值佐证，只含就业预算、河运比例（0-1）、维护支出、军事拨款或税率调整。现况："
+            f"请结合当前形势，立足本职，发言一句尽可能简短的中肯建议，必要时附具体数值佐证，只含就业预算、河运比例（0-1）、维护支出、军事拨款或税率调整。现况："
             f"国库有银{self.government.get_budget():.2f}两，兵力{self.government.get_military_strength():.2f}，税率: {self.government.get_tax_rate()*100:.1f}%"
             f"运输任务: {transport_task}吨,河运费(不可修改){river_price:.2f}两/吨，海运费(不可修改){sea_price:.2f}两/吨（海运低廉但岗位少，河运高费却可养人）\n"
         )
-        opinion = await self.generate_llm_response(prompt, self.system_message)
+        self.update_system_message()
+        opinion = await self.generate_llm_response(prompt)
         if opinion:
             await self.memory.write_record(
                 role_name="普通政府官员",
@@ -60,13 +70,14 @@ class OrdinaryGovernmentAgent(BaseAgent):
         all_discussion = await self.shared_pool.get_all_discussions()
         if all_discussion:
             prompt = (
-                f"你为清代政府{self.function}官员（{self.mbti}，{self.faction}），今朝廷议政，众臣各抒己见，所言如下：\n"
+                f"众臣各抒己见，所言如下：\n"
                 f"{all_discussion}"
                 f"请立足本职与立场，发言一句尽可能简短的回应，可表支持、反对，或另陈己见，并酌情附上数值佐证，如河运比例、就业预算、维护支出、税率调整等。"
             )
 
             try:
-                opinion = await self.generate_llm_response(prompt, self.system_message)
+                self.update_system_message()
+                opinion = await self.generate_llm_response(prompt)
                 if opinion:
                     await self.shared_pool.add_discussion(opinion)
                     government_log.info(f"普通官员 {self.agent_id} 回应了讨论：{opinion}")
@@ -91,12 +102,17 @@ class HighRankingGovernmentAgent(BaseAgent):
         self.shared_pool = shared_pool
         self.time = 0  # 当前时间（年）
         self.map = government.map
-
-        # 初始化官员属性
+        self.system_message = None
         self.mbti = None  # 人物性格
-        
-        # 系统消息
-        self.system_message = "你是一个清代地方政府高级官员，负责根据下属官员的讨论和当前政府状态做出最终决策，你的目标是维持地方统治稳定，同时完成中央政府下达的航运任务。其中航运包括河运和海运，河运具有创造大量沿线就业岗位的优势，而海运具有成本极低的优势。"
+    
+    def update_system_message(self):
+        """
+        更新系统提示词，包含居民当前的状态信息
+        """
+        mbti_description = mbti_descriptions.get(self.mbti, "未知")
+        self.system_message = (
+            f"你为清代政府最高决策者，你{mbti_description}，朝廷正议政务，你负责根据下属讨论和当前状态做出最终决策。你的目标是维持地方统治稳定，同时完成中央政府下达的航运任务。\n"
+        )
 
     async def make_decision(self, summary):
         """
@@ -122,10 +138,8 @@ class HighRankingGovernmentAgent(BaseAgent):
         transport_cost_sea = sea_price * transport_task      # 全部海运成本
 
         decision_prompt = (
-            f"你是清代政府高级官员，负责根据下属讨论做出最终决策。\n\n"
-            f"当前状态：\n"
-            f"预算: {current_budget:.2f}两,军事力量: {self.government.get_military_strength():.2f},税率: {self.government.get_tax_rate()*100:.1f}%\n"
-            f"运输任务: {transport_task}吨,河运: {river_price:.2f}两/吨,海运: {sea_price:.2f}两/吨\n，维护运河基本运转需{maintenance_cost_base}两\n"
+            f"当前政府预算: {current_budget:.2f}两,军事力量: {self.government.get_military_strength():.2f},税率: {self.government.get_tax_rate()*100:.1f}%\n"
+            f"运输任务共{transport_task}吨,河运需{river_price:.2f}两/吨,海运需{sea_price:.2f}两/吨\n，维护运河基本运转需{maintenance_cost_base}两\n"
             
             f"成本计算：\n"
             f"运输成本 = 河运比例×{transport_cost_river:.2f} + 海运比例×{transport_cost_sea:.2f}\n"
@@ -138,8 +152,8 @@ class HighRankingGovernmentAgent(BaseAgent):
             f'{{"increase_employment": 就业预算（整数）, "transport_ratio": 河运比例（0-1）, "maintenance_investment": 维护资金（整数）, "military_support": 军事拨款（整数）, "tax_adjustment": 税率调整（-0.1到0.1）}}\n'
         )
         try:
-            # 调用模型做出最终决策
-            decision = await self.generate_llm_response(decision_prompt, self.system_message)
+            self.update_system_message()
+            decision = await self.generate_llm_response(decision_prompt)
 
             if decision:
                 government_log.info(f"高级政府官员 {self.agent_id} 的决策：{decision}")
@@ -354,7 +368,6 @@ class InformationOfficer(BaseAgent):
         super().__init__(agent_id, group_type='government', window_size=0)
         self.shared_pool = shared_pool
         self.memory = None
-        self.system_message = "你是清代朝廷信息整理官员。"
 
 
     async def summarize_discussions(self) -> str:
@@ -372,7 +385,7 @@ class InformationOfficer(BaseAgent):
         )
 
         try:
-            summary = await self.generate_llm_response(prompt, self.system_message)
+            summary = await self.generate_llm_response(prompt)
             if summary:
                 government_log.info(f"信息整理官 {self.agent_id} 生成总结报告：{summary}")
                 return summary

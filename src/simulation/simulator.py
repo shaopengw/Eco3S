@@ -67,6 +67,22 @@ class Simulator:
             "river_navigability": [],
             "gdp": [],
         }
+        
+        # 保存初始数据
+        self.gdp = self.calculate_gdp()  # 确保先计算初始GDP
+        self.average_satisfaction = self.calculate_average_satisfaction()  # 计算初始满意度
+        
+        self.results["years"].append("初始")
+        self.results["rebellions"].append(self.rebellion_records)
+        self.results["unemployment_rate"].append(0)  # 初始失业率
+        self.results["population"].append(self.population.get_population())
+        self.results["government_budget"].append(self.government.get_budget())
+        self.results["rebellion_strength"].append(self.rebellion.get_strength())
+        self.results["average_satisfaction"].append(self.average_satisfaction)
+        self.results["tax_rate"].append(self.government.get_tax_rate())
+        self.results["river_navigability"].append(self.map.get_navigability())
+        self.results["gdp"].append(self.gdp)
+        
         self.start_time = None  # 用于记录模拟开始时间
         self.end_time = None    # 用于记录模拟结束时间
 
@@ -195,17 +211,20 @@ class Simulator:
 
             # 在每年第一季度进行结算更新
             if self.time.get_current_quarter() == 1:
-                rebel_salary, other_salary = self.calculate_total_salaries()
-                # 从叛军资源中扣除工资
-                # self.rebellion.resources = max(0, self.rebellion.resources - rebel_salary)
                 # 从政府预算中扣除工资
+                _, other_salary = self.calculate_total_salaries()
                 self.government.budget = max(0, self.government.budget - other_salary)
-                # 计算并更新运河价格
+
+                # 更新运河价格与状态
                 self.transport_economy.calculate_river_price(self.map.get_navigability())
-                # 自然更新运河状态
                 climate_impact_factor = self.climate.get_current_impact(self.time.get_current_year(),self.time.get_start_time())
                 self.map.decay_river_condition_naturally(climate_impact_factor)
-                print(f"运河状态更新为: {self.map.get_navigability()}") 
+
+                # 更新就业市场
+                old_navigability = self.results["river_navigability"][len(self.results["years"])-1]
+                current_navigability = self.map.get_navigability()
+                change_rate = (current_navigability - old_navigability) / old_navigability if old_navigability != 0 else 0
+                self.towns.adjust_job_market(change_rate, self.residents)
 
                 # 每3-5年更新一次社交网络
                 current_year = self.time.get_current_year()
@@ -252,8 +271,11 @@ class Simulator:
                             changes_summary
                         )
 
-            # 推进时间
-            self.time.step()
+            if self.time.get_current_quarter() == 4 and self.map.get_navigability() < 0.2:
+                print(Back.RED + f"运河因通航能力过低（{self.map.get_navigability()}）而废弃，提前结束模拟" + Back.RESET)
+                break
+            else:
+                self.time.step()
 
         self.end_time = datetime.now()  # 记录模拟结束时间
         self.display_total_simulation_time()
@@ -670,21 +692,19 @@ class Simulator:
         
         # 计算各项指标的变化率
         changes = {
-            "人口变化率": self._calculate_change_rate("population", current_idx),
-            "GDP变化率": self._calculate_change_rate("gdp", current_idx),
-            "政府预算变化率": self._calculate_change_rate("government_budget", current_idx),
-            "叛军力量变化率": self._calculate_change_rate("rebellion_strength", current_idx),
-            "平均满意度变化": self._calculate_change_rate("average_satisfaction", current_idx),
-            "失业率变化": self._calculate_change_rate("unemployment_rate", current_idx),
+            "人口变化率": self.calculate_change_rate("population", current_idx),
+            "GDP变化率": self.calculate_change_rate("gdp", current_idx),
+            "政府预算变化率": self.calculate_change_rate("government_budget", current_idx),
+            "叛军力量变化率": self.calculate_change_rate("rebellion_strength", current_idx),
+            "平均满意度变化": self.calculate_change_rate("average_satisfaction", current_idx),
+            "失业率变化": self.calculate_change_rate("unemployment_rate", current_idx),
             "叛乱次数变化": self.results["rebellions"][current_idx] - self.results["rebellions"][current_idx-1],
         }
         
         return changes
 
-    def _calculate_change_rate(self, metric, current_idx):
+    def calculate_change_rate(self, metric, current_idx):
         """计算指定指标的变化率"""
-        if current_idx <= 0:
-            return 0
         current = self.results[metric][current_idx]
         previous = self.results[metric][current_idx-1]
         if previous == 0:

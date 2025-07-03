@@ -213,3 +213,18 @@ class Towns:
             town_data['resident_group'].remove_resident(resident_id)
             
         return True
+
+    def adjust_job_market(self, change_rate, residents):
+        """
+        更新所有城镇的就业市场
+        :param change_rate: 运河状态的变化率（-1到1之间的值）
+        :param residents: 居民字典，key为居民ID，value为居民对象
+        """
+        for town_name, town_data in self.towns.items():
+            # 获取城镇的就业市场
+            job_market = town_data['job_market']
+            if job_market:
+                # 调用就业市场的调整方法
+                job_market.adjust_canal_maintenance_jobs(change_rate, residents)
+            else:
+                print(f"警告：城镇 {town_name} 没有就业市场")

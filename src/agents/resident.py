@@ -85,6 +85,7 @@ class Resident(BaseAgent):
         self.towns_manager = None  # Towns实例的引用
         self.group = None  # 所属群组的引用
         self.mbti = None
+        self.system_message = None  # 系统提示词
 
         # 由 ResidentGroup 设置agent属性
         self.model_backend = None
@@ -129,38 +130,39 @@ class Resident(BaseAgent):
         self.income = 0
         self.satisfaction -= 20  # 失业降低满意度
         resident_log.info(f"居民 {self.resident_id} 目前无业")
+        # if old_job:
+        #     resident_log.info(f"居民 {self.resident_id} 失去工作工作：{old_job}")
+        # else:
+        #     resident_log.info(f"居民 {self.resident_id} 目前无业")
+
+    def update_system_message(self):
+        """
+        更新系统提示词，包含居民当前的状态信息
+        """
+        health_conditions = ["", "健康状况非常差", "亚健康", "一般健康", "健康", "极健康"]
+        health_condition = health_conditions[self.health_index] if 1 <= self.health_index <= 5 else "未知"
+        work_condition = self.job if self.employed else "无业游民"
+        mbti_description = mbti_descriptions.get(self.mbti, "未知")
+        self.system_message = (
+            f"你是一个清代普通{work_condition}，你{mbti_description}，收入为{self.income}两，{health_condition}，目前满意度为{self.satisfaction}。\n"
+        )
 
     async def receive_information(self, message_content):
         """
         接收信息（如政府政策、叛乱信息）
         """
-        self.satisfaction += 5  # 接收信息增加满意度
-        # resident_log.info(f"居民 {self.resident_id} 收到了信息：{message_content}。")
-
-        # 将收到的信息存入记忆
-        await self.memory.write_record(
-            role_name="其他居民",
-            content=message_content,
-            is_user=True
-        )
-
-        # 构建提示词
-        health_conditions = ["", "健康状况非常差", "亚健康", "一般健康", "健康", "极健康"]
-        health_condition = health_conditions[self.health_index] if 1 <= self.health_index <= 5 else "未知"
-        work_condition = self.job if self.employed else "无业游民"
-
+        # self.satisfaction += 5  # 接收信息增加满意度
         # 从配置中获取回应概率
         response_prob = global_config.get("simulation", {}).get("response_probability")
         if random.random() < response_prob:
-            
             # 构建回应提示词
             prompt = (
-                f"你是一个清代普通{work_condition}，收入为{self.income}两，{health_condition}。\n"
                 # f"当前税率:为{tax_rate*100:.1f}%，基本生活所需为{basic_living_cost}两\n"
                 f"你听说了一条信息：{message_content}\n"
                 f"请用不超过20字回应，表达你的真实感受与想法，让这句话值得传开。"
             )
-            
+
+            self.update_system_message()
             response_content = await self.generate_llm_response(prompt)
             
             if response_content:
@@ -202,14 +204,7 @@ class Resident(BaseAgent):
             else:
                 job_market_info = "当前没有可用的工作岗位。\n"
 
-        # 构建提示词
-        health_conditions = ["", "健康状况非常差", "亚健康", "一般健康", "健康", "极健康"]
-        health_condition = health_conditions[self.health_index] if 1 <= self.health_index <= 5 else "未知"
-        work_condition = self.job if self.employed else "无业游民"
-
-        # 基础提示信息
         base_prompt = (
-            f"你是一个清代普通{work_condition}({self.mbti})，收入为{self.income}两，{health_condition}，目前满意度为{self.satisfaction}。\n"
             f"当前税率:为{tax_rate*100:.1f}%，基本生活所需为{basic_living_cost}两\n"
             f"{job_market_info}"
             f"你可以选择以下行动之一：\n"
@@ -228,6 +223,7 @@ class Resident(BaseAgent):
         )
 
         try:
+            self.update_system_message()
             response = await self.generate_llm_response(prompt)
             if not response:
                 return "2", "发生错误，继续当前工作"
