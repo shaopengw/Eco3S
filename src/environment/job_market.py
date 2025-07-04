@@ -34,32 +34,32 @@ class JobMarket:
             "运河维护工": {"沿河": [0.15, 0.25], "非沿河": [0.0, 0.0]},
             "其他": {"沿河": [0.05, 0.1], "非沿河": [0.1, 0.15]}
         }
+        # 如果总岗位数小于总职业数
+        if total_count < len(professions_ratio):
+            # 优先分配给概率更高的职业
+            # sorted_professions = sorted(professions_ratio, key=lambda x: professions_ratio[x][self.town_type], reverse=True)
+            # for job in sorted_professions:
+            #     if total_count <= 0:
+            #         break
+            #     self.jobs_info[job]["total"] = 1
+            #     total_count -= 1
 
-        # 确保总岗位数不小于职业类型数
-        total_count = max(total_count, len(professions_ratio))
-        
-        # 首先为每种工作分配一个基础岗位
-        remaining_count = total_count - len(professions_ratio)
-        for job in professions_ratio:
-            self.jobs_info[job]["total"] = 1
-        
-        # 然后按比例分配剩余岗位，保留一部分给农民
-        reserved_for_farmers = int(remaining_count * 0.2)  # 预留20%给农民
-        remaining_for_others = remaining_count - reserved_for_farmers
-        
-        allocated_count = 0
-        for job, ratios in professions_ratio.items():
-            if job == "农民":
-                continue
-            ratio_range = ratios[self.town_type]
-            ratio = random.uniform(ratio_range[0], ratio_range[1])
-            additional_jobs = max(0, int(remaining_for_others * ratio))
-            self.jobs_info[job]["total"] += additional_jobs
-            allocated_count += additional_jobs
-        
-        # 将所有剩余的工作分配给农民，确保非负
-        remaining_jobs = max(0, remaining_count - allocated_count)
-        self.jobs_info["农民"]["total"] += remaining_jobs + reserved_for_farmers
+            # 每个职业分配一个岗位
+            for job, ratios in professions_ratio.items():
+                self.jobs_info[job]["total"] += 1
+        else:
+            # 根据城镇类型和职业比例范围，随机选择一个比例来分配剩余岗位
+            allocated_count = 0
+            for job, ratios in professions_ratio.items():
+                ratio_range = ratios[self.town_type]
+                ratio = random.uniform(ratio_range[0], ratio_range[1])
+                additional_jobs = max(0, int(total_count * ratio))
+                self.jobs_info[job]["total"] += additional_jobs
+                allocated_count += additional_jobs
+
+            # 将所有剩余的工作分配给农民，确保非负
+            remaining_jobs = max(0, total_count - allocated_count)
+            self.jobs_info["农民"]["total"] += remaining_jobs + int(total_count * professions_ratio["农民"][self.town_type][0])
     
     def add_job(self, job, num=1):
         """
@@ -343,6 +343,35 @@ class JobMarket:
             if job_type != "叛军":
                 other_total += sum(salary for salary in info["employed"].values())
         return other_total
+
+    def add_random_jobs(self, num_jobs):
+        """
+        随机增加指定数量的工作岗位（除叛军外）
+        :param num_jobs: 需要增加的工作岗位数量
+        """
+        # 获取除叛军外的所有职业类型
+        available_jobs = [job for job in self.jobs_info.keys() if job != "叛军"]
+        
+        # 如果岗位数小于职业数，随机选取岗位数个职业来增加工作岗位
+        if num_jobs < len(available_jobs):
+            selected_jobs = random.sample(available_jobs, num_jobs)
+        else:
+            # 计算每个职业平均分配的岗位数
+            jobs_per_profession = num_jobs // len(available_jobs)
+            # 处理除不尽的情况，将剩余岗位分配给前几个职业
+            remaining_jobs = num_jobs % len(available_jobs)
+            selected_jobs = available_jobs
+
+        # 为每个职业分配基础岗位数
+        for job in selected_jobs:
+            self.jobs_info[job]["total"] += jobs_per_profession if jobs_per_profession else 1
+
+        # 随机分配剩余的岗位
+        if remaining_jobs > 0:
+            for _ in range(remaining_jobs):
+                selected_job = random.choice(selected_jobs)
+                self.jobs_info[selected_job]["total"] += 1
+
 
     def add_random_jobs(self, num_jobs):
         """

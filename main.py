@@ -59,9 +59,6 @@ async def run_simulation(config: dict[str, Any]) -> None:
     # 初始化时间
     time = Time(start_year=config["simulation"]["start_year"], end_year=config["simulation"]["end_year"])
 
-    # 初始化就业市场
-    job_market = JobMarket()
-
     # 初始化人口
     population = Population(initial_population=config["simulation"]["initial_population"])
 
@@ -121,7 +118,7 @@ async def run_simulation(config: dict[str, Any]) -> None:
     # 初始化政府
     government = Government(
         map=map,
-        job_market=job_market,
+        towns=towns,
         military_strength=total_military,
         initial_budget=initial_population * 10,
         time=time,
@@ -155,7 +152,6 @@ async def run_simulation(config: dict[str, Any]) -> None:
     simulator = Simulator(
         map=map,
         time=time,
-        job_market=job_market,
         government=government,
         government_officials=government_officials,
         rebellion=rebellion,

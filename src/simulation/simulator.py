@@ -20,12 +20,11 @@ from src.environment.towns import Towns
 from src.environment.transport_economy import TransportEconomy
 
 class Simulator:
-    def __init__(self, map, time, job_market, government, government_officials, rebellion, rebels_agents, population, social_network, residents, towns, transport_economy, climate):
+    def __init__(self, map, time, government, government_officials, rebellion, rebels_agents, population, social_network, residents, towns, transport_economy, climate):
         """
         初始化模拟器类
         :param map: 地图对象
         :param time: 时间对象
-        :param job_market: 就业市场对象
         :param government: 政府对象
         :param government_officials: 政府官员列表
         :param rebellion: 叛军对象
@@ -194,7 +193,7 @@ class Simulator:
                 for job, count in job_counts.items():
                     print(f"- {job}: {count}人求职")
             
-            # 打印城镇详细状态---测试用
+            # # 打印城镇详细状态---测试用
             # print("\n各城镇详细状态：")
             # self.towns.print_towns_status()
                 
