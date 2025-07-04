@@ -173,15 +173,12 @@ class HighRankingGovernmentAgent(BaseAgent):
         government_log.info(f"  人物性格：{self.mbti}")
 
 class Government:
-    def __init__(self, map, job_market, military_strength, initial_budget, time, transport_economy):
+    def __init__(self, map, towns, military_strength, initial_budget, time, transport_economy):
         """
         初始化政府类
-        :param map: 地图对象，用于获取地理信息
-        :param job_market: 就业市场对象，用于提供就业机会
-        :param initial_budget: 初始预算
         """
         self.map = map
-        self.job_market = job_market
+        self.towns = towns
         self.budget = initial_budget
         self.military_strength = military_strength
         self.time = time
@@ -196,7 +193,7 @@ class Government:
         # TODO : 提供就业机会/以工代赈，不仅限于运河沿线地区，而是均匀分布在各地区。
         if self.budget >= budget_allocation:
             job_amount = int(budget_allocation / 10)
-            self.job_market.add_random_jobs(job_amount)
+            self.towns.add_jobs_across_towns(job_amount)
             self.budget -= budget_allocation
             print(f"政府提供{job_amount}个工作岗位。")
         else:
@@ -219,7 +216,7 @@ class Government:
         # 提供就业机会
         job_opportunities = int(maintenance_investment / 100)
         if job_opportunities > 0:
-            self.job_market.add_job("运河维护工", job_opportunities)
+            self.towns.add_specific_job(job_opportunities,"沿河","运河维护工", )
         
         # 扣除支出
         self.budget -= maintenance_investment
