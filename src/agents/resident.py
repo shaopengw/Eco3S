@@ -135,7 +135,7 @@ class Resident(BaseAgent):
         # else:
         #     resident_log.info(f"居民 {self.resident_id} 目前无业")
 
-    def update_system_message(self):
+    def update_system_message(self, basic_living_cost=0):
         """
         更新系统提示词，包含居民当前的状态信息
         """
@@ -143,8 +143,22 @@ class Resident(BaseAgent):
         health_condition = health_conditions[self.health_index] if 1 <= self.health_index <= 5 else "未知"
         work_condition = self.job if self.employed else "无业游民"
         mbti_description = mbti_descriptions.get(self.mbti, "未知")
+        
+        economic_status_description = ""
+        if self.income > 0 :
+            if basic_living_cost > self.income:
+                economic_status_description = "生活困难"
+            elif basic_living_cost * 2 > self.income:
+                economic_status_description = "收支勉强平衡"
+            elif basic_living_cost * 4 > self.income:
+                economic_status_description = "小康"
+            else:
+                economic_status_description = "生活富裕"
+        else:
+            economic_status_description = "生活极度困难"
+
         self.system_message = (
-            f"你是一个清代普通{work_condition}，你{mbti_description}，收入为{self.income}两，{health_condition}，目前满意度为{self.satisfaction}。\n"
+            f"你是一个清代普通{work_condition}，你{mbti_description}，收入为{self.income}两，{economic_status_description}，{health_condition}，目前满意度为{self.satisfaction}。"
         )
 
     async def receive_information(self, message_content):
@@ -223,7 +237,7 @@ class Resident(BaseAgent):
         )
 
         try:
-            self.update_system_message()
+            self.update_system_message(basic_living_cost)
             response = await self.generate_llm_response(prompt)
             if not response:
                 return "2", "发生错误，继续当前工作"
