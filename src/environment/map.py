@@ -234,7 +234,7 @@ class Map:
         # 自然衰减和气候影响
         natural_decay_rate = 0.1
         old_navigability = self.navigability
-        self.navigability = max(0, self.navigability * (1 - natural_decay_rate) - climate_impact_factor)
+        self.navigability = max(0, self.navigability * (1 - natural_decay_rate) - climate_impact_factor * 0.5)
 
         # 更新运河网格的状态
         self.river_grid[self.river_grid > 0] = self.navigability
