@@ -84,7 +84,8 @@ class Resident(BaseAgent):
         self.lifespan = 0  # 居民的寿命
         self.towns_manager = None  # Towns实例的引用
         self.group = None  # 所属群组的引用
-        self.mbti = None
+        # self.mbti = None
+        self.personality = None
         self.system_message = None  # 系统提示词
 
         # 由 ResidentGroup 设置agent属性
@@ -142,7 +143,9 @@ class Resident(BaseAgent):
         health_conditions = ["", "健康状况非常差", "亚健康", "一般健康", "健康", "极健康"]
         health_condition = health_conditions[self.health_index] if 1 <= self.health_index <= 5 else "未知"
         work_condition = self.job if self.employed else "无业游民"
-        mbti_description = mbti_descriptions.get(self.mbti, "未知")
+        # mbti_description = mbti_descriptions.get(self.mbti, "未知")
+        satisfaction_levels = ["恨之入骨，誓要推翻朝廷", "怨气深重，痛恨贪官污吏", "勉强过活，不惹事不生非", "尚算安稳，但求温饱太平", "深感皇恩，甘愿效忠朝廷"]
+        satisfaction_description = satisfaction_levels[min(self.satisfaction // 20, 4)]
         
         economic_status_description = ""
         if self.income > 0 :
@@ -158,7 +161,7 @@ class Resident(BaseAgent):
             economic_status_description = "生活极度困难"
 
         self.system_message = (
-            f"你是一个清代普通{work_condition}，你{mbti_description}，收入为{self.income}两，{economic_status_description}，{health_condition}，目前满意度为{self.satisfaction}。"
+            f"你是一个清代普通{work_condition}，你{self.personality}，收入为{self.income}两，{economic_status_description}，{health_condition}，目前对政府{satisfaction_description}。"
         )
 
     async def receive_information(self, message_content):
@@ -215,24 +218,23 @@ class Resident(BaseAgent):
                     f"- {job}: {count}个空缺, 基础收入：{self.job_market.jobs_info[job]['base_salary']}"
                     for job, count in vacant_jobs.items()
                 )
-            else:
-                job_market_info = "当前没有可用的工作岗位。\n"
 
         base_prompt = (
             f"当前税率:为{tax_rate*100:.1f}%，基本生活所需为{basic_living_cost}两\n"
             f"{job_market_info}"
             f"你可以选择以下行动之一：\n"
             f"1. 参加叛乱\n"
-            f"2. {'寻找工作（仅限失业状态可选）' if not self.employed else '继续目前的工作'}\n"
-            f"3. 迁徙至他地（会失去当前工作，需重新谋生）\n"
-            f"请综合考虑收入是否足以维生、就业稳定性、税负情况及健康状况等因素，选择最适合自己的行动。"
+            f"2. {'迁徙至他地（有生存风险，会失去当前工作，需重新谋生）'if self.employed else '迁徙至他地（有生存风险）'}\n"
         )
+        if job_market_info:
+            base_prompt += f"3. {'寻找工作' if not self.employed else '继续目前的工作'}\n"
 
         # 规范输出
         prompt = base_prompt + (
-             "并返回单行的JSON字符串，格式如下，必须严格按照格式填写：\n"
+            "综合考虑收入是否足以维生、就业稳定性、税负情况及健康状况等因素，选择最适合自己的行动。"
+            "返回单行的JSON字符串，格式如下，必须严格按照格式填写：\n"
             + '{"select": 你的选择（1-3）, "reason": 选择原因, "satisfaction_change": 满意度变化值(-20到20)'
-            + (', "desired_job": 期望职业（可选：农民、商人、官员及士兵、其他）, "min_salary": 可接受的最低收入（数字）' if not self.employed else '')
+            + (', "desired_job": 期望职业（如果选择2，可选：农民、商人、官员及士兵、其他）, "min_salary": 可接受的最低收入（数字）' if not self.employed and job_market_info else '')
             + (', "speech": 一句有传播力的态度言论，允许负面、质疑或愤怒情绪。}' if need_speech else '}')
         )
 
@@ -265,7 +267,7 @@ class Resident(BaseAgent):
 
 
             # 执行决策
-            if select == 2 and not self.employed:
+            if select == 3 and not self.employed:
                 # 如果选择找工作，则传入期望职业和最低收入
                 job_request = await self.execute_decision(select, desired_job, min_salary)
                 if isinstance(job_request, dict):
@@ -294,16 +296,18 @@ class Resident(BaseAgent):
         """
         try:
             if select == 1:  # 参加叛乱
-                # 首先检查叛军职位是否已满
-                total_positions, current_employed,_ = self.job_market.get_job_statistics("叛军")
-                
-                if total_positions <= current_employed:
-                    resident_log.info(f"居民 {self.resident_id} 想参加叛乱但叛军已满员")
-                    return False
-                self.job_market.assign_specific_job(self, "叛军")
+                self.job_market.assign_rebel(self)
                 return True
             
-            elif select == 2:  # 寻找工作或继续工作
+            elif select == 2:
+                # 迁移到新城镇
+                self.satisfaction -= 10  # 路途奔波
+                success = await self.migrate_to_new_town(self.map)
+                if not success:
+                    resident_log.info(f"居民 {self.resident_id} 迁移失败，保持原位置")
+                return success
+            
+            elif select == 3:  # 寻找工作或继续工作
                 if self.employed:
                     resident_log.info(f"居民 {self.resident_id} 已有工作：{self.job}，继续目前工作")
                     return True
@@ -316,13 +320,6 @@ class Resident(BaseAgent):
                         "resident_id": self.resident_id 
                     }
                 return True
-            
-            elif select == 3:
-                # 迁移到新城镇
-                success = await self.migrate_to_new_town(self.map)
-                if not success:
-                    resident_log.info(f"居民 {self.resident_id} 迁移失败，保持原位置")
-                return success
             
             else:
                 resident_log.error(f"居民 {self.resident_id} 的选择无效：{select}")
@@ -343,7 +340,8 @@ class Resident(BaseAgent):
         resident_log.info(f"  满意度：{self.satisfaction}")
         resident_log.info(f"  健康状况：{self.health_index}")
         resident_log.info(f"  寿命：{self.lifespan}")
-        resident_log.info(f"  mbti：{self.mbti}")
+        # resident_log.info(f"  mbti：{self.mbti}")
+        resident_log.info(f"  性格：{self.personality}")
 
     def handle_death(self):
         """
