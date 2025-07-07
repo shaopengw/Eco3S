@@ -13,6 +13,7 @@ class JobMarket:
             "农民": {"total": 0, "employed": {}, "base_salary": 10},  # 基础农业劳动者收入
             "商人": {"total": 0, "employed": {}, "base_salary": 30},  # 经商收入较高
             "叛军": {"total": 0, "employed": {}, "base_salary": 12},  # 非正规收入
+            # "叛军": {"total": float('inf'), "employed": {}, "base_salary": 12},  # 非正规收入
             "官员及士兵": {"total": 0, "employed": {}, "base_salary": 25},  # 正规军饷和俸禄
             "运河维护工": {"total": 0, "employed": {}, "base_salary": 15},  # 运河维护收入
             "普通工作者": {"total": 0, "employed": {}, "base_salary": 12}   # 其他普通职业收入
@@ -105,6 +106,25 @@ class JobMarket:
         resident.employ(job_type, salary)  # 更新居民的工作和收入信息
         return True
 
+    def assign_rebel(self, resident):
+        """
+        分配叛军职业给指定居民，不判断空缺，直接增加工作总数和就职人数
+        :param resident: 居民对象
+        """
+        job_type = "叛军"
+        # 如果居民已经在其他职业就业，先移除原有工作
+        for job, info in self.jobs_info.items():
+            if resident.resident_id in info["employed"]:
+                del info["employed"][resident.resident_id]
+                break
+                
+        # 分配新工作，使用实际收入或基础收入
+        salary = self.jobs_info[job_type]["base_salary"]
+        self.jobs_info[job_type]["employed"][resident.resident_id] = salary
+        self.jobs_info[job_type]["total"] += 1 # 增加叛军工作总数
+        resident.employ(job_type, salary)  # 更新居民的工作和收入信息
+        return True
+
     def assign_job(self, resident):
         """
         随机分配工作给居民
@@ -143,7 +163,8 @@ class JobMarket:
         :param total_residents: 总居民数
         :return: 失业率（0到100之间的值）
         """
-        total_employed = sum(len(info["employed"]) for info in self.jobs_info.values())
+        # 排除叛军的就业人数
+        total_employed = sum(len(info["employed"]) for job_type, info in self.jobs_info.items() if job_type != "叛军")
         
         if total_residents == 0:
             return 0.0
