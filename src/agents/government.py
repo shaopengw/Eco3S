@@ -31,23 +31,33 @@ class OrdinaryGovernmentAgent(BaseAgent):
         """
         mbti_description = mbti_descriptions.get(self.mbti, "未知")
         self.system_message = (
-            f"你为清代政府{self.function}官员，负责{self.faction}工作，你{mbti_description}，朝廷正议政务。\n"
+            f"你为清代政府{self.function}官员，{self.faction}，你{mbti_description}，朝廷正议政务。\n"
         )
 
-    async def generate_opinion(self):
+    def get_current_situation_prompt(self, maintain_employment_cost):
+        river_price = self.government.transport_economy.river_price
+        sea_price = self.government.transport_economy.sea_price
+        transport_task = self.government.transport_economy.transport_task
+        return (
+            f"当前国库有银{self.government.get_budget():.2f}两，兵力{self.government.get_military_strength():.2f}，税率: {self.government.get_tax_rate()*100:.1f}%"
+            f"运输任务: {transport_task}吨,河运费(不可修改){river_price:.2f}两/吨，海运费(不可修改){sea_price:.2f}两/吨（海运低廉但岗位少，河运高费却可养人）\n"
+            f"维持目前就业需资金{maintain_employment_cost:.2f}两。若就业预算高于此值，可增加就业；反之，将减少就业。"
+            f"军事拨款需为20的整数倍（可以为0），每20两增加一单位兵力。总支出不应超出{self.government.get_budget():.2f}两"
+        )
+
+    async def generate_opinion(self, salary):
         """
         生成一句关于政治决策的意见
         :return: 生成的意见内容
         """
-        river_price = self.government.transport_economy.river_price
-        sea_price = self.government.transport_economy.sea_price
-        transport_task = self.government.transport_economy.transport_task
+        maintain_employment_cost = salary * 0.5
+
         # 构建提示信息
         prompt = (
-            f"请结合当前形势，立足本职，发言一句尽可能简短的中肯建议，必要时附具体数值佐证，只含就业预算、河运比例（0-1）、维护支出、军事拨款或税率调整。现况："
-            f"国库有银{self.government.get_budget():.2f}两，兵力{self.government.get_military_strength():.2f}，税率: {self.government.get_tax_rate()*100:.1f}%"
-            f"运输任务: {transport_task}吨,河运费(不可修改){river_price:.2f}两/吨，海运费(不可修改){sea_price:.2f}两/吨（海运低廉但岗位少，河运高费却可养人）\n"
+            f"请结合当前形势，立足本职，发言一句尽可能简短的中肯建议，必要时附具体数值佐证，只含就业预算、河运比例（0-1）、维护支出、军事拨款或税率调整。"
+            + self.get_current_situation_prompt(maintain_employment_cost)
         )
+        
         self.update_system_message()
         opinion = await self.generate_llm_response(prompt)
         if opinion:
@@ -62,17 +72,19 @@ class OrdinaryGovernmentAgent(BaseAgent):
             return opinion
         return "无法生成意见"
 
-    async def generate_and_share_opinion(self):
+    async def generate_and_share_opinion(self, salary):
         """
         从共享信息池中获取信息并发表看法，将看法放入共享信息池
         """
+        maintain_employment_cost = salary * 0.5
         # 获取最新讨论内容
         all_discussion = await self.shared_pool.get_all_discussions()
         if all_discussion:
             prompt = (
                 f"众臣各抒己见，所言如下：\n"
                 f"{all_discussion}"
-                f"请立足本职与立场，发言一句尽可能简短的回应，可表支持、反对，或另陈己见，并酌情附上数值佐证，如河运比例、就业预算、维护支出、税率调整等。"
+                f"请结合自身立场与现实条件，发言一句尽可能简短的回应，可支持、反对或另提方案，务必考虑财政可行性。"
+                + self.get_current_situation_prompt(maintain_employment_cost)
             )
 
             try:
@@ -84,11 +96,7 @@ class OrdinaryGovernmentAgent(BaseAgent):
             except Exception as e:
                 government_log.error(f"普通官员 {self.agent_id} 在生成回应时出错：{e}")
         else:
-            # 如果没有讨论内容，生成新话题
             print("没有讨论内容")
-            # opinion = await self.generate_opinion()
-            # await self.shared_pool.add_discussion(opinion)
-            # government_log.info(f"普通官员 {self.agent_id} 发起了新讨论：{opinion}")
 
 class HighRankingGovernmentAgent(BaseAgent):
     def __init__(self, agent_id, government, shared_pool):
@@ -114,7 +122,7 @@ class HighRankingGovernmentAgent(BaseAgent):
             f"你为清代政府最高决策者，你{mbti_description}，朝廷正议政务，你负责根据下属讨论和当前状态做出最终决策。你的目标是维持地方统治稳定，同时完成中央政府下达的航运任务。\n"
         )
 
-    async def make_decision(self, summary):
+    async def make_decision(self, summary, salary):
         """
         根据普通政府官员的讨论作出决策
         :return: 决策结果
@@ -136,15 +144,19 @@ class HighRankingGovernmentAgent(BaseAgent):
         # 计算各项支出的成本基准
         transport_cost_river = river_price * transport_task  # 全部河运成本
         transport_cost_sea = sea_price * transport_task      # 全部海运成本
+        
+        # 获取维持当前就业所需的资金
+        maintain_employment_cost = salary * 0.5
 
         decision_prompt = (
             f"当前政府预算: {current_budget:.2f}两,军事力量: {self.government.get_military_strength():.2f},税率: {self.government.get_tax_rate()*100:.1f}%\n"
-            f"运输任务共{transport_task}吨,河运需{river_price:.2f}两/吨,海运需{sea_price:.2f}两/吨\n，维护运河基本运转需{maintenance_cost_base}两\n"
+            f"运输任务共{transport_task}吨,河运需{river_price:.2f}两/吨,海运需{sea_price:.2f}两/吨，维护运河基本运转需{maintenance_cost_base}两\n"
+            f"维持目前就业需资金: {maintain_employment_cost:.2f}两。若就业预算高于此值，可增加就业；反之，将减少就业。"
             
             f"成本计算：\n"
             f"运输成本 = 河运比例×{transport_cost_river:.2f} + 海运比例×{transport_cost_sea:.2f}\n"
             f"总支出 = 运输成本 + 就业预算 + 维护资金 + 军事拨款\n"
-            f"总支出必须 ≤ {current_budget:.2f}两\n\n"
+            f"总支出必须 ≤ {current_budget:.2f}两。军事拨款需为20的整数倍，每20两增加一点军事力量。"
             
             f"下属讨论：\n{summary}\n\n"
             
@@ -186,18 +198,31 @@ class Government:
         self.residents = {}  # 添加居民引用
         self.transport_economy = transport_economy  # 运输经济模型引用
 
-    def provide_jobs(self,budget_allocation):
+    def update_employment(self,budget_allocation, salary):
         """
-        提供就业机会
+        更新就业情况
         """
-        # TODO : 提供就业机会/以工代赈，不仅限于运河沿线地区，而是均匀分布在各地区。
-        if self.budget >= budget_allocation:
-            job_amount = int(budget_allocation / 10)
-            self.towns.add_jobs_across_towns(job_amount)
-            self.budget -= budget_allocation
-            print(f"政府提供{job_amount}个工作岗位。")
-        else:
+        if self.budget < budget_allocation:
             print("政府预算不足以提供工作。")
+            return
+        # 获取维持当前就业所需的资金
+        maintain_employment_cost = salary * 0.5
+        if budget_allocation > maintain_employment_cost:
+            # 增加就业
+            job_increase_amount = int((budget_allocation - maintain_employment_cost) / 10) # 假设每10两增加1个岗位
+            if job_increase_amount > 0:
+                self.towns.add_jobs_across_towns(job_increase_amount)
+                government_log.info(f"政府执行决策 - 增加 {job_increase_amount} 个工作岗位。")
+        elif budget_allocation < maintain_employment_cost:
+            # 减少就业
+            job_decrease_amount = int((maintain_employment_cost - budget_allocation) / 10) # 假设每10两减少1个岗位
+            if job_decrease_amount > 0:
+                self.towns.remove_jobs_across_towns(job_decrease_amount)
+                government_log.info(f"政府执行决策 - 减少 {job_decrease_amount} 个工作岗位。")
+        else:
+            government_log.info(f"政府执行决策 - 维持现有就业岗位数量不变。")
+        
+        self.budget -= budget_allocation
 
     def maintain_canal(self, maintenance_investment):
         """
@@ -214,14 +239,13 @@ class Government:
         self.map.update_river_condition(maintenance_ratio) 
         
         # 提供就业机会
-        job_opportunities = int(maintenance_investment / 100)
+        job_opportunities = int(maintenance_investment / 15)
         if job_opportunities > 0:
-            self.towns.add_specific_job(job_opportunities,"沿河","运河维护工", )
+            self.towns.add_specific_job(job_opportunities,"canal","运河维护工", )
         
         # 扣除支出
         self.budget -= maintenance_investment
-        
-        print(f"政府维护运河。通航能力：{self.map.get_navigability():.2f}，支出：{maintenance_investment:.2f}两，新增就业岗位：{job_opportunities}个")
+        government_log.info(f"政府执行决策 - 投入{maintenance_investment:.2f}两维护运河，新增就业岗位：{job_opportunities}个")
         return True
 
     def handle_transport_decision(self, transport_ratio):
@@ -242,8 +266,7 @@ class Government:
         
         # 扣除运输成本
         self.budget -= total_cost
-        
-        print(f"政府运输决策。河运比例：{transport_ratio:.2f}，实际支出：{total_cost:.2f}两")
+        government_log.info(f"政府执行决策 - 河运比例：{transport_ratio:.2f}，实际支出：{total_cost:.2f}两")
         return True
 
     def support_military(self, budget_allocation):
@@ -251,12 +274,14 @@ class Government:
         军需拨款
         :param budget_allocation: 分配给军事力量的预算
         """
-        if self.budget >= budget_allocation:
-            self.military_strength += budget_allocation * 0.1  # 假设每投入1单位预算，军事力量增加0.1
+        if self.budget >= budget_allocation and budget_allocation >= 20:
+            job_increase_amount = budget_allocation // 20
+            self.towns.add_jobs_across_towns(job_increase_amount,"官员及士兵")
+            self.military_strength += job_increase_amount
             self.budget -= budget_allocation
-            print(f"政府支持军事力量，军事力量增加了 {budget_allocation * 0.1}。")
+            government_log.info(f"政府执行决策 - 政府军事拨款{budget_allocation}两，军事力量增加了 {budget_allocation * 0.1}。")
         else:
-            print("政府因预算限制未支持军事力量。")
+            government_log.info(f"政府执行决策 - 政府因预算限制未支持军事力量。")
 
     def get_budget(self):
         """
@@ -280,7 +305,7 @@ class Government:
         old_rate = self.tax_rate
         # 限制税率在 0% 到 50% 之间
         self.tax_rate = max(0.0, min(0.5, self.tax_rate + adjustment))
-        print(f"税率从 {old_rate*100:.1f}% 调整到 {self.tax_rate*100:.1f}%")
+        government_log.info(f"政府执行决策 - 税率从 {old_rate*100:.1f}% 调整为 {self.tax_rate*100:.1f}%")
         return self.tax_rate
 
     def get_tax_rate(self):

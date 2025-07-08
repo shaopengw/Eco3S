@@ -144,7 +144,7 @@ class Resident(BaseAgent):
         health_condition = health_conditions[self.health_index] if 1 <= self.health_index <= 5 else "未知"
         work_condition = self.job if self.employed else "无业游民"
         # mbti_description = mbti_descriptions.get(self.mbti, "未知")
-        satisfaction_levels = ["恨之入骨，誓要推翻朝廷", "怨气深重，痛恨贪官污吏", "勉强过活，不惹事不生非", "尚算安稳，但求温饱太平", "深感皇恩，甘愿效忠朝廷"]
+        satisfaction_levels = ["恨之入骨，誓要推翻朝廷", "怨气深重，斥其昏庸无道", "漠然视之，不过问政事", "尚可接受，愿安分守己", "衷心拥戴，誓死效忠"]
         satisfaction_description = satisfaction_levels[min(self.satisfaction // 20, 4)]
         
         economic_status_description = ""

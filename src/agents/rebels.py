@@ -31,7 +31,7 @@ class OrdinaryRebel(BaseAgent):
             f"你是清代叛军的主要头目之一，负责{self.role}工作，你{mbti_description}，叛军正密谋下一步行动。\n"
         )
     
-    async def generate_opinion(self):
+    async def generate_opinion(self, salary):
         """
         生成一句关于叛军行动的意见
         :return: 生成的意见内容
@@ -48,7 +48,7 @@ class OrdinaryRebel(BaseAgent):
             return opinion
         return "无法生成意见"
 
-    async def generate_and_share_opinion(self):
+    async def generate_and_share_opinion(self, salary):
         """
         从共享信息池中获取信息并发表看法，将看法放入共享信息池
         """
@@ -70,7 +70,7 @@ class OrdinaryRebel(BaseAgent):
                 rebellion_log.error(f"普通叛军 {self.agent_id} 在生成回应时出错：{e}")
         else:
             # 如果没有讨论内容，生成新话题
-            opinion = await self.generate_opinion()
+            opinion = await self.generate_opinion(salary)
             await self.shared_pool.add_discussion(opinion)
             rebellion_log.info(f"普通叛军 {self.agent_id} 发起了新讨论：{opinion}")
 

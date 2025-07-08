@@ -13,8 +13,7 @@ class JobMarket:
             "农民": {"total": 0, "employed": {}, "base_salary": 10},  # 基础农业劳动者收入
             "商人": {"total": 0, "employed": {}, "base_salary": 30},  # 经商收入较高
             "叛军": {"total": 0, "employed": {}, "base_salary": 12},  # 非正规收入
-            # "叛军": {"total": float('inf'), "employed": {}, "base_salary": 12},  # 非正规收入
-            "官员及士兵": {"total": 0, "employed": {}, "base_salary": 25},  # 正规军饷和俸禄
+            "官员及士兵": {"total": 0, "employed": {}, "base_salary": 20},  # 正规军饷和俸禄
             "运河维护工": {"total": 0, "employed": {}, "base_salary": 15},  # 运河维护收入
             "普通工作者": {"total": 0, "employed": {}, "base_salary": 12}   # 其他普通职业收入
         }
@@ -283,7 +282,6 @@ class JobMarket:
                 else:
                     print(f"警告: 未找到ID为 {resident_id} 的居民对象，无法解雇。")
 
-
     def get_vacant_jobs(self):
         """
         获取所有空工作岗位的名称和数量
@@ -365,11 +363,19 @@ class JobMarket:
                 other_total += sum(salary for salary in info["employed"].values())
         return other_total
 
-    def add_random_jobs(self, num_jobs):
+    def add_random_jobs(self, num_jobs, specific_job=None):
         """
         随机增加指定数量的工作岗位（除叛军外）
         :param num_jobs: 需要增加的工作岗位数量
         """
+        if specific_job:
+            # 如果指定了具体职业
+            if specific_job not in self.jobs_info or specific_job == "叛军":
+                raise ValueError(f"无效的职业名称: {specific_job}")
+            
+            self.jobs_info[specific_job]["total"] += num_jobs
+            return
+        
         # 获取除叛军外的所有职业类型
         available_jobs = [job for job in self.jobs_info.keys() if job != "叛军"]
         
@@ -392,27 +398,3 @@ class JobMarket:
             for _ in range(remaining_jobs):
                 selected_job = random.choice(selected_jobs)
                 self.jobs_info[selected_job]["total"] += 1
-
-
-    def add_random_jobs(self, num_jobs):
-        """
-        随机增加指定数量的工作岗位（除叛军外）
-        :param num_jobs: 需要增加的工作岗位数量
-        """
-        # 获取除叛军外的所有职业类型
-        available_jobs = [job for job in self.jobs_info.keys() if job != "叛军"]
-        
-        # 计算每个职业平均分配的岗位数
-        jobs_per_profession = num_jobs // len(available_jobs)
-        remaining_jobs = num_jobs % len(available_jobs)
-        
-        # 为每个职业分配基础岗位数
-        for job in available_jobs:
-            self.jobs_info[job]["total"] += jobs_per_profession
-        
-        # 随机分配剩余的岗位
-        if remaining_jobs > 0:
-            selected_jobs = random.sample(available_jobs, remaining_jobs)
-            for job in selected_jobs:
-                self.jobs_info[job]["total"] += 1
-    
