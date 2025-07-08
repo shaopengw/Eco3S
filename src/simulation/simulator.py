@@ -99,7 +99,7 @@ class Simulator:
             # 更新属性变量
             self.gdp = self.calculate_gdp() # 更新GDP
             self.tax_income = self.gdp * self.government.get_tax_rate() # 计算税收收入
-            self.government.budget += self.tax_income  # 增加政府预算
+            self.government.budget = round(self.government.budget + self.tax_income, 2)  
             self.average_satisfaction = self.calculate_average_satisfaction() # 更新平均满意度
             self.population.update_birth_rate(self.average_satisfaction) # 更新出生率
             print(f"GDP：{self.gdp}，税收收入：{self.tax_income}，政府预算：{self.government.budget}")
@@ -116,6 +116,9 @@ class Simulator:
             if self.time.get_current_quarter() == 1:
                 government_decision = None
                 rebellion_decision = None
+                
+                
+                
                 # 收集政府决策
                 government_config = {
                     'agents': self.government_officials,
@@ -178,8 +181,6 @@ class Simulator:
             # 处理所有城镇的求职信息
             if town_job_requests:
                 hiring_results = self.towns.process_town_job_requests(town_job_requests)
-                # 测试用输出
-                print("\n求职处理结果汇总：")
                 for town_name, hired_residents in hiring_results.items():
                     print(f"城镇 {town_name} 目前录用了 {len(hired_residents)} 名居民")
             
@@ -210,9 +211,6 @@ class Simulator:
 
             # 在每年第一季度进行结算更新
             if self.time.get_current_quarter() == 1:
-                # 从政府预算中扣除工资
-                _, other_salary = self.calculate_total_salaries()
-                self.government.budget = max(0, self.government.budget - other_salary)
 
                 # 更新运河价格与状态
                 self.transport_economy.calculate_river_price(self.map.get_navigability())
@@ -301,8 +299,13 @@ class Simulator:
         
         # 如果是叛军决策，获取各城镇叛军统计信息
         towns_stats = None
+        # 计算工资
+        rebel_salary, government_salary = self.calculate_total_salaries()
         if group_type == 'rebellion':
             towns_stats = self.get_rebels_statistics()
+            salary = rebel_salary
+        else:
+            salary = government_salary
         
         # 获取所有普通成员
         ordinary_members = [
@@ -320,7 +323,7 @@ class Simulator:
 
         # 第一轮：所有成员异步发表初始意见
         first_round_tasks = [
-            member.generate_opinion()
+            member.generate_opinion(salary)
             for member in random.sample(ordinary_members, len(ordinary_members))
         ]
         await asyncio.gather(*first_round_tasks)
@@ -329,7 +332,7 @@ class Simulator:
         for round_num in range(2, max_rounds + 1):
             # print(f"第{round_num}轮决策")
             round_tasks = [
-                member.generate_and_share_opinion()
+                member.generate_and_share_opinion(salary)
                 for member in random.sample(ordinary_members, len(ordinary_members))
             ]
             await asyncio.gather(*round_tasks)
@@ -351,7 +354,7 @@ class Simulator:
                 if group_type == 'rebellion':
                     decision = await leaders[0].make_decision(discussion_summary, towns_stats)
                 else:
-                    decision = await leaders[0].make_decision(discussion_summary)
+                    decision = await leaders[0].make_decision(discussion_summary, salary)
                 return decision
 
         return None
@@ -371,6 +374,7 @@ class Simulator:
         :param group_type: 群体类型，'government' 或 'rebellion'
         :return: 是否执行成功
         """
+        _, salary = self.calculate_total_salaries()
         def extract_json_from_text(text):
             """从文本中提取JSON内容"""
             import re
@@ -428,7 +432,7 @@ class Simulator:
                             transport_ratio=decision_data["transport_ratio"]
                         )
                     elif key == "increase_employment":
-                        self.government.provide_jobs(budget_allocation=decision_data["increase_employment"])
+                        self.government.update_employment(budget_allocation=decision_data["increase_employment"],salary = salary)
                     elif key == "military_support":
                         self.government.support_military(budget_allocation=decision_data["military_support"])
                     elif key == "tax_adjustment":

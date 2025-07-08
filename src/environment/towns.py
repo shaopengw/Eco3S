@@ -2,6 +2,7 @@ from collections import defaultdict
 from typing import Dict
 from src.agents.resident import ResidentGroup
 from src.environment.job_market import JobMarket
+import random
 
 class Towns:
     def __init__(self, map, initial_population=10):
@@ -231,10 +232,11 @@ class Towns:
             else:
                 print(f"警告：城镇 {town_name} 没有就业市场")
 
-    def add_jobs_across_towns(self, add_job_amount):
+    def add_jobs_across_towns(self, add_job_amount,specific_job=None):
         """
         将要增加的岗位均匀分布给所有城镇
         :param add_job_amount: 需要增加的总岗位数量
+        :param specific_job: 指定的工作类型（可选）
         """
         # 获取所有城镇数量
         total_towns = len(self.towns)
@@ -259,7 +261,7 @@ class Towns:
                     current_town_jobs = 1
                 else:
                     current_town_jobs = jobs_per_town + (remaining_jobs if i == 0 else 0)
-                town_data['job_market'].add_random_jobs(current_town_jobs)
+                town_data['job_market'].add_random_jobs(current_town_jobs, specific_job)
             else:
                 print(f"警告: 城镇 {town_name} 没有就业市场")
 
@@ -289,7 +291,7 @@ class Towns:
         """
         # 获取所有指定类型的城镇
         specific_towns = [(town_name, town_data) for town_name, town_data in self.towns.items() if town_data['info']['type'] == town_type]
-        
+
         # 获取指定类型的城镇数量
         total_specific_towns = len(specific_towns)
         if total_specific_towns == 0:

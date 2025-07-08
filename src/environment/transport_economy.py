@@ -10,7 +10,7 @@ class TransportEconomy:
         self.transport_task = transport_task  # 年度运输任务量
         self.maintenance_cost_base = maintenance_cost_base  # 基础维护成本
         self.river_price = transport_cost
-        self.sea_price = self.transport_cost / 5  # 初始化海运价格
+        self.sea_price = round((self.transport_cost / 5),2)  # 初始化海运价格
 
     def calculate_river_price(self, navigability):
         """
@@ -19,7 +19,7 @@ class TransportEconomy:
         :return: 河运价格
         """
         # 通航值越低价格越高，最低为基础价格
-        river_price = self.transport_cost * (2 - navigability)
+        river_price = round(self.transport_cost * (2 - navigability),2)
         self.river_price = max(river_price, self.transport_cost) # 更新实例变量
         return self.river_price
 
@@ -30,7 +30,7 @@ class TransportEconomy:
         :return: 维护成本
         """
         # 通航能力越低，维护成本越高
-        return self.maintenance_cost_base * (2 - navigability)
+        return round(self.maintenance_cost_base * (2 - navigability),2)
 
     def calculate_total_transport_cost(self, river_ratio):
         """

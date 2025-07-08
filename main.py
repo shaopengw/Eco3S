@@ -120,7 +120,7 @@ async def run_simulation(config: dict[str, Any]) -> None:
         map=map,
         towns=towns,
         military_strength=total_military,
-        initial_budget=initial_population * 10,
+        initial_budget=initial_population * 15,
         time=time,
         transport_economy=transport_economy,
     )
