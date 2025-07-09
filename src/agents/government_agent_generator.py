@@ -55,7 +55,7 @@ async def generate_government_agents(
             raise ValueError(f"未知的官员类型：{official_data['rank']}")
 
         # 设置官员的初始属性
-        official.mbti = official_data["mbti"]  # 人物性格
+        official.personality = official_data["personality"]  # 人物性格
         # 派别属性
         if official_data["rank"] == "普通官员":
             official.function = official_data["function"]  # 职能

@@ -27,19 +27,10 @@ health_indices = [1, 2, 3, 4, 5]
 # 收入范围（以清代的普通民众收入假设为基础）
 income_range = [0, 5, 10, 20, 50]  # 假设收入等级：0, 5, 10, 20, 50（两白银）
 
-# # MBT及其分布比例
-# p_mbti = [
-#     0.12625, 0.11625, 0.02125, 0.03125, 0.05125, 0.07125, 0.04625, 0.04125,
-#     0.04625, 0.06625, 0.07125, 0.03625, 0.10125, 0.11125, 0.03125, 0.03125
-# ]
-# mbti_types = [
-#     "ISTJ", "ISFJ", "INFJ", "INTJ", "ISTP", "ISFP", "INFP", "INTP", "ESTP",
-#     "ESFP", "ENFP", "ENTP", "ESTJ", "ESFJ", "ENFJ", "ENTJ"
-# ]
 # 性格词语
 personality_words = []
 
-filepath='src/generator/personality_words.txt'
+filepath='src/generator/resident_personality_words.txt'
 if not os.path.exists(filepath):
     print(f"警告: 性格词语文件 '{filepath}' 不存在。请确保文件存在且每行包含一个词语。")
 with open(filepath, 'r', encoding='utf-8') as f:
@@ -91,10 +82,6 @@ def get_random_health_index():
 def get_random_income():
     return random.choice(income_range)
 
-# # 随机生成性格特征
-# def get_random_mbti():
-#     return random.choices(mbti_types, p_mbti)[0]
-
 # 随机获取两个性格词语
 def get_random_personality():
     if len(personality_words) < 2:
@@ -114,7 +101,6 @@ def generate_resident_profile():
             satisfaction = get_random_satisfaction()
             health_index = get_random_health_index()
             income = get_random_income()
-            # mbti = get_random_mbti()
             personality = get_random_personality()
 
             profile = {
@@ -124,14 +110,10 @@ def generate_resident_profile():
                 "satisfaction": satisfaction,
                 "health_index": health_index,
                 "income": income,
-                # "mbti": mbti,
                 "personality": personality,
             }
-            # print(f"Generated profile: {profile}")
             return profile
-            
-        # except Exception as e:
-        #     print(f"Profile generation failed: {e}. Retrying...")
+
         except Exception as e:
             failure_count += 1  # 失败次数加一
             print(f"Profile generation failed: {e}. Retrying...")

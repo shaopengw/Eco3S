@@ -56,7 +56,7 @@ async def generate_rebels_agents(
             raise ValueError(f"未知的叛军类型：{rebel_data['rank']}")
 
         # 设置叛军的初始属性
-        rebel.mbti = rebel_data["mbti"]  # 人物性格
+        rebel.personality = rebel_data["personality"]  # 人物性格
         if rebel_data["rank"] == "普通叛军":
             # 普通叛军的初始属性
             rebel.role = rebel_data["role"]  # 角色

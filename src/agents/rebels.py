@@ -19,16 +19,15 @@ class OrdinaryRebel(BaseAgent):
         self.shared_pool = shared_pool
         self.time = 0  # 当前时间（年）
         self.role = None  # 角色
-        self.mbti = None  # 人物性格
+        self.personality = None  # 人物性格
         self.system_message = None  # 系统提示词
     
     def update_system_message(self):
         """
         更新系统提示词，包含居民当前的状态信息
         """
-        mbti_description = mbti_descriptions.get(self.mbti, "未知")
         self.system_message = (
-            f"你是清代叛军的主要头目之一，负责{self.role}工作，你{mbti_description}，叛军正密谋下一步行动。\n"
+            f"你是清代叛军的主要头目之一，负责{self.role}工作，你{self.personality}，叛军正密谋下一步行动。\n"
         )
     
     async def generate_opinion(self, salary):
@@ -83,7 +82,7 @@ class RebelLeader(BaseAgent):
 
         # 初始化叛军头子属性
         self.role = None  # 角色
-        self.mbti = None  # 人物性格
+        self.personality = None  # 人物性格
         # 系统消息
         self.system_message = None
     
@@ -91,9 +90,8 @@ class RebelLeader(BaseAgent):
         """
         更新系统提示词，包含居民当前的状态信息
         """
-        mbti_description = mbti_descriptions.get(self.mbti, "未知")
         self.system_message = (
-            f"你是清代叛军组织的首领，{mbti_description}，你的目标是确保叛军组织的生存和壮大（拥有更多的成员和金钱）。叛军正密谋下一步行动。\n"
+            f"你是清代叛军组织的首领，你{self.personality}，你的目标是确保叛军组织的生存和壮大（拥有更多的成员和金钱）。叛军正密谋下一步行动。\n"
         )
 
     async def make_decision(self, summary, towns_stats):
@@ -148,7 +146,7 @@ class RebelLeader(BaseAgent):
         rebellion_log.info(f"叛军头子 {self.agent_id} 的状态：")
         rebellion_log.info(f"  当前时间：{self.time}年")
         rebellion_log.info(f"  角色：{self.role}")
-        rebellion_log.info(f"  人物性格：{self.mbti}")
+        rebellion_log.info(f"  人物性格：{self.personality}")
 
 class InformationOfficer(BaseAgent):
     def __init__(self, agent_id, rebellion, shared_pool):

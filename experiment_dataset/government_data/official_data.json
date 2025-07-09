@@ -1,24 +1,30 @@
 [
   {
     "rank": "高级官员",
-    "mbti": "ENTP"
+    "personality": "刻薄、势利"
   },
   {
     "rank": "普通官员",
-    "mbti": "INFP",
+    "personality": "世故、刻薄",
     "function": "漕运",
     "faction": "海运派"
   },
   {
     "rank": "普通官员",
-    "mbti": "ENFP",
-    "function": "漕运",
-    "faction": "河运派"
+    "personality": "圆滑、忠厚",
+    "function": "行政",
+    "faction": "海运派"
   },
   {
     "rank": "普通官员",
-    "mbti": "ISTJ",
+    "personality": "狭隘、迷信",
     "function": "经济管理",
     "faction": "海运派"
+  },
+  {
+    "rank": "普通官员",
+    "personality": "勤恳、迷信",
+    "function": "军事",
+    "faction": "河运派"
   }
 ]
