@@ -1,16 +1,26 @@
 [
   {
+    "rank": "普通叛军",
+    "personality": "迷信、迂腐",
+    "role": "军事"
+  },
+  {
     "rank": "叛军头子",
-    "mbti": "ESTP"
+    "personality": "计较、迷信"
   },
   {
     "rank": "普通叛军",
-    "mbti": "INFP",
-    "role": "侦察兵"
+    "personality": "世故、狭隘",
+    "role": "情报"
   },
   {
     "rank": "普通叛军",
-    "mbti": "ISTP",
-    "role": "指挥官"
+    "personality": "狭隘、虚荣",
+    "role": "后勤"
+  },
+  {
+    "rank": "普通叛军",
+    "personality": "奸诈、世故",
+    "role": "行政"
   }
 ]

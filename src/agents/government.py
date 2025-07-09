@@ -22,16 +22,15 @@ class OrdinaryGovernmentAgent(BaseAgent):
         self.map = government.map
         self.function = None
         self.faction = None
-        self.mbti = None
+        self.personality = None
         self.system_message = None
 
     def update_system_message(self):
         """
         更新系统提示词，包含居民当前的状态信息
         """
-        mbti_description = mbti_descriptions.get(self.mbti, "未知")
         self.system_message = (
-            f"你为清代政府{self.function}官员，{self.faction}，你{mbti_description}，朝廷正议政务。\n"
+            f"你为清代政府{self.function}官员，{self.faction}，你{self.personality}，朝廷正议政务。\n"
         )
 
     def get_current_situation_prompt(self, maintain_employment_cost):
@@ -111,15 +110,14 @@ class HighRankingGovernmentAgent(BaseAgent):
         self.time = 0  # 当前时间（年）
         self.map = government.map
         self.system_message = None
-        self.mbti = None  # 人物性格
+        self.personality = None  # 人物性格
     
     def update_system_message(self):
         """
         更新系统提示词，包含居民当前的状态信息
         """
-        mbti_description = mbti_descriptions.get(self.mbti, "未知")
         self.system_message = (
-            f"你为清代政府最高决策者，你{mbti_description}，朝廷正议政务，你负责根据下属讨论和当前状态做出最终决策。你的目标是维持地方统治稳定，同时完成中央政府下达的航运任务。\n"
+            f"你为清代政府最高决策者，你{self.personality}，朝廷正议政务，你负责根据下属讨论和当前状态做出最终决策。你的目标是维持地方统治稳定，同时完成中央政府下达的航运任务。\n"
         )
 
     async def make_decision(self, summary, salary):
@@ -182,7 +180,7 @@ class HighRankingGovernmentAgent(BaseAgent):
         """
         government_log.info(f"高级政府官员 {self.agent_id} 的状态：")
         government_log.info(f"  当前时间：{self.time}年")
-        government_log.info(f"  人物性格：{self.mbti}")
+        government_log.info(f"  人物性格：{self.personality}")
 
 class Government:
     def __init__(self, map, towns, military_strength, initial_budget, time, transport_economy):

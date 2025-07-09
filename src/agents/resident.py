@@ -84,7 +84,6 @@ class Resident(BaseAgent):
         self.lifespan = 0  # 居民的寿命
         self.towns_manager = None  # Towns实例的引用
         self.group = None  # 所属群组的引用
-        # self.mbti = None
         self.personality = None
         self.system_message = None  # 系统提示词
 
@@ -143,7 +142,6 @@ class Resident(BaseAgent):
         health_conditions = ["", "健康状况非常差", "亚健康", "一般健康", "健康", "极健康"]
         health_condition = health_conditions[self.health_index] if 1 <= self.health_index <= 5 else "未知"
         work_condition = self.job if self.employed else "无业游民"
-        # mbti_description = mbti_descriptions.get(self.mbti, "未知")
         satisfaction_levels = ["恨之入骨，誓要推翻朝廷", "怨气深重，斥其昏庸无道", "漠然视之，不过问政事", "尚可接受，愿安分守己", "衷心拥戴，誓死效忠"]
         satisfaction_description = satisfaction_levels[min(self.satisfaction // 20, 4)]
         
@@ -340,7 +338,6 @@ class Resident(BaseAgent):
         resident_log.info(f"  满意度：{self.satisfaction}")
         resident_log.info(f"  健康状况：{self.health_index}")
         resident_log.info(f"  寿命：{self.lifespan}")
-        # resident_log.info(f"  mbti：{self.mbti}")
         resident_log.info(f"  性格：{self.personality}")
 
     def handle_death(self):
