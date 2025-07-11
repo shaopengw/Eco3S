@@ -30,7 +30,7 @@ class OrdinaryGovernmentAgent(BaseAgent):
         更新系统提示词，包含居民当前的状态信息
         """
         self.system_message = (
-            f"你为清代政府{self.function}官员，{self.faction}，你{self.personality}，朝廷正议政务。\n"
+            f"你为清代政府{self.function}官员，{self.faction}，你{self.personality}，朝廷正议政务。政府的目标是维持地方统治稳定，同时完成中央政府下达的航运任务。\n"
         )
 
     def get_current_situation_prompt(self, maintain_employment_cost):
@@ -40,7 +40,7 @@ class OrdinaryGovernmentAgent(BaseAgent):
         return (
             f"当前国库有银{self.government.get_budget():.2f}两，兵力{self.government.get_military_strength():.2f}，税率: {self.government.get_tax_rate()*100:.1f}%"
             f"运输任务: {transport_task}吨,河运费(不可修改){river_price:.2f}两/吨，海运费(不可修改){sea_price:.2f}两/吨（海运低廉但岗位少，河运高费却可养人）\n"
-            f"维持目前就业需资金{maintain_employment_cost:.2f}两。若就业预算高于此值，可增加就业；反之，将减少就业。"
+            f"维持目前就业需资金{maintain_employment_cost:.2f}两。若公共预算高于此值，可增加就业；反之，将减少就业。"
             f"军事拨款需为20的整数倍（可以为0），每20两增加一单位兵力。总支出不应超出{self.government.get_budget():.2f}两"
         )
 
@@ -53,7 +53,7 @@ class OrdinaryGovernmentAgent(BaseAgent):
 
         # 构建提示信息
         prompt = (
-            f"请结合当前形势，立足本职，发言一句尽可能简短的中肯建议，必要时附具体数值佐证，只含就业预算、河运比例（0-1）、维护支出、军事拨款或税率调整。"
+            f"请结合当前形势，立足本职，发言一句尽可能简短的中肯建议，必要时附具体数值佐证，只含公共预算、河运比例（0-1）、维护支出、军事拨款或税率调整。"
             + self.get_current_situation_prompt(maintain_employment_cost)
         )
         
@@ -149,17 +149,17 @@ class HighRankingGovernmentAgent(BaseAgent):
         decision_prompt = (
             f"当前政府预算: {current_budget:.2f}两,军事力量: {self.government.get_military_strength():.2f},税率: {self.government.get_tax_rate()*100:.1f}%\n"
             f"运输任务共{transport_task}吨,河运需{river_price:.2f}两/吨,海运需{sea_price:.2f}两/吨，维护运河基本运转需{maintenance_cost_base}两\n"
-            f"维持目前就业需资金: {maintain_employment_cost:.2f}两。若就业预算高于此值，可增加就业；反之，将减少就业。"
+            f"维持目前就业需资金: {maintain_employment_cost:.2f}两。若公共预算高于此值，可增加就业；反之，将减少就业。"
             
             f"成本计算：\n"
             f"运输成本 = 河运比例×{transport_cost_river:.2f} + 海运比例×{transport_cost_sea:.2f}\n"
-            f"总支出 = 运输成本 + 就业预算 + 维护资金 + 军事拨款\n"
+            f"总支出 = 运输成本 + 公共预算 + 维护资金 + 军事拨款\n"
             f"总支出必须 ≤ {current_budget:.2f}两。军事拨款需为20的整数倍，每20两增加一点军事力量。"
             
             f"下属讨论：\n{summary}\n\n"
             
             f"请做出合理决策，确保总支出不超预算。输出JSON，无需说明理由：\n"
-            f'{{"increase_employment": 就业预算（整数）, "transport_ratio": 河运比例（0-1）, "maintenance_investment": 维护资金（整数）, "military_support": 军事拨款（整数）, "tax_adjustment": 税率调整（-0.1到0.1）}}\n'
+            f'{{"public_budget": 公共预算（整数）, "transport_ratio": 河运比例（0-1）, "maintenance_investment": 维护资金（整数）, "military_support": 军事拨款（整数）, "tax_adjustment": 税率调整（-0.1到0.1）}}\n'
         )
         try:
             self.update_system_message()
@@ -196,10 +196,8 @@ class Government:
         self.residents = {}  # 添加居民引用
         self.transport_economy = transport_economy  # 运输经济模型引用
 
-    def update_employment(self,budget_allocation, salary):
-        """
-        更新就业情况
-        """
+    def handle_public_budget(self,budget_allocation, salary):
+        """处理公共预算决策"""
         if self.budget < budget_allocation:
             print("政府预算不足以提供工作。")
             return

@@ -117,9 +117,12 @@ class Resident(BaseAgent):
             self.income = self.job_market.jobs_info[job]["salary"]
         else:
             self.income = 0
-            
-        self.satisfaction += 10  # 就业增加满意度
-        resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 找到了工作：{job}，收入：{self.income}。")
+        if self.job == "叛军":
+            self.satisfaction -= 50  # 叛军降低满意度
+            resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 加入了叛军。")
+        else:
+            self.satisfaction += 10  # 就业增加满意度
+            resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 找到了工作：{job}，收入：{self.income}。")
     
     def unemploy(self):
         """
@@ -174,7 +177,7 @@ class Resident(BaseAgent):
             prompt = (
                 # f"当前税率:为{tax_rate*100:.1f}%，基本生活所需为{basic_living_cost}两\n"
                 f"你听说了一条信息：{message_content}\n"
-                f"请用不超过20字回应，表达你的真实感受与想法，让这句话值得传开。"
+                f"请表达你的真实感受与想法，并用尽可能简短的一句话讲给更多人。"
             )
 
             self.update_system_message()
@@ -196,7 +199,7 @@ class Resident(BaseAgent):
 
         return None
 
-    async def decide_action_by_llm(self, tax_rate, basic_living_cost, population):
+    async def decide_action_by_llm(self, tax_rate, basic_living_cost):
         """
         通过LLM决定居民的行动，并随机生成对政府的态度发言。同时更新满意度。
         """
@@ -204,7 +207,7 @@ class Resident(BaseAgent):
         speech_prob = 0.0
         social_network = self.get_social_network()
         if social_network:
-            speech_prob = social_network.calculate_speech_probability(self.resident_id, population)
+            speech_prob = social_network.calculate_speech_probability(self.resident_id)
         need_speech = random.random() < speech_prob
 
         # 如果是未就业居民，获取当前城镇的空缺岗位信息
@@ -232,7 +235,7 @@ class Resident(BaseAgent):
             "综合考虑收入是否足以维生、就业稳定性、税负情况及健康状况等因素，选择最适合自己的行动。"
             "返回单行的JSON字符串，格式如下，必须严格按照格式填写：\n"
             + '{"select": 你的选择（1-3）, "reason": 选择原因, "satisfaction_change": 满意度变化值(-20到20)'
-            + (', "desired_job": 期望职业（如果选择2，可选：农民、商人、官员及士兵、其他）, "min_salary": 可接受的最低收入（数字）' if not self.employed and job_market_info else '')
+            + (', "desired_job": 期望职业（如果选择2，可选：农民、商人、官员及士兵、运河维护工、普通工作者）, "min_salary": 可接受的最低收入（数字）' if not self.employed and job_market_info else '')
             + (', "speech": 一句有传播力的态度言论，允许负面、质疑或愤怒情绪。}' if need_speech else '}')
         )
 
@@ -326,6 +329,35 @@ class Resident(BaseAgent):
         except Exception as e:
             resident_log.error(f"居民 {self.resident_id} 执行决策时出错：{e}")
             return False
+
+    async def generate_provocative_opinion(self, probability):
+        """
+        处理居民是叛军时的特殊逻辑，生成煽动性言论
+        :param probability: 发言概率
+        :return: 生成的言论
+        """
+        # 根据概率决定是否发表煽动性言论
+        if random.random() < probability:
+            # 构建煽动性提示信息
+            prompt = (
+                f"目前叛军发放任务，需要你发言一句尽可能简短的煽动性的言论，放大民众对高税收或失业的不满。"
+            )
+            
+            self.update_system_message()
+            opinion = await self.generate_llm_response(prompt)
+            if opinion:
+                await self.memory.write_record(
+                    role_name="叛军",
+                    content=f"我的言论：{opinion}",
+                    is_user=False,
+                    store_in_shared=False  # 不存入共享记忆
+                )
+                resident_log.info(f"叛军 {self.agent_id} 发表煽动性言论：{opinion}")
+                # 随机选择一种关系类型
+                relation_types = ["friend", "colleague", "family", "hometown"]
+                selected_type = random.choice(relation_types)
+                return opinion,selected_type
+        return "未发表煽动性言论"
 
     def print_resident_status(self):
         """
