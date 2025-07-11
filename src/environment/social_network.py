@@ -544,7 +544,7 @@ class SocialNetwork:
             #     family_group_id = f"family_{family_id}"
             #     self.add_group(family_group_id, [resident_id])
 
-    def calculate_speech_probability(self, node_id: int, population: int) -> float:
+    def calculate_speech_probability(self, node_id) -> float:
         """
         计算节点的发言概率
         :param node_id: 节点ID
@@ -555,10 +555,6 @@ class SocialNetwork:
             degree = self.get_node_degree(node_id)
             max_degree = self.get_max_degree()
             normalized_degree = degree / max_degree
-            # print(f"节点 {node_id} 的度发言概率为{degree}/{max_degree}={normalized_degree}")
-            
-            # speech_probability = 1 / (1 + math.exp(-10 * (normalized_degree - 0.5)))
-            # print(f"节点 {node_id} 的度发言概率为{degree}/{max_degree}={normalized_degree}，经过归一化后为 {speech_probability}")
             return normalized_degree
         except ValueError:
             return 0.0

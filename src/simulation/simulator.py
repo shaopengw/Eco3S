@@ -51,8 +51,7 @@ class Simulator:
         self.basic_living_cost = 10  # 每年基本生活所需值（单位：两）
         self.average_satisfaction = None  # 平均满意度（0-1）
         self.gdp = 0  # 国内生产总值（单位：两）
-        # self.transport_cost = population.get_population() /10  # 基础运输成本-与人口数相关
-        # self.transport_task = 50 # 政府运输任务（单位：吨）
+        self.propaganda_prob = 0.1  # 叛军宣传概率（0-1）
         self.rebellion_records = 0
         self.results = {
             "years": [],
@@ -97,9 +96,14 @@ class Simulator:
             start_year = self.time.get_start_time()
             print(f"天气影响因子：{self.climate.get_current_impact(current_year,start_year)}")
             # 更新属性变量
+            # 政府日常收入
             self.gdp = self.calculate_gdp() # 更新GDP
             self.tax_income = self.gdp * self.government.get_tax_rate() # 计算税收收入
-            self.government.budget = round(self.government.budget + self.tax_income, 2)  
+            self.government.budget = round(self.government.budget + self.tax_income, 2) 
+            # 叛军日常收入
+            self.rebellion_income = self.rebellion.get_strength() * 6 # 假设叛军收入为6两/人
+            self.government.budget = round(self.government.budget + self.rebellion_income, 2)
+
             self.average_satisfaction = self.calculate_average_satisfaction() # 更新平均满意度
             self.population.update_birth_rate(self.average_satisfaction) # 更新出生率
             print(f"GDP：{self.gdp}，税收收入：{self.tax_income}，政府预算：{self.government.budget}")
@@ -134,7 +138,7 @@ class Simulator:
                     'leader_type': RebelLeader,
                 }
                 rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
-                # rebellion_decision = '{"stage_rebellion": 2,"recruit_members": 0,"maintain_status": 0,"target_town": "杭州"}'
+                # rebellion_decision = '{"propaganda_budget": 0,"stage_rebellion": 1,"target_town": "杭州"}'
                 # rebellion_summary = '一致决定发动叛乱'
                 # 统一执行决策
                 if government_decision:
@@ -150,8 +154,12 @@ class Simulator:
             for resident_name in list(self.residents.keys()):
                 resident = self.residents[resident_name]
                 tax_rate = self.government.get_tax_rate()
-                # 传入社会状态参数
-                tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost, self.population.get_population()))  # 基于LLM的决策--测试时建议暂时注释
+                # 基于LLM的决策--测试时建议暂时注释
+                if resident.job == "叛军":
+                    tasks.append(resident.generate_provocative_opinion(self.propaganda_prob))
+                else:
+                    tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost))
+                    # print(f"居民 {resident_name} 决策")
 
                 # 更新居民寿命（次/年）
                 if self.time.get_current_quarter() == 1:
@@ -177,6 +185,14 @@ class Simulator:
                                 # 处理发言传播
                                 await self.social_network.spread_speech_in_network(resident_id, speech, relation_type)
                                 break
+                    elif isinstance(result, tuple) and len(result) == 2:
+                        # 叛军发言，传播到社会网络
+                        speech, relation_type = result
+                        for resident_id, resident in self.residents.items():
+                            if resident.resident_id == resident_name:  # 使用resident_name作为ID匹配
+                                # 处理发言传播
+                                await self.social_network.spread_speech_in_network(resident_id, speech, relation_type)
+                                break
             
             # 处理所有城镇的求职信息
             if town_job_requests:
@@ -194,7 +210,7 @@ class Simulator:
                 for job, count in job_counts.items():
                     print(f"- {job}: {count}人求职")
             
-            # # 打印城镇详细状态---测试用
+            # 打印城镇详细状态---测试用
             # print("\n各城镇详细状态：")
             # self.towns.print_towns_status()
                 
@@ -296,16 +312,15 @@ class Simulator:
         :return: 决策结果
         """
         print(f"开始收集 {group_type} 的决策")
-        
-        # 如果是叛军决策，获取各城镇叛军统计信息
-        towns_stats = None
+
         # 计算工资
-        rebel_salary, government_salary = self.calculate_total_salaries()
+        _, government_salary = self.calculate_total_salaries()
         if group_type == 'rebellion':
-            towns_stats = self.get_rebels_statistics()
-            salary = rebel_salary
+            # 如果是叛军决策，获取各城镇叛军统计信息
+            group_stats = self.get_rebels_statistics()
+            group_param = group_stats
         else:
-            salary = government_salary
+            group_param = government_salary
         
         # 获取所有普通成员
         ordinary_members = [
@@ -323,16 +338,16 @@ class Simulator:
 
         # 第一轮：所有成员异步发表初始意见
         first_round_tasks = [
-            member.generate_opinion(salary)
+            member.generate_opinion(group_param)
             for member in random.sample(ordinary_members, len(ordinary_members))
         ]
         await asyncio.gather(*first_round_tasks)
 
         # 后续轮次：基于之前的讨论内容发表见解
         for round_num in range(2, max_rounds + 1):
-            # print(f"第{round_num}轮决策")
+            print(f"第{round_num}轮决策")
             round_tasks = [
-                member.generate_and_share_opinion(salary)
+                member.generate_and_share_opinion(group_param)
                 for member in random.sample(ordinary_members, len(ordinary_members))
             ]
             await asyncio.gather(*round_tasks)
@@ -351,10 +366,7 @@ class Simulator:
         if info_officers and leaders and shared_pool.is_ended():
             discussion_summary = await info_officers[0].summarize_discussions()
             if discussion_summary:
-                if group_type == 'rebellion':
-                    decision = await leaders[0].make_decision(discussion_summary, towns_stats)
-                else:
-                    decision = await leaders[0].make_decision(discussion_summary, salary)
+                decision = await leaders[0].make_decision(discussion_summary, group_param)
                 return decision
 
         return None
@@ -431,8 +443,8 @@ class Simulator:
                         self.government.handle_transport_decision(
                             transport_ratio=decision_data["transport_ratio"]
                         )
-                    elif key == "increase_employment":
-                        self.government.update_employment(budget_allocation=decision_data["increase_employment"],salary = salary)
+                    elif key == "public_budget":
+                        self.government.handle_public_budget(budget_allocation=decision_data["public_budget"],salary = salary)
                     elif key == "military_support":
                         self.government.support_military(budget_allocation=decision_data["military_support"])
                     elif key == "tax_adjustment":
@@ -440,27 +452,20 @@ class Simulator:
 
             # 叛军决策处理
             elif group_type == "rebellion":
-                # 获取决策键并随机打乱顺序
-                rebellion_decision_keys = list(decision_data.keys())
-                random.shuffle(rebellion_decision_keys)
-
-                # 按随机顺序处理叛军决策
-                for key in rebellion_decision_keys:
-                    if key == "stage_rebellion":
-                        strength = decision_data["stage_rebellion"]
-                        target = decision_data.get('target_town', None)
-                        if target:
-                            self.handle_rebellion(strength_investment=strength, target_town=target)
-                    elif key == "recruit_members":
-                        self.rebellion.recruit_new_members(resource_investment=decision_data["recruit_members"])
-                    elif key == "maintain_status" and decision_data["maintain_status"] == 1:
-                        self.rebellion.maintain_status()
+                if decision_data["propaganda_budget"] > 0:
+                    speech_count = decision_data["propaganda_budget"] / 10 # 每10两多一名叛军发言
+                    self.calculate_propaganda_prob(speech_count)
+                if decision_data["stage_rebellion"] >0:
+                    strength = decision_data["stage_rebellion"]
+                    target = decision_data.get('target_town', None)
+                    if target:
+                        self.handle_rebellion(strength_investment=strength, target_town=target)
             
             # 检查是否有未知动作
             for action in decision_data:
-                if action not in ["increase_employment", "transport_ratio", "maintenance_investment", 
+                if action not in ["public_budget", "transport_ratio", "maintenance_investment", 
                                 "military_support", "tax_adjustment", "stage_rebellion", 
-                                "recruit_members", "maintain_status", "target_town"]:
+                                "propaganda_budget", "target_town"]:
                     print(f"未知的决策动作：{action}")
                     success = False
 
@@ -593,99 +598,110 @@ class Simulator:
         gdp = total_income
         return gdp
 
-
     def handle_rebellion(self, strength_investment, target_town=None):
         """
-        处理叛军袭击事件
+        处理叛军叛乱事件（基于非线性优势损耗模型+随机扰动+极端优势保护）
         :param strength_investment: 叛军投入的力量
         :param target_town: 目标城镇名称
-        :return: 是否执行成功
+        :return: (是否成功, 政府军损耗, 叛军损耗)
         """
-        # 叛军发动袭击
-        if strength_investment <= 0:
-            return False
-        if self.rebellion.strength < strength_investment:
-            print("叛军力量不足以发动叛乱。")
-            return False
+        # 参数配置
+        BASE_LOSS_RATE = 0.1      # 基准损耗率c
+        DECAY_FACTOR = 0.7        # 衰减系数d
+        MAX_RATIO = 5             # 极端优势阈值α_max
+        MIN_LOSS_RATE = 0.01      # 优势方最低损耗率
+        RANDOM_RANGE = 0.03       # 随机扰动范围ε
         
         # 验证目标城镇
         if target_town and target_town not in self.towns.towns:
             print(f"目标城镇 {target_town} 不存在")
             return False
-            
-        self.rebellion_records += 1
-        print(f"叛军在 {target_town or '未指定城镇'} 发动第 {self.rebellion_records} 次叛乱")
+        if strength_investment <= 0:
+            return False
         
-        # 获取目标城镇的官兵数量作为额外防御力量
-        town_defense = 0
+        success = False
+        # 获取战斗双方兵力
+        town_data = self.towns.towns[target_town]
+        town_defense = len(town_data['job_market'].jobs_info["官员及士兵"]["employed"])
+        town_rebels = len(town_data['job_market'].jobs_info["叛军"]["employed"])
+        rebel_strength = strength_investment
+
+        if town_rebels < strength_investment:
+            print(f"目标城镇 {target_town} 叛军数量不足，未能成功发起叛乱")
+            return False
+        elif town_defense ==0:
+            success = True
+            gov_loss = town_rebels  # 仅用于后续计算资源
+        else:
+            # 战斗损耗计算
+            strength_ratio = town_defense / rebel_strength  # α = G/R
+            success = True if strength_ratio < 0 else False
+            
+            # 1. 非线性损耗比例计算
+            if strength_ratio > MAX_RATIO:
+                # 极端优势保护(当兵力差距极大时，优势方损耗接近零)
+                gov_loss_rate = MIN_LOSS_RATE
+                rebel_loss_rate = BASE_LOSS_RATE * (MAX_RATIO ** DECAY_FACTOR)
+            else:
+                gov_loss_rate = BASE_LOSS_RATE / (strength_ratio ** DECAY_FACTOR)
+                rebel_loss_rate = BASE_LOSS_RATE * (strength_ratio ** DECAY_FACTOR)
+            
+            # 2. 添加随机扰动
+            random_factor = random.uniform(-RANDOM_RANGE, RANDOM_RANGE)
+            gov_loss_rate += random_factor
+            rebel_loss_rate += random_factor
+            
+            # 3. 计算实际损耗
+            gov_loss = int(gov_loss_rate * town_defense)
+            rebel_loss = int(rebel_loss_rate * rebel_strength)
+            self.handle_army_loss("官员及士兵", gov_loss, target_town)
+            self.handle_army_loss("叛军", rebel_loss, target_town)
+
+        # 计算叛军经济
+        if success:
+            loot_ratio = gov_loss / self.government.military_strength
+            gov_loss_budget = int(self.government.budget * loot_ratio)
+            self.rebellion.resources += gov_loss_budget
+        else:
+            loot_ratio = rebel_loss / self.government.military_strength
+            rebel_loss_resources = int(self.rebellion.resources * loot_ratio)
+            self.rebellion.resources -= rebel_loss_resources
+
+        #更新状态
+        self.rebellion_records += 1
+
+        print(f"\n=== 第 {self.rebellion_records} 次叛乱 ===")
+        print(f"叛乱成功" if success else f"叛乱失败")
+        print(f"战场：{target_town}")
+        print(f"兵力对比：政府军 {town_defense} vs 叛军 {rebel_strength}")
+        print(f"损耗率：政府军 {gov_loss_rate*100:.1f}% | 叛军 {rebel_loss_rate*100:.1f}%" if gov_loss_rate and rebel_loss_rate else "")
+        print(f"实际损耗：政府军 -{gov_loss} | 叛军 -{rebel_loss}")
+        print(f"叛军获得资源{gov_loss_budget} " if success else f"叛军失去资源{rebel_loss_resources}")
+        print(f"\n===========================")
+ 
+        return True
+    
+    def handle_army_loss(self, army_type, actual_loss, target_town):
+        """处理军队损耗"""
+        # 从目标城镇中选择要移除的军队
+        all_army_residents = []
         if target_town:
             town_data = self.towns.towns[target_town]
             if town_data.get('job_market'):
-                town_defense = len(town_data['job_market'].jobs_info["官员及士兵"]["employed"])
-        
-        # 计算军事力量消耗（基于双方力量差距）
-        total_rebel_strength = strength_investment + town_defense
-        strength_ratio = self.government.military_strength / total_rebel_strength if total_rebel_strength > 0 else float('inf')
-        
-        # 政府军力消耗基于力量比计算
-        military_consumption = total_rebel_strength / (1 + strength_ratio)
-        self.government.military_strength = max(0, self.government.military_strength - military_consumption)
-        
-        if self.government.military_strength >= total_rebel_strength:
-            # 镇压成功，叛军损失基于力量差距计算
-            strength_ratio_factor = min(1, strength_ratio)  # 限制最大比例为1
-            strength_loss = strength_investment * strength_ratio_factor
-            resource_loss = strength_investment * strength_ratio_factor
+                target_army = [resident_id for resident_id in town_data['job_market'].jobs_info[army_type]["employed"]]
+                all_army_residents.extend(target_army)
             
-            self.rebellion.strength = max(0, self.rebellion.strength - strength_loss)
-            self.rebellion.resources = max(0, self.rebellion.resources - resource_loss)
-            
-            # 损失叛军资源，注销叛军居民
-            rebels_to_remove = int(self.rebellion.strength * (strength_loss / self.rebellion.strength))
-            
-            # 从目标城镇中选择要移除的叛军
-            all_rebel_residents = []
-            if target_town:
-                town_data = self.towns.towns[target_town]
-                if town_data.get('job_market'):
-                    target_rebels = [resident_id for resident_id in town_data['job_market'].jobs_info["叛军"]["employed"]]
-                    all_rebel_residents.extend(target_rebels)
-            
-            # 从收集到的叛军中随机选择要移除的人数
-            if all_rebel_residents:
-                selected_rebels = random.sample(all_rebel_residents, min(rebels_to_remove, len(all_rebel_residents)))
-                # 注销选中的叛军居民
-                for rebel_id in selected_rebels:
-                    if rebel_id in self.residents:
-                        resident = self.residents[rebel_id]
-                        resident.handle_death()
-                        del self.residents[rebel_id]
-                        self.population.death()
-                        print(f"叛军 {rebel_id} 战死，失去生命")
-            
-            print(f"政府成功压制了强度为 {strength_investment} 的叛乱，消耗军事力量 {military_consumption:.1f}。")
-            print(f"叛军被镇压，损失军事力量 {strength_loss:.1f}，损失资源 {resource_loss:.1f}")
-            print(f"共有 {len(selected_rebels)} 名叛军居民死亡")
-            return True
-        else:
-            # 镇压失败，叛军损失基于力量差距计算
-            inverse_ratio = total_rebel_strength / self.government.military_strength if self.government.military_strength > 0 else float('inf')
-            inverse_ratio_factor = 1 / (1 + inverse_ratio)  # 转换为0-1之间的值
-            
-            strength_loss = strength_investment * inverse_ratio_factor
-            resource_gain = strength_investment * (1 + (1 - inverse_ratio_factor))  # 资源获得与损失成反比
-            
-            self.rebellion.strength = max(0, self.rebellion.strength - strength_loss)
-            self.rebellion.resources += resource_gain
-            
-            # 镇压叛乱失败导致就业岗位减少（基于叛乱成功程度）
-            job_loss = int(strength_investment * (1 - inverse_ratio_factor))
-            self.towns.remove_jobs_across_towns(job_loss)
-            
-            print(f"政府未能压制强度为 {strength_investment} 的叛乱，消耗军事力量 {military_consumption:.1f}，")
-            print(f"叛军袭击成功，损失军事力量 {strength_loss:.1f}，获得资源 {resource_gain:.1f}")
-            print(f"地区动乱导致商业衰败，减少就业岗位 {job_loss} 个。")
-            return True
+        # 从收集到的军队中随机选择要移除的人数
+        if all_army_residents:
+            selected_army = random.sample(all_army_residents, min(actual_loss, len(all_army_residents)))
+            # 注销选中的军队居民
+            for army_id in selected_army:
+                if army_id in self.residents:
+                    resident = self.residents[army_id]
+                    resident.handle_death()
+                    del self.residents[army_id]
+                    self.population.death()
+                    print(f"{army_type} {army_id} 战死，失去生命")
 
     def summarize_time_step_results(self):
         """总结当前时间步的各项指标变化"""
@@ -798,3 +814,13 @@ class Simulator:
                 total_other_salary += town_data['job_market'].get_other_total_salary()
         
         return total_rebel_salary, total_other_salary
+    
+    def calculate_propaganda_prob(self, speech_count):
+        """计算普通叛军发表煽动言论的概率"""
+        total_rebels = self.rebellion.get_strength()
+        if total_rebels == 0:
+            self.propaganda_prob = 0.0
+        else:
+            self.propaganda_prob = round(speech_count / total_rebels, 2)
+            self.propaganda_prob = max(0.0, min(1.0, self.propaganda_prob))  # 确保概率在0到1之间
+            print(f"普通叛军发表煽动言论的概率为 {self.propaganda_prob:.2%}")
