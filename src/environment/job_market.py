@@ -301,7 +301,7 @@ class JobMarket:
         :return: 收入金额，如果职业不存在则返回None
         """
         if job_type in self.jobs_info:
-            return self.jobs_info[job_type]["salary"]
+            return self.jobs_info[job_type]["base_salary"]
         return None
 
     def process_job_applications(self, job_requests):

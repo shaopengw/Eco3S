@@ -69,43 +69,53 @@ def plot_government_budget_over_time(years, government_budget):
 
 def plot_all_results(years, rebellions, unemployment_rate, population, government_budget):
     """
-    绘制所有结果的综合图表
+    绘制所有结果的综合图表（按年显示，只取每年Q1的数据）
     """
+    # 筛选每年Q1的数据
+    yearly_indices = [i for i, year in enumerate(years) if year.endswith(' Q1') or year == '初始']
+    
+    # 提取年度数据
+    yearly_years = [years[i].split(' ')[0] if years[i] != '初始' else '初始' for i in yearly_indices]
+    yearly_rebellions = [rebellions[i] for i in yearly_indices]
+    yearly_unemployment = [unemployment_rate[i] for i in yearly_indices]
+    yearly_population = [population[i] for i in yearly_indices]
+    yearly_budget = [government_budget[i] for i in yearly_indices]
+
     plt.figure(figsize=(15, 10))
 
     # 叛乱次数随时间变化
     plt.subplot(2, 2, 1)
-    plt.plot(years, rebellions, label="Rebellions", color="red", marker="o")
+    plt.plot(yearly_years, yearly_rebellions, label="Rebellions", color="red", marker="o")
     plt.xlabel("Year")
     plt.ylabel("Number of Rebellions")
-    plt.title("Rebellions Over Time")
+    plt.title("Rebellions Over Time (Yearly Q1)")
     plt.legend()
     plt.grid(True)
 
     # 失业率随时间变化
     plt.subplot(2, 2, 2)
-    plt.plot(years, unemployment_rate, label="Unemployment Rate", color="blue", marker="o")
+    plt.plot(yearly_years, yearly_unemployment, label="Unemployment Rate", color="blue", marker="o")
     plt.xlabel("Year")
     plt.ylabel("Unemployment Rate")
-    plt.title("Unemployment Rate Over Time")
+    plt.title("Unemployment Rate Over Time (Yearly Q1)")
     plt.legend()
     plt.grid(True)
 
     # 人口数量随时间变化
     plt.subplot(2, 2, 3)
-    plt.plot(years, population, label="Population", color="green", marker="o")
+    plt.plot(yearly_years, yearly_population, label="Population", color="green", marker="o")
     plt.xlabel("Year")
     plt.ylabel("Population")
-    plt.title("Population Over Time")
+    plt.title("Population Over Time (Yearly Q1)")
     plt.legend()
     plt.grid(True)
 
     # 政府预算随时间变化
     plt.subplot(2, 2, 4)
-    plt.plot(years, government_budget, label="Government Budget", color="purple", marker="o")
+    plt.plot(yearly_years, yearly_budget, label="Government Budget", color="purple", marker="o")
     plt.xlabel("Year")
     plt.ylabel("Government Budget")
-    plt.title("Government Budget Over Time")
+    plt.title("Government Budget Over Time (Yearly Q1)")
     plt.legend()
     plt.grid(True)
 
@@ -116,9 +126,9 @@ def plot_all_results(years, rebellions, unemployment_rate, population, governmen
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_path = os.path.join(save_dir, f"all_results_{current_time}.png")
+    save_path = os.path.join(save_dir, f"all_results_yearly_Q1_{current_time}.png")
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    print(f"综合结果图表已保存至：{save_path}")
+    print(f"年度Q1综合结果图表已保存至：{save_path}")
     plt.close()
 
 # 在文件开头添加必要的导入
