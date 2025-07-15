@@ -133,9 +133,8 @@ class RebelLeader(BaseAgent):
             f"下属建议：\n{summary}\n"
             f"在做决策时，请考虑各城镇叛军和官兵的力量对比，优先选择叛军多或官兵少的城镇出击。宣传可以煽动民众不满情绪，从而加入叛军。\n"
             f"输出JSON，无需说明理由：\n"
-            # f'{{"stage_rebellion": 发动叛乱的力量投入（整数）, "recruit_members": 招募新成员的资源投入（整数,每12两可招募1人）, "maintain_status": 维持现状（设为1表示选择维持现状，设为0表示不选择）, "target_town": 发动叛乱目标城镇名称（字符串）}}'
-            f'{{ "propaganda_budget": 宣传预算（整数）, "target_town": 发动叛乱目标城镇名称（字符串）,"stage_rebellion": 发动叛乱的兵力投入（整数，不超过目标城镇叛军数）}}'
-
+            # f'{{ "propaganda_budget": 宣传预算（整数）, "target_towns": [{{"town_name": 发动叛乱目标城镇名称1（字符串）, "stage_rebellion": 发动叛乱的兵力投入1（整数，不超过该城镇叛军数）}}, ...] }}'
+            f'{{ "propaganda_budget": 宣传预算（整数）, "target_towns": [{{"town_name": 发动叛乱目标城镇名称1（字符串）, "stage_rebellion": 发动叛乱的兵力投入1（整数，不超过该城镇叛军数）}}, ...], "provocative_speech": 要在全国宣传的煽动性言论（字符串） }}'
         )
 
         try:

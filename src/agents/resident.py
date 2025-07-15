@@ -219,12 +219,13 @@ class Resident(BaseAgent):
                     f"- {job}: {count}个空缺, 基础收入：{self.job_market.jobs_info[job]['base_salary']}"
                     for job, count in vacant_jobs.items()
                 )
+        rebel_salary = self.job_market.get_job_salary("叛军")
 
         base_prompt = (
             f"当前税率:为{tax_rate*100:.1f}%，基本生活所需为{basic_living_cost}两\n"
             f"{job_market_info}"
             f"你可以选择以下行动之一：\n"
-            f"1. 参加叛乱\n"
+            f"1. 加入叛军（工资{rebel_salary}）\n"
             f"2. {'迁徙至他地（有生存风险，会失去当前工作，需重新谋生）'if self.employed else '迁徙至他地（有生存风险）'}\n"
         )
         if job_market_info:
@@ -330,7 +331,7 @@ class Resident(BaseAgent):
             resident_log.error(f"居民 {self.resident_id} 执行决策时出错：{e}")
             return False
 
-    async def generate_provocative_opinion(self, probability):
+    async def generate_provocative_opinion(self, probability, speech):
         """
         处理居民是叛军时的特殊逻辑，生成煽动性言论
         :param probability: 发言概率
@@ -338,13 +339,17 @@ class Resident(BaseAgent):
         """
         # 根据概率决定是否发表煽动性言论
         if random.random() < probability:
-            # 构建煽动性提示信息
-            prompt = (
-                f"目前叛军发放任务，需要你发言一句尽可能简短的煽动性的言论，放大民众对高税收或失业的不满。"
-            )
-            
-            self.update_system_message()
-            opinion = await self.generate_llm_response(prompt)
+            if speech:
+                opinion = speech
+            else:
+                # 构建煽动性提示信息
+                prompt = (
+                    f"目前叛军发放任务，需要你发言一句尽可能简短的煽动性的言论，放大民众对高税收或失业的不满。"
+                )
+                
+                self.update_system_message()
+                opinion = await self.generate_llm_response(prompt)
+
             if opinion:
                 await self.memory.write_record(
                     role_name="叛军",
