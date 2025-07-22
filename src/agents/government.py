@@ -199,7 +199,7 @@ class Government:
     def handle_public_budget(self,budget_allocation, salary):
         """处理公共预算决策"""
         if self.budget < budget_allocation:
-            print("政府预算不足以提供工作。")
+            government_log.info(f"政府执行决策 - 预算不足，无法提供工作。")
             return
         # 获取维持当前就业所需的资金
         maintain_employment_cost = salary * 0.5
@@ -231,6 +231,9 @@ class Government:
         # 2. 提供就业机会，增加居民满意度。但是提供的就业机会仅限运河沿线地区。
         # 3. 政府预算减少
         # 计算并更新改善后的通航能力
+        if self.budget < maintenance_investment:
+            government_log.info(f"政府执行决策 - 预算不足，无法维护运河。")
+            return
         maintenance_ratio = maintenance_investment / self.transport_economy.maintenance_cost_base
         self.map.update_river_condition(maintenance_ratio) 
         
