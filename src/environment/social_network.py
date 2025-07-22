@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from typing import List
 from datetime import datetime
+os.environ["OMP_NUM_THREADS"] = "1"
 from sklearn.cluster import KMeans
 import asyncio
 

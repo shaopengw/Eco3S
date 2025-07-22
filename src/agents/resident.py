@@ -176,8 +176,10 @@ class Resident(BaseAgent):
             # 构建回应提示词
             prompt = (
                 # f"当前税率:为{tax_rate*100:.1f}%，基本生活所需为{basic_living_cost}两\n"
-                f"你听说了一条信息：{message_content}\n"
-                f"请表达你的真实感受与想法，并用尽可能简短的一句话讲给更多人。"
+                f"你听说了一条信息：[{message_content}]\n"
+                # f"对此，表达你的真实感受与想法，并用尽可能简短的一句话讲给更多人。"
+                # f"用你最真实的反应回一句话，要简短、带情绪，像市井小民聊天那样。"
+                f"现在你在和其他老百姓聊天，根据这句话发表一些看法，注意考虑你的性格和处境,要简短，口语化。"
             )
 
             self.update_system_message()
