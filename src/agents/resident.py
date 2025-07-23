@@ -2,6 +2,9 @@ from .shared_imports import *
 import re
 load_dotenv()
 
+with open('config/residents_prompts.yaml', 'r', encoding='utf-8') as file:
+    prompts_resident = yaml.safe_load(file)
+
 if "sphinx" not in sys.modules:
     resident_log = logging.getLogger(name="resident.agent")
     resident_log.setLevel("DEBUG")
@@ -138,7 +141,7 @@ class Resident(BaseAgent):
         # else:
         #     resident_log.info(f"居民 {self.resident_id} 目前无业")
 
-    def update_system_message(self, basic_living_cost=0):
+    def update_system_message(self, basic_living_cost=0, tax_rate=0):
         """
         更新系统提示词，包含居民当前的状态信息
         """
@@ -150,11 +153,12 @@ class Resident(BaseAgent):
         
         economic_status_description = ""
         if self.income > 0 :
-            if basic_living_cost > self.income:
+            income = self.income * (1 - tax_rate)
+            if basic_living_cost > income:
                 economic_status_description = "生活困难"
-            elif basic_living_cost * 2 > self.income:
+            elif basic_living_cost * 2 > income:
                 economic_status_description = "收支勉强平衡"
-            elif basic_living_cost * 4 > self.income:
+            elif basic_living_cost * 4 > income:
                 economic_status_description = "小康"
             else:
                 economic_status_description = "生活富裕"
@@ -162,7 +166,7 @@ class Resident(BaseAgent):
             economic_status_description = "生活极度困难"
 
         self.system_message = (
-            f"你是一个清代普通{work_condition}，你{self.personality}，收入为{self.income}两，{economic_status_description}，{health_condition}，目前对政府{satisfaction_description}。"
+            f"你是一个清代{work_condition}，你{self.personality}，收入为{self.income}两，{economic_status_description}，{health_condition}，目前对政府{satisfaction_description}。"
         )
 
     async def receive_information(self, message_content):
@@ -174,13 +178,14 @@ class Resident(BaseAgent):
         response_prob = global_config.get("simulation", {}).get("response_probability")
         if random.random() < response_prob:
             # 构建回应提示词
-            prompt = (
-                # f"当前税率:为{tax_rate*100:.1f}%，基本生活所需为{basic_living_cost}两\n"
-                f"你听说了一条信息：[{message_content}]\n"
-                # f"对此，表达你的真实感受与想法，并用尽可能简短的一句话讲给更多人。"
-                # f"用你最真实的反应回一句话，要简短、带情绪，像市井小民聊天那样。"
-                f"现在你在和其他老百姓聊天，根据这句话发表一些看法，注意考虑你的性格和处境,要简短，口语化。"
-            )
+            prompt = prompts_resident['receive_information_prompt'].format(message_content=message_content)
+            # prompt = (
+            #     # f"当前税率:为{tax_rate*100:.1f}%，基本生活所需为{basic_living_cost}两\n"
+            #     f"你听说了一条信息：[{message_content}]\n"
+            #     # f"对此，表达你的真实感受与想法，并用尽可能简短的一句话讲给更多人。"
+            #     # f"用你最真实的反应回一句话，要简短、带情绪，像市井小民聊天那样。"
+            #     f"现在你在和其他老百姓聊天，根据听说的消息发表一句尽可能简短的话，表达你的看法，注意考虑你的性格和处境，口语化。"
+            # )
 
             self.update_system_message()
             response_content = await self.generate_llm_response(prompt)
@@ -223,25 +228,34 @@ class Resident(BaseAgent):
                 )
         rebel_salary = self.job_market.get_job_salary("叛军")
 
-        base_prompt = (
-            f"当前税率:为{tax_rate*100:.1f}%，基本生活所需为{basic_living_cost}两\n"
-            f"{job_market_info}"
-            f"你可以选择以下行动之一：\n"
-            f"1. 加入叛军（工资{rebel_salary}）\n"
-            f"2. {'迁徙至他地（有生存风险，会失去当前工作，需重新谋生）'if self.employed else '迁徙至他地（有生存风险）'}\n"
-        )
-        if job_market_info:
-            base_prompt += f"3. {'寻找工作' if not self.employed else '继续目前的工作'}\n"
+        tax_rate_message = ""
+        if tax_rate < 0.05:
+            tax_rate_message = "当前税率极低，几乎无税负担。\n"
+        elif tax_rate < 0.15:
+            tax_rate_message = "当前税率适中，负担一般。\n"
+        elif tax_rate < 0.3:
+            tax_rate_message = "当前税率较高，负担较重。\n"
+        else:
+            tax_rate_message = "当前税率极高，负担极重。\n"
+        
+        employed = self.employed
+        need_speech = random.random() < global_config.get("simulation", {}).get("response_probability")
 
-        # 规范输出
-        prompt = base_prompt + (
-            "综合考虑收入是否足以维生、就业稳定性、税负情况及健康状况等因素，选择最适合自己的行动。"
-            "返回单行的JSON字符串，格式如下，必须严格按照格式填写：\n"
-            + '{"select": 你的选择（1-3）, "reason": 选择原因, "satisfaction_change": 满意度变化值(-20到20)'
-            + (', "desired_job": 期望职业（如果选择2，可选：农民、商人、官员及士兵、运河维护工、普通工作者）, "min_salary": 可接受的最低收入（数字）' if not self.employed and job_market_info else '')
-            + (', "speech": 一句有传播力的态度言论，允许负面、质疑或愤怒情绪。}' if need_speech else '}')
-        )
+        # 根据是否就业选择不同的提示词模板
+        if employed:
+            prompt = prompts_resident['decide_action_prompt_employed'].format(
+                tax_rate_message=tax_rate_message, job_market_info=job_market_info)
+        else:
+            prompt = prompts_resident['decide_action_prompt_unemployed'].format(
+                tax_rate_message=tax_rate_message, job_market_info=job_market_info)
 
+        # 构建 desired_job_and_min_salary 和 speech
+        desired_job_and_min_salary = prompts_resident['decide_action_json'].format(
+            desired_job_and_min_salary=', "desired_job": 期望职业（如果选择2，可选：农民、商人、官员及士兵、运河维护工、普通工作者）, "min_salary": 可接受的最低收入（数字）' if not self.employed and job_market_info else '',
+            speech=', "speech": 一句有传播力的态度言论，允许负面、质疑或愤怒情绪。}' if need_speech else '}')
+
+        # 将 desired_job_and_min_salary 和 speech 插入到 prompt 中
+        prompt += desired_job_and_min_salary
         try:
             self.update_system_message(basic_living_cost)
             response = await self.generate_llm_response(prompt)
@@ -345,9 +359,7 @@ class Resident(BaseAgent):
                 opinion = speech
             else:
                 # 构建煽动性提示信息
-                prompt = (
-                    f"目前叛军发放任务，需要你发言一句尽可能简短的煽动性的言论，放大民众对高税收或失业的不满。"
-                )
+                prompt = prompts_resident['generate_provocative_opinion_prompt']
                 
                 self.update_system_message()
                 opinion = await self.generate_llm_response(prompt)
@@ -383,24 +395,22 @@ class Resident(BaseAgent):
         """
         处理居民死亡的逻辑
         """
-        if self.lifespan <= 0:
-            # 从就业市场和城镇中移除
-            if self.town and self.towns_manager:
-                self.towns_manager.remove_resident_in_town(self.resident_id, self.town, self.job)
-                self.employed = False
-                self.job = None
+        # 从就业市场和城镇中移除
+        if self.town and self.towns_manager:
+            self.towns_manager.remove_resident_in_town(self.resident_id, self.town, self.job)
+            self.employed = False
+            self.job = None
 
-            # 从社交网络中移除（如果存在）
-            social_network = self.get_social_network()
-            if social_network:
-                # 从异质图中移除
-                social_network.hetero_graph.remove_node(self.resident_id)
-                # 从超图中移除
-                social_network.hyper_graph.remove_node(self.resident_id)
+        # 从社交网络中移除（如果存在）
+        social_network = self.get_social_network()
+        if social_network:
+            # 从异质图中移除
+            social_network.hetero_graph.remove_node(self.resident_id)
+            # 从超图中移除
+            social_network.hyper_graph.remove_node(self.resident_id)
 
-            resident_log.info(f"居民 {self.resident_id} 已死亡。")
-            return True
-        return False
+        resident_log.info(f"居民 {self.resident_id} 已死亡。")
+        return True
 
     def update_resident_status(self, basic_living_cost):
         """

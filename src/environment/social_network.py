@@ -216,8 +216,8 @@ class SocialNetwork:
             return
             
         neighbors = self.hetero_graph.get_neighbors(resident_id, relation_type)
-        # 随机选择30%-70%的邻居节点
-        selected_count = random.randint(max(1, int(len(neighbors) * 0.3)), max(1, int(len(neighbors) * 0.7)))
+        # 随机选择30%-50%的邻居节点
+        selected_count = random.randint(max(1, int(len(neighbors) * 0.3)), max(1, int(len(neighbors) * 0.5)))
         selected_neighbors = random.sample(neighbors, min(selected_count, len(neighbors)))
         
         tasks = []
@@ -251,8 +251,8 @@ class SocialNetwork:
             return
             
         members = self.hyper_graph.get_hyperedge_nodes(group_id)
-        # 随机选择30%-70%的群组成员
-        selected_count = random.randint(max(1, int(len(members) * 0.3)), max(1, int(len(members) * 0.7)))
+        # 随机选择30%-50%的群组成员
+        selected_count = random.randint(max(1, int(len(members) * 0.3)), max(1, int(len(members) * 0.5)))
         selected_members = random.sample(members, min(selected_count, len(members)))
         
         tasks = []

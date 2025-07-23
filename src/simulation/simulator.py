@@ -48,7 +48,7 @@ class Simulator:
         self.towns = towns
         self.transport_economy = transport_economy
         self.climate = climate
-        self.basic_living_cost = 10  # 每年基本生活所需值（单位：两）
+        self.basic_living_cost = 8  # 每年基本生活所需值（单位：两）
         self.average_satisfaction = None  # 平均满意度（0-1）
         self.gdp = 0  # 国内生产总值（单位：两）
         self.propaganda_prob = 0.1  # 叛军宣传概率（0-1）
@@ -97,17 +97,17 @@ class Simulator:
             start_year = self.time.get_start_time()
             print(f"天气影响因子：{self.climate.get_current_impact(current_year,start_year)}")
             # 更新属性变量
-            # 政府日常收入
+            # 政府
             self.gdp = self.calculate_gdp() # 更新GDP
             self.tax_income = self.gdp * self.government.get_tax_rate() # 计算税收收入
             self.government.budget = round(self.government.budget + self.tax_income, 2) 
-            # 叛军日常收入
+            # 叛军
             self.rebellion_income = self.rebellion.get_strength() * 6 # 假设叛军收入为6两/人
-            self.government.budget = round(self.government.budget + self.rebellion_income, 2)
+            self.rebellion.resources = round(self.rebellion.resources + self.rebellion_income, 2)
+            self.rebellion.strength = self.calculate_total_rebels()
 
             self.average_satisfaction = self.calculate_average_satisfaction() # 更新平均满意度
             self.population.update_birth_rate(self.average_satisfaction) # 更新出生率
-            self.propaganda_prob = 0
             self.rebellion_records = 0
             print(f"GDP：{self.gdp}，税收收入：{self.tax_income}，政府预算：{self.government.budget}")
             print(f"河运价格：{self.transport_economy.river_price}，维护成本：{self.transport_economy.calculate_maintenance_cost(self.map.get_navigability())}")
@@ -156,10 +156,10 @@ class Simulator:
                 resident = self.residents[resident_name]
                 tax_rate = self.government.get_tax_rate()
                 # 基于LLM的决策--测试时建议暂时注释
-                # if resident.job == "叛军":
-                #     tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
-                # else:
-                #     tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost))
+                if resident.job == "叛军":
+                    tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
+                else:
+                    tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost))
 
                 # 更新居民寿命（次/年）
                 if self.time.get_current_quarter() == 1:
@@ -243,6 +243,8 @@ class Simulator:
                 current_year = self.time.get_current_year()
                 if current_year % random.randint(3, 5) == 0:
                     self.social_network.update_network_edges()  # 更新社交网络边
+                
+                self.propaganda_prob = 0
 
             total_unemployment_rate = self.calculate_total_unemployment_rate()
             # 记录数据
@@ -264,8 +266,10 @@ class Simulator:
                   f"失业率: {self.results['unemployment_rate'][-1]:.2f}%, "
                   f"平均满意度: {self.results['average_satisfaction'][-1]:.2f}, "
                   f"税率: {self.government.get_tax_rate():.2f}, "
-                  f"GDP: {self.results['gdp'][-1]:.2f}")
-
+                  f"GDP: {self.results['gdp'][-1]:.2f}, "
+                  f"叛军强度: {self.results['rebellion_strength'][-1]}, "
+                  f"运河通航能力: {self.map.get_navigability():.2f}"
+            )
             # 在时间步结束前，总结本次决策结果
             if self.time.get_current_quarter() == 1:
                 if government_decision or rebellion_decision:
@@ -545,11 +549,9 @@ class Simulator:
         """
         if not self.residents:
             return 0.0
-        non_rebel_residents = [resident for resident in self.residents.values() if resident.job != "叛军"]
-        if not non_rebel_residents:
-            return 0.0
-        total_satisfaction = sum(resident.satisfaction for resident in non_rebel_residents)
-        return total_satisfaction / len(non_rebel_residents)
+
+        total_satisfaction = sum(resident.satisfaction for resident in self.residents.values())
+        return total_satisfaction / len(self.residents)
 
     def get_basic_living_cost(self):
         """
@@ -573,28 +575,26 @@ class Simulator:
         计算所有城镇的平均失业率
         :return: 平均失业率（浮点数）
         """
-        total_residents = 0
+        
+        total_residents = self.population.get_population() - self.rebellion.strength
         total_employed = 0
         
         # 遍历所有城镇
         for town_name, town_data in self.towns.towns.items():
-            # 获取该城镇的居民总数
-            residents_count = len(town_data['residents'])
-            total_residents += residents_count
-            
             # 获取该城镇的就业市场
             job_market = town_data['job_market']
             if job_market:
-                # 计算该城镇的就业人数（所有职业的就业人数之和）
-                town_employed = sum(len(info["employed"]) for info in job_market.jobs_info.values())
+                # 计算该城镇的就业人数
+                town_employed = sum(len(info["employed"]) for job, info in job_market.jobs_info.items() if job != "叛军")
                 total_employed += town_employed
         
         # 计算总体失业率
         if total_residents == 0:
             return 0.0
-        
+        print(f"总体就业率: {total_employed} / {total_residents} = {total_employed / total_residents:.2f}")
         unemployment_rate = (1.0 - (total_employed / total_residents)) * 100
         return unemployment_rate
+
 
     def calculate_gdp(self):
         """
@@ -727,6 +727,22 @@ class Simulator:
                     del self.residents[army_id]
                     self.population.death()
                     print(f"{army_type} {army_id} 战死，失去生命")
+
+    def calculate_total_rebels(self):
+        """
+        计算叛军总数
+        """
+        total_rebels = 0
+        
+        # 遍历所有城镇
+        for town_name, town_data in self.towns.towns.items():
+            # 获取该城镇的就业市场
+            job_market = town_data['job_market']
+            if job_market:
+                rebels_count = len(job_market.jobs_info["叛军"]["employed"])
+                total_rebels += rebels_count
+        
+        return total_rebels
 
     def summarize_time_step_results(self):
         """总结当前时间步的各项指标变化"""
