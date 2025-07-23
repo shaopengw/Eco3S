@@ -23,14 +23,16 @@ class TransportEconomy:
         self.river_price = max(river_price, self.transport_cost) # 更新实例变量
         return self.river_price
 
-    def calculate_maintenance_cost(self, navigability):
+    def calculate_maintenance_cost(self, navigability, exponent=2):
         """
         计算河运维护成本
         :param navigability: 当前通航能力（0-1）
+        :param exponent: 指数，默认为2
         :return: 维护成本
         """
-        # 通航能力越低，维护成本越高
-        return round(self.maintenance_cost_base * (2 - navigability),2)
+        # 通航能力越低，维护成本以指数形式增加
+        return round(self.maintenance_cost_base * ((2 - navigability) ** exponent), 2)
+
 
     def calculate_total_transport_cost(self, river_ratio):
         """

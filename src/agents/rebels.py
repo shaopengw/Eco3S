@@ -1,6 +1,9 @@
 from .shared_imports import *
 load_dotenv()
 
+with open('config/rebels_prompts.yaml', 'r', encoding='utf-8') as file:
+    prompts_rebels = yaml.safe_load(file)
+
 if "sphinx" not in sys.modules:
     rebellion_log = logging.getLogger(name="rebels.agent")
     rebellion_log.setLevel("DEBUG")
@@ -26,9 +29,8 @@ class OrdinaryRebel(BaseAgent):
         """
         更新系统提示词，包含居民当前的状态信息
         """
-        self.system_message = (
-            f"你是清代叛军的{self.role}头目，你{self.personality}，正参与密谋下一步行动。\n"
-        )
+        self.system_message = prompts_rebels['ordinary_rebel_system_message'].format(
+            role=self.role, personality=self.personality)
     
     async def generate_opinion(self, towns_stats):
         """
@@ -36,12 +38,12 @@ class OrdinaryRebel(BaseAgent):
         :return: 生成的意见内容
         """
         towns_analysis = self.analysis_towns_stats(towns_stats)
-        # 构建提示信息
-        prompt = (
-            f"当前叛军总兵力{self.rebellion.get_strength()}，总预算{self.rebellion.get_resources()}两\n"
-            f"各城镇力量分布（叛军：官兵）：\n" + "\n".join(towns_analysis) + "\n"
-            f"请结合当前形势，立足本职，发言一句尽可能简短的下一步行动建议。附具体数值佐证，只含全国宣传预算（整数），发动叛乱目标城镇名称，目标城镇兵力投入（不超过目标城镇叛军数）。不要解释，不得违反兵力限制。"
-        )
+        strength = self.rebellion.get_strength()
+        resources = self.rebellion.get_resources()
+
+        prompt = prompts_rebels['generate_opinion_prompt'].format(
+            strength=strength, resources=resources, towns_analysis="\n".join(towns_analysis))
+        
         self.update_system_message()
         opinion = await self.generate_llm_response(prompt)
         if opinion:
@@ -63,10 +65,7 @@ class OrdinaryRebel(BaseAgent):
         # 获取所有讨论内容
         all_discussion = await self.shared_pool.get_all_discussions()
         if all_discussion:
-            prompt = (
-                f"\n众人各抒己见，所言如下：{all_discussion}\n"
-                f"请立足本职与立场，发言一句尽可能简短的回应，可表支持、反对，或另陈己见。"
-            )
+            prompt = prompts_rebels['generate_and_share_opinion_prompt'].format(all_discussion=all_discussion)
 
             try:
                 self.update_system_message()
@@ -109,9 +108,7 @@ class RebelLeader(BaseAgent):
         """
         更新系统提示词，包含居民当前的状态信息
         """
-        self.system_message = (
-            f"你是清代叛军组织的首领，你{self.personality}，你的目标是确保叛军组织的生存和壮大（拥有更多的成员和金钱）。叛军正密谋下一步行动。\n"
-        )
+        self.system_message = prompts_rebels['rebel_leader_system_message'].format(personality=self.personality)
 
     async def make_decision(self, summary, towns_stats):
         """
@@ -123,24 +120,16 @@ class RebelLeader(BaseAgent):
         if not self.shared_pool.is_ended():
             return None
         towns_analysis = self.analysis_towns_stats(towns_stats)
+        strength = self.rebellion.get_strength()
+        resources = self.rebellion.get_resources()
 
-        # 使用 CAMEL 框架来做决策
-        # 历史决策信息，让叛军可以自己从中总结不同决策带来的后果。
-        decision_prompt = (
-            f"你是清代地方叛军组织的首领，负责根据下属的讨论和当前叛军状态做出最终决策。\n"
-            f"当前叛军总兵力{self.rebellion.get_strength()}，资源总计{self.rebellion.get_resources()}两\n"
-            f"各城镇力量分布（叛军：官兵）：\n" + "\n".join(towns_analysis) + "\n"
-            f"下属建议：\n{summary}\n"
-            f"在做决策时，请考虑各城镇叛军和官兵的力量对比，优先选择叛军多或官兵少的城镇出击。宣传可以煽动民众不满情绪，从而加入叛军。\n"
-            f"输出JSON，无需说明理由：\n"
-            # f'{{ "propaganda_budget": 宣传预算（整数）, "target_towns": [{{"town_name": 发动叛乱目标城镇名称1（字符串）, "stage_rebellion": 发动叛乱的兵力投入1（整数，不超过该城镇叛军数）}}, ...] }}'
-            f'{{ "propaganda_budget": 宣传预算（整数）, "target_towns": [{{"town_name": 发动叛乱目标城镇名称1（字符串）, "stage_rebellion": 发动叛乱的兵力投入1（整数，不超过该城镇叛军数）}}, ...], "provocative_speech": 要在全国宣传的煽动性言论（字符串） }}'
-        )
+        prompt = prompts_rebels['make_decision_prompt'].format(
+            strength=strength, resources=resources, towns_analysis="\n".join(towns_analysis), summary=summary)
 
         try:
             # 调用模型做出最终决策
             self.update_system_message()
-            decision = await self.generate_llm_response(decision_prompt)
+            decision = await self.generate_llm_response(prompt)
 
             if decision:
                 rebellion_log.info(f"叛军头子 {self.agent_id} 的决策：{decision}")
@@ -186,10 +175,8 @@ class InformationOfficer(BaseAgent):
             return "暂无讨论内容"
 
         # 构建提示信息
-        prompt = (
-            f"作为叛军信息整理官，请根据下列{len(discussions)}条讨论内容，用一句话尽可能简要地总结归纳核心观点，保留具体数值。"
-            f"讨论内容：\n" + "\n".join([f"{i+1}. {d}" for i, d in enumerate(discussions)])
-        )
+        prompt = prompts_rebels['summarize_discussions_prompt'].format(
+            num_discussions=len(discussions), discussions="\n".join([f"{i+1}. {d}" for i, d in enumerate(discussions)]))
 
         try:
             summary = await self.generate_llm_response(prompt)

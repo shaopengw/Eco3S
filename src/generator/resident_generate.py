@@ -8,9 +8,9 @@ import os
 gender_ratio = [0.351, 0.636]  # 女：男
 genders = ['女性', '男性']
 
-# 寿命比例（剩余寿命）
-lifespan_ratio = [0.45, 0.35, 0.15, 0.05]
-lifespan_groups = ['10-19', '20-39', '40-54', '55+'] # 仅考虑劳动力群体
+# 寿命比例（剩余寿命）,仅考虑劳动力群体
+lifespan_ratio = [0.10, 0.30, 0.25, 0.25, 0.10]
+lifespan_groups = ['1-9', '10-19', '20-39', '40-54', '55+']
 
 # 居住地
 residence_ratio = [0.7, 0.3]  # 70% 在沿河，30% 在非沿河地区
@@ -45,14 +45,17 @@ def get_random_gender():
 # 获取随机的寿命
 def get_random_lifespan():
     group = random.choices(lifespan_groups, lifespan_ratio)[0]
-    if group == '18-29':
-        return random.randint(18, 29)
-    elif group == '30-49':
-        return random.randint(30, 49)
-    elif group == '50-64':
-        return random.randint(50, 64)
-    else:
-        return random.randint(65, 80)
+    if group == '1-9':
+        return random.randint(1, 9)
+    elif group == '10-19':
+        return random.randint(10, 19)
+    elif group == '20-39':
+        return random.randint(20, 39)
+    elif group == '40-54':
+        return random.randint(40, 54)
+    else:  # 对应 '55+' 组
+        return random.randint(55, 80)
+
 
 # 获取随机居住地
 def get_random_residence():

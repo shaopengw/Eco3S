@@ -152,19 +152,6 @@ class JobMarket:
         """
         return {job: info["employed"] for job, info in self.jobs_info.items()}
 
-    def get_unemployment_rate(self, total_residents):
-        """
-        计算失业率
-        :param total_residents: 总居民数
-        :return: 失业率（0到100之间的值）
-        """
-        # 排除叛军的就业人数
-        total_employed = sum(len(info["employed"]) for job_type, info in self.jobs_info.items() if job_type != "叛军")
-        
-        if total_residents == 0:
-            return 0.0
-        return (1.0 - (total_employed / total_residents)) * 100
-
     def print_job_market_status(self):
         """
         打印就业市场状态（用于调试）

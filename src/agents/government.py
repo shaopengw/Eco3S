@@ -1,6 +1,9 @@
 from .shared_imports import *
 load_dotenv()
 
+with open('config/government_prompts.yaml', 'r', encoding='utf-8') as file:
+    prompts = yaml.safe_load(file)
+
 if "sphinx" not in sys.modules:
     government_log = logging.getLogger(name="government.agent")
     government_log.setLevel("DEBUG")
@@ -29,20 +32,17 @@ class OrdinaryGovernmentAgent(BaseAgent):
         """
         更新系统提示词，包含居民当前的状态信息
         """
-        self.system_message = (
-            f"你为清代政府{self.function}官员，{self.faction}，你{self.personality}，朝廷正议政务。政府的目标是维持地方统治稳定，同时完成中央政府下达的航运任务。\n"
-        )
+        self.system_message = prompts['ordinary_government_agent_system_message'].format(
+            function=self.function, faction=self.faction, personality=self.personality)
 
     def get_current_situation_prompt(self, maintain_employment_cost):
         river_price = self.government.transport_economy.river_price
         sea_price = self.government.transport_economy.sea_price
         transport_task = self.government.transport_economy.transport_task
-        return (
-            f"当前国库有银{self.government.get_budget():.2f}两，兵力{self.government.get_military_strength():.2f}，税率: {self.government.get_tax_rate()*100:.1f}%"
-            f"运输任务: {transport_task}吨,河运费(不可修改){river_price:.2f}两/吨，海运费(不可修改){sea_price:.2f}两/吨（海运低廉但岗位少，河运高费却可养人）\n"
-            f"维持目前就业需资金{maintain_employment_cost:.2f}两。若公共预算高于此值，可增加就业；反之，将减少就业。"
-            f"军事拨款需为20的整数倍（可以为0），每20两增加一单位兵力。总支出不应超出{self.government.get_budget():.2f}两"
-        )
+        return prompts['get_current_situation_prompt'].format(
+            budget=self.government.get_budget(), military_strength=self.government.get_military_strength(), tax_rate=self.government.get_tax_rate()*100,
+            transport_task=transport_task, river_price=river_price, sea_price=sea_price,
+            maintain_employment_cost=maintain_employment_cost)
 
     async def generate_opinion(self, salary):
         """
@@ -52,10 +52,8 @@ class OrdinaryGovernmentAgent(BaseAgent):
         maintain_employment_cost = salary * 0.5
 
         # 构建提示信息
-        prompt = (
-            f"请结合当前形势，立足本职，发言一句尽可能简短的中肯建议，必要时附具体数值佐证，只含公共预算、河运比例（0-1）、维护支出、军事拨款或税率调整。"
-            + self.get_current_situation_prompt(maintain_employment_cost)
-        )
+        prompt = prompts['generate_opinion_prompt'].format(
+            current_situation_prompt=self.get_current_situation_prompt(maintain_employment_cost))
         
         self.update_system_message()
         opinion = await self.generate_llm_response(prompt)
@@ -79,12 +77,8 @@ class OrdinaryGovernmentAgent(BaseAgent):
         # 获取最新讨论内容
         all_discussion = await self.shared_pool.get_all_discussions()
         if all_discussion:
-            prompt = (
-                f"众臣各抒己见，所言如下：\n"
-                f"{all_discussion}"
-                f"请结合自身立场与现实条件，发言一句尽可能简短的回应，可支持、反对或另提方案，务必考虑财政可行性。"
-                + self.get_current_situation_prompt(maintain_employment_cost)
-            )
+            prompt = prompts['generate_and_share_opinion_prompt'].format(
+                all_discussion=all_discussion, current_situation_prompt=self.get_current_situation_prompt(maintain_employment_cost))
 
             try:
                 self.update_system_message()
@@ -116,9 +110,7 @@ class HighRankingGovernmentAgent(BaseAgent):
         """
         更新系统提示词，包含居民当前的状态信息
         """
-        self.system_message = (
-            f"你为清代政府最高决策者，你{self.personality}，朝廷正议政务，你负责根据下属讨论和当前状态做出最终决策。你的目标是维持地方统治稳定，同时完成中央政府下达的航运任务。\n"
-        )
+        self.system_message = prompts['high_ranking_government_agent_system_message'].format(personality=self.personality)
 
     async def make_decision(self, summary, salary):
         """
@@ -146,24 +138,14 @@ class HighRankingGovernmentAgent(BaseAgent):
         # 获取维持当前就业所需的资金
         maintain_employment_cost = salary * 0.5
 
-        decision_prompt = (
-            f"当前政府预算: {current_budget:.2f}两,军事力量: {self.government.get_military_strength():.2f},税率: {self.government.get_tax_rate()*100:.1f}%\n"
-            f"运输任务共{transport_task}吨,河运需{river_price:.2f}两/吨,海运需{sea_price:.2f}两/吨，维护运河基本运转需{maintenance_cost_base}两\n"
-            f"维持目前就业需资金: {maintain_employment_cost:.2f}两。若公共预算高于此值，可增加就业；反之，将减少就业。"
-            
-            f"成本计算：\n"
-            f"运输成本 = 河运比例×{transport_cost_river:.2f} + 海运比例×{transport_cost_sea:.2f}\n"
-            f"总支出 = 运输成本 + 公共预算 + 维护资金 + 军事拨款\n"
-            f"总支出必须 ≤ {current_budget:.2f}两。军事拨款需为20的整数倍，每20两增加一点军事力量。"
-            
-            f"下属讨论：\n{summary}\n\n"
-            
-            f"请做出合理决策，确保总支出不超预算。输出JSON，无需说明理由：\n"
-            f'{{"public_budget": 公共预算（整数）, "transport_ratio": 河运比例（0-1）, "maintenance_investment": 维护资金（整数）, "military_support": 军事拨款（整数）, "tax_adjustment": 税率调整（-0.1到0.1）}}\n'
-        )
+        prompt = prompts['make_decision_prompt'].format(
+            current_budget=current_budget, military_strength=self.government.get_military_strength(),
+            tax_rate=self.government.get_tax_rate()*100, transport_task=transport_task, river_price=river_price,
+            sea_price=sea_price, maintenance_cost_base=maintenance_cost_base, maintain_employment_cost=maintain_employment_cost,
+            transport_cost_river=transport_cost_river, transport_cost_sea=transport_cost_sea, summary=summary)
         try:
             self.update_system_message()
-            decision = await self.generate_llm_response(decision_prompt)
+            decision = await self.generate_llm_response(prompt)
 
             if decision:
                 government_log.info(f"高级政府官员 {self.agent_id} 的决策：{decision}")
@@ -205,13 +187,13 @@ class Government:
         maintain_employment_cost = salary * 0.5
         if budget_allocation > maintain_employment_cost:
             # 增加就业
-            job_increase_amount = int((budget_allocation - maintain_employment_cost) / 10) # 假设每10两增加1个岗位
+            job_increase_amount = int((budget_allocation - maintain_employment_cost) / 20) # 假设每20两增加1个岗位
             if job_increase_amount > 0:
                 self.towns.add_jobs_across_towns(job_increase_amount)
                 government_log.info(f"政府执行决策 - 增加 {job_increase_amount} 个工作岗位。")
         elif budget_allocation < maintain_employment_cost:
             # 减少就业
-            job_decrease_amount = int((maintain_employment_cost - budget_allocation) / 10) # 假设每10两减少1个岗位
+            job_decrease_amount = int((maintain_employment_cost - budget_allocation) / 20) # 假设每20两减少1个岗位
             if job_decrease_amount > 0:
                 self.towns.remove_jobs_across_towns(job_decrease_amount)
                 government_log.info(f"政府执行决策 - 减少 {job_decrease_amount} 个工作岗位。")
@@ -253,15 +235,15 @@ class Government:
         :param transport_ratio: 河运投入比例（0-1）
         :return: 是否决策成功
         """
-        # 计算总运输成本
-        total_cost = self.transport_economy.calculate_total_transport_cost(transport_ratio)
-        
         # 检查预算是否充足，不足则自动调整比例
         if self.budget < total_cost:
             # 计算最大可负担比例
             max_affordable_ratio = self.budget / (self.transport_economy.river_price * self.transport_economy.transport_task)
             transport_ratio = min(transport_ratio, max_affordable_ratio)
             print(f"预算不足，自动调整河运比例为{transport_ratio:.2f}")
+            
+        # 计算总运输成本
+        total_cost = self.transport_economy.calculate_total_transport_cost(transport_ratio)
         
         # 扣除运输成本
         self.budget -= total_cost
@@ -400,10 +382,8 @@ class InformationOfficer(BaseAgent):
         if not discussions:
             return "暂无讨论内容"
         
-        prompt = (
-            f"你为朝廷信息整理官员，请根据下列{len(discussions)}条朝堂讨论，用一句话尽可能简要地总结归纳核心观点，保留具体数值。"
-            f"讨论内容：\n" + "\n".join([f"{i+1}. {d}" for i, d in enumerate(discussions)])
-        )
+        prompt = prompts['summarize_discussions_prompt'].format(
+            num_discussions=len(discussions), discussions="\n".join([f"{i+1}. {d}" for i, d in enumerate(discussions)]))
 
         try:
             summary = await self.generate_llm_response(prompt)

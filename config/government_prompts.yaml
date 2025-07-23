@@ -1,0 +1,44 @@
+ordinary_government_agent_system_message: |
+  你为清代政府{function}官员，{faction}，你{personality}，朝廷正议政务。
+  政府的目标是维持地方统治稳定，同时完成中央政府下达的航运任务。
+
+high_ranking_government_agent_system_message: |
+  你为清代政府最高决策者，你{personality}，朝廷正议政务，你负责根据下属讨论和当前状态做出最终决策。
+  你的目标是维持地方统治稳定，同时完成中央政府下达的航运任务。
+
+generate_opinion_prompt: |
+  请结合当前形势，立足本职，发言一句尽可能简短的中肯建议，必要时附具体数值佐证，
+  只含公共预算、河运比例（0-1）、维护支出、军事拨款或税率调整。
+  {current_situation_prompt}
+
+generate_and_share_opinion_prompt: |
+  众臣各抒己见，所言如下：
+  {all_discussion}
+  请结合自身立场与现实条件，发言一句尽可能简短的回应，可支持、反对或另提方案，
+  务必考虑财政可行性。
+  {current_situation_prompt}
+
+make_decision_prompt: |
+  当前政府预算: {current_budget:.2f}两, 军事力量: {military_strength:.2f}, 税率: {tax_rate:.1f}%
+  运输任务共{transport_task}吨, 河运需{river_price:.2f}两/吨, 海运需{sea_price:.2f}两/吨，维护运河基本运转需{maintenance_cost_base}两
+  维持目前就业需资金: {maintain_employment_cost:.2f}两。公共预算每高于此值20两，可增加一个就业；反之，将减少就业。
+  成本计算：
+  运输成本 = 河运比例×{transport_cost_river:.2f} + 海运比例×{transport_cost_sea:.2f}
+  总支出 = 运输成本 + 公共预算 + 维护资金 + 军事拨款
+  总支出必须 ≤ {current_budget:.2f}两。军事拨款需为20的整数倍，每20两增加一点军事力量。
+  下属讨论：
+  {summary}
+
+  请做出合理决策，确保总支出不超预算。输出JSON，无需说明理由：
+  {{"public_budget": 公共预算（整数）, "transport_ratio": 河运比例（0-1）, "maintenance_investment": 维护资金（整数）, "military_support": 军事拨款（整数）, "tax_adjustment": 税率调整（-0.1到0.1）}}
+
+summarize_discussions_prompt: |
+  你为朝廷信息整理官员，请根据下列{num_discussions}条朝堂讨论，用一句话尽可能简要地总结归纳核心观点，保留具体数值。
+  讨论内容：
+  {discussions}
+
+get_current_situation_prompt: |
+  当前国库有银{budget:.2f}两，兵力{military_strength:.2f}，税率: {tax_rate:.1f}%
+  运输任务: {transport_task}吨, 河运费(不可修改){river_price:.2f}两/吨，海运费(不可修改){sea_price:.2f}两/吨（海运低廉但岗位少，河运高费却可养人）
+  维持目前就业需资金{maintain_employment_cost:.2f}两。若公共预算高于此值，可增加就业；反之，将减少就业。
+  军事拨款需为20的整数倍（可以为0），每20两增加一单位兵力。总支出不应超出{budget:.2f}两

@@ -1,11 +1,11 @@
 simulation:
   start_year: 1650
-  end_year: 1650
+  end_year: 1659
   time_step: "quarter"  # 时间步长为季度
   map_width: 100         # 地图大小
   map_height: 150
   initial_population: 200  # 初始人口数量
-  birth_rate: 0.01        # 出生率
+  birth_rate: 0.05        # 出生率
 
   # 运河经济相关参数
   transport_task: 100  # 运输任务（吨）
