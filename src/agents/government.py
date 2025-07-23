@@ -49,7 +49,7 @@ class OrdinaryGovernmentAgent(BaseAgent):
         生成一句关于政治决策的意见
         :return: 生成的意见内容
         """
-        maintain_employment_cost = salary * 0.5
+        maintain_employment_cost = salary * 0.6
 
         # 构建提示信息
         prompt = prompts['generate_opinion_prompt'].format(
@@ -73,7 +73,7 @@ class OrdinaryGovernmentAgent(BaseAgent):
         """
         从共享信息池中获取信息并发表看法，将看法放入共享信息池
         """
-        maintain_employment_cost = salary * 0.5
+        maintain_employment_cost = salary * 0.6
         # 获取最新讨论内容
         all_discussion = await self.shared_pool.get_all_discussions()
         if all_discussion:
@@ -136,7 +136,7 @@ class HighRankingGovernmentAgent(BaseAgent):
         transport_cost_sea = sea_price * transport_task      # 全部海运成本
         
         # 获取维持当前就业所需的资金
-        maintain_employment_cost = salary * 0.5
+        maintain_employment_cost = salary * 0.6
 
         prompt = prompts['make_decision_prompt'].format(
             current_budget=current_budget, military_strength=self.government.get_military_strength(),
@@ -184,7 +184,7 @@ class Government:
             government_log.info(f"政府执行决策 - 预算不足，无法提供工作。")
             return
         # 获取维持当前就业所需的资金
-        maintain_employment_cost = salary * 0.5
+        maintain_employment_cost = salary * 0.6
         if budget_allocation > maintain_employment_cost:
             # 增加就业
             job_increase_amount = int((budget_allocation - maintain_employment_cost) / 20) # 假设每20两增加1个岗位
