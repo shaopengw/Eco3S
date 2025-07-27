@@ -88,7 +88,7 @@ class OrdinaryRebel(BaseAgent):
             rebel_count = town['rebel_count']
             official_count = town['official_count']
             if rebel_count > 0:  # 只有当叛军数量大于0时才添加到提示词中
-                towns_analysis.append(f"{town['town_name']}: {rebel_count}：{official_count}")
+                towns_analysis.append(f"{town['town_name']}: 叛军{rebel_count}人，官兵{official_count}人。")
         return towns_analysis
 
 class RebelLeader(BaseAgent):
@@ -122,6 +122,7 @@ class RebelLeader(BaseAgent):
         towns_analysis = self.analysis_towns_stats(towns_stats)
         strength = self.rebellion.get_strength()
         resources = self.rebellion.get_resources()
+        summary = ("下属建议：" + summary) if summary else ""
 
         prompt = prompts_rebels['make_decision_prompt'].format(
             strength=strength, resources=resources, towns_analysis="\n".join(towns_analysis), summary=summary)
@@ -147,7 +148,7 @@ class RebelLeader(BaseAgent):
             rebel_count = town['rebel_count']
             official_count = town['official_count']
             if rebel_count > 0:  # 只有当叛军数量大于0时才添加到提示词中
-                towns_analysis.append(f"{town['town_name']}: {rebel_count}：{official_count}")
+                towns_analysis.append(f"{town['town_name']}: 叛军{rebel_count}人，官兵{official_count}人。")
         return towns_analysis
     
     def print_leader_status(self):

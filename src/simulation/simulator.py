@@ -3,6 +3,7 @@ import json
 import random
 import pandas as pd
 import os
+import yaml
 from datetime import datetime, timedelta
 from collections import defaultdict
 from colorama import Back
@@ -61,11 +62,13 @@ class Simulator:
             "population": [],
             "government_budget": [],
             "rebellion_strength": [],
+            "rebellion_resources": [],
             "average_satisfaction": [],
             "tax_rate": [],
             "river_navigability": [],
             "gdp": [],
         }
+        self.rebellion_history = []  # 存储叛乱历史记录
         
         # 保存初始数据
         self.gdp = self.calculate_gdp()  # 确保先计算初始GDP
@@ -77,6 +80,7 @@ class Simulator:
         self.results["population"].append(self.population.get_population())
         self.results["government_budget"].append(self.government.get_budget())
         self.results["rebellion_strength"].append(self.rebellion.get_strength())
+        self.results["rebellion_resources"].append(self.rebellion.get_resources())
         self.results["average_satisfaction"].append(self.average_satisfaction)
         self.results["tax_rate"].append(self.government.get_tax_rate())
         self.results["river_navigability"].append(self.map.get_navigability())
@@ -213,6 +217,7 @@ class Simulator:
             # 打印城镇详细状态---测试用
             # print("\n各城镇详细状态：")
             # self.towns.print_towns_status()
+            # self.towns.print_towns()
                 
             # for resident_name in list(self.residents.keys()):  #测试用-展示居民情况
             #     resident = self.residents[resident_name]
@@ -254,6 +259,7 @@ class Simulator:
             self.results["population"].append(self.population.get_population())
             self.results["government_budget"].append(self.government.get_budget())
             self.results["rebellion_strength"].append(self.rebellion.get_strength())
+            self.results["rebellion_resources"].append(self.rebellion.get_resources())
             self.results["average_satisfaction"].append(self.average_satisfaction)
             self.results["tax_rate"].append(self.government.get_tax_rate())
             self.results["river_navigability"].append(self.map.get_navigability())
@@ -293,6 +299,7 @@ class Simulator:
                 break
             else:
                 self.time.step()
+            # self.time.step()
 
         self.end_time = datetime.now()  # 记录模拟结束时间
         self.display_total_simulation_time()
@@ -317,27 +324,55 @@ class Simulator:
         """
         print(f"开始收集 {group_type} 的决策")
 
-        # 计算工资
+        # 获取群体决策配置
+        try:
+            with open('config/simulation_config.yaml', 'r', encoding='utf-8') as f:
+                sim_config = yaml.safe_load(f)
+                group_decision_config = sim_config['simulation'].get('group_decision', {})
+                # 根据群体类型获取对应的配置
+                group_config = group_decision_config.get(group_type, {})
+                group_decision_enabled = group_config.get('enabled', True)
+                configured_max_rounds = group_config.get('max_rounds', 2)
+        except Exception as e:
+            print(f"读取群体决策配置失败，使用默认值：{e}")
+            group_decision_enabled = True
+            configured_max_rounds = max_rounds
+
+        # 计算决策参数
         _, government_salary = self.calculate_total_salaries()
         if group_type == 'rebellion':
-            # 如果是叛军决策，获取各城镇叛军统计信息
             group_stats = self.get_rebels_statistics()
             group_param = group_stats
         else:
             group_param = government_salary
-        
-        # 获取所有普通成员
+
+        # 获取领导者
+        leaders = [member for member in config['agents'].values()
+                  if isinstance(member, config['leader_type'])]
+        if not leaders:
+            return None
+
+        # 如果不启用群体决策，直接由领导者决策
+        if not group_decision_enabled:
+            leader = leaders[0]
+            decision = await leader.make_decision(
+                summary="直接决策模式，无群体讨论。",
+                towns_stats=group_param
+            )
+            return decision
+
+        # 启用群体决策模式
         ordinary_members = [
             member for member in config['agents'].values()
-            if isinstance(member, config['ordinary_type']) and not isinstance(member, InformationOfficer) and not isinstance(member, RebelsInformationOfficer)  
+            if isinstance(member, config['ordinary_type'])
+            and not isinstance(member, InformationOfficer)
+            and not isinstance(member, RebelsInformationOfficer)
         ]
 
         if not ordinary_members:
             return None
 
         shared_pool = list(config['agents'].values())[0].shared_pool
-        
-        # 确保在开始新的讨论前清空共享池
         await shared_pool.clear_discussions()
 
         # 第一轮：所有成员异步发表初始意见
@@ -348,7 +383,7 @@ class Simulator:
         await asyncio.gather(*first_round_tasks)
 
         # 后续轮次：基于之前的讨论内容发表见解
-        for round_num in range(2, max_rounds + 1):
+        for round_num in range(2, configured_max_rounds + 1):
             print(f"第{round_num}轮决策")
             round_tasks = [
                 member.generate_and_share_opinion(group_param)
@@ -356,14 +391,11 @@ class Simulator:
             ]
             await asyncio.gather(*round_tasks)
 
-        # 获取信息整理员和领导者
+        # 获取信息整理员
         info_officers = [
             member for member in config['agents'].values()
-            if isinstance(member, InformationOfficer) or isinstance(member, RebelsInformationOfficer)
-        ]
-        leaders = [
-            member for member in config['agents'].values()
-            if isinstance(member, config['leader_type'])
+            if isinstance(member, InformationOfficer)
+            or isinstance(member, RebelsInformationOfficer)
         ]
 
         # 处理讨论结果
@@ -513,12 +545,18 @@ class Simulator:
         )
 
         # 分配新ID
-        offset = max(self.residents.keys()) + 1 if self.residents else 1
+        used_ids = set(self.residents.keys()) | set(self.social_network.hetero_graph.graph.nodes())
+        new_id = max(used_ids) + 1 if used_ids else 1
+        
         new_residents_with_new_ids = {}
         for i, (_, resident) in enumerate(new_residents.items()):
-            new_id = offset + i
-            resident.resident_id = new_id  # 直接修改 ID
+            while new_id in used_ids:  # 确保ID不重复
+                new_id += 1
+            resident.resident_id = new_id
             new_residents_with_new_ids[new_id] = resident
+            used_ids.add(new_id)
+            new_id += 1
+            
         return new_residents_with_new_ids
 
     async def integrate_new_residents(self, new_residents):
@@ -575,9 +613,8 @@ class Simulator:
         计算所有城镇的平均失业率
         :return: 平均失业率（浮点数）
         """
-        
-        total_residents = self.population.get_population() - self.rebellion.strength
         total_employed = 0
+        total_residents = 0
         
         # 遍历所有城镇
         for town_name, town_data in self.towns.towns.items():
@@ -587,6 +624,8 @@ class Simulator:
                 # 计算该城镇的就业人数
                 town_employed = sum(len(info["employed"]) for job, info in job_market.jobs_info.items() if job != "叛军")
                 total_employed += town_employed
+                # 获取该城镇的居民总数
+                total_residents += len(town_data['residents'])
         
         # 计算总体失业率
         if total_residents == 0:
@@ -605,9 +644,7 @@ class Simulator:
         if not self.residents:
             return 0.0
         # 计算所有居民的收入总和
-        total_income = sum(resident.income for resident in self.residents.values())
-        # total_basic_cost = self.basic_living_cost * len(self.residents)
-        # gdp = total_income - total_basic_cost
+        total_income = sum(resident.income for resident in self.residents.values() if resident.job != "叛军")
         gdp = total_income
         return gdp
 
@@ -643,7 +680,7 @@ class Simulator:
         if town_rebels < strength_investment:
             print(f"目标城镇 {target_town} 叛军数量不足，未能成功发起叛乱")
             return False
-        elif town_defense ==0:
+        elif town_defense == 0:
             success = True
             loot_ratio = strength_investment / self.government.military_strength
             gov_loss_budget = int(self.government.budget * loot_ratio)
@@ -657,11 +694,25 @@ class Simulator:
             print(f"兵力对比：政府军 {town_defense} vs 叛军 {rebel_strength}")
             print(f"叛军获得资源{gov_loss_budget}")
             print(f"\n===========================")
-
+            
+            # 记录叛乱信息
+            rebellion_info = {
+                "id": self.rebellion_records,
+                "time": self.time.get_current_time(),
+                "target_town": target_town,
+                "success": True,
+                "rebel_strength": rebel_strength,
+                "town_defense": town_defense,
+                "rebel_loss": 0,
+                "gov_loss": 0,
+                "resource_change": gov_loss_budget
+            }
+            self.rebellion_history.append(rebellion_info)
         else:
             # 战斗损耗计算
             strength_ratio = town_defense / rebel_strength  # α = G/R
-            success = True if strength_ratio < 0 else False
+            success = True if strength_ratio < 1 else False
+
             
             # 1. 非线性损耗比例计算
             if strength_ratio > MAX_RATIO:
@@ -758,7 +809,8 @@ class Simulator:
             "叛军力量变化率": self.calculate_change_rate("rebellion_strength", current_idx),
             "平均满意度变化": self.calculate_change_rate("average_satisfaction", current_idx),
             "失业率变化": self.calculate_change_rate("unemployment_rate", current_idx),
-            "叛乱次数变化": self.results["rebellions"][current_idx] - self.results["rebellions"][current_idx-1],
+            "叛乱次数": self.results["rebellions"][current_idx],
+            "叛军资源变化": self.calculate_change_rate("rebellion_resources", current_idx),
         }
         
         return changes
@@ -776,24 +828,22 @@ class Simulator:
         存储决策记忆
         :param group_type: 群体类型
         :param decision: 决策内容
-        :param discussion_summary: 讨论总结
         :param changes_summary: 变化率总结
         """
         # 将决策内容和结果格式化为字符串
-        memory_content = (
-            f"时间: {self.time.get_current_year()}\n"
-            f"决策内容: {decision}\n"
-            f"执行结果:\n"
-            # f"- 人口变化率: {changes_summary.get('人口变化率', 0):.2%}\n"
-            f"- GDP变化率: {changes_summary.get('GDP变化率', 0):.2%}\n"
-            f"- 政府预算变化率: {changes_summary.get('政府预算变化率', 0):.2%}\n"
-            f"- 叛军力量变化率: {changes_summary.get('叛军力量变化率', 0):.2%}\n"
-            f"- 平均满意度变化: {changes_summary.get('平均满意度变化', 0):.2%}\n"
-            f"- 失业率变化: {changes_summary.get('失业率变化', 0):.2%}\n"
-            f"- 叛乱次数: {changes_summary.get('叛乱次数', 0)}"
-        )
-        
         if group_type == 'government':
+            memory_content = (
+                f"时间: {self.time.get_current_year()}\n"
+                f"决策内容: {decision}\n"
+                f"执行结果:\n"
+                f"- GDP变化率: {'+' if changes_summary.get('GDP变化率', 0) > 0 else ''}{changes_summary.get('GDP变化率', 0):.2%}\n"
+                f"- 政府预算变化率: {'+' if changes_summary.get('政府预算变化率', 0) > 0 else ''}{changes_summary.get('政府预算变化率', 0):.2%}\n"
+                f"- 叛军力量变化率: {'+' if changes_summary.get('叛军力量变化率', 0) > 0 else ''}{changes_summary.get('叛军力量变化率', 0):.2%}\n"
+                f"- 平均满意度变化: {'+' if changes_summary.get('平均满意度变化', 0) > 0 else ''}{changes_summary.get('平均满意度变化', 0):.2%}\n"
+                f"- 失业率变化: {'+' if changes_summary.get('失业率变化', 0) > 0 else ''}{changes_summary.get('失业率变化', 0):.2%}\n"
+                f"- 叛乱次数: {changes_summary.get('叛乱次数', 0)}"
+            )
+            
             # 存储到所有政府官员的记忆中
             for official in self.government_officials.values():
                 if not isinstance(official, InformationOfficer):
@@ -806,6 +856,14 @@ class Simulator:
                     )
         
         elif group_type == 'rebellion':
+            memory_content = (
+                f"时间: {self.time.get_current_year()}\n"
+                f"决策内容: {decision}\n"
+                f"执行结果:\n"
+                f"- 叛军力量变化率: {'+' if changes_summary.get('叛军力量变化率', 0) > 0 else ''}{changes_summary.get('叛军力量变化率', 0):.2%}\n"
+                f"- 叛军资源变化: {'+' if changes_summary.get('叛军资源变化', 0) > 0 else ''}{changes_summary.get('叛军资源变化', 0):.2%}\n"
+            )
+            
             # 存储到所有叛军成员的记忆中
             for rebel in self.rebels_agents.values():
                 if not isinstance(rebel, InformationOfficer):
@@ -814,7 +872,9 @@ class Simulator:
                         content=memory_content,
                         is_user=False,
                         round_num=self.time.get_current_time(),
-                        store_in_shared=True                )
+                        store_in_shared=True
+                    )
+
 
     def get_rebels_statistics(self):
         """
@@ -864,4 +924,3 @@ class Simulator:
         else:
             self.propaganda_prob = round(speech_count / total_rebels, 2)
             self.propaganda_prob = max(0.0, min(1.0, self.propaganda_prob))  # 确保概率在0到1之间
-            print(f"普通叛军发表煽动言论的概率为 {self.propaganda_prob:.2%}")
