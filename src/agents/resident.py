@@ -239,7 +239,6 @@ class Resident(BaseAgent):
             tax_rate_message = "当前税率极高，负担极重。\n"
         
         employed = self.employed
-        need_speech = random.random() < global_config.get("simulation", {}).get("response_probability")
 
         # 根据是否就业选择不同的提示词模板
         if employed:

@@ -129,6 +129,28 @@ class Towns:
             print("就业市场状态:")
             town_data['job_market'].print_job_market_status()
 
+    def print_towns(self):
+        """打印所有城镇状态"""
+        river_town_residents = 0
+        non_river_town_residents = 0
+
+        for town_name, town_data in self.towns.items():
+            # print(f"\n城镇 {town_name} 状态:")
+            # print(f"中心位置: {town_data['info']['location']}")
+            # print(f"类型: {town_data['info']['type']}")
+            # print(f"居民数量: {len(town_data['residents'])}")
+            # print("就业市场状态:")
+            # town_data['job_market'].print_job_market_status()
+
+            if town_data['info']['type'] == 'canal':
+                river_town_residents += len(town_data['residents'])
+            else:
+                non_river_town_residents += len(town_data['residents'])
+
+        print(f"\n沿河城镇总居民数量: {river_town_residents}")
+        print(f"非沿河城镇总居民数量: {non_river_town_residents}")
+
+
     def remove_jobs_across_towns(self, total_jobs_to_remove):
         """
         将要减少的岗位均匀分布给所有城镇

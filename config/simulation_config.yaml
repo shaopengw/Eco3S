@@ -4,7 +4,7 @@ simulation:
   time_step: "quarter"  # 时间步长为季度
   map_width: 100         # 地图大小
   map_height: 150
-  initial_population: 200  # 初始人口数量
+  initial_population: 1000  # 初始人口数量
   birth_rate: 0.05        # 出生率
 
   # 运河经济相关参数
@@ -16,6 +16,13 @@ simulation:
   max_retry_attempts: 3  # 最大重试次数
   retry_delay: 1.0       # 重试延迟时间（秒）
   response_probability: 0.3  # 居民回应概率
+  group_decision:
+    government:
+      enabled: true  # 是否启用政府群体决策
+      max_rounds: 2   # 政府最大讨论轮数
+    rebellion:
+      enabled: false  # 是否启用叛军群体决策
+      max_rounds: 2   # 叛军最大讨论轮数
 
 data:
   resident_info_path: "experiment_dataset/resident_data/resident_data.json"  # 居民信息文件路径

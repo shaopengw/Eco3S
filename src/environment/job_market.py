@@ -365,6 +365,7 @@ class JobMarket:
         # 如果岗位数小于职业数，随机选取岗位数个职业来增加工作岗位
         if num_jobs < len(available_jobs):
             selected_jobs = random.sample(available_jobs, num_jobs)
+            jobs_per_profession = 1
         else:
             # 计算每个职业平均分配的岗位数
             jobs_per_profession = num_jobs // len(available_jobs)
@@ -374,7 +375,7 @@ class JobMarket:
 
         # 为每个职业分配基础岗位数
         for job in selected_jobs:
-            self.jobs_info[job]["total"] += jobs_per_profession if jobs_per_profession else 1
+            self.jobs_info[job]["total"] += jobs_per_profession
 
         # 随机分配剩余的岗位
         if remaining_jobs > 0:

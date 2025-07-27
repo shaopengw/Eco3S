@@ -177,8 +177,14 @@ async def run_simulation(config: dict[str, Any]) -> None:
         unemployment_rate=simulator.results["unemployment_rate"],
         population=simulator.results["population"],
         government_budget=simulator.results["government_budget"],
-        # rebellion_strength=simulator.results["rebellion_strength"],
+        # government_strength=simulator.government.get_military_strength(),
+        rebellion_strength=simulator.results["rebellion_strength"],
+        average_satisfaction=simulator.results["average_satisfaction"],
+        tax_rate=simulator.results["tax_rate"],
+        river_navigability=simulator.results["river_navigability"],
+        gdp=simulator.results["gdp"],
     )
+    
 
     # 保存结果
     print("模拟结束")
