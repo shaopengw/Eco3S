@@ -1,12 +1,13 @@
 class Time:
-    def __init__(self, start_year, end_year):
+    def __init__(self, start_year, total_years):
         """
         初始化时间类
         :param start_year: 模拟的起始年份
-        :param end_year: 模拟的结束年份
+        :param total_years: 模拟的总年数
         """
         self.start_year = start_year
-        self.end_year = end_year
+        self.total_years = total_years
+        self.end_year = start_year + total_years - 1
         self.current_year = start_year
         self.current_quarter = 1  # 当前季度（1到4）
 
@@ -77,3 +78,8 @@ class Time:
         """
         self.current_year = self.start_year
         self.current_quarter = 1
+
+    def update_total_years(self, new_total_years):
+        """更新总模拟年数，并相应调整结束年份"""
+        self.total_years = new_total_years
+        self.end_year = self.current_year + new_total_years - 1

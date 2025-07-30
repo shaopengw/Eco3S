@@ -6,13 +6,17 @@ import random
 
 class Towns:
     def __init__(self, map, initial_population=10):
-        self.towns = defaultdict(lambda: {
+        self.towns = defaultdict(self._create_town_dict)
+        self.initialize_towns(map, initial_population)
+    
+    def _create_town_dict(self):
+        """创建一个新的城镇字典结构"""
+        return {
             'info': {},
             'residents': {},
             'resident_group': None,
             'job_market': None
-        })
-        self.initialize_towns(map, initial_population)
+        }
 
     def initialize_towns(self, map, initial_population):
         """初始化所有城镇信息"""
