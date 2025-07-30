@@ -195,10 +195,10 @@ def plot_all_results(years, rebellions, unemployment_rate, population, governmen
     绘制所有结果的图表并保存数据表格
     """
     # 筛选每年Q1的数据
-    yearly_indices = [i for i, year in enumerate(years) if year.endswith(' Q1') or year == '初始']
+    yearly_indices = [i for i, year in enumerate(years) if year.endswith(' Q1') or year == 'initial']
     
     # 提取年度数据
-    yearly_years = [years[i].split(' ')[0] if years[i] != '初始' else '初始' for i in yearly_indices]
+    yearly_years = [years[i].split(' ')[0] if years[i] != 'initial' else 'initial' for i in yearly_indices]
     yearly_rebellions = [rebellions[i] for i in yearly_indices]
     yearly_unemployment = [unemployment_rate[i] for i in yearly_indices]
     yearly_population = [population[i] for i in yearly_indices]

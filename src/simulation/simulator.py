@@ -7,18 +7,28 @@ import yaml
 from datetime import datetime, timedelta
 from collections import defaultdict
 from colorama import Back
+import pickle
 from src.agents.resident_agent_generator import (generate_canal_agents)
 from src.agents.government import (
     OrdinaryGovernmentAgent,
     HighRankingGovernmentAgent,
     InformationOfficer
 )
-from src.agents.rebels import OrdinaryRebel, RebelLeader, InformationOfficer as RebelsInformationOfficer
+from src.agents.rebels import OrdinaryRebel, RebelLeader, RebelsSharedInformationPool, InformationOfficer as RebelsInformationOfficer
 from src.generator.resident_generate import generate_resident_data, save_resident_data
 from src.environment.social_network import SocialNetwork
-from src.agents.resident import ResidentGroup
 from src.environment.towns import Towns
 from src.environment.transport_economy import TransportEconomy
+
+from src.environment.map import Map
+from src.environment.time import Time
+from src.environment.job_market import JobMarket
+from src.environment.population import Population
+from src.environment.social_network import SocialNetwork
+from src.environment.climate import ClimateSystem
+from src.agents.government import Government, government_SharedInformationPool
+from src.agents.rebels import Rebellion
+from src.agents.resident import Resident, ResidentGroup, ResidentSharedInformationPool
 
 class Simulator:
     def __init__(self, map, time, government, government_officials, rebellion, rebels_agents, population, social_network, residents, towns, transport_economy, climate):
@@ -134,7 +144,7 @@ class Simulator:
                     'ordinary_type': OrdinaryGovernmentAgent,
                     'leader_type': HighRankingGovernmentAgent,
                 }
-                government_decision = await self.collect_group_decision('government', government_config)
+                # government_decision = await self.collect_group_decision('government', government_config)
                 
                 # 收集叛军决策
                 rebellion_config = {
@@ -142,7 +152,7 @@ class Simulator:
                     'ordinary_type': OrdinaryRebel,
                     'leader_type': RebelLeader,
                 }
-                rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
+                # rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
                 # rebellion_decision = '{"propaganda_budget": 0,"stage_rebellion": 1,"target_town": "杭州"}'
                 # rebellion_summary = '一致决定发动叛乱'
                 # 统一执行决策
@@ -160,10 +170,10 @@ class Simulator:
                 resident = self.residents[resident_name]
                 tax_rate = self.government.get_tax_rate()
                 # 基于LLM的决策--测试时建议暂时注释
-                if resident.job == "叛军":
-                    tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
-                else:
-                    tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost))
+                # if resident.job == "叛军":
+                #     tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
+                # else:
+                #     tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost))
 
                 # 更新居民寿命（次/年）
                 if self.time.get_current_quarter() == 1:
@@ -294,12 +304,9 @@ class Simulator:
                             changes_summary
                         )
 
-            if self.time.get_current_quarter() == 4 and self.map.get_navigability() < 0.2:
-                print(Back.RED + f"运河因通航能力过低（{self.map.get_navigability()}）而废弃，提前结束模拟" + Back.RESET)
-                break
-            else:
-                self.time.step()
-            # self.time.step()
+            # if self.time.get_current_quarter() == 4 and self.map.get_navigability() < 0.2:
+            #     print(Back.RED + f"运河因通航能力过低（{self.map.get_navigability()}）而废弃" + Back.RESET)
+            self.time.step()
 
         self.end_time = datetime.now()  # 记录模拟结束时间
         self.display_total_simulation_time()
@@ -924,3 +931,321 @@ class Simulator:
         else:
             self.propaganda_prob = round(speech_count / total_rebels, 2)
             self.propaganda_prob = max(0.0, min(1.0, self.propaganda_prob))  # 确保概率在0到1之间
+
+    def save_cache(self, file_path):
+        """保存模拟状态到缓存文件"""
+        cache_dir = "./backups"  # 缓存文件存放的目录
+        
+        # 确保 backups 目录存在
+        os.makedirs(cache_dir, exist_ok=True)
+
+        if file_path is None:
+            # 如果没有指定文件路径，使用默认的命名规则
+            population = self.population.get_population()
+            total_years = self.time.total_years
+            file_path = os.path.join(cache_dir, f"simulation_cache_p{population}_y{total_years}.pkl")
+        try:
+            with open(file_path, 'wb') as f:
+                # 只保存关键状态数据
+                government_state = {
+                    'budget': self.government.budget,
+                    'military_strength': self.government.military_strength,
+                    'tax_rate': self.government.tax_rate
+                },
+                residents_state = [
+                    {
+                        'resident_id': resident.resident_id,
+                        'shared_pool': {
+                            'economic_status': resident.shared_pool.shared_info.get('economic_status', {}),
+                            'social_network': resident.shared_pool.shared_info.get('social_network', {}),
+                            'environment_awareness': resident.shared_pool.shared_info.get('environment_awareness', {})
+                        },
+                        'location': resident.location,
+                        'town': resident.town,
+                        'employed': resident.employed,
+                        'job': resident.job,
+                        'income': resident.income,
+                        'satisfaction': resident.satisfaction,
+                        'health_index': resident.health_index,
+                        'lifespan': resident.lifespan,
+                        'personality': resident.personality,
+                        'system_message': resident.system_message,
+                        # 'memory': resident.memory,
+                    } for resident in self.residents.values()
+                ],
+
+                towns_state = {
+                    town_name: {
+                        'info': {
+                            'name': town_name,
+                            'location': town_data['info']['location'],
+                            'type': town_data['info']['type']
+                        },
+                        'residents': {
+                            resident_id: {
+                                'resident_id': resident.resident_id,
+                                'town': resident.town
+                            } for resident_id, resident in town_data['residents'].items()
+                        },
+                        'job_market': {
+                            'town_type': town_data['job_market'].town_type,
+                            'jobs_info': {
+                                job_type: {
+                                    'total': info['total'],
+                                    'employed': {
+                                        resident_id: salary 
+                                        for resident_id, salary in info['employed'].items()
+                                    },
+                                    'base_salary': info['base_salary']
+                                } for job_type, info in town_data['job_market'].jobs_info.items()
+                            }
+                        } if town_data['job_market'] else None,
+                        'hometown_group': town_data.get('hometown_group')
+                    } for town_name, town_data in self.towns.towns.items()
+                },
+
+                social_network_state = {
+                    'hetero_graph': self.social_network.hetero_graph,
+                    'hyper_graph': self.social_network.hyper_graph,
+                },
+
+                rebellion_state = {
+                    'strength': self.rebellion.strength,
+                    'resources': self.rebellion.resources,
+                },
+                government_officials_state = [
+                    {
+                        'agent_id': official.agent_id,
+                        'group_type': 'government',
+                        'function': getattr(official, 'function', None),
+                        'faction': getattr(official, 'faction', None),
+                        'personality': getattr(official, 'personality', None) if hasattr(official, 'personality') else None,
+                        'system_message': official.system_message
+                    } for official in self.government_officials.values()
+                ],
+                
+                rebels_agents_state = [
+                    {
+                        'agent_id': rebel.agent_id,
+                        'group_type': 'rebellion',
+                        'role': rebel.role,
+                        'personality': getattr(rebel, 'personality', None) if hasattr(rebel, 'personality') else None,
+                        'system_message': rebel.system_message,
+                    } for rebel in self.rebels_agents.values()
+                ],
+
+                state = {
+                    'map': self.map,
+                    'time': self.time,
+                    'population': self.population,
+                    'government': government_state,
+                    'transport_economy': self.transport_economy,
+                    'residents': residents_state,
+                    'towns': towns_state,
+                    'social_network': social_network_state,
+                    'rebellion': rebellion_state,
+                    'government_officials': government_officials_state,
+                    'rebels_agents': rebels_agents_state,
+                    'climate': self.climate,
+                    'basic_living_cost': self.basic_living_cost,
+                    'average_satisfaction': self.average_satisfaction,
+                    'gdp': self.gdp,
+                    'propaganda_prob': self.propaganda_prob,
+                    'propaganda_speech': self.propaganda_speech,
+                    'rebellion_records': self.rebellion_records,
+                    'results': self.results,
+                    'rebellion_history': self.rebellion_history,
+                    'start_time': self.start_time,
+                    'end_time': self.end_time
+                }
+                pickle.dump(state, f)
+                print(f"缓存文件保存成功")
+        except Exception as e:
+            raise Exception(f"保存缓存失败: {e}")
+
+    
+    @classmethod
+    def load_cache(cls, file_path, simulator_years):
+        """从缓存文件加载模拟状态"""
+        try:
+            with open(file_path, 'rb') as f:
+                state = pickle.load(f)
+            
+            # 创建新的模拟器实例
+            simulator = cls.__new__(cls)
+            
+            # 重建组件
+            simulator.map = state.get('map')
+            simulator.time = state.get('time')
+
+            if simulator.time:
+            #     # 获取配置文件中的总年数
+            #     with open('config/simulation_config.yaml', 'r', encoding='utf-8') as f:
+            #         config = yaml.safe_load(f)
+            #         total_years = config['simulation'].get('total_years', 10)  # 默认10年
+                # 更新时间设置
+                simulator.time.update_total_years(simulator_years)
+            simulator.population = state.get('population')
+            simulator.transport_economy = state.get('transport_economy')
+            
+            # 重建居民
+            simulator.residents = {}
+            residents_data = state.get('residents')
+            if residents_data:
+                # 处理元组包裹的情况
+                if isinstance(residents_data, tuple) and len(residents_data) > 0:
+                    residents_data = residents_data[0]
+                if isinstance(residents_data, list):
+                    for res_state in residents_data:
+                        resident = Resident(
+                            resident_id=res_state.get('resident_id'),
+                            job_market=None,  # 临时设为None，后续更新
+                            shared_pool=ResidentSharedInformationPool(),
+                            map=simulator.map
+                        )
+                        # 恢复居民状态
+                        resident.shared_pool.shared_info = res_state.get('shared_pool', {})
+                        resident.location = res_state.get('location')
+                        resident.town = res_state.get('town')
+                        resident.employed = res_state.get('employed')
+                        resident.job = res_state.get('job')
+                        resident.income = res_state.get('income')
+                        resident.satisfaction = res_state.get('satisfaction')
+                        resident.health_index = res_state.get('health_index')
+                        resident.lifespan = res_state.get('lifespan')
+                        resident.personality = res_state.get('personality')
+                        resident.system_message = res_state.get('system_message')
+                        simulator.residents[resident.resident_id] = resident
+
+            # 重建城镇
+            simulator.towns = Towns(simulator.map, simulator.population.get_population())
+            towns_state = state.get('towns')
+            if towns_state:
+                # 处理元组包裹的情况
+                if isinstance(towns_state, tuple) and len(towns_state) > 0:
+                    towns_state = towns_state[0]
+                if isinstance(towns_state, dict):
+                    for town_name, town_data in towns_state.items():
+                        simulator.towns.towns[town_name] = {
+                            'info': town_data.get('info', {}),
+                            'residents': {},
+                            'job_market': None,  # 临时设为None，后续更新
+                            'hometown_group': town_data.get('hometown_group')
+                        }
+                        
+                        # 恢复居民关联
+                        for resident_id, resident_data in town_data.get('residents', {}).items():
+                            if resident_id in simulator.residents:
+                                simulator.towns.towns[town_name]['residents'][resident_id] = simulator.residents[resident_id]
+
+                        # 恢复就业市场
+                        if town_data.get('job_market'):
+                            job_market = JobMarket(town_data['job_market'].get('town_type'))
+                            for job_type, info in town_data['job_market'].get('jobs_info', {}).items():
+                                job_market.jobs_info[job_type] = {
+                                    'total': info.get('total'),
+                                    'employed': info.get('employed', {}),
+                                    'base_salary': info.get('base_salary')
+                                }
+                            simulator.towns.towns[town_name]['job_market'] = job_market
+
+            # 恢复其他组件
+            social_network_state = state.get('social_network', {})
+            if isinstance(social_network_state, tuple) and len(social_network_state) > 0:
+                social_network_state = social_network_state[0]
+            simulator.social_network = SocialNetwork()
+            simulator.social_network.hetero_graph = social_network_state.get('hetero_graph')
+            simulator.social_network.hyper_graph = social_network_state.get('hyper_graph')
+
+            # 恢复政府数据
+            government_data = state.get('government')
+            if government_data:
+                if isinstance(government_data, tuple) and len(government_data) > 0:
+                    government_data = government_data[0]
+                simulator.government = Government(
+                    map=simulator.map,
+                    towns=simulator.towns,
+                    military_strength=government_data.get('military_strength'),
+                    initial_budget=government_data.get('budget'),
+                    time=simulator.time,
+                    transport_economy=simulator.transport_economy,
+                )
+                simulator.government.tax_rate = government_data.get('tax_rate')
+
+            # 恢复政府官员
+            simulator.government_officials = {}
+            officials_data = state.get('government_officials')
+            if officials_data:
+                if isinstance(officials_data, tuple) and len(officials_data) > 0:
+                    officials_data = officials_data[0]
+                shared_pool = government_SharedInformationPool()
+                for off_state in officials_data:
+                    if off_state.get('function'):
+                        official = OrdinaryGovernmentAgent(
+                            agent_id=off_state.get('agent_id'),
+                            government=simulator.government,
+                            shared_pool=shared_pool
+                        )
+                        official.function = off_state.get('function')
+                        official.faction = off_state.get('faction')
+                    else:
+                        official = HighRankingGovernmentAgent(
+                            agent_id=off_state.get('agent_id'),
+                            government=simulator.government,
+                            shared_pool=shared_pool
+                        )
+                    official.personality = off_state.get('personality')
+                    official.system_message = off_state.get('system_message')
+                    simulator.government_officials[official.agent_id] = official
+
+            rebellion_state = state.get('rebellion', {})
+            if isinstance(rebellion_state, tuple) and len(rebellion_state) > 0:
+                rebellion_state = rebellion_state[0]
+            simulator.rebellion = Rebellion(
+                initial_strength=rebellion_state.get('strength'),
+                initial_resources=rebellion_state.get('resources'),
+                towns=simulator.towns,
+            )
+
+            # 恢复叛军
+            simulator.rebels_agents = {}
+            rebels_data = state.get('rebels_agents')
+            if rebels_data:
+                if isinstance(rebels_data, tuple) and len(rebels_data) > 0:
+                    rebels_data = rebels_data[0]
+                shared_pool = RebelsSharedInformationPool()
+                for rebel_state in rebels_data:
+                    if rebel_state.get('role') == 'leader':
+                        rebel = RebelLeader(
+                            agent_id=rebel_state.get('agent_id'),
+                            rebellion=simulator.rebellion,
+                            shared_pool=shared_pool
+                        )
+                    else:
+                        rebel = OrdinaryRebel(
+                            agent_id=rebel_state.get('agent_id'),
+                            rebellion=simulator.rebellion,
+                            shared_pool=shared_pool
+                        )
+                    rebel.role = rebel_state.get('role')
+                    rebel.personality = rebel_state.get('personality')
+                    rebel.system_message = rebel_state.get('system_message')
+                    rebel.time = rebel_state.get('time')
+                    simulator.rebels_agents[rebel.agent_id] = rebel
+
+            # 恢复统计数据和历史记录
+            simulator.climate = state.get('climate')
+            simulator.basic_living_cost = state.get('basic_living_cost')
+            simulator.average_satisfaction = state.get('average_satisfaction')
+            simulator.gdp = state.get('gdp')
+            simulator.propaganda_prob = state.get('propaganda_prob')
+            simulator.propaganda_speech = state.get('propaganda_speech')
+            simulator.rebellion_records = state.get('rebellion_records')
+            simulator.results = state.get('results')
+            simulator.rebellion_history = state.get('rebellion_history')
+            simulator.start_time = state.get('start_time')
+            simulator.end_time = state.get('end_time')
+
+            return simulator
+        except Exception as e:
+            raise Exception(f"加载缓存失败: {str(e)}")

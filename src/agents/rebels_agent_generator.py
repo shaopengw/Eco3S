@@ -1,7 +1,7 @@
 import json
 import asyncio
 from typing import Dict, Optional
-from src.agents.rebels import OrdinaryRebel, RebelLeader, rebels_SharedInformationPool, InformationOfficer
+from src.agents.rebels import OrdinaryRebel, RebelLeader, RebelsSharedInformationPool, InformationOfficer
 from src.agents.rebels import Rebellion
 
 async def generate_rebels_agents(
@@ -9,7 +9,7 @@ async def generate_rebels_agents(
     rebellion: Rebellion,
     agent_graph: Optional[Dict[int, OrdinaryRebel]] = None,
     agent_id_mapping: Optional[Dict[int, int]] = None,
-    shared_pool: Optional[rebels_SharedInformationPool] = None,
+    shared_pool: Optional[RebelsSharedInformationPool] = None,
 ) -> Dict[int, OrdinaryRebel]:
     """
     生成并返回叛军的叛军图。
@@ -19,7 +19,7 @@ async def generate_rebels_agents(
         rebellion (Rebellion): 叛军对象，用于关联叛军。
         agent_graph (Dict[int, OrdinaryRebel], 可选): 叛军图，默认为空。
         agent_id_mapping (Dict[int, int], 可选): 叛军 ID 与 Agent ID 的映射关系，默认为空。
-        shared_pool (rebels_SharedInformationPool, 可选): 共享信息池，默认为空。
+        shared_pool (RebelsSharedInformationPool, 可选): 共享信息池，默认为空。
 
     返回:
         Dict[int, OrdinaryRebel]: 生成的叛军图。
@@ -29,7 +29,7 @@ async def generate_rebels_agents(
     if agent_graph is None:
         agent_graph = {}
     if shared_pool is None:
-        shared_pool = rebels_SharedInformationPool()
+        shared_pool = RebelsSharedInformationPool()
 
     # 读取叛军信息文件
     with open(rebellion_info_path, "r", encoding="utf-8", errors='ignore') as file:

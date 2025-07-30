@@ -231,7 +231,7 @@ class Rebellion:
         print(f"叛军力量: {self.strength}")
         print(f"叛军资源: {self.resources}")
 
-class rebels_SharedInformationPool:
+class RebelsSharedInformationPool:
     def __init__(self, max_discussions: int = 5):
         """
         初始化共享信息池
