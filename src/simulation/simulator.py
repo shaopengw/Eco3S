@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 from colorama import Back
 import pickle
+import networkx as nx
 from src.agents.resident_agent_generator import (generate_canal_agents)
 from src.agents.government import (
     OrdinaryGovernmentAgent,
@@ -19,7 +20,7 @@ from src.generator.resident_generate import generate_resident_data, save_residen
 from src.environment.social_network import SocialNetwork
 from src.environment.towns import Towns
 from src.environment.transport_economy import TransportEconomy
-
+from src.agents.model_manager import ModelManager
 from src.environment.map import Map
 from src.environment.time import Time
 from src.environment.job_market import JobMarket
@@ -29,6 +30,16 @@ from src.environment.climate import ClimateSystem
 from src.agents.government import Government, government_SharedInformationPool
 from src.agents.rebels import Rebellion
 from src.agents.resident import Resident, ResidentGroup, ResidentSharedInformationPool
+
+from camel.configs import ChatGPTConfig
+from camel.memories import ScoreBasedContextCreator, MemoryRecord
+from camel.messages import BaseMessage
+from camel.models import ModelFactory
+from camel.types import ModelType
+from camel.utils import OpenAITokenCounter
+from src.agents.model_manager import ModelManager
+from src.agents.memory_manager import MemoryManager
+from src.agents.base_agent import BaseAgent
 
 class Simulator:
     def __init__(self, map, time, government, government_officials, rebellion, rebels_agents, population, social_network, residents, towns, transport_economy, climate):
@@ -144,7 +155,7 @@ class Simulator:
                     'ordinary_type': OrdinaryGovernmentAgent,
                     'leader_type': HighRankingGovernmentAgent,
                 }
-                # government_decision = await self.collect_group_decision('government', government_config)
+                government_decision = await self.collect_group_decision('government', government_config)
                 
                 # 收集叛军决策
                 rebellion_config = {
@@ -152,7 +163,7 @@ class Simulator:
                     'ordinary_type': OrdinaryRebel,
                     'leader_type': RebelLeader,
                 }
-                # rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
+                rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
                 # rebellion_decision = '{"propaganda_budget": 0,"stage_rebellion": 1,"target_town": "杭州"}'
                 # rebellion_summary = '一致决定发动叛乱'
                 # 统一执行决策
@@ -170,10 +181,10 @@ class Simulator:
                 resident = self.residents[resident_name]
                 tax_rate = self.government.get_tax_rate()
                 # 基于LLM的决策--测试时建议暂时注释
-                # if resident.job == "叛军":
-                #     tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
-                # else:
-                #     tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost))
+                if resident.job == "叛军":
+                    tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
+                else:
+                    tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost))
 
                 # 更新居民寿命（次/年）
                 if self.time.get_current_quarter() == 1:
@@ -970,7 +981,14 @@ class Simulator:
                         'lifespan': resident.lifespan,
                         'personality': resident.personality,
                         'system_message': resident.system_message,
-                        # 'memory': resident.memory,
+                        # 添加记忆系统状态
+                        'memory': {
+                            'chat_history': [{
+                                'role': record.memory_record.role_at_backend,
+                                'content': record.memory_record.message.content
+                            } for record in resident.memory.personal_memory.chat_history.retrieve()],
+                            'longterm_memory': resident.memory.personal_memory.longterm_memory
+                        } if resident.memory else None,
                     } for resident in self.residents.values()
                 ],
 
@@ -1004,11 +1022,6 @@ class Simulator:
                     } for town_name, town_data in self.towns.towns.items()
                 },
 
-                social_network_state = {
-                    'hetero_graph': self.social_network.hetero_graph,
-                    'hyper_graph': self.social_network.hyper_graph,
-                },
-
                 rebellion_state = {
                     'strength': self.rebellion.strength,
                     'resources': self.rebellion.resources,
@@ -1020,7 +1033,15 @@ class Simulator:
                         'function': getattr(official, 'function', None),
                         'faction': getattr(official, 'faction', None),
                         'personality': getattr(official, 'personality', None) if hasattr(official, 'personality') else None,
-                        'system_message': official.system_message
+                        'system_message': official.system_message,
+                        # 添加记忆系统状态
+                        'memory': {
+                            'chat_history': [{
+                                'role': record.memory_record.role_at_backend,
+                                'content': record.memory_record.message.content
+                            } for record in official.memory.personal_memory.chat_history.retrieve()],
+                            'longterm_memory': official.memory.personal_memory.longterm_memory
+                        } if official.memory else None
                     } for official in self.government_officials.values()
                 ],
                 
@@ -1031,6 +1052,14 @@ class Simulator:
                         'role': rebel.role,
                         'personality': getattr(rebel, 'personality', None) if hasattr(rebel, 'personality') else None,
                         'system_message': rebel.system_message,
+                        # 添加记忆系统状态
+                        'memory': {
+                            'chat_history': [{
+                                'role': record.memory_record.role_at_backend,
+                                'content': record.memory_record.message.content
+                            } for record in rebel.memory.personal_memory.chat_history.retrieve()],
+                            'longterm_memory': rebel.memory.personal_memory.longterm_memory
+                        } if rebel.memory else None,
                     } for rebel in self.rebels_agents.values()
                 ],
 
@@ -1042,7 +1071,6 @@ class Simulator:
                     'transport_economy': self.transport_economy,
                     'residents': residents_state,
                     'towns': towns_state,
-                    'social_network': social_network_state,
                     'rebellion': rebellion_state,
                     'government_officials': government_officials_state,
                     'rebels_agents': rebels_agents_state,
@@ -1079,11 +1107,6 @@ class Simulator:
             simulator.time = state.get('time')
 
             if simulator.time:
-            #     # 获取配置文件中的总年数
-            #     with open('config/simulation_config.yaml', 'r', encoding='utf-8') as f:
-            #         config = yaml.safe_load(f)
-            #         total_years = config['simulation'].get('total_years', 10)  # 默认10年
-                # 更新时间设置
                 simulator.time.update_total_years(simulator_years)
             simulator.population = state.get('population')
             simulator.transport_economy = state.get('transport_economy')
@@ -1103,6 +1126,18 @@ class Simulator:
                             shared_pool=ResidentSharedInformationPool(),
                             map=simulator.map
                         )
+                        # 初始化model_manager和model_backend
+                        resident.model_manager = ModelManager()
+                        model_config = resident.model_manager.get_random_model_config()
+                        resident.model_type = ModelType(model_config["model_type"])
+                        resident.model_config = ChatGPTConfig(**model_config["model_config"])
+                        resident.model_backend = ModelFactory.create(
+                            model_platform=model_config["model_platform"],
+                            model_type=resident.model_type,
+                            model_config_dict=resident.model_config.as_dict(),
+                        )
+                        resident.token_counter = OpenAITokenCounter(resident.model_type)
+                        resident.context_creator = ScoreBasedContextCreator(resident.token_counter, 4096)
                         # 恢复居民状态
                         resident.shared_pool.shared_info = res_state.get('shared_pool', {})
                         resident.location = res_state.get('location')
@@ -1115,6 +1150,32 @@ class Simulator:
                         resident.lifespan = res_state.get('lifespan')
                         resident.personality = res_state.get('personality')
                         resident.system_message = res_state.get('system_message')
+                        
+                        # 恢复记忆系统
+                        memory_state = res_state.get('memory')
+                        if memory_state:
+                            resident.memory = MemoryManager(
+                                agent_id=resident.resident_id,
+                                model_type=resident.model_type,
+                                group_type='resident',
+                                window_size=5
+                            )
+                            resident.memory.set_agent(resident)
+                            # 恢复聊天历史
+                            for msg in memory_state.get('chat_history', []):
+                                record = MemoryRecord(
+                                    message=BaseMessage.make_assistant_message(
+                                        role_name='resident',
+                                        content=msg['content']
+                                    ) if msg['role'] == 'assistant' else BaseMessage.make_user_message(
+                                        role_name='resident',
+                                        content=msg['content']
+                                    ),
+                                    role_at_backend=msg['role']
+                                )
+                                resident.memory.personal_memory.write_record(record)
+                            # 恢复长期记忆
+                            resident.memory.personal_memory.longterm_memory = memory_state.get('longterm_memory', [])
                         simulator.residents[resident.resident_id] = resident
 
             # 重建城镇
@@ -1130,13 +1191,8 @@ class Simulator:
                             'info': town_data.get('info', {}),
                             'residents': {},
                             'job_market': None,  # 临时设为None，后续更新
-                            'hometown_group': town_data.get('hometown_group')
+                            'resident_group': ResidentGroup(town_name)  # 初始化ResidentGroup
                         }
-                        
-                        # 恢复居民关联
-                        for resident_id, resident_data in town_data.get('residents', {}).items():
-                            if resident_id in simulator.residents:
-                                simulator.towns.towns[town_name]['residents'][resident_id] = simulator.residents[resident_id]
 
                         # 恢复就业市场
                         if town_data.get('job_market'):
@@ -1148,14 +1204,32 @@ class Simulator:
                                     'base_salary': info.get('base_salary')
                                 }
                             simulator.towns.towns[town_name]['job_market'] = job_market
+                        else:
+                            simulator.towns.towns[town_name]['job_market'] = JobMarket(town_data.get('info', {}).get('type', '非沿河'))
+                        
+                        # 恢复居民关联
+                        for resident_id, resident_data in town_data.get('residents', {}).items():
+                            if resident_id in simulator.residents:
+                                simulator.towns.towns[town_name]['residents'][resident_id] = simulator.residents[resident_id]
+                                simulator.residents[resident_id].town = town_name
+                                # 更新居民的job_market引用
+                                simulator.residents[resident_id].job_market = simulator.towns.towns[town_name]['job_market']
+                                # 将居民添加到ResidentGroup
+                                simulator.towns.towns[town_name]['resident_group'].add_resident(simulator.residents[resident_id])
+                                # 如果该居民之前有工作，需要重新建立就业关系
+                                if resident_id in town_data.get('job_market', {}).get('jobs_info', {}).get('employed', {}):
+                                    simulator.residents[resident_id].employed = True
+                                    simulator.residents[resident_id].job = town_data['job_market']['jobs_info']['employed'][resident_id]
 
-            # 恢复其他组件
-            social_network_state = state.get('social_network', {})
-            if isinstance(social_network_state, tuple) and len(social_network_state) > 0:
-                social_network_state = social_network_state[0]
+
+            # 恢复社交网络
             simulator.social_network = SocialNetwork()
-            simulator.social_network.hetero_graph = social_network_state.get('hetero_graph')
-            simulator.social_network.hyper_graph = social_network_state.get('hyper_graph')
+            simulator.social_network.initialize_network(simulator.residents, simulator.towns)
+            # 为每个城镇的居民群组设置社交网络
+            for town_name, town_data in simulator.towns.towns.items():
+                resident_group = town_data.get('resident_group')
+                if resident_group:
+                    resident_group.set_social_network(simulator.social_network)
 
             # 恢复政府数据
             government_data = state.get('government')
@@ -1180,22 +1254,54 @@ class Simulator:
                     officials_data = officials_data[0]
                 shared_pool = government_SharedInformationPool()
                 for off_state in officials_data:
-                    if off_state.get('function'):
-                        official = OrdinaryGovernmentAgent(
-                            agent_id=off_state.get('agent_id'),
-                            government=simulator.government,
-                            shared_pool=shared_pool
-                        )
-                        official.function = off_state.get('function')
-                        official.faction = off_state.get('faction')
+                    if off_state.get('personality'):
+                        if off_state.get('function'):
+                            official = OrdinaryGovernmentAgent(
+                                agent_id=off_state.get('agent_id'),
+                                government=simulator.government,
+                                shared_pool=shared_pool
+                            )
+                            official.function = off_state.get('function')
+                            official.faction = off_state.get('faction')
+                        else:
+                            official = HighRankingGovernmentAgent(
+                                agent_id=off_state.get('agent_id'),
+                                government=simulator.government,
+                                shared_pool=shared_pool
+                            )
                     else:
-                        official = HighRankingGovernmentAgent(
+                        official = InformationOfficer(
                             agent_id=off_state.get('agent_id'),
                             government=simulator.government,
                             shared_pool=shared_pool
                         )
                     official.personality = off_state.get('personality')
                     official.system_message = off_state.get('system_message')
+                    # 恢复记忆系统
+                    memory_state = off_state.get('memory')
+                    if memory_state:
+                        official.memory = MemoryManager(
+                            agent_id=official.agent_id,
+                            model_type=official.model_type,
+                            group_type='government',
+                            window_size=5
+                        )
+                        official.memory.set_agent(official)
+                        # 恢复聊天历史
+                        for msg in memory_state.get('chat_history', []):
+                            record = MemoryRecord(
+                                message=BaseMessage.make_assistant_message(
+                                    role_name='government',
+                                    content=msg['content']
+                                ) if msg['role'] == 'assistant' else BaseMessage.make_user_message(
+                                    role_name='government',
+                                    content=msg['content']
+                                ),
+                                role_at_backend=msg['role']
+                            )
+                            official.memory.personal_memory.write_record(record)
+                        # 恢复长期记忆
+                        official.memory.personal_memory.longterm_memory = memory_state.get('longterm_memory', [])
                     simulator.government_officials[official.agent_id] = official
 
             rebellion_state = state.get('rebellion', {})
@@ -1215,14 +1321,20 @@ class Simulator:
                     rebels_data = rebels_data[0]
                 shared_pool = RebelsSharedInformationPool()
                 for rebel_state in rebels_data:
-                    if rebel_state.get('role') == 'leader':
-                        rebel = RebelLeader(
+                    if rebel_state.get('role') == '信息整理官':
+                        rebel = RebelsInformationOfficer(
+                            agent_id=rebel_state.get('agent_id'),
+                            rebellion=simulator.rebellion,
+                            shared_pool=shared_pool
+                        )
+                    elif rebel_state.get('role'):
+                        rebel = OrdinaryRebel(
                             agent_id=rebel_state.get('agent_id'),
                             rebellion=simulator.rebellion,
                             shared_pool=shared_pool
                         )
                     else:
-                        rebel = OrdinaryRebel(
+                        rebel = RebelLeader(
                             agent_id=rebel_state.get('agent_id'),
                             rebellion=simulator.rebellion,
                             shared_pool=shared_pool
@@ -1230,7 +1342,43 @@ class Simulator:
                     rebel.role = rebel_state.get('role')
                     rebel.personality = rebel_state.get('personality')
                     rebel.system_message = rebel_state.get('system_message')
-                    rebel.time = rebel_state.get('time')
+                    # 初始化model_manager和model_backend
+                    rebel.model_manager = ModelManager()
+                    model_config = rebel.model_manager.get_random_model_config()
+                    rebel.model_type = ModelType(model_config["model_type"])
+                    rebel.model_config = ChatGPTConfig(**model_config["model_config"])
+                    rebel.model_backend = ModelFactory.create(
+                        model_platform=model_config["model_platform"],
+                        model_type=rebel.model_type,
+                        model_config_dict=rebel.model_config.as_dict(),
+                    )
+                    rebel.token_counter = OpenAITokenCounter(rebel.model_type)
+                    rebel.context_creator = ScoreBasedContextCreator(rebel.token_counter, 4096)
+                    # 恢复记忆系统
+                    memory_state = rebel_state.get('memory')
+                    if memory_state:
+                        rebel.memory = MemoryManager(
+                            agent_id=rebel.agent_id,
+                            model_type=rebel.model_type,
+                            group_type='rebellion',
+                            window_size=5
+                        )
+                        rebel.memory.set_agent(rebel)
+                        # 恢复聊天历史
+                        for msg in memory_state.get('chat_history', []):
+                            record = MemoryRecord(
+                                message=BaseMessage.make_assistant_message(
+                                    role_name='rebellion',
+                                    content=msg['content']
+                                ) if msg['role'] == 'assistant' else BaseMessage.make_user_message(
+                                    role_name='rebellion',
+                                    content=msg['content']
+                                ),
+                                role_at_backend=msg['role']
+                            )
+                            rebel.memory.personal_memory.write_record(record)
+                        # 恢复长期记忆
+                        rebel.memory.personal_memory.longterm_memory = memory_state.get('longterm_memory', [])
                     simulator.rebels_agents[rebel.agent_id] = rebel
 
             # 恢复统计数据和历史记录

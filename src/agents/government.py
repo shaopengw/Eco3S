@@ -235,6 +235,9 @@ class Government:
         :param transport_ratio: 河运投入比例（0-1）
         :return: 是否决策成功
         """
+        # 计算总运输成本
+        total_cost = self.transport_economy.calculate_total_transport_cost(transport_ratio)
+
         # 检查预算是否充足，不足则自动调整比例
         if self.budget < total_cost:
             # 计算最大可负担比例
@@ -242,9 +245,6 @@ class Government:
             transport_ratio = min(transport_ratio, max_affordable_ratio)
             print(f"预算不足，自动调整河运比例为{transport_ratio:.2f}")
             
-        # 计算总运输成本
-        total_cost = self.transport_economy.calculate_total_transport_cost(transport_ratio)
-        
         # 扣除运输成本
         self.budget -= total_cost
         government_log.info(f"政府执行决策 - 河运比例：{transport_ratio:.2f}，实际支出：{total_cost:.2f}两")
