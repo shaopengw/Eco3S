@@ -44,6 +44,13 @@ class HeterogeneousGraph:
             if edge_type is None or self.graph[node_id][neighbor]["type"] == edge_type:
                 neighbors.append(neighbor)
         return neighbors
+    
+    def remove_node(self, node_id):
+        """
+        从异质图中移除节点。
+        """
+        if node_id in self.graph.nodes:
+            self.graph.remove_node(node_id)
 
     def visualize(self):
         """
@@ -669,3 +676,35 @@ class SocialNetwork:
         #结果统计
         actual_ratio = len(new_edges_list) / m if m > 0 else 0
         print(f"社交网络更新完成: 更新了{len(edges_to_remove)}条边，实际更新比例{actual_ratio:.1%}，")
+
+    def to_dict(self):
+        """将社交网络状态转换为可序列化的字典"""
+        return {
+            'hetero_graph': nx.node_link_data(self.hetero_graph.graph),
+            'hyper_graph': {
+                'nodes': list(self.hyper_graph.hypergraph.nodes),
+                'edges': {e: list(self.hyper_graph.hypergraph.edges[e]) 
+                        for e in self.hyper_graph.hypergraph.edges}
+            }
+        }
+
+    @classmethod
+    def from_dict(cls, data, residents):
+        """从字典恢复社交网络"""
+        sn = cls()
+        sn.residents = residents
+        
+        # 恢复异质图
+        if 'hetero_graph' in data:
+            sn.hetero_graph.graph = nx.node_link_graph(data['hetero_graph'])
+        
+        # 恢复超图
+        if 'hyper_graph' in data:
+            hyper_data = data['hyper_graph']
+            sn.hyper_graph = Hypergraph()
+            for node in hyper_data.get('nodes', []):
+                sn.hyper_graph.add_node(node)
+            for edge_id, members in hyper_data.get('edges', {}).items():
+                sn.hyper_graph.add_hyperedge(edge_id, members)
+        
+        return sn

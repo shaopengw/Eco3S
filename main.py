@@ -70,17 +70,19 @@ async def run_simulation(config: dict[str, Any]) -> None:
     matching_files = [f for f in os.listdir(cache_dir) if os.path.isfile(os.path.join(cache_dir, f)) and f.startswith(cache_file_prefix)]
 
     found_cache_file = None
+    found_year = None
     for file in matching_files:
         try:
             current_year = int(file.split('y')[-1].split('.')[0])
             if current_year == total_years:
                 found_cache_file = os.path.join(cache_dir, file)
+                found_year = current_year
                 print(f"发现已有的模拟文件 {file}，模拟年份等于配置文件中年份。")
                 break
-            elif current_year < total_years:
+            elif current_year < total_years and (found_year is None or current_year > found_year):
                 found_cache_file = os.path.join(cache_dir, file)
+                found_year = current_year
                 print(f"发现已有的模拟文件 {file}，模拟年份小于配置文件中年份。")
-                break
         except ValueError:
             logging.warning(f"缓存文件名 {file} 格式不正确，跳过。")
     
@@ -88,17 +90,17 @@ async def run_simulation(config: dict[str, Any]) -> None:
     
     if found_cache_file:
         if os.path.exists(found_cache_file):
-            if current_year == total_years:
+            if found_year == total_years:
                 response = input(f"发现已有的模拟文件 {found_cache_file}，是否需要重新模拟？(Y/N): ")
                 if response.upper() == 'Y':
                     print(f"将从头开始模拟...")
                 else:
                     # print(f"模拟结果地址: {found_cache_file}")
                     return  # 结束函数，不再继续
-            elif current_year < total_years:
+            elif found_year < total_years:
                 try:
                     print(f"尝试从缓存文件 {found_cache_file} 加载模拟状态...")
-                    simulator_years = total_years - current_year
+                    simulator_years = total_years - found_year
                     simulator = Simulator.load_cache(found_cache_file, simulator_years)
                     print(f"当前年份：{simulator.time.get_current_year()}，将继续模拟 {simulator_years} 年")
                 except Exception as e:

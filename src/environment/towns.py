@@ -312,6 +312,8 @@ class Towns:
         # 如果岗位数小于城镇数，随机选取岗位数个城镇来增加工作岗位
         if add_job_amount < total_specific_towns:
             selected_towns = random.sample(specific_towns, add_job_amount)
+            jobs_per_town = 1
+            remaining_jobs = 0
         else:
             # 平均分配岗位数量给所有城镇
             jobs_per_town = add_job_amount // total_specific_towns
