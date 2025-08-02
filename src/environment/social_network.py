@@ -57,7 +57,6 @@ class HeterogeneousGraph:
         可视化异质图，使用不同颜色显示不同类型的边。
         """
         pos = nx.spring_layout(self.graph)
-        
         # 绘制节点
         node_colors = [self.graph.nodes[node]["type"] == "person" and "lightblue" or "lightgreen" for node in self.graph.nodes]
         nx.draw_networkx_nodes(self.graph, pos, node_color=node_colors, node_size=300)
@@ -680,23 +679,29 @@ class SocialNetwork:
     def to_dict(self):
         """将社交网络状态转换为可序列化的字典"""
         return {
-            'hetero_graph': nx.node_link_data(self.hetero_graph.graph),
+            'hetero_graph': nx.node_link_data(self.hetero_graph.graph, edges="edges"),
             'hyper_graph': {
                 'nodes': list(self.hyper_graph.hypergraph.nodes),
                 'edges': {e: list(self.hyper_graph.hypergraph.edges[e]) 
                         for e in self.hyper_graph.hypergraph.edges}
-            }
-        }
+        }}
 
     @classmethod
     def from_dict(cls, data, residents):
         """从字典恢复社交网络"""
         sn = cls()
         sn.residents = residents
+
+        plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS', 'DejaVu Sans']
+        plt.rcParams['axes.unicode_minus'] = False
         
         # 恢复异质图
         if 'hetero_graph' in data:
-            sn.hetero_graph.graph = nx.node_link_graph(data['hetero_graph'])
+            try:
+                sn.hetero_graph.graph = nx.node_link_graph(data['hetero_graph'], edges="edges")
+            except KeyError:
+                # 兼容旧版本的缓存数据
+                sn.hetero_graph.graph = nx.node_link_graph(data['hetero_graph'], edges="links")
         
         # 恢复超图
         if 'hyper_graph' in data:

@@ -1,10 +1,10 @@
 simulation:
   start_year: 1650
-  total_years: 9  # 模拟总年数
+  total_years: 2  # 模拟总年数
   time_step: "quarter"  # 时间步长为季度
   map_width: 100         # 地图大小
   map_height: 150
-  initial_population: 200  # 初始人口数量
+  initial_population: 5  # 初始人口数量
   birth_rate: 0.05        # 出生率
   resume_from_cache: true # 是否从缓存继续模拟
 
