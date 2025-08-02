@@ -991,7 +991,7 @@ class Simulator:
                         } if resident.memory else None,
                     } for resident in self.residents.values()
                 ],
-
+                social_network_state = self.social_network.to_dict()
                 towns_state = {
                     town_name: {
                         'info': {
@@ -1074,6 +1074,7 @@ class Simulator:
                     'rebellion': rebellion_state,
                     'government_officials': government_officials_state,
                     'rebels_agents': rebels_agents_state,
+                    'social_network': social_network_state,
                     'climate': self.climate,
                     'basic_living_cost': self.basic_living_cost,
                     'average_satisfaction': self.average_satisfaction,
@@ -1223,8 +1224,14 @@ class Simulator:
 
 
             # 恢复社交网络
-            simulator.social_network = SocialNetwork()
-            simulator.social_network.initialize_network(simulator.residents, simulator.towns)
+            if state.get('social_network'):
+                simulator.social_network = SocialNetwork.from_dict(
+                    state.get('social_network', {}), 
+                    simulator.residents
+                )
+            else:
+                simulator.social_network = SocialNetwork()
+                simulator.social_network.initialize_network(simulator.residents, simulator.towns)
             # 为每个城镇的居民群组设置社交网络
             for town_name, town_data in simulator.towns.towns.items():
                 resident_group = town_data.get('resident_group')
