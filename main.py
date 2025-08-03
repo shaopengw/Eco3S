@@ -61,7 +61,6 @@ async def run_simulation(config: dict[str, Any]) -> None:
     total_years = config['simulation']['total_years']
     cache_filename = f"simulation_cache_p{population}_y{total_years}.pkl"
     cache_file = os.path.join(cache_dir, cache_filename)
-    cache_file_pattern = f"simulation_cache_p{population}_y*.pkl"
     cache_file_prefix = f"simulation_cache_p{population}_y"
 
     # 确保 backups 目录存在
@@ -94,6 +93,9 @@ async def run_simulation(config: dict[str, Any]) -> None:
                 response = input(f"发现已有的模拟文件 {found_cache_file}，是否需要重新模拟？(Y/N): ")
                 if response.upper() == 'Y':
                     print(f"将从头开始模拟...")
+                    now = datetime.now()
+                    cache_filename_with_timestamp = f"simulation_cache_p{population}_y{total_years}_{now.strftime('%Y%m%d_%H%M%S')}.pkl"
+                    cache_file = os.path.join(cache_dir, cache_filename_with_timestamp)
                 else:
                     # print(f"模拟结果地址: {found_cache_file}")
                     return  # 结束函数，不再继续
