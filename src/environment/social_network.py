@@ -226,24 +226,31 @@ class SocialNetwork:
         selected_count = random.randint(max(1, int(len(neighbors) * 0.3)), max(1, int(len(neighbors) * 0.5)))
         selected_neighbors = random.sample(neighbors, min(selected_count, len(neighbors)))
         
+        # 并发执行所有接收任务
         tasks = []
         for neighbor in selected_neighbors:
             if neighbor in self.residents:
                 tasks.append(self.residents[neighbor].receive_information(message))
         
-        # 并发执行所有接收任务
         if tasks:
             responses = await asyncio.gather(*tasks)
-            # 并发处理所有有效的回应
-            response_tasks = []
-            for neighbor, response in zip(neighbors, responses):
+            # 收集所有有效回应
+            next_layer_tasks = []
+            for neighbor, response in zip(selected_neighbors, responses):
                 if response:
                     response_content, response_type = response
-                    response_tasks.append(
-                        self.spread_speech_in_network(neighbor, response_content, response_type, current_depth + 1)
-                    )
-            if response_tasks:
-                await asyncio.gather(*response_tasks)
+                    next_neighbors = self.hetero_graph.get_neighbors(neighbor, response_type)
+                    next_selected_count = random.randint(max(1, int(len(next_neighbors) * 0.3)), max(1, int(len(next_neighbors) * 0.5)))
+                    next_selected_neighbors = random.sample(next_neighbors, min(next_selected_count, len(next_neighbors)))
+                    for next_neighbor in next_selected_neighbors:
+                        if next_neighbor in self.residents:
+                            next_layer_tasks.append((next_neighbor, response_content, response_type))
+            
+            # 并发执行下一层的所有传播任务
+            if next_layer_tasks and current_depth < max_depth:
+                spread_tasks = [self.residents[next_neighbor].receive_information(content) 
+                               for next_neighbor, content, _ in next_layer_tasks]
+                await asyncio.gather(*spread_tasks)
 
     async def spread_information_in_group(self, group_id: str, message: str, current_depth: int = 1, max_depth: int = 3):
         """
@@ -261,24 +268,43 @@ class SocialNetwork:
         selected_count = random.randint(max(1, int(len(members) * 0.3)), max(1, int(len(members) * 0.5)))
         selected_members = random.sample(members, min(selected_count, len(members)))
         
+        # 并发执行所有接收任务
         tasks = []
         for member in selected_members:
             if member in self.residents:
                 tasks.append(self.residents[member].receive_information(message))
         
-        # 并发执行所有接收任务
         if tasks:
             responses = await asyncio.gather(*tasks)
-            # 并发处理所有有效的回应
-            response_tasks = []
-            for member, response in zip(members, responses):
+            # 收集所有有效回应
+            next_layer_tasks = []
+            for member, response in zip(selected_members, responses):
                 if response:
                     response_content, response_type = response
-                    response_tasks.append(
-                        self.spread_speech_in_network(member, response_content, response_type, current_depth + 1)
-                    )
-            if response_tasks:
-                await asyncio.gather(*response_tasks)
+                    if response_type in ["friend", "colleague"]:
+                        next_neighbors = self.hetero_graph.get_neighbors(member, response_type)
+                        next_selected_count = random.randint(max(1, int(len(next_neighbors) * 0.3)), max(1, int(len(next_neighbors) * 0.5)))
+                        next_selected_neighbors = random.sample(next_neighbors, min(next_selected_count, len(next_neighbors)))
+                        for next_neighbor in next_selected_neighbors:
+                            if next_neighbor in self.residents:
+                                next_layer_tasks.append((next_neighbor, response_content, response_type))
+                    elif response_type in ["family", "hometown"]:
+                        groups = self.get_resident_groups(member, response_type)
+                        if groups:
+                            selected_group = random.choice(groups)
+                            next_layer_tasks.append((selected_group, response_content, response_type, True))
+            
+            # 并发执行下一层的所有传播任务
+            if next_layer_tasks and current_depth < max_depth:
+                spread_tasks = []
+                for task in next_layer_tasks:
+                    if len(task) == 4:  # 群组传播
+                        group_id, content, _, _ = task
+                        spread_tasks.append(self.spread_information_in_group(group_id, content, current_depth + 1, max_depth))
+                    else:  # 个人传播
+                        next_neighbor, content, _ = task
+                        spread_tasks.append(self.residents[next_neighbor].receive_information(content))
+                await asyncio.gather(*spread_tasks)
 
     async def spread_speech_in_network(self, resident_id: int, speech: str, relation_type: str, current_depth: int = 1, max_depth: int = 3):
         """在社交网络中递归传播发言
@@ -296,16 +322,20 @@ class SocialNetwork:
             if not resident:
                 return
 
+            tasks = []
             if relation_type in ["friend", "colleague"]:
                 # 在异质图中并发传播
-                await self.spread_information(resident_id, speech, relation_type, current_depth, max_depth)
+                tasks.append(self.spread_information(resident_id, speech, relation_type, current_depth, max_depth))
                 
             elif relation_type in ["family", "hometown"]:
                 # 在超图中并发传播
                 groups = self.get_resident_groups(resident_id, relation_type)
                 if groups:
                     selected_group = random.choice(groups)
-                    await self.spread_information_in_group(selected_group, speech, current_depth, max_depth)
+                    tasks.append(self.spread_information_in_group(selected_group, speech, current_depth, max_depth))
+            
+            if tasks:
+                await asyncio.gather(*tasks)
                     
         except Exception as e:
             print(f"在社交网络中传播发言时出错：{e}")

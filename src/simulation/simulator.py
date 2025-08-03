@@ -137,40 +137,37 @@ class Simulator:
             print(f"GDP：{self.gdp}，税收收入：{self.tax_income}，政府预算：{self.government.budget}")
             print(f"河运价格：{self.transport_economy.river_price}，维护成本：{self.transport_economy.calculate_maintenance_cost(self.map.get_navigability())}")
 
-            # 居民出生（次/年）
-            if self.time.get_current_quarter() == 1:
-                new_count = int(self.population.birth_rate * self.population.get_population())
-                new_residents = await self.generate_new_residents(new_count)
-                await self.integrate_new_residents(new_residents)
-                self.population.birth(new_count)
+            # 居民出生（每年）
+            new_count = int(self.population.birth_rate * self.population.get_population())
+            new_residents = await self.generate_new_residents(new_count)
+            await self.integrate_new_residents(new_residents)
+            self.population.birth(new_count)
 
-            # 收集政府和叛军的决策（每年第一季度）
-            if self.time.get_current_quarter() == 1:
-                government_decision = None
-                rebellion_decision = None
-                
-                # 收集政府决策
-                government_config = {
-                    'agents': self.government_officials,
-                    'ordinary_type': OrdinaryGovernmentAgent,
-                    'leader_type': HighRankingGovernmentAgent,
-                }
-                government_decision = await self.collect_group_decision('government', government_config)
-                
-                # 收集叛军决策
-                rebellion_config = {
-                    'agents': self.rebels_agents,
-                    'ordinary_type': OrdinaryRebel,
-                    'leader_type': RebelLeader,
-                }
-                rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
-                # rebellion_decision = '{"propaganda_budget": 0,"stage_rebellion": 1,"target_town": "杭州"}'
-                # rebellion_summary = '一致决定发动叛乱'
-                # 统一执行决策
-                if government_decision:
-                    self.execute_government_decision(government_decision)
-                if rebellion_decision:
-                    self.execute_rebellion_decision(rebellion_decision)
+            # 收集政府和叛军的决策（每年）
+            government_decision = None
+            rebellion_decision = None
+            
+            # 收集政府决策
+            government_config = {
+                'agents': self.government_officials,
+                'ordinary_type': OrdinaryGovernmentAgent,
+                'leader_type': HighRankingGovernmentAgent,
+            }
+            government_decision = await self.collect_group_decision('government', government_config)
+            
+            # 收集叛军决策
+            rebellion_config = {
+                'agents': self.rebels_agents,
+                'ordinary_type': OrdinaryRebel,
+                'leader_type': RebelLeader,
+            }
+            rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
+            
+            # 统一执行决策
+            if government_decision:
+                self.execute_government_decision(government_decision)
+            if rebellion_decision:
+                self.execute_rebellion_decision(rebellion_decision)
 
             # 居民行为
             tasks = []
@@ -186,12 +183,11 @@ class Simulator:
                 else:
                     tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost))
 
-                # 更新居民寿命（次/年）
-                if self.time.get_current_quarter() == 1:
-                    if resident.update_resident_status(self.basic_living_cost):
-                        del self.residents[resident_name]
-                        self.population.death()
-                        continue
+                # 更新居民寿命（每年）
+                if resident.update_resident_status(self.basic_living_cost):
+                    del self.residents[resident_name]
+                    self.population.death()
+                    continue
 
             # 并发执行所有居民的行为并收集结果
             if tasks:  # 只在有任务时执行
@@ -251,26 +247,23 @@ class Simulator:
             #     social_network = resident.get_social_network()
             #     social_network.calculate_speech_probability(resident.resident_id, self.population.get_population())
 
-            # 在每年第一季度进行结算更新
-            if self.time.get_current_quarter() == 1:
+            # 更新运河价格与状态
+            self.transport_economy.calculate_river_price(self.map.get_navigability())
+            climate_impact_factor = self.climate.get_current_impact(self.time.get_current_year(),self.time.get_start_time())
+            self.map.decay_river_condition_naturally(climate_impact_factor)
 
-                # 更新运河价格与状态
-                self.transport_economy.calculate_river_price(self.map.get_navigability())
-                climate_impact_factor = self.climate.get_current_impact(self.time.get_current_year(),self.time.get_start_time())
-                self.map.decay_river_condition_naturally(climate_impact_factor)
+            # 更新就业市场
+            old_navigability = self.results["river_navigability"][len(self.results["years"])-1]
+            current_navigability = self.map.get_navigability()
+            change_rate = (current_navigability - old_navigability) / old_navigability if old_navigability != 0 else 0
+            self.towns.adjust_job_market(change_rate, self.residents)
 
-                # 更新就业市场
-                old_navigability = self.results["river_navigability"][len(self.results["years"])-1]
-                current_navigability = self.map.get_navigability()
-                change_rate = (current_navigability - old_navigability) / old_navigability if old_navigability != 0 else 0
-                self.towns.adjust_job_market(change_rate, self.residents)
-
-                # 每3-5年更新一次社交网络
-                current_year = self.time.get_current_year()
-                if current_year % random.randint(3, 5) == 0:
-                    self.social_network.update_network_edges()  # 更新社交网络边
-                
-                self.propaganda_prob = 0
+            # 每3-5年更新一次社交网络
+            current_year = self.time.get_current_year()
+            if current_year % random.randint(3, 5) == 0:
+                self.social_network.update_network_edges()  # 更新社交网络边
+            
+            self.propaganda_prob = 0
 
             total_unemployment_rate = self.calculate_total_unemployment_rate()
             # 记录数据
@@ -298,24 +291,24 @@ class Simulator:
                   f"运河通航能力: {self.map.get_navigability():.2f}"
             )
             # 在时间步结束前，总结本次决策结果
-            if self.time.get_current_quarter() == 1:
-                if government_decision or rebellion_decision:
-                    changes_summary = self.summarize_time_step_results()
-                    # 存储到政府和叛军的记忆中
-                    if government_decision:
-                        await self.store_decision_memory(
-                            'government', 
-                            government_decision,
-                            changes_summary
-                        )
-                    if rebellion_decision:
-                        await self.store_decision_memory(
-                            'rebellion', 
-                            rebellion_decision,
-                            changes_summary
-                        )
+            
+            if government_decision or rebellion_decision:
+                changes_summary = self.summarize_time_step_results()
+                # 存储到政府和叛军的记忆中
+                if government_decision:
+                    await self.store_decision_memory(
+                        'government', 
+                        government_decision,
+                        changes_summary
+                    )
+                if rebellion_decision:
+                    await self.store_decision_memory(
+                        'rebellion', 
+                        rebellion_decision,
+                        changes_summary
+                    )
 
-            # if self.time.get_current_quarter() == 4 and self.map.get_navigability() < 0.2:
+            # if self.map.get_navigability() < 0.2:
             #     print(Back.RED + f"运河因通航能力过低（{self.map.get_navigability()}）而废弃" + Back.RESET)
             self.time.step()
 

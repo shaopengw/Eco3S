@@ -194,46 +194,17 @@ def plot_all_results(years, rebellions, unemployment_rate, population, governmen
     """
     绘制所有结果的图表并保存数据表格
     """
-    # 筛选每年Q1的数据
-    yearly_indices = [i for i, year in enumerate(years) if year.endswith(' Q1') or year == 'initial']
-    
-    # 提取年度数据
-    yearly_years = [years[i].split(' ')[0] if years[i] != 'initial' else 'initial' for i in yearly_indices]
-    yearly_rebellions = [rebellions[i] for i in yearly_indices]
-    yearly_unemployment = [unemployment_rate[i] for i in yearly_indices]
-    yearly_population = [population[i] for i in yearly_indices]
-    yearly_budget = [government_budget[i] for i in yearly_indices]
-    yearly_rebellion_strength = [rebellion_strength[i] for i in yearly_indices]
-    yearly_satisfaction = [average_satisfaction[i] for i in yearly_indices]
-    yearly_tax_rate = [tax_rate[i] for i in yearly_indices]
-    yearly_river_navigability = [river_navigability[i] for i in yearly_indices]
-    yearly_gdp = [gdp[i] for i in yearly_indices]
-
     # 绘制各个指标的图表
-    plot_rebellions_over_time(yearly_years, yearly_rebellions)
-    plot_unemployment_rate_over_time(yearly_years, yearly_unemployment)
-    plot_population_over_time(yearly_years, yearly_population)
-    plot_government_budget_over_time(yearly_years, yearly_budget)
-    plot_rebellion_strength_over_time(yearly_years, yearly_rebellion_strength)
-    plot_satisfaction_over_time(yearly_years, yearly_satisfaction)
-    plot_tax_rate_over_time(yearly_years, yearly_tax_rate)
-    plot_river_navigability_over_time(yearly_years, yearly_river_navigability)
-    plot_gdp_over_time(yearly_years, yearly_gdp)
+    plot_rebellions_over_time(years, rebellions)
+    plot_unemployment_rate_over_time(years, unemployment_rate)
+    plot_population_over_time(years, population)
+    plot_government_budget_over_time(years, government_budget)
+    plot_rebellion_strength_over_time(years, rebellion_strength)
+    plot_satisfaction_over_time(years, average_satisfaction)
+    plot_tax_rate_over_time(years, tax_rate)
+    plot_river_navigability_over_time(years, river_navigability)
+    plot_gdp_over_time(years, gdp)
     
-    # 保存数据表格（保存所有数据，不只是Q1）
-    data_dict = {
-        'years': years,
-        'rebellions': rebellions,
-        'unemployment_rate': unemployment_rate,
-        'population': population,
-        'government_budget': government_budget,
-        'rebellion_strength': rebellion_strength,
-        'average_satisfaction': average_satisfaction,
-        'tax_rate': tax_rate,
-        'river_navigability': river_navigability,
-        'gdp': gdp
-    }
-
 
 if __name__ == "__main__":
     # 示例数据
