@@ -126,6 +126,7 @@ class Simulator:
             self.gdp = self.calculate_gdp() # 更新GDP
             self.tax_income = self.gdp * self.government.get_tax_rate() # 计算税收收入
             self.government.budget = round(self.government.budget + self.tax_income, 2) 
+            self.government.military_strength = self.calculate_total_government_military()
             # 叛军
             self.rebellion_income = self.rebellion.get_strength() * 6 # 假设叛军收入为6两/人
             self.rebellion.resources = round(self.rebellion.resources + self.rebellion_income, 2)
@@ -161,7 +162,7 @@ class Simulator:
                 'ordinary_type': OrdinaryRebel,
                 'leader_type': RebelLeader,
             }
-            rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
+            # rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
             
             # 统一执行决策
             if government_decision:
@@ -171,6 +172,7 @@ class Simulator:
 
             # 居民行为
             tasks = []
+            speech_tasks = []
             # 清空上一轮的求职信息
             town_job_requests = defaultdict(list)
             
@@ -178,10 +180,10 @@ class Simulator:
                 resident = self.residents[resident_name]
                 tax_rate = self.government.get_tax_rate()
                 # 基于LLM的决策--测试时建议暂时注释
-                if resident.job == "叛军":
-                    tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
-                else:
-                    tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost))
+                # if resident.job == "叛军":
+                #     tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
+                # else:
+                #     tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost))
 
                 # 更新居民寿命（每年）
                 if resident.update_resident_status(self.basic_living_cost):
@@ -203,17 +205,21 @@ class Simulator:
                         select, reason, speech, relation_type = result
                         for resident_id, resident in self.residents.items():
                             if resident.resident_id == select:  # 使用select作为ID匹配
-                                # 处理发言传播
-                                await self.social_network.spread_speech_in_network(resident_id, speech, relation_type)
+                                # 收集发言传播任务
+                                speech_tasks.append(self.social_network.spread_speech_in_network(resident_id, speech, relation_type))
                                 break
                     elif isinstance(result, tuple) and len(result) == 2:
                         # 叛军发言，传播到社会网络
                         speech, relation_type = result
                         for resident_id, resident in self.residents.items():
                             if resident.resident_id == resident_name:  # 使用resident_name作为ID匹配
-                                # 处理发言传播
-                                await self.social_network.spread_speech_in_network(resident_id, speech, relation_type)
+                                # 收集发言传播任务
+                                speech_tasks.append(self.social_network.spread_speech_in_network(resident_id, speech, relation_type))
                                 break
+                
+                # 并发执行所有发言传播任务
+                if speech_tasks:
+                    await asyncio.gather(*speech_tasks)
             
             # 处理所有城镇的求职信息
             if town_job_requests:
@@ -264,8 +270,13 @@ class Simulator:
                 self.social_network.update_network_edges()  # 更新社交网络边
             
             self.propaganda_prob = 0
-
+            
             total_unemployment_rate = self.calculate_total_unemployment_rate()
+
+            # 更新政府和叛军力量
+            self.rebellion.strength = self.calculate_total_rebels()
+            self.government.military_strength = self.calculate_total_government_military()
+
             # 记录数据
             self.results["years"].append(self.time.get_current_time())
             self.results["rebellions"].append(self.rebellion_records)
@@ -308,9 +319,11 @@ class Simulator:
                         changes_summary
                     )
 
-            # if self.map.get_navigability() < 0.2:
-            #     print(Back.RED + f"运河因通航能力过低（{self.map.get_navigability()}）而废弃" + Back.RESET)
-            self.time.step()
+            if self.map.get_navigability() < 0.2:
+                print(Back.RED + f"运河因通航能力过低（{self.map.get_navigability()}）而废弃" + Back.RESET)
+                break
+            else:
+                self.time.step()
 
         self.end_time = datetime.now()  # 记录模拟结束时间
         self.display_total_simulation_time()
@@ -491,7 +504,7 @@ class Simulator:
                             transport_ratio=decision_data["transport_ratio"]
                         )
                     elif key == "public_budget":
-                        self.government.handle_public_budget(budget_allocation=decision_data["public_budget"], salary=salary)
+                        self.government.handle_public_budget(budget_allocation=decision_data["public_budget"], salary=salary, job_total_count = self.get_job_total_count())
                     elif key == "military_support":
                         self.government.support_military(budget_allocation=decision_data["military_support"])
                     elif key == "tax_adjustment":
@@ -753,7 +766,7 @@ class Simulator:
             else:
                 loot_ratio = rebel_loss / self.government.military_strength
                 rebel_loss_resources = int(self.rebellion.resources * loot_ratio)
-                self.rebellion.resources -= rebel_loss_resources
+                self.rebellion.resources = max(0, self.rebellion.resources - rebel_loss_resources)
 
             #更新状态
             self.rebellion_records += 1
@@ -805,6 +818,34 @@ class Simulator:
                 total_rebels += rebels_count
         
         return total_rebels
+    def calculate_total_government_military(self):
+        """
+        计算政府军总数
+        """
+        total_military = 0
+        
+        # 遍历所有城镇
+        for town_name, town_data in self.towns.towns.items():
+            # 获取该城镇的就业市场
+            job_market = town_data['job_market']
+            if job_market:
+                military_count = len(job_market.jobs_info["官员及士兵"]["employed"])
+                total_military += military_count
+        return total_military
+
+    def get_job_total_count(self):
+        """
+        获取除了叛军外的所有职业的岗位总数
+        :return: 除叛军外其他职业的岗位总数
+        """
+        total_count = 0
+        for town_name, town_data in self.towns.towns.items():
+            job_market = town_data['job_market']
+            if job_market:
+                for job_type, job_info in job_market.jobs_info.items():
+                    if job_type != "叛军":
+                        total_count += job_info["total"]
+        return total_count
 
     def summarize_time_step_results(self):
         """总结当前时间步的各项指标变化"""

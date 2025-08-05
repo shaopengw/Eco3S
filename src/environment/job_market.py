@@ -72,7 +72,7 @@ class JobMarket:
         :param job: 工作名称
         """
         if job in self.jobs_info and self.jobs_info[job]["total"] > 0:
-            self.jobs_info[job]["total"] -= 1
+            self.jobs_info[job]["total"] = max(0, self.jobs_info[job]["total"] - 1)
 
     def assign_specific_job(self, resident, job_type, actual_salary=None):
         """
@@ -351,6 +351,7 @@ class JobMarket:
         随机增加指定数量的工作岗位（除叛军外）
         :param num_jobs: 需要增加的工作岗位数量
         """
+        remaining_jobs = 0
         if specific_job:
             # 如果指定了具体职业
             if specific_job not in self.jobs_info or specific_job == "叛军":

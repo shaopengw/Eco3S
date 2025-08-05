@@ -291,7 +291,7 @@ class Towns:
             else:
                 print(f"警告: 城镇 {town_name} 没有就业市场")
 
-        print(f"已在所有城镇中均匀增加总计 {add_job_amount} 个工作岗位")
+        print(f"已在所有城镇中均匀增加总计 {add_job_amount} 个工作岗位" + (f" {specific_job}" if specific_job else ""))
 
     def add_specific_job(self, add_job_amount, town_type, job_name):
         """
@@ -302,7 +302,8 @@ class Towns:
         """
         # 获取所有指定类型的城镇
         specific_towns = [(town_name, town_data) for town_name, town_data in self.towns.items() if town_data['info']['type'] == town_type]
-
+        jobs_per_town = 1
+        remaining_jobs = 0
         # 获取指定类型的城镇数量
         total_specific_towns = len(specific_towns)
         if total_specific_towns == 0:
@@ -312,8 +313,6 @@ class Towns:
         # 如果岗位数小于城镇数，随机选取岗位数个城镇来增加工作岗位
         if add_job_amount < total_specific_towns:
             selected_towns = random.sample(specific_towns, add_job_amount)
-            jobs_per_town = 1
-            remaining_jobs = 0
         else:
             # 平均分配岗位数量给所有城镇
             jobs_per_town = add_job_amount // total_specific_towns

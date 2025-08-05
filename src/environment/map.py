@@ -213,8 +213,8 @@ class Map:
         根据政府维护决策更新运河状态。
         :param new_navigability: 维护后新的通航能力值。
         """
-        current_navigability = min(1.0, self.get_navigability() + maintenance_ratio * 0.1)  # 假设每投入1倍维护成本改善0.1
-        self.navigability = current_navigability
+        current_navigability = min(1.0, self.get_navigability() + maintenance_ratio * 0.2)  # 假设每投入1倍维护成本改善0.2
+        self.navigability = current_navigability + 0.1 * random.random()
         self.river_grid[self.river_grid > 0] = self.navigability
         
         # 增加通航值低于0.2的警告
