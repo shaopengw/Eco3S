@@ -121,10 +121,10 @@ class Resident(BaseAgent):
         else:
             self.income = 0
         if self.job == "叛军":
-            self.satisfaction -= 50  # 叛军降低满意度
+            self.satisfaction = max(0, self.satisfaction - 50)  # 叛军降低满意度
             resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 加入了叛军。")
         else:
-            self.satisfaction += 10  # 就业增加满意度
+            self.satisfaction = min(100, self.satisfaction + 10)  # 就业增加满意度
             resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 找到了工作：{job}，收入：{self.income}。")
     
     def unemploy(self):
@@ -134,7 +134,7 @@ class Resident(BaseAgent):
         self.employed = False
         self.job = None
         self.income = 0
-        self.satisfaction -= 20  # 失业降低满意度
+        self.satisfaction = max(0, self.satisfaction - 20)  # 失业降低满意度
         resident_log.info(f"居民 {self.resident_id} 目前无业")
         # if old_job:
         #     resident_log.info(f"居民 {self.resident_id} 失去工作工作：{old_job}")
@@ -318,7 +318,7 @@ class Resident(BaseAgent):
             
             elif select == 2:
                 # 迁移到新城镇
-                self.satisfaction -= 10  # 路途奔波
+                self.satisfaction = max(0, self.satisfaction - 10)  # 叛军降低满意度
                 success = await self.migrate_to_new_town(self.map)
                 if not success:
                     resident_log.info(f"居民 {self.resident_id} 迁移失败，保持原位置")
@@ -426,13 +426,13 @@ class Resident(BaseAgent):
         """根据收入和满意度等因素更新健康状况"""
         # 叛军职业的额外健康影响
         if self.job == "叛军":
-            self.health_index -= 2  # 叛军生活艰苦，健康快速下降
+            self.health_index = max(0, self.health_index - 2)  # 叛军生活艰苦，健康快速下降
 
         # 基于收入的健康影响
         if self.income <= 0:
-            self.health_index -= 2  # 无收入严重影响健康
+            self.health_index = max(0, self.health_index - 2)  # 无收入严重影响健康
         elif self.income < basic_living_cost:
-            self.health_index -= 1  # 收入不足影响健康
+            self.health_index = max(0, self.health_index - 1)  # 收入不足影响健康
         elif self.income >= basic_living_cost * 2:
             # 高收入恢复健康
             if self.job == "叛军":  #叛军恢复较少
@@ -442,7 +442,7 @@ class Resident(BaseAgent):
 
         # 基于满意度的健康影响
         if self.satisfaction < 30:
-            self.health_index -= 1  # 低满意度影响健康
+            self.health_index = max(0, self.health_index - 1)  # 低满意度影响健康
         elif self.satisfaction > 80:
             # 高满意度恢复健康
             if self.job == "叛军":  #叛军恢复较少

@@ -39,9 +39,10 @@ class OrdinaryGovernmentAgent(BaseAgent):
         river_price = self.government.transport_economy.river_price
         sea_price = self.government.transport_economy.sea_price
         transport_task = self.government.transport_economy.transport_task
+        maintenance_cost_base = self.government.transport_economy.maintenance_cost_base
         return prompts['get_current_situation_prompt'].format(
             budget=self.government.get_budget(), military_strength=self.government.get_military_strength(), tax_rate=self.government.get_tax_rate()*100,
-            transport_task=transport_task, river_price=river_price, sea_price=sea_price,
+            transport_task=transport_task, river_price=river_price, sea_price=sea_price, maintenance_cost_base=maintenance_cost_base,
             maintain_employment_cost=maintain_employment_cost)
 
     async def generate_opinion(self, salary):
@@ -49,8 +50,7 @@ class OrdinaryGovernmentAgent(BaseAgent):
         生成一句关于政治决策的意见
         :return: 生成的意见内容
         """
-        maintain_employment_cost = salary * 0.6
-
+        maintain_employment_cost = salary * 0.05
         # 构建提示信息
         prompt = prompts['generate_opinion_prompt'].format(
             current_situation_prompt=self.get_current_situation_prompt(maintain_employment_cost))
@@ -73,7 +73,7 @@ class OrdinaryGovernmentAgent(BaseAgent):
         """
         从共享信息池中获取信息并发表看法，将看法放入共享信息池
         """
-        maintain_employment_cost = salary * 0.6
+        maintain_employment_cost = salary * 0.05
         # 获取最新讨论内容
         all_discussion = await self.shared_pool.get_all_discussions()
         if all_discussion:
@@ -136,7 +136,7 @@ class HighRankingGovernmentAgent(BaseAgent):
         transport_cost_sea = sea_price * transport_task      # 全部海运成本
         
         # 获取维持当前就业所需的资金
-        maintain_employment_cost = salary * 0.6
+        maintain_employment_cost = salary * 0.05
 
         prompt = prompts['make_decision_prompt'].format(
             current_budget=current_budget, military_strength=self.government.get_military_strength(),
@@ -178,29 +178,35 @@ class Government:
         self.residents = {}  # 添加居民引用
         self.transport_economy = transport_economy  # 运输经济模型引用
 
-    def handle_public_budget(self,budget_allocation, salary):
+    def handle_public_budget(self, budget_allocation, salary, job_total_count):
         """处理公共预算决策"""
-        if self.budget < budget_allocation:
-            government_log.info(f"政府执行决策 - 预算不足，无法提供工作。")
-            return
         # 获取维持当前就业所需的资金
-        maintain_employment_cost = salary * 0.6
+        maintain_employment_cost = salary * 0.05
+        if budget_allocation == 0:
+            government_log.info(f"政府执行决策 - 公共预算决策：不分配公共预算。")
+            return
+        if self.budget < budget_allocation:
+            budget_allocation = self.budget
+            government_log.info(f"政府执行决策 - 预算不足，自动调整预算为{budget_allocation:.2f}两。")
+            
         if budget_allocation > maintain_employment_cost:
-            # 增加就业
-            job_increase_amount = int((budget_allocation - maintain_employment_cost) / 20) # 假设每20两增加1个岗位
+            # 增加就业，根据比例计算增加的岗位数量
+            job_increase_proportion = (budget_allocation - maintain_employment_cost) / maintain_employment_cost
+            job_increase_amount = int(job_total_count * job_increase_proportion)
             if job_increase_amount > 0:
                 self.towns.add_jobs_across_towns(job_increase_amount)
                 government_log.info(f"政府执行决策 - 增加 {job_increase_amount} 个工作岗位。")
         elif budget_allocation < maintain_employment_cost:
-            # 减少就业
-            job_decrease_amount = int((maintain_employment_cost - budget_allocation) / 20) # 假设每20两减少1个岗位
+            # 减少就业，根据比例计算减少的岗位数量
+            job_decrease_proportion = (maintain_employment_cost - budget_allocation) / maintain_employment_cost
+            job_decrease_amount = int(job_total_count * job_decrease_proportion)
             if job_decrease_amount > 0:
                 self.towns.remove_jobs_across_towns(job_decrease_amount)
                 government_log.info(f"政府执行决策 - 减少 {job_decrease_amount} 个工作岗位。")
         else:
             government_log.info(f"政府执行决策 - 维持现有就业岗位数量不变。")
         
-        self.budget -= budget_allocation
+        self.budget = max(0, self.budget - budget_allocation)
 
     def maintain_canal(self, maintenance_investment):
         """
@@ -213,8 +219,11 @@ class Government:
         # 2. 提供就业机会，增加居民满意度。但是提供的就业机会仅限运河沿线地区。
         # 3. 政府预算减少
         # 计算并更新改善后的通航能力
+        if maintenance_investment == 0:
+            government_log.info(f"政府执行决策 - 未维护运河。")
+            return
         if self.budget < maintenance_investment:
-            government_log.info(f"政府执行决策 - 预算不足，无法维护运河。")
+            government_log.info(f"政府执行决策 - 预算不足，未维护运河。")
             return
         maintenance_ratio = maintenance_investment / self.transport_economy.maintenance_cost_base
         self.map.update_river_condition(maintenance_ratio) 
@@ -225,7 +234,7 @@ class Government:
             self.towns.add_specific_job(job_opportunities,"canal","运河维护工", )
         
         # 扣除支出
-        self.budget -= maintenance_investment
+        self.budget = max(0, self.budget - maintenance_investment)
         government_log.info(f"政府执行决策 - 投入{maintenance_investment:.2f}两维护运河，新增就业岗位：{job_opportunities}个")
         return True
 
@@ -242,11 +251,11 @@ class Government:
         if self.budget < total_cost:
             # 计算最大可负担比例
             max_affordable_ratio = self.budget / (self.transport_economy.river_price * self.transport_economy.transport_task)
-            transport_ratio = min(transport_ratio, max_affordable_ratio)
+            transport_ratio = max(0, min(transport_ratio, max_affordable_ratio))
             print(f"预算不足，自动调整河运比例为{transport_ratio:.2f}")
             
         # 扣除运输成本
-        self.budget -= total_cost
+        self.budget = max(0, self.budget - total_cost)
         government_log.info(f"政府执行决策 - 河运比例：{transport_ratio:.2f}，实际支出：{total_cost:.2f}两")
         return True
 
@@ -259,8 +268,8 @@ class Government:
             job_increase_amount = budget_allocation // 20
             self.towns.add_jobs_across_towns(job_increase_amount,"官员及士兵")
             self.military_strength += job_increase_amount
-            self.budget -= budget_allocation
-            government_log.info(f"政府执行决策 - 政府军事拨款{budget_allocation}两，军事力量增加了 {budget_allocation * 0.1}。")
+            self.budget = max(0, self.budget - budget_allocation)
+            government_log.info(f"政府执行决策 - 政府军事拨款{budget_allocation}两，军事力量增加了 {job_increase_amount}。")
         else:
             government_log.info(f"政府执行决策 - 政府因预算限制未支持军事力量。")
 

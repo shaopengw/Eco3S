@@ -19,13 +19,13 @@ generate_and_share_opinion_prompt: |
   {current_situation_prompt}
 
 make_decision_prompt: |
-  当前政府预算: {current_budget:.2f}两, 军事力量: {military_strength:.2f}, 税率: {tax_rate:.1f}%
-  运输任务共{transport_task}吨, 河运需{river_price:.2f}两/吨, 海运需{sea_price:.2f}两/吨，维护运河基本运转需{maintenance_cost_base}两
-  维持目前就业需资金: {maintain_employment_cost:.2f}两。公共预算每高于此值20两，可增加一个就业；反之，将减少就业。
-  成本计算：
-  运输成本 = 河运比例×{transport_cost_river:.2f} + 海运比例×{transport_cost_sea:.2f}
-  总支出 = 运输成本 + 公共预算 + 维护资金 + 军事拨款
-  总支出必须 ≤ {current_budget:.2f}两。军事拨款需为20的整数倍，每20两增加一点军事力量。
+ 
+  国库现状：资金{current_budget:.2f}两 | 兵力{military_strength:.2f} | 税率{tax_rate:.1f}%
+  运输任务：总量{transport_task}吨，河运{river_price:.2f}两/吨（岗位多），海运{sea_price:.2f}两/吨（成本低），运河维护费{maintenance_cost_base}两（高低影响运河通航能力，进而影响河运价格）
+  就业要求：最低维持资金{maintain_employment_cost:.2f}两（公共预算高低影响就业增减）
+  军事拨款：必须为20的整数倍，每20两增加1兵力
+  支出计算：总支出 = 运输成本（河运+海运） + 公共预算 + 维护费 + 军事拨款，不得超过{current_budget:.2f}两
+  决策要点：运输：平衡成本（海运）与就业（河运），维护：是否支付运河维护费，军事：阶梯式投入（20两/单位），民生：公共预算调节就业
   下属讨论：
   {summary}
 
@@ -38,7 +38,9 @@ summarize_discussions_prompt: |
   {discussions}
 
 get_current_situation_prompt: |
-  当前国库有银{budget:.2f}两，兵力{military_strength:.2f}，税率: {tax_rate:.1f}%
-  运输任务: {transport_task}吨, 河运费(不可修改){river_price:.2f}两/吨，海运费(不可修改){sea_price:.2f}两/吨（海运低廉但岗位少，河运高费却可养人）
-  维持目前就业需资金{maintain_employment_cost:.2f}两。若公共预算高于此值，可增加就业；反之，将减少就业。
-  军事拨款需为20的整数倍（可以为0），每20两增加一单位兵力。总支出不应超出{budget:.2f}两
+  国库现状：资金{budget:.2f}两 | 兵力{military_strength:.2f} | 税率{tax_rate:.1f}%
+  运输任务：总量{transport_task}吨，河运{river_price:.2f}两/吨（岗位多），海运{sea_price:.2f}两/吨（成本低），运河维护费{maintenance_cost_base}两（高低影响运河通航能力，进而影响河运价格）
+  就业要求：最低维持资金{maintain_employment_cost:.2f}两（公共预算高低影响就业增减）
+  军事拨款：必须为20的整数倍，每20两增加1兵力
+  支出计算：总支出 = 运输成本（河运+海运） + 公共预算 + 维护费 + 军事拨款，不得超过{budget:.2f}两
+  决策要点：运输：平衡成本（海运）与就业（河运），维护：是否支付运河维护费，军事：阶梯式投入（20两/单位），民生：公共预算调节就业

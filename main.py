@@ -137,9 +137,9 @@ async def run_simulation(config: dict[str, Any]) -> None:
 
         # 初始化运输经济系统
         transport_economy = TransportEconomy(
-            transport_cost=population.get_population() / 50,
+            transport_cost=population.get_population() / 200,
             transport_task=config["simulation"]["transport_task"],
-            maintenance_cost_base=population.get_population(),
+            maintenance_cost_base=population.get_population() * 0.2,
         )
 
         # 初始化居民
@@ -193,7 +193,7 @@ async def run_simulation(config: dict[str, Any]) -> None:
             map=map,
             towns=towns,
             military_strength=total_military,
-            initial_budget=initial_population * 15,
+            initial_budget=0,
             time=time,
             transport_economy=transport_economy,
         )
@@ -243,7 +243,8 @@ async def run_simulation(config: dict[str, Any]) -> None:
     print("开始模拟......")
     try:
         await simulator.run()
-            # 可视化结果
+        # 可视化结果
+        # if config["simulation"]["total_years"] > 2:
         plot_all_results(
             years=simulator.results["years"],
             rebellions=simulator.results["rebellions"],
