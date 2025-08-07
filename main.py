@@ -138,8 +138,8 @@ async def run_simulation(config: dict[str, Any]) -> None:
         # 初始化运输经济系统
         transport_economy = TransportEconomy(
             transport_cost=population.get_population() / 200,
-            transport_task=config["simulation"]["transport_task"],
-            maintenance_cost_base=population.get_population() * 0.2,
+            transport_task=population.get_population() / 2,
+            maintenance_cost_base=population.get_population() * 0.4,
         )
 
         # 初始化居民

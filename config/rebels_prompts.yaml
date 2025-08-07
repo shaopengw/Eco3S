@@ -23,9 +23,9 @@ make_decision_prompt: |
   {towns_analysis}
   下属建议：
   {summary}
-  在做决策时，请考虑各城镇叛军和官兵的力量对比，优先选择叛军多或官兵少的城镇出击。在确保能成功的情况下，尽可能发动多个城市叛乱。宣传可以煽动民众不满情绪，从而加入叛军。
+  在做决策时，请考虑各城镇叛军和官兵的力量对比，优先选择叛军多或官兵少的城镇出击。在确保能成功的情况下，尽可能多地发动城市叛乱。宣传可以煽动民众不满情绪，从而加入叛军。
   输出JSON，无需说明理由：
-  {{"propaganda_budget": 宣传预算（整数）, "target_towns": [{{"town_name": 发动叛乱目标城镇名称1（字符串）, "stage_rebellion": 发动叛乱的兵力投入1（整数，不超过该城镇叛军数）}}, ...], "provocative_speech": 要在全国宣传的煽动性言论（字符串） }}
+  {{"propaganda_budget": 宣传预算（整数）, "target_towns": [{{"town_name": 发动叛乱目标城镇名称1（字符串）, "stage_rebellion": 发动叛乱的兵力投入1（整数，不超过该城镇叛军数）}}, ...], "provocative_speech": 直接号召清代百姓加入叛军的言论，必须包含“叛军”一词， }}
 
 summarize_discussions_prompt: |
   作为叛军信息整理官，请根据下列{num_discussions}条讨论内容，用一句话尽可能简要地总结归纳核心观点，保留具体数值。

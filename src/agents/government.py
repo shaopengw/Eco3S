@@ -178,7 +178,7 @@ class Government:
         self.residents = {}  # 添加居民引用
         self.transport_economy = transport_economy  # 运输经济模型引用
 
-    def handle_public_budget(self, budget_allocation, salary, job_total_count):
+    def handle_public_budget(self, budget_allocation, salary, job_total_count,residents):
         """处理公共预算决策"""
         # 获取维持当前就业所需的资金
         maintain_employment_cost = salary * 0.05
@@ -187,7 +187,7 @@ class Government:
             return
         if self.budget < budget_allocation:
             budget_allocation = self.budget
-            government_log.info(f"政府执行决策 - 预算不足，自动调整预算为{budget_allocation:.2f}两。")
+            government_log.info(f"政府执行决策 - 公共预算决策：预算不足，自动调整预算为{budget_allocation:.2f}两。")
             
         if budget_allocation > maintain_employment_cost:
             # 增加就业，根据比例计算增加的岗位数量
@@ -195,14 +195,14 @@ class Government:
             job_increase_amount = int(job_total_count * job_increase_proportion)
             if job_increase_amount > 0:
                 self.towns.add_jobs_across_towns(job_increase_amount)
-                government_log.info(f"政府执行决策 - 增加 {job_increase_amount} 个工作岗位。")
+                government_log.info(f"政府执行决策 - 公共预算决策：增加 {job_increase_amount} 个工作岗位。")
         elif budget_allocation < maintain_employment_cost:
             # 减少就业，根据比例计算减少的岗位数量
             job_decrease_proportion = (maintain_employment_cost - budget_allocation) / maintain_employment_cost
             job_decrease_amount = int(job_total_count * job_decrease_proportion)
             if job_decrease_amount > 0:
-                self.towns.remove_jobs_across_towns(job_decrease_amount)
-                government_log.info(f"政府执行决策 - 减少 {job_decrease_amount} 个工作岗位。")
+                self.towns.remove_jobs_across_towns(job_decrease_amount, residents = residents)
+                government_log.info(f"政府执行决策 - 公共预算决策：减少 {job_decrease_amount} 个工作岗位。")
         else:
             government_log.info(f"政府执行决策 - 维持现有就业岗位数量不变。")
         
@@ -216,7 +216,7 @@ class Government:
         """
         # 维护运河有三个方面的影响：
         # 1. 改善运河状态（运河通航能力，取值范围：[0,1]），从而降低运输成本。否则运输成本上升，政府需要支出更多的预算来完成运输。
-        # 2. 提供就业机会，增加居民满意度。但是提供的就业机会仅限运河沿线地区。
+        # 2. 提供就业机会，增加居民满意度。但是提供的就业机会仅限运河沿线地区。（隐性）
         # 3. 政府预算减少
         # 计算并更新改善后的通航能力
         if maintenance_investment == 0:
@@ -228,14 +228,9 @@ class Government:
         maintenance_ratio = maintenance_investment / self.transport_economy.maintenance_cost_base
         self.map.update_river_condition(maintenance_ratio) 
         
-        # 提供就业机会
-        job_opportunities = int(maintenance_investment / 15)
-        if job_opportunities > 0:
-            self.towns.add_specific_job(job_opportunities,"canal","运河维护工", )
-        
         # 扣除支出
         self.budget = max(0, self.budget - maintenance_investment)
-        government_log.info(f"政府执行决策 - 投入{maintenance_investment:.2f}两维护运河，新增就业岗位：{job_opportunities}个")
+        government_log.info(f"政府执行决策 - 投入{maintenance_investment:.2f}两维护运河")
         return True
 
     def handle_transport_decision(self, transport_ratio):
