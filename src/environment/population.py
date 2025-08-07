@@ -25,12 +25,12 @@ class Population:
             # 满意度高于80时，出生率上升
             # 每超过80一点，出生率增加0.2%
             increase = (satisfaction - 80) * 0.002
-            self.birth_rate = min(0.2, base_rate + increase)  # 设置上限为20%
+            self.birth_rate = min(0.5, base_rate + increase)
         elif satisfaction <= 50:
             # 满意度低于50时，出生率下降
-            # 每低于50一点，出生率降低0.1%
+            # 每低于50一点，出生率降低0.001
             decrease = (50 - satisfaction) * 0.001
-            self.birth_rate = max(0.05, base_rate - decrease)  # 设置下限为5%
+            self.birth_rate = max(0.01, base_rate - decrease)
         else:
             # 满意度在50-80之间，保持基础出生率
             self.birth_rate = base_rate

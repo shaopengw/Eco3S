@@ -155,7 +155,7 @@ class Towns:
         print(f"非沿河城镇总居民数量: {non_river_town_residents}")
 
 
-    def remove_jobs_across_towns(self, total_jobs_to_remove):
+    def remove_jobs_across_towns(self, total_jobs_to_remove, residents):
         """
         将要减少的岗位均匀分布给所有城镇
         :param total_jobs_to_remove: 需要减少的总岗位数量
@@ -176,7 +176,7 @@ class Towns:
             if town_data['job_market']:
                 # 为第一个城镇添加剩余岗位
                 current_town_jobs = jobs_per_town + (remaining_jobs if i == 0 else 0)
-                town_data['job_market'].remove_random_jobs(current_town_jobs)
+                town_data['job_market'].remove_random_jobs(current_town_jobs, residents = residents)
             else:
                 print(f"警告: 城镇 {town_name} 没有就业市场")
 

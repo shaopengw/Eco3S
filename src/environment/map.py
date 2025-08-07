@@ -211,11 +211,27 @@ class Map:
     def update_river_condition(self, maintenance_ratio):
         """
         根据政府维护决策更新运河状态。
-        :param new_navigability: 维护后新的通航能力值。
+        :param maintenance_ratio: 维护投入比例。
         """
-        current_navigability = min(1.0, self.get_navigability() + maintenance_ratio * 0.2)  # 假设每投入1倍维护成本改善0.2
-        self.navigability = current_navigability + 0.1 * random.random()
+        current_navigability = self.get_navigability()
+
+        if maintenance_ratio >= 1:
+            # 每增加一倍通航能力额外增加 0.1
+            new_navigability = current_navigability + 0.1 * maintenance_ratio
+        else:
+            # 每减少一倍通航能力减少 0.2
+            new_navigability = current_navigability - 0.2 * maintenance_ratio
+
+        # 确保通航能力在 0 到 1 之间
+        self.navigability = max(0, min(1.0, new_navigability))
+
+        # 更新运河网格的状态
         self.river_grid[self.river_grid > 0] = self.navigability
+
+        # 增加通航值低于0.2的警告
+        if self.navigability < 0.2:
+            print(Back.RED + f"运河已废弃，通航能力为 {self.navigability:.2f}" + Back.RESET)
+
         
         # 增加通航值低于0.2的警告
         if self.navigability < 0.2:
@@ -234,12 +250,12 @@ class Map:
         # 自然衰减和气候影响
         natural_decay_rate = 0.1
         old_navigability = self.navigability
-        self.navigability = max(0, self.navigability * (1 - natural_decay_rate) - climate_impact_factor * 0.5)
+        self.navigability = max(0, self.navigability * (1 - natural_decay_rate) - climate_impact_factor * 0.6)
 
         # 更新运河网格的状态
         self.river_grid[self.river_grid > 0] = self.navigability
 
-        print(f"运河自然衰减:{old_navigability}* (1 - {natural_decay_rate}) - {climate_impact_factor} = {self.navigability:.2f}")
+        print(f"运河自然衰减:{old_navigability}* (1 - {natural_decay_rate}) - {climate_impact_factor} * 0.6 = {self.navigability:.2f}")
 
         return self.navigability
 

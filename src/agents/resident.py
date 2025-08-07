@@ -166,7 +166,7 @@ class Resident(BaseAgent):
             economic_status_description = "生活极度困难"
 
         self.system_message = (
-            f"你是一个清代{work_condition}，你{self.personality}，收入为{self.income}两，{economic_status_description}，{health_condition}，目前对政府{satisfaction_description}。"
+            f"你是一个清代{work_condition}，你{self.personality}，收入为{self.income}两，{economic_status_description}，{health_condition}，目前对政府{satisfaction_description}(满意度{self.satisfaction}/100)。"
         )
 
     async def receive_information(self, message_content):
@@ -318,7 +318,7 @@ class Resident(BaseAgent):
             
             elif select == 2:
                 # 迁移到新城镇
-                self.satisfaction = max(0, self.satisfaction - 10)  # 叛军降低满意度
+                self.satisfaction = max(0, self.satisfaction - 10)  # 降低满意度
                 success = await self.migrate_to_new_town(self.map)
                 if not success:
                     resident_log.info(f"居民 {self.resident_id} 迁移失败，保持原位置")

@@ -191,7 +191,7 @@ class JobMarket:
             return total_positions, current_employed, salary
         return None
 
-    def remove_random_jobs(self, num_jobs):
+    def remove_random_jobs(self, num_jobs, residents):
         """
         随机减少指定数量的工作岗位
         :param num_jobs: 需要减少的工作岗位数量
@@ -220,12 +220,19 @@ class JobMarket:
             if len(info["employed"]) > info["total"]:
                 # 需要解雇的人数
                 num_to_layoff = len(info["employed"]) - info["total"]
-                # 随机选择要解雇的员工
-                employees_to_layoff = random.sample(info["employed"], num_to_layoff)
-                # 从就业列表中移除这些员工
-                for employee in employees_to_layoff:
-                    info["employed"].remove(employee)
-        # print(f"已随机减少 {num_jobs} 个工作岗位").
+                # 将集合转换为列表后再随机选择要解雇的员工
+                employees_to_layoff_ids = random.sample(list(info["employed"]), num_to_layoff)
+                # 解雇员工
+                for resident_id in employees_to_layoff_ids:
+                    # 从传入的residents列表中找到对应的居民对象
+                    resident = residents.get(resident_id)
+                    if resident:
+                        self.remove_resident(resident.resident_id, job_type)
+                        resident.unemploy()
+                    else:
+                        print(f"警告: 未找到ID为 {resident_id} 的居民对象，无法解雇。")
+
+        # print(f"已随机减少 {num_jobs} 个工作岗位")
 
     def adjust_canal_maintenance_jobs(self, change_rate, residents):
         """

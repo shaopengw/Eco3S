@@ -162,7 +162,7 @@ class Simulator:
                 'ordinary_type': OrdinaryRebel,
                 'leader_type': RebelLeader,
             }
-            # rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
+            rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
             
             # 统一执行决策
             if government_decision:
@@ -180,10 +180,10 @@ class Simulator:
                 resident = self.residents[resident_name]
                 tax_rate = self.government.get_tax_rate()
                 # 基于LLM的决策--测试时建议暂时注释
-                # if resident.job == "叛军":
-                #     tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
-                # else:
-                #     tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost))
+                if resident.job == "叛军":
+                    tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
+                else:
+                    tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost))
 
                 # 更新居民寿命（每年）
                 if resident.update_resident_status(self.basic_living_cost):
@@ -319,11 +319,12 @@ class Simulator:
                         changes_summary
                     )
 
-            if self.map.get_navigability() < 0.2:
-                print(Back.RED + f"运河因通航能力过低（{self.map.get_navigability()}）而废弃" + Back.RESET)
-                break
-            else:
-                self.time.step()
+            # if self.map.get_navigability() < 0.2:
+            #     print(Back.RED + f"运河因通航能力过低（{self.map.get_navigability()}）而废弃" + Back.RESET)
+            #     break
+            # else:
+            #     self.time.step()
+            self.time.step()
 
         self.end_time = datetime.now()  # 记录模拟结束时间
         self.display_total_simulation_time()
@@ -461,6 +462,8 @@ class Simulator:
 
         def parse_decision(decision_text, max_retries=3):
             """解析决策内容，支持重试"""
+            # 删除前缀和后缀
+            decision_text = decision_text.strip().removeprefix('```json').removesuffix('```')
             for attempt in range(max_retries):
                 try:
                     # 尝试直接解析JSON
@@ -504,7 +507,7 @@ class Simulator:
                             transport_ratio=decision_data["transport_ratio"]
                         )
                     elif key == "public_budget":
-                        self.government.handle_public_budget(budget_allocation=decision_data["public_budget"], salary=salary, job_total_count = self.get_job_total_count())
+                        self.government.handle_public_budget(budget_allocation=decision_data["public_budget"], salary=salary, job_total_count = self.get_job_total_count(), residents = self.residents)
                     elif key == "military_support":
                         self.government.support_military(budget_allocation=decision_data["military_support"])
                     elif key == "tax_adjustment":
@@ -531,14 +534,6 @@ class Simulator:
                         self.propaganda_speech = decision_data.get("provocative_speech", "")
                         if target:
                             self.handle_rebellion(strength_investment=strength, target_town=target)
-            # 检查是否有未知动作
-            for action in decision_data:
-                if action not in ["public_budget", "transport_ratio", "maintenance_investment", 
-                                "military_support", "tax_adjustment", "stage_rebellion", 
-                                "propaganda_budget", "target_town", "target_towns", "provocative_speech"]:
-                    print(f"未知的决策动作：{action}")
-                    success = False
-
             return success
 
         except Exception as e:
@@ -613,7 +608,7 @@ class Simulator:
             return 0.0
 
         total_satisfaction = sum(resident.satisfaction for resident in self.residents.values())
-        return total_satisfaction / len(self.residents)
+        return total_satisfaction / self.population.population
 
     def get_basic_living_cost(self):
         """
@@ -661,10 +656,9 @@ class Simulator:
 
     def calculate_gdp(self):
         """
-        计算GDP：所有居民收入总和减去基本生活所需值总和
+        计算GDP
         :return: GDP值（浮点数）
         """
-        # GDP按照收入法计算：增加值＝劳动者报酬＋生产税净额＋固定资产折旧＋营业盈余 ，不必减去基本生活所需值
         if not self.residents:
             return 0.0
         # 计算所有居民的收入总和
