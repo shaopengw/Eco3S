@@ -124,7 +124,7 @@ class Resident(BaseAgent):
             self.satisfaction = max(0, self.satisfaction - 50)  # 叛军降低满意度
             resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 加入了叛军。")
         else:
-            self.satisfaction = min(100, self.satisfaction + 10)  # 就业增加满意度
+            # self.satisfaction = min(100, self.satisfaction + 10)  # 就业增加满意度
             resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 找到了工作：{job}，收入：{self.income}。")
     
     def unemploy(self):
@@ -165,8 +165,14 @@ class Resident(BaseAgent):
         else:
             economic_status_description = "生活极度困难"
 
-        self.system_message = (
-            f"你是一个清代{work_condition}，你{self.personality}，收入为{self.income}两，{economic_status_description}，{health_condition}，目前对政府{satisfaction_description}(满意度{self.satisfaction}/100)。"
+        self.system_message = prompts_resident['resident_system_message'].format(
+            work_condition=work_condition,
+            personality=self.personality,
+            income=self.income,
+            economic_status_description=economic_status_description,
+            health_condition=health_condition,
+            satisfaction_description=satisfaction_description,
+            satisfaction=self.satisfaction
         )
 
     async def receive_information(self, message_content):
