@@ -3,7 +3,7 @@ simulation:
   total_years: 5 # 模拟总年数
   map_width: 100         # 地图大小
   map_height: 150
-  initial_population: 20  # 初始人口数量
+  initial_population: 15  # 初始人口数量
   birth_rate: 0.05        # 出生率
   resume_from_cache: True # 是否从缓存继续模拟
 
