@@ -1,9 +1,6 @@
 from .shared_imports import *
 load_dotenv()
 
-with open('config/government_prompts.yaml', 'r', encoding='utf-8') as file:
-    prompts = yaml.safe_load(file)
-
 if "sphinx" not in sys.modules:
     government_log = logging.getLogger(name="government.agent")
     government_log.setLevel("DEBUG")
@@ -32,7 +29,7 @@ class OrdinaryGovernmentAgent(BaseAgent):
         """
         更新系统提示词，包含居民当前的状态信息
         """
-        self.system_message = prompts['ordinary_government_agent_system_message'].format(
+        self.system_message = self.government.prompts['ordinary_government_agent_system_message'].format(
             function=self.function, faction=self.faction, personality=self.personality)
 
     def get_current_situation_prompt(self, maintain_employment_cost):
@@ -40,7 +37,7 @@ class OrdinaryGovernmentAgent(BaseAgent):
         sea_price = self.government.transport_economy.sea_price
         transport_task = self.government.transport_economy.transport_task
         maintenance_cost_base = self.government.transport_economy.maintenance_cost_base
-        return prompts['get_current_situation_prompt'].format(
+        return self.government.prompts['get_current_situation_prompt'].format(
             budget=self.government.get_budget(), military_strength=self.government.get_military_strength(), tax_rate=self.government.get_tax_rate()*100,
             transport_task=transport_task, river_price=river_price, sea_price=sea_price, maintenance_cost_base=maintenance_cost_base,
             maintain_employment_cost=maintain_employment_cost)
@@ -50,9 +47,9 @@ class OrdinaryGovernmentAgent(BaseAgent):
         生成一句关于政治决策的意见
         :return: 生成的意见内容
         """
-        maintain_employment_cost = salary * 0.05
+        maintain_employment_cost = salary * 0.07
         # 构建提示信息
-        prompt = prompts['generate_opinion_prompt'].format(
+        prompt = self.government.prompts['generate_opinion_prompt'].format(
             current_situation_prompt=self.get_current_situation_prompt(maintain_employment_cost))
         
         self.update_system_message()
@@ -73,11 +70,11 @@ class OrdinaryGovernmentAgent(BaseAgent):
         """
         从共享信息池中获取信息并发表看法，将看法放入共享信息池
         """
-        maintain_employment_cost = salary * 0.05
+        maintain_employment_cost = salary * 0.07
         # 获取最新讨论内容
         all_discussion = await self.shared_pool.get_all_discussions()
         if all_discussion:
-            prompt = prompts['generate_and_share_opinion_prompt'].format(
+            prompt = self.government.prompts['generate_and_share_opinion_prompt'].format(
                 all_discussion=all_discussion, current_situation_prompt=self.get_current_situation_prompt(maintain_employment_cost))
 
             try:
@@ -110,7 +107,7 @@ class HighRankingGovernmentAgent(BaseAgent):
         """
         更新系统提示词，包含居民当前的状态信息
         """
-        self.system_message = prompts['high_ranking_government_agent_system_message'].format(personality=self.personality)
+        self.system_message = self.government.prompts['high_ranking_government_agent_system_message'].format(personality=self.personality)
 
     async def make_decision(self, summary, salary):
         """
@@ -136,9 +133,9 @@ class HighRankingGovernmentAgent(BaseAgent):
         transport_cost_sea = sea_price * transport_task      # 全部海运成本
         
         # 获取维持当前就业所需的资金
-        maintain_employment_cost = salary * 0.05
+        maintain_employment_cost = salary * 0.07
 
-        prompt = prompts['make_decision_prompt'].format(
+        prompt = self.government.prompts['make_decision_prompt'].format(
             current_budget=current_budget, military_strength=self.government.get_military_strength(),
             tax_rate=self.government.get_tax_rate()*100, transport_task=transport_task, river_price=river_price,
             sea_price=sea_price, maintenance_cost_base=maintenance_cost_base, maintain_employment_cost=maintain_employment_cost,
@@ -165,7 +162,7 @@ class HighRankingGovernmentAgent(BaseAgent):
         government_log.info(f"  人物性格：{self.personality}")
 
 class Government:
-    def __init__(self, map, towns, military_strength, initial_budget, time, transport_economy):
+    def __init__(self, map, towns, military_strength, initial_budget, time, transport_economy, government_prompt_path):
         """
         初始化政府类
         """
@@ -177,11 +174,13 @@ class Government:
         self.tax_rate = 0.1  # 初始税率为 10%
         self.residents = {}  # 添加居民引用
         self.transport_economy = transport_economy  # 运输经济模型引用
+        with open(government_prompt_path, 'r', encoding='utf-8') as file:
+            self.prompts = yaml.safe_load(file)
 
     def handle_public_budget(self, budget_allocation, salary, job_total_count,residents):
         """处理公共预算决策"""
         # 获取维持当前就业所需的资金
-        maintain_employment_cost = salary * 0.05
+        maintain_employment_cost = salary * 0.07
         if budget_allocation == 0:
             government_log.info(f"政府执行决策 - 公共预算决策：不分配公共预算。")
             return
@@ -375,6 +374,7 @@ class InformationOfficer(BaseAgent):
         super().__init__(agent_id, group_type='government', window_size=0)
         self.shared_pool = shared_pool
         self.memory = None
+        self.prompts = government.prompts
 
 
     async def summarize_discussions(self) -> str:
@@ -386,7 +386,7 @@ class InformationOfficer(BaseAgent):
         if not discussions:
             return "暂无讨论内容"
         
-        prompt = prompts['summarize_discussions_prompt'].format(
+        prompt = self.prompts['summarize_discussions_prompt'].format(
             num_discussions=len(discussions), discussions="\n".join([f"{i+1}. {d}" for i, d in enumerate(discussions)]))
 
         try:

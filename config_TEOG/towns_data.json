@@ -1,0 +1,41 @@
+{
+  "map_boundaries": {
+    "min_longitude": 43.0,
+    "max_longitude": 48.0,
+    "min_latitude": 29.0,
+    "max_latitude": 36.0
+  },
+  "canals": [
+    {
+      "name": "底格里斯河",
+      "towns": [
+        {"name": "提克里特", "longitude": 43.7, "latitude": 34.6},
+        {"name": "萨迈拉", "longitude": 43.9, "latitude": 34.2},
+        {"name": "Al Hatamia", "longitude": 44.4, "latitude": 33.9},
+        {"name": "巴格达", "longitude": 44.4, "latitude": 33.3},
+        {"name": "库特", "longitude": 45.8, "latitude": 32.5},
+        {"name": "阿里加尔比", "longitude": 46.6, "latitude": 32.4},
+        {"name": "阿马拉", "longitude": 47.0, "latitude": 31.8},
+        {"name": "古尔奈", "longitude": 47.4, "latitude": 31.0}
+      ]
+    },
+    {
+      "name": "幼发拉底河",
+      "towns": [
+        {"name": "哈巴尼亚", "longitude": 43.4, "latitude": 33.4},
+        {"name": "希拉", "longitude": 44.4, "latitude": 32.5},
+        {"name": "纳杰夫", "longitude": 44.3, "latitude": 32.0},
+        {"name": "塞马沃", "longitude": 45.3, "latitude": 31.3},
+        {"name": "纳西里耶", "longitude": 46.3, "latitude": 31.1},
+        {"name": "古尔奈", "longitude": 47.4, "latitude": 31.0},
+        {"name": "巴士拉", "longitude": 47.8, "latitude": 30.5}
+        
+      ]
+    }
+  ],
+  "other_towns": [
+    {"name": "迪瓦尼耶", "longitude": 44.9, "latitude": 31.9},
+    {"name": "卡尔巴拉", "longitude": 44.0, "latitude": 32.6},
+    {"name": "苏克舒尤赫", "longitude": 46.1, "latitude": 31.9}
+  ]
+}

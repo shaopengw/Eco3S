@@ -16,7 +16,7 @@ from src.agents.government import (
     InformationOfficer
 )
 from src.agents.rebels import OrdinaryRebel, RebelLeader, RebelsSharedInformationPool, InformationOfficer as RebelsInformationOfficer
-from src.generator.resident_generate import generate_resident_data, save_resident_data
+from src.agents.resident_agent_generator import generate_new_residents
 from src.environment.social_network import SocialNetwork
 from src.environment.towns import Towns
 from src.environment.transport_economy import TransportEconomy
@@ -71,9 +71,9 @@ class Simulator:
         self.transport_economy = transport_economy
         self.climate = climate
         self.basic_living_cost = 8  # 每年基本生活所需值（单位：两）
-        self.average_satisfaction = None  # 平均满意度（0-1）
+        self.average_satisfaction = None  # 平均满意度
         self.gdp = 0  # 国内生产总值（单位：两）
-        self.propaganda_prob = 0.1  # 叛军宣传概率（0-1）
+        self.propaganda_prob = 0.1  # 叛军宣传概率
         self.propaganda_speech = ""
         self.rebellion_records = 0
         self.results = {
@@ -140,7 +140,12 @@ class Simulator:
 
             # 居民出生（每年）
             new_count = int(self.population.birth_rate * self.population.get_population())
-            new_residents = await self.generate_new_residents(new_count)
+            new_residents = await generate_new_residents(
+                count=new_count,
+                map=self.map,
+                residents=self.residents,
+                social_network=self.social_network
+            )
             await self.integrate_new_residents(new_residents)
             self.population.birth(new_count)
 
@@ -154,7 +159,7 @@ class Simulator:
                 'ordinary_type': OrdinaryGovernmentAgent,
                 'leader_type': HighRankingGovernmentAgent,
             }
-            government_decision = await self.collect_group_decision('government', government_config)
+            # government_decision = await self.collect_group_decision('government', government_config)
             
             # 收集叛军决策
             rebellion_config = {
@@ -162,7 +167,7 @@ class Simulator:
                 'ordinary_type': OrdinaryRebel,
                 'leader_type': RebelLeader,
             }
-            rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
+            # rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
             
             # 统一执行决策
             if government_decision:
@@ -196,26 +201,23 @@ class Simulator:
                 results = await asyncio.gather(*tasks)
                 
                 # 处理返回的结果
-                for result in results:
+                for i, result in enumerate(results):
+                    resident = list(self.residents.values())[i]
                     if isinstance(result, dict) and "town" in result:
                         # 处理求职请求
                         town_job_requests[result["town"]].append(result)
                     elif isinstance(result, tuple) and len(result) == 4:
                         # 处理带有发言的决策结果
                         select, reason, speech, relation_type = result
-                        for resident_id, resident in self.residents.items():
-                            if resident.resident_id == select:  # 使用select作为ID匹配
-                                # 收集发言传播任务
-                                speech_tasks.append(self.social_network.spread_speech_in_network(resident_id, speech, relation_type))
-                                break
+                        # 执行决策
+                        await resident.execute_decision(select)
+                        # 收集发言传播任务
+                        speech_tasks.append(self.social_network.spread_speech_in_network(resident.resident_id, speech, relation_type))
                     elif isinstance(result, tuple) and len(result) == 2:
-                        # 叛军发言，传播到社会网络
-                        speech, relation_type = result
-                        for resident_id, resident in self.residents.items():
-                            if resident.resident_id == resident_name:  # 使用resident_name作为ID匹配
-                                # 收集发言传播任务
-                                speech_tasks.append(self.social_network.spread_speech_in_network(resident_id, speech, relation_type))
-                                break
+                        # 处理普通决策结果
+                        select, reason = result
+                        # 执行决策
+                        await resident.execute_decision(select)
                 
                 # 并发执行所有发言传播任务
                 if speech_tasks:
@@ -224,18 +226,18 @@ class Simulator:
             # 处理所有城镇的求职信息
             if town_job_requests:
                 hiring_results = self.towns.process_town_job_requests(town_job_requests)
-                for town_name, hired_residents in hiring_results.items():
-                    print(f"城镇 {town_name} 目前录用了 {len(hired_residents)} 名居民")
+                # for town_name, hired_residents in hiring_results.items():
+                #     print(f"城镇 {town_name} 目前录用了 {len(hired_residents)} 名居民")
             
-            # 打印每个城镇的求职信息统计--测试用
-            for town, requests in town_job_requests.items():
-                print(f"\n城镇 {town} 的求职信息:")
-                job_counts = {}
-                for req in requests:
-                    job = req["desired_job"]
-                    job_counts[job] = job_counts.get(job, 0) + 1
-                for job, count in job_counts.items():
-                    print(f"- {job}: {count}人求职")
+            # # 打印每个城镇的求职信息统计--测试用
+            # for town, requests in town_job_requests.items():
+            #     print(f"\n城镇 {town} 的求职信息:")
+            #     job_counts = {}
+            #     for req in requests:
+            #         job = req["desired_job"]
+            #         job_counts[job] = job_counts.get(job, 0) + 1
+            #     for job, count in job_counts.items():
+            #         print(f"- {job}: {count}人求职")
             
             # 打印城镇详细状态---测试用
             # print("\n各城镇详细状态：")
@@ -550,34 +552,6 @@ class Simulator:
         df.to_csv(filename, index=False)
         print(f"模拟结果已保存至 {filename}")
 
-    async def generate_new_residents(self, count):
-        """生成新居民并初始化"""
-        # 生成居民数据
-        resident_data = generate_resident_data(count)
-        new_resident_info_path = 'experiment_dataset/resident_data/new_resident_data.json'
-        save_resident_data(resident_data, new_resident_info_path)
-
-        # 生成居民实例
-        new_residents = await generate_canal_agents(
-            resident_info_path=new_resident_info_path,
-            map=self.map,
-        )
-
-        # 分配新ID
-        used_ids = set(self.residents.keys()) | set(self.social_network.hetero_graph.graph.nodes())
-        new_id = max(used_ids) + 1 if used_ids else 1
-        
-        new_residents_with_new_ids = {}
-        for i, (_, resident) in enumerate(new_residents.items()):
-            while new_id in used_ids:  # 确保ID不重复
-                new_id += 1
-            resident.resident_id = new_id
-            new_residents_with_new_ids[new_id] = resident
-            used_ids.add(new_id)
-            new_id += 1
-            
-        return new_residents_with_new_ids
-
     async def integrate_new_residents(self, new_residents):
         """将新居民整合到系统中"""
         if not new_residents:
@@ -605,10 +579,13 @@ class Simulator:
         :return: 平均满意度（浮点数）
         """
         if not self.residents:
+            print("没有居民，平均满意度为 0.0")
             return 0.0
 
         total_satisfaction = sum(resident.satisfaction for resident in self.residents.values())
-        return total_satisfaction / self.population.population
+        average_satisfaction = total_satisfaction / self.population.population
+        print(f"平均满意度: {average_satisfaction} = {total_satisfaction / self.population.population:.2f}")
+        return average_satisfaction
 
     def get_basic_living_cost(self):
         """
@@ -699,8 +676,12 @@ class Simulator:
             print(f"目标城镇 {target_town} 叛军数量不足，未能成功发起叛乱")
             return False
         elif town_defense == 0:
+            
             success = True
-            loot_ratio = strength_investment / self.government.military_strength
+            if self.government.military_strength <= 0:
+                loot_ratio = 0
+            else:
+                loot_ratio = strength_investment / self.government.military_strength
             gov_loss_budget = int(self.government.budget * loot_ratio)
             self.rebellion.resources += gov_loss_budget
 

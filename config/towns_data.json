@@ -1,0 +1,44 @@
+{
+  "map_boundaries": {
+    "min_longitude": 109.0,
+    "max_longitude": 125.0,
+    "min_latitude": 30.0,
+    "max_latitude": 41.0
+  },
+  "canals": [
+    {
+      "name": "京杭大运河",
+      "towns": [
+        {"name": "北京", "longitude": 116.4, "latitude": 39.9},
+        {"name": "通州", "longitude": 116.7, "latitude": 39.8},
+        {"name": "天津", "longitude": 117.2, "latitude": 39.1},
+        {"name": "沧州", "longitude": 116.8, "latitude": 38.3},
+        {"name": "德州", "longitude": 116.3, "latitude": 37.4},
+        {"name": "临清", "longitude": 115.7, "latitude": 36.9},
+        {"name": "聊城", "longitude": 115.9, "latitude": 36.4},
+        {"name": "济宁", "longitude": 116.6, "latitude": 35.4},
+        {"name": "台儿庄", "longitude": 117.7, "latitude": 34.6},
+        {"name": "徐州", "longitude": 117.2, "latitude": 34.3},
+        {"name": "淮安", "longitude": 119.1, "latitude": 33.5},
+        {"name": "扬州", "longitude": 119.4, "latitude": 32.4},
+        {"name": "镇江", "longitude": 119.4, "latitude": 32.2},
+        {"name": "苏州", "longitude": 120.6, "latitude": 31.3},
+        {"name": "杭州", "longitude": 120.2, "latitude": 30.3}
+      ]
+    }
+  ],
+  "other_towns": [
+    {"name": "太原", "longitude": 112.5, "latitude": 37.9},
+    {"name": "洛阳", "longitude": 112.4, "latitude": 34.6},
+    {"name": "开封", "longitude": 114.3, "latitude": 34.8},
+    {"name": "济南", "longitude": 117.0, "latitude": 36.7},
+    {"name": "合肥", "longitude": 117.3, "latitude": 31.9},
+    {"name": "南京", "longitude": 118.8, "latitude": 32.1},
+    {"name": "上海", "longitude": 121.5, "latitude": 31.2},
+    {"name": "武汉", "longitude": 114.3, "latitude": 30.5},
+    {"name": "石家庄", "longitude": 114.5, "latitude": 38.0},
+    {"name": "郑州", "longitude": 113.6, "latitude": 34.8},
+    {"name": "荆州", "longitude": 112.2, "latitude": 30.3},
+    {"name": "大同", "longitude": 113.3, "latitude": 40.1}
+  ]
+}

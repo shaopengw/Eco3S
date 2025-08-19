@@ -4,6 +4,7 @@ import random
 from typing import Dict, Optional
 from src.agents.resident import Resident, ResidentSharedInformationPool
 from src.environment.map import Map
+from src.generator.resident_generate import generate_resident_data, save_resident_data
 
 async def generate_canal_agents(
     resident_info_path: str,  # 居民信息文件的路径
@@ -12,6 +13,7 @@ async def generate_canal_agents(
     agent_graph: Optional[Dict[int, Resident]] = None,  # 居民图，默认为空
     shared_pool: Optional[ResidentSharedInformationPool] = None, # 共享资源池，默认为空
     resident_id_mapping: Optional[Dict[int, int]] = None,  # 居民 ID 与 Agent ID 的映射关系，默认为空
+    resident_prompt_path: Optional[str] = None,  # 居民提示语文件路径，默认为空
 ) -> Dict[int, Resident]:
     """
     生成并返回运河居民的居民图。
@@ -43,7 +45,8 @@ async def generate_canal_agents(
             resident_id=resident_id,
             job_market=None,
             shared_pool=shared_pool,
-            map=map
+            map=map,
+            resident_prompt_path=resident_prompt_path,
         )
 
         # 设置居民的初始属性
@@ -93,3 +96,31 @@ def assign_resident_location(resident_data, map):
     
     location = map.generate_random_location(town_name)
     return location, town_name
+
+async def generate_new_residents(count, map, residents, social_network):
+    """生成新居民并初始化"""
+    # 生成居民数据
+    resident_data = generate_resident_data(count)
+    new_resident_info_path = 'experiment_dataset/resident_data/new_resident_data.json'
+    save_resident_data(resident_data, new_resident_info_path)
+
+    # 生成居民实例
+    new_residents = await generate_canal_agents(
+        resident_info_path=new_resident_info_path,
+        map=map,
+    )
+
+    # 分配新ID
+    used_ids = set(residents.keys()) | set(social_network.hetero_graph.graph.nodes())
+    new_id = max(used_ids) + 1 if used_ids else 1
+    
+    new_residents_with_new_ids = {}
+    for i, (_, resident) in enumerate(new_residents.items()):
+        while new_id in used_ids:  # 确保ID不重复
+            new_id += 1
+        resident.resident_id = new_id
+        new_residents_with_new_ids[new_id] = resident
+        used_ids.add(new_id)
+        new_id += 1
+        
+    return new_residents_with_new_ids

@@ -1,18 +1,11 @@
 class Population:
-    def __init__(self, initial_population):
+    def __init__(self, initial_population, birth_rate=0.01):
         """
         初始化人口类
         :param initial_population: 初始人口数量
         """
         self.population = initial_population
-        # 从配置文件读取出生率
-        try:
-            import yaml
-            with open('config/simulation_config.yaml', 'r', encoding='utf-8') as f:
-                config = yaml.safe_load(f)
-                self.birth_rate = config['simulation'].get('birth_rate', 0.01)
-        except Exception as e:
-            logging.warning(f"读取重试配置失败")
+        self.birth_rate = birth_rate
 
     def update_birth_rate(self, satisfaction):
         """

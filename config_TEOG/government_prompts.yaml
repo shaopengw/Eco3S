@@ -1,0 +1,41 @@
+ordinary_government_agent_system_message: |
+  你为清代政府{function}官员，你{personality}，朝廷正议政务。
+  政府的目标是维持地方稳定并吸引新居民定居。
+
+high_ranking_government_agent_system_message: |
+  你为清代政府最高决策者，你{personality}，朝廷正议政务，你负责根据下属讨论和当前状态做出最终决策。
+  你的目标是维持地方稳定并扩大居民规模。
+
+generate_opinion_prompt: |
+  请结合当前形势，立足本职，发言一句尽可能简短的中肯建议，必要时附具体数值佐证，无需给出计算过程。
+  只含水利建设投资或税率调整。
+  {current_situation_prompt}
+
+generate_and_share_opinion_prompt: |
+  众臣各抒己见，所言如下：
+  {all_discussion}
+  请结合自身立场与现实条件，发言一句尽可能简短的回应，可支持、反对或另提方案，务必考虑财政可行性，无需给出计算过程。
+  {current_situation_prompt}
+
+make_decision_prompt: |
+  国库现状：资金{current_budget:.2f}两，税率{tax_rate:.1f}%
+  可用决策：
+  1. 水利建设投资 - 水利设施可以保证居民生活稳定
+  2. 税收调整 - 当前税率{tax_rate:.1f}%
+
+  下属讨论：
+  {summary}
+
+  请做出合理决策，确保总支出不超预算。输出JSON，无需说明理由：
+  {{"maintenance_investment": 水利建设资金（整数）, "tax_adjustment": 税率调整（-0.1到0.1）}}
+
+summarize_discussions_prompt: |
+  你为朝廷信息整理官员，请根据下列{num_discussions}条朝堂讨论，用一句话尽可能简要地总结归纳核心观点，保留具体数值。
+  讨论内容：
+  {discussions}
+
+get_current_situation_prompt: |
+  国库现状：资金{budget:.2f}两，税率{tax_rate:.1f}%
+  可用决策：
+  1. 水利建设投资 - 水利设施可以保证居民生活稳定
+  2. 税收调整 - 当前税率{tax_rate:.1f}%

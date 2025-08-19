@@ -2,9 +2,6 @@ from .shared_imports import *
 import re
 load_dotenv()
 
-with open('config/residents_prompts.yaml', 'r', encoding='utf-8') as file:
-    prompts_resident = yaml.safe_load(file)
-
 if "sphinx" not in sys.modules:
     resident_log = logging.getLogger(name="resident.agent")
     resident_log.setLevel("DEBUG")
@@ -70,7 +67,7 @@ class ResidentGroup(BaseAgent):
             del self.residents[resident_id]
 
 class Resident(BaseAgent):
-    def __init__(self, resident_id, job_market, shared_pool, map):
+    def __init__(self, resident_id, job_market, shared_pool, map, resident_prompt_path):
         """初始化居民"""
         super().__init__(agent_id=resident_id, group_type='resident', window_size=3)
         self.resident_id = resident_id
@@ -89,6 +86,8 @@ class Resident(BaseAgent):
         self.group = None  # 所属群组的引用
         self.personality = None
         self.system_message = None  # 系统提示词
+        with open(resident_prompt_path, 'r', encoding='utf-8') as file:
+            self.prompts_resident = yaml.safe_load(file)
 
         # 由 ResidentGroup 设置agent属性
         self.model_backend = None
@@ -121,10 +120,9 @@ class Resident(BaseAgent):
         else:
             self.income = 0
         if self.job == "叛军":
-            self.satisfaction = max(0, self.satisfaction - 50)  # 叛军降低满意度
+            # self.satisfaction = max(0, self.satisfaction - 50)  # 叛军降低满意度
             resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 加入了叛军。")
         else:
-            # self.satisfaction = min(100, self.satisfaction + 10)  # 就业增加满意度
             resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 找到了工作：{job}，收入：{self.income}。")
     
     def unemploy(self):
@@ -134,7 +132,7 @@ class Resident(BaseAgent):
         self.employed = False
         self.job = None
         self.income = 0
-        self.satisfaction = max(0, self.satisfaction - 20)  # 失业降低满意度
+        # self.satisfaction = max(0, self.satisfaction - 20)  # 失业降低满意度
         resident_log.info(f"居民 {self.resident_id} 目前无业")
         # if old_job:
         #     resident_log.info(f"居民 {self.resident_id} 失去工作工作：{old_job}")
@@ -145,27 +143,25 @@ class Resident(BaseAgent):
         """
         更新系统提示词，包含居民当前的状态信息
         """
-        health_conditions = ["", "健康状况非常差", "亚健康", "一般健康", "健康", "极健康"]
-        health_condition = health_conditions[self.health_index] if 1 <= self.health_index <= 5 else "未知"
+        health_condition = self.prompts_resident['health_conditions'][self.health_index] if 1 <= self.health_index <= 5 else "未知"
         work_condition = self.job if self.employed else "无业游民"
-        satisfaction_levels = ["恨之入骨，誓要推翻朝廷", "怨气深重，斥其昏庸无道", "漠然视之，不过问政事", "尚可接受，愿安分守己", "衷心拥戴，誓死效忠"]
-        satisfaction_description = satisfaction_levels[min(self.satisfaction // 20, 4)]
+        satisfaction_description = self.prompts_resident['satisfaction_levels'][min(self.satisfaction // 20, 4)]
         
         economic_status_description = ""
         if self.income > 0 :
             income = self.income * (1 - tax_rate)
             if basic_living_cost > income:
-                economic_status_description = "生活困难"
+                economic_status_description = "终日辛劳不得温饱"
             elif basic_living_cost * 2 > income:
-                economic_status_description = "收支勉强平衡"
+                economic_status_description = "勉强糊口"
             elif basic_living_cost * 4 > income:
-                economic_status_description = "小康"
+                economic_status_description = "生活尚算安稳"
             else:
-                economic_status_description = "生活富裕"
+                economic_status_description = "生活富裕丰衣足食"
         else:
-            economic_status_description = "生活极度困难"
+            economic_status_description = "家破人亡难以为继"
 
-        self.system_message = prompts_resident['resident_system_message'].format(
+        self.system_message = self.prompts_resident['resident_system_message'].format(
             work_condition=work_condition,
             personality=self.personality,
             income=self.income,
@@ -179,12 +175,11 @@ class Resident(BaseAgent):
         """
         接收信息（如政府政策、叛乱信息）
         """
-        # self.satisfaction += 5  # 接收信息增加满意度
         # 从配置中获取回应概率
         response_prob = global_config.get("simulation", {}).get("response_probability")
         if random.random() < response_prob:
             # 构建回应提示词
-            prompt = prompts_resident['receive_information_prompt'].format(message_content=message_content)
+            prompt = self.prompts_resident['receive_information_prompt'].format(message_content=message_content)
             # prompt = (
             #     # f"当前税率:为{tax_rate*100:.1f}%，基本生活所需为{basic_living_cost}两\n"
             #     f"你听说了一条信息：[{message_content}]\n"
@@ -213,9 +208,7 @@ class Resident(BaseAgent):
         return None
 
     async def decide_action_by_llm(self, tax_rate, basic_living_cost):
-        """
-        通过LLM决定居民的行动，并随机生成对政府的态度发言。同时更新满意度。
-        """
+        """通过LLM决定居民的行动，并随机生成对政府的态度发言。同时更新满意度。"""
         # 发言概率基于节点在社交网络中的度值
         speech_prob = 0.0
         social_network = self.get_social_network()
@@ -247,15 +240,18 @@ class Resident(BaseAgent):
         employed = self.employed
 
         # 根据是否就业选择不同的提示词模板
-        if employed:
-            prompt = prompts_resident['decide_action_prompt_employed'].format(
+        if self.job == "城市居民":
+            prompt = self.prompts_resident['decide_action_prompt_city_resident'].format(
+                tax_rate_message=tax_rate_message, job_market_info=job_market_info)
+        elif employed:
+            prompt = self.prompts_resident['decide_action_prompt_employed'].format(
                 tax_rate_message=tax_rate_message, job_market_info=job_market_info)
         else:
-            prompt = prompts_resident['decide_action_prompt_unemployed'].format(
+            prompt = self.prompts_resident['decide_action_prompt_unemployed'].format(
                 tax_rate_message=tax_rate_message, job_market_info=job_market_info)
 
         # 构建 desired_job_and_min_salary 和 speech
-        desired_job_and_min_salary = prompts_resident['decide_action_json'].format(
+        desired_job_and_min_salary = self.prompts_resident['decide_action_json'].format(
             desired_job_and_min_salary=', "desired_job": 期望职业（如果选择2，可选：农民、商人、官员及士兵、运河维护工、普通工作者）, "min_salary": 可接受的最低收入（数字）' if not self.employed and job_market_info else '',
             speech=', "speech": 一句有传播力的态度言论，允许负面、质疑或愤怒情绪。}' if need_speech else '}')
 
@@ -280,7 +276,9 @@ class Resident(BaseAgent):
 
             if satisfaction_change is not None:
                 # 确保满意度在0-100范围内
+                old_satisfaction = self.satisfaction
                 self.satisfaction = max(0, min(100, self.satisfaction + satisfaction_change))
+                # print(f"居民 {self.resident_id} 收到满意度变化{satisfaction_change}：{old_satisfaction} -> {self.satisfaction}")
 
             # 记录居民的决策信息
             if desired_job is None and min_salary is None:
@@ -288,25 +286,24 @@ class Resident(BaseAgent):
             else:
                 resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}, 期望职业：{desired_job}, 最低收入：{min_salary}, 更新满意度：{self.satisfaction}")
 
-
-            # 执行决策
-            if select == 3 and not self.employed:
-                # 如果选择找工作，则传入期望职业和最低收入
-                job_request = await self.execute_decision(select, desired_job, min_salary)
-                if isinstance(job_request, dict):
-                    return job_request  # 返回求职信息
-            else:
-                await self.execute_decision(select)
-
-            # 如果有发言，返回发言信息和关系类型
-            if speech:
-                resident_log.info(f"居民 {self.resident_id} 发言：{speech}")
+            # 返回决策结果
+            if select == "3" and not self.employed and desired_job and min_salary:
+                # 返回求职信息
+                return {
+                    "town": self.town, 
+                    "desired_job": desired_job, 
+                    "min_salary": min_salary,
+                    "resident_id": self.resident_id 
+                }
+            elif speech:
+                # 返回带有发言的决策结果
                 relation_types = ["friend", "colleague", "family", "hometown"]
                 # 随机选择一种关系类型
                 selected_type = random.choice(relation_types)
                 return select, reason, speech, selected_type
-
-            return select, reason
+            else:
+                # 返回普通决策结果
+                return select, reason
 
         except Exception as e:
             resident_log.error(f"居民 {self.resident_id} 决策出错：{e}")
@@ -319,19 +316,20 @@ class Resident(BaseAgent):
         """
         try:
             if select == 1:  # 参加叛乱
-                self.job_market.assign_rebel(self)
-                return True
+                if self.job_market:
+                    self.job_market.assign_specific_job_withoutcheck(self,"叛军")
+                    return True
             
             elif select == 2:
                 # 迁移到新城镇
-                self.satisfaction = max(0, self.satisfaction - 10)  # 降低满意度
+                # self.satisfaction = max(0, self.satisfaction - 20)  # 降低满意度
                 success = await self.migrate_to_new_town(self.map)
                 if not success:
                     resident_log.info(f"居民 {self.resident_id} 迁移失败，保持原位置")
                 return success
             
             elif select == 3:  # 寻找工作或继续工作
-                if self.employed:
+                if self.job_market and self.employed:
                     resident_log.info(f"居民 {self.resident_id} 已有工作：{self.job}，继续目前工作")
                     return True
                 elif desired_job and min_salary:
@@ -364,7 +362,7 @@ class Resident(BaseAgent):
                 opinion = speech
             else:
                 # 构建煽动性提示信息
-                prompt = prompts_resident['generate_provocative_opinion_prompt']
+                prompt = self.prompts_resident['generate_provocative_opinion_prompt']
                 
                 self.update_system_message()
                 opinion = await self.generate_llm_response(prompt)
