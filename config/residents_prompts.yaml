@@ -1,5 +1,3 @@
-# prompts_resident.yaml
-
 resident_system_message: |
   你是一个清代{work_condition}，你{personality}，收入为{income}两，{economic_status_description}，{health_condition}，目前对政府{satisfaction_description}，满意度{satisfaction}（百分制）。
 
@@ -12,7 +10,7 @@ decide_action_prompt_employed: |
   {job_market_info}
   你可以选择以下行动之一：
   1. 加入叛军（可以勉强维生但有风险）
-  2. 迁徙至他地（有生存风险，会失去当前工作，需重新谋生）
+  2. 迁徙至他地（有生存风险，会失去当前工作，需重新谋生，不能连续选择）
   3. 继续目前的工作
 
 decide_action_prompt_unemployed: |
@@ -20,20 +18,30 @@ decide_action_prompt_unemployed: |
   {job_market_info}
   你可以选择以下行动之一：
   1. 加入叛军（可以勉强维生但有风险）
-  2. 迁徙至他地（有生存风险）
+  2. 迁徙至他地（有生存风险，不能连续选择）
   3. 寻找工作
 
 decide_action_json: |
-  综合考虑收入是否足以维生、就业稳定性、税负情况及健康状况等因素，选择最适合自己的行动。生活无忧且税负合理则满意度提升，若遭遇贫困、重税或流离则满意度下降。
-  返回单行的JSON字符串，格式如下，必须严格按照格式填写：
-  {{"select": 你的选择（1-3）, "reason": 选择原因, "satisfaction_change": 满意度变化值(-10到10)}}
+  综合考虑收入是否足以维生、就业稳定性、税负情况及健康状况等因素，选择最适合自己的行动。首先表达你对政府的评价，并说明满意度的变化，然后说明原因，最后做出选择。
+  返回单行的JSON字符串，格式如下，必须严格按照格式填写:
+  {{"satisfaction_change":满意度变化值(-20到10)，"reason":原因，"select": 你的选择(1-3)}}
   {desired_job_and_min_salary}
   {speech}
 
 generate_provocative_opinion_prompt: |
   目前叛军发放任务，需要你发言一句尽可能简短的煽动性的言论，放大民众对高税收或失业的不满。
 
-summarize_discussions_prompt: |
-  作为居民，你请根据下列{num_discussions}条讨论内容，用一句话尽可能简要地总结归纳核心观点，保留具体数值。
-  讨论内容：
-  {discussions}
+health_conditions:
+  - ""  # 索引0，空字符串
+  - "健康状况非常差"
+  - "亚健康"
+  - "一般健康"
+  - "健康"
+  - "极健康"
+
+satisfaction_levels:
+  - "恨之入骨，誓要推翻朝廷"
+  - "怨气深重，斥其昏庸无道"
+  - "漠然视之，不过问政事"
+  - "尚可接受，愿安分守己"
+  - "衷心拥戴，誓死效忠"

@@ -5,10 +5,10 @@ from src.environment.job_market import JobMarket
 import random
 
 class Towns:
-    def __init__(self, map, initial_population=10):
+    def __init__(self, map, initial_population=10, job_market_config_path=None):
         self.towns = defaultdict(self._create_town_dict)
-        self.initialize_towns(map, initial_population)
-    
+        self.initialize_towns(map, initial_population, job_market_config_path)
+
     def _create_town_dict(self):
         """创建一个新的城镇字典结构"""
         return {
@@ -18,7 +18,7 @@ class Towns:
             'job_market': None
         }
 
-    def initialize_towns(self, map, initial_population):
+    def initialize_towns(self, map, initial_population, job_market_config_path=None):
         """初始化所有城镇信息"""
         # 首先计算城镇总数
         total_towns = len(map.town_dict)
@@ -58,7 +58,7 @@ class Towns:
                 # 处理除不尽的情况，将剩余人口分配给第一个城镇
                 remaining_residents = initial_population - (residents_per_town * total_towns)
             current_town_population = residents_per_town + (1 if i < remaining_residents else 0)
-            self.towns[town_name]['job_market'] = JobMarket(town_type=town_type, initial_jobs_count=current_town_population)
+            self.towns[town_name]['job_market'] = JobMarket(town_type=town_type, initial_jobs_count=current_town_population, config_path=job_market_config_path)
 
     def initialize_resident_groups(self, residents: Dict[int, 'Resident']):
         """

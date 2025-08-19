@@ -1,14 +1,14 @@
 simulation:
   start_year: 1650
-  total_years: 13  # 模拟总年数
+  total_years: 5 # 模拟总年数
   map_width: 100         # 地图大小
   map_height: 150
-  initial_population: 200  # 初始人口数量
+  initial_population: 5  # 初始人口数量
   birth_rate: 0.05        # 出生率
-  resume_from_cache: true # 是否从缓存继续模拟
+  resume_from_cache: False # 是否从缓存继续模拟
 
   # 运河经济相关参数
-  transport_task: 100  # 运输任务（吨）
+  # transport_task: 10  # 运输任务（吨）
   # canal_transport_cost = 100  # 河运初始基础运输成本
   # sea_transport_cost = 20  # 海运初始基础运输成本
 
@@ -20,15 +20,17 @@ simulation:
     government:
       enabled: true  # 是否启用政府群体决策
       max_rounds: 2   # 政府最大讨论轮数
-    rebellion:
-      enabled: false  # 是否启用叛军群体决策
-      max_rounds: 2   # 叛军最大讨论轮数
 
 data:
   resident_info_path: "experiment_dataset/resident_data/resident_data.json"  # 居民信息文件路径
   government_info_path: "experiment_dataset/government_data/official_data.json"  # 政府官员信息文件路径
   rebellion_info_path: "experiment_dataset/rebellion_data/rebels_data.json"  # 叛乱信息文件路径
   climate_info_path: "experiment_dataset/climate_data/climate.csv"
+  resident_prompt_path: "config_TEOG/residents_prompts.yaml"
+  government_prompt_path: "config_TEOG/government_prompts.yaml"
+  rebels_prompt_path: "config_TEOG/rebels_prompts.yaml"
+  jobs_config_path: "config_TEOG/jobs_config.yaml"
+  towns_data_path: "config_TEOG/towns_data.json"
 
 
 # api_settings:

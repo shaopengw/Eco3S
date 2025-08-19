@@ -1,8 +1,14 @@
 from .shared_imports import *
 load_dotenv()
 
-with open('config/rebels_prompts.yaml', 'r', encoding='utf-8') as file:
-    prompts_rebels = yaml.safe_load(file)
+try:
+    with open('config/simulation_config.yaml', 'r', encoding='utf-8') as f:
+        config = yaml.safe_load(f)
+        rebels_prompt_path = config['data']['rebels_prompt_path']
+    with open(rebels_prompt_path, 'r', encoding='utf-8') as file:
+        prompts_rebels = yaml.safe_load(file)
+except Exception as e:
+    logging.warning(f"读取提示词失败")
 
 if "sphinx" not in sys.modules:
     rebellion_log = logging.getLogger(name="rebels.agent")

@@ -189,21 +189,51 @@ def plot_gdp_over_time(years, gdp):
     print(f"GDP图表已保存至：{save_path}")
     plt.close()
 
-def plot_all_results(years, rebellions, unemployment_rate, population, government_budget,
-                    rebellion_strength, average_satisfaction, tax_rate, river_navigability, gdp):
+def plot_urban_scale_over_time(years, urban_scale):
+    plt.figure(figsize=(10, 6))
+    plt.plot(years, urban_scale, label="Urban Scale", color="blue", marker="o")
+    plt.xlabel("Year")
+    plt.ylabel("Urban Scale")
+    plt.title("Urban Scale Over Time")
+    plt.legend()
+    plt.grid(True)
+    # 获取当前时间并格式化
+    current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+    save_dir = "experiment_dataset/plot_results"
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    save_path = os.path.join(save_dir, f"urban_scale_{current_time}.png")
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    print(f"城市规模图表已保存至：{save_path}")
+    plt.close()
+
+def plot_all_results(years, rebellions=None, unemployment_rate=None, population=None, government_budget=None,
+                    rebellion_strength=None, average_satisfaction=None, tax_rate=None, river_navigability=None, gdp=None, urban_scale=None):
     """
     绘制所有结果的图表并保存数据表格
     """
     # 绘制各个指标的图表
-    plot_rebellions_over_time(years, rebellions)
-    plot_unemployment_rate_over_time(years, unemployment_rate)
-    plot_population_over_time(years, population)
-    plot_government_budget_over_time(years, government_budget)
-    plot_rebellion_strength_over_time(years, rebellion_strength)
-    plot_satisfaction_over_time(years, average_satisfaction)
-    plot_tax_rate_over_time(years, tax_rate)
-    plot_river_navigability_over_time(years, river_navigability)
-    plot_gdp_over_time(years, gdp)
+    if rebellions is not None:
+        plot_rebellions_over_time(years, rebellions)
+    if unemployment_rate is not None:
+        plot_unemployment_rate_over_time(years, unemployment_rate)
+    if population is not None:
+        plot_population_over_time(years, population)
+    if government_budget is not None:
+        plot_government_budget_over_time(years, government_budget)
+    if rebellion_strength is not None:
+        plot_rebellion_strength_over_time(years, rebellion_strength)
+    if average_satisfaction is not None:
+        plot_satisfaction_over_time(years, average_satisfaction)
+    if tax_rate is not None:
+        plot_tax_rate_over_time(years, tax_rate)
+    if river_navigability is not None:
+        plot_river_navigability_over_time(years, river_navigability)
+    if gdp is not None:
+        plot_gdp_over_time(years, gdp)
+    if urban_scale is not None:
+        plot_urban_scale_over_time(years, urban_scale)
+
     
 
 if __name__ == "__main__":

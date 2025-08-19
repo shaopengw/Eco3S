@@ -125,7 +125,7 @@ async def run_simulation(config: dict[str, Any]) -> None:
         # print(f"生成了{N} 名居民数据，并保存到 {output_path}")
 
         # 初始化地图
-        map = Map(width=config["simulation"]["map_width"], height=config["simulation"]["map_height"])
+        map = Map(width=config["simulation"]["map_width"], height=config["simulation"]["map_height"], data_file=config["data"]["towns_data_path"])
         map.initialize_map()
         
         # 初始化时间
@@ -133,7 +133,10 @@ async def run_simulation(config: dict[str, Any]) -> None:
                    total_years=config["simulation"]["total_years"])
 
         # 初始化人口
-        population = Population(initial_population=config["simulation"]["initial_population"])
+        population = Population(
+            initial_population=config["simulation"]["initial_population"],
+            birth_rate=config["simulation"]["birth_rate"]
+        )
 
         # 初始化运输经济系统
         transport_economy = TransportEconomy(
@@ -148,10 +151,11 @@ async def run_simulation(config: dict[str, Any]) -> None:
             resident_info_path=resident_info_path,
             map=map,
             initial_population=config["simulation"]["initial_population"],
+            resident_prompt_path=config["data"]["resident_prompt_path"],
         )
 
         # 初始化城镇
-        towns = Towns(map=map,initial_population=config["simulation"]["initial_population"],)
+        towns = Towns(map=map,initial_population=config["simulation"]["initial_population"],job_market_config_path=config["data"]["jobs_config_path"])
         towns.initialize_resident_groups(residents)
         
         # 初始化社交网络
@@ -186,8 +190,6 @@ async def run_simulation(config: dict[str, Any]) -> None:
                 total_rebels += rebels_count
                 total_military += military_count
 
-        initial_population = config["simulation"]["initial_population"]
-
         # 初始化政府
         government = Government(
             map=map,
@@ -196,6 +198,8 @@ async def run_simulation(config: dict[str, Any]) -> None:
             initial_budget=0,
             time=time,
             transport_economy=transport_economy,
+            government_prompt_path=config["data"]["government_prompt_path"],
+
         )
 
         # 初始化政府官员

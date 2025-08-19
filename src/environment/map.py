@@ -6,7 +6,7 @@ import random
 from colorama import Back
 
 class Map:
-    def __init__(self, width, height, data_file='src/environment/towns_data.json'):
+    def __init__(self, width, height, data_file='config/towns_data.json'):
         """
         初始化地图
         :param width: 地图宽度
@@ -22,41 +22,60 @@ class Map:
         self.town_dict = {}  # 存储城市信息
         self.terrain_ruggedness = np.random.rand(height, width)
         
-        # 加载城市数据
+        # 加载城市数据和地图边界
         self.load_town_data(data_file)
-        
-        # 计算地图边界（中国大致经纬度范围）
-        self.min_longitude = 109
-        self.max_longitude = 125.0
-        self.min_latitude = 30.0
-        self.max_latitude = 41.0
 
     def load_town_data(self, data_file):
         """
-        从JSON文件加载城市数据
+        从JSON文件加载城市数据和地图边界
         :param data_file: JSON文件路径
         """
         try:
             with open(data_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)     
+                data = json.load(f)
             self.town_data = data
+            
+            # 从配置文件加载地图边界
+            boundaries = data.get('map_boundaries', {
+                'min_longitude': 109.0,
+                'max_longitude': 125.0,
+                'min_latitude': 30.0,
+                'max_latitude': 41.0
+            })
+            
+            self.min_longitude = boundaries['min_longitude']
+            self.max_longitude = boundaries['max_longitude']
+            self.min_latitude = boundaries['min_latitude']
+            self.max_latitude = boundaries['max_latitude']
             
         except Exception as e:
             print(f"加载城市数据失败: {e}")
             # 提供默认数据
             self.town_data = {
-                "canal_towns": [],
+                "canals": [],
                 "other_towns": []
             }
+            # 使用默认边界
+            self.min_longitude = 109.0
+            self.max_longitude = 125.0
+            self.min_latitude = 30.0
+            self.max_latitude = 41.0
 
     def _prepare_towns(self):
         """转换原始城市数据为带坐标的列表"""
         towns = []
-        for town in self.town_data['canal_towns'] + self.town_data['other_towns']:
+        # 处理多条运河
+        for canal in self.town_data.get('canals', []):
+            for town in canal.get('towns', []):
+                x = self.longitude_to_x(town['longitude'])
+                y = self.latitude_to_y(town['latitude'])
+                towns.append({'x': x, 'y': y, 'name': town['name'], 'type': 'canal', 'river_name': canal['name']})
+
+        # 处理其他城市
+        for town in self.town_data.get('other_towns', []):
             x = self.longitude_to_x(town['longitude'])
             y = self.latitude_to_y(town['latitude'])
-            town_type = 'canal' if town in self.town_data['canal_towns'] else 'non_canal'
-            towns.append({'x': x, 'y': y, 'name': town['name'], 'type': town_type})
+            towns.append({'x': x, 'y': y, 'name': town['name'], 'type': 'non_canal'})
         return towns
 
     def longitude_to_x(self, longitude):
@@ -74,34 +93,36 @@ class Map:
 
     def initialize_river(self):
         """
-        初始化京杭大运河路线
+        初始化所有运河路线
         """
         self.river_grid = np.zeros((self.height, self.width))
         self.navigability = 1.0  # 重置运河通航能力
         
-        # 获取运河城市坐标点
-        river_points = []
-        for town in self.town_data['canal_towns']:
-            x = self.longitude_to_x(town['longitude'])
-            y = self.latitude_to_y(town['latitude'])
-            river_points.append((x, y, town['name']))
-        
-        # 连接各个点形成运河
-        for i in range(len(river_points) - 1):
-            x1, y1, _ = river_points[i]
-            x2, y2, _ = river_points[i + 1]
-            steps = max(abs(x2 - x1), abs(y2 - y1)) * 2
-            for step in range(steps + 1):
-                t = step / steps
-                x = int(x1 + t * (x2 - x1))
-                y = int(y1 + t * (y2 - y1))
-                if 0 <= x < self.width and 0 <= y < self.height:
-                    self.river_grid[y, x] = 1
-                    # 为运河添加一定宽度
-                    for dy, dx in [(-1,-1), (-1,0), (-1,1), (0,-1), (0,0), (0,1), (1,-1), (1,0), (1,1)]:
-                        ny, nx = y + dy, x + dx
-                        if 0 <= ny < self.height and 0 <= nx < self.width:
-                            self.river_grid[ny, nx] = 1
+        # 遍历 canals 列表中的每个运河（河流）
+        for canal in self.town_data.get('canals', []):
+            river_points = []
+            # 直接遍历运河中的城镇
+            for town in canal.get('towns', []):
+                x = self.longitude_to_x(town['longitude'])
+                y = self.latitude_to_y(town['latitude'])
+                river_points.append((x, y, town['name']))
+                
+            # 连接各个点形成运河
+            for i in range(len(river_points) - 1):
+                x1, y1, _ = river_points[i]
+                x2, y2, _ = river_points[i + 1]
+                steps = max(abs(x2 - x1), abs(y2 - y1)) * 2
+                for step in range(steps + 1):
+                    t = step / steps
+                    x = int(x1 + t * (x2 - x1))
+                    y = int(y1 + t * (y2 - y1))
+                    if 0 <= x < self.width and 0 <= y < self.height:
+                        self.river_grid[y, x] = 1
+                        # 为运河添加一定宽度
+                        for dy, dx in [(-1,-1), (-1,0), (-1,1), (0,-1), (0,0), (0,1), (1,-1), (1,0), (1,1)]:
+                            ny, nx = y + dy, x + dx
+                            if 0 <= ny < self.height and 0 <= nx < self.width:
+                                self.river_grid[ny, nx] = 1
     
     def initialize_town_graph(self, max_distance=20):
         """
@@ -160,7 +181,7 @@ class Map:
 
         # 绘制沿河区域
         river_y, river_x = np.where(self.river_grid > 0)  # 改为>0以显示部分损坏的运河
-        plt.scatter(river_x, river_y, color='blue', label='The Canal', s=10)
+        plt.scatter(river_x, river_y, color='blue', label='Canals', s=10) # 标签改为Canals
 
         # 准备城市数据
         canal_towns = []
@@ -202,9 +223,9 @@ class Map:
                             fontproperties='SimHei',
                             bbox=dict(facecolor='white', edgecolor='none', alpha=0.7))
 
-        plt.title("中国主要城市与京杭大运河地图", fontproperties='SimHei', fontsize=14)
-        plt.xlabel("经度方向 (东→西)", fontproperties='SimHei')
-        plt.ylabel("纬度方向 (北→南)", fontproperties='SimHei')
+        plt.title("地图", fontproperties='SimHei', fontsize=14)
+        plt.xlabel("经度方向", fontproperties='SimHei')
+        plt.ylabel("纬度方向", fontproperties='SimHei')
         plt.legend()
         plt.show()
 
@@ -355,7 +376,7 @@ class Map:
 
 if __name__ == "__main__":
     # 初始化地图
-    map = Map(width=100, height=150)
+    map = Map(width=100, height=150,data_file='config_TEOG/towns_data.json')
     map.initialize_map()
 
     # 打印地图信息

@@ -1,22 +1,35 @@
 import random
 from collections import defaultdict
+import yaml
+from pathlib import Path
+
 class JobMarket:
-    def __init__(self, town_type="非沿河", initial_jobs_count=100):
+    def __init__(self, town_type="非沿河", initial_jobs_count=100, config_path=None):
         """
         初始化就业市场类
         :param town_type: 城镇类型（"沿河"或"非沿河"）
         :param initial_jobs_count: 初始工作总数
+        :param config_path: 职业配置文件路径，如果为None则使用默认路径
         """
         self.town_type = town_type
-        # 收入单位为季度
-        self.jobs_info = {
-            "农民": {"total": 0, "employed": {}, "base_salary": 10},  # 基础农业劳动者收入
-            "商人": {"total": 0, "employed": {}, "base_salary": 30},  # 经商收入较高
-            "叛军": {"total": 0, "employed": {}, "base_salary": 12},  # 非正规收入
-            "官员及士兵": {"total": 0, "employed": {}, "base_salary": 20},  # 正规军饷和俸禄
-            "运河维护工": {"total": 0, "employed": {}, "base_salary": 15},  # 运河维护收入
-            "普通工作者": {"total": 0, "employed": {}, "base_salary": 12}   # 其他普通职业收入
-        }
+        # 加载配置文件
+        if config_path is None:
+            config_path = Path(__file__).parent.parent.parent / 'config' / 'jobs_config.yaml'
+        
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+        
+        # 初始化jobs_info
+        self.jobs_info = {}
+        for job, info in config['jobs_info'].items():
+            self.jobs_info[job] = {
+                "total": 0,
+                "employed": {},
+                "base_salary": info['base_salary']
+            }
+        
+        # 保存职业比例配置
+        self.professions_ratio = config['professions_ratio']
         
         # 根据城镇类型初始化工作数量
         self._initialize_jobs(initial_jobs_count)
@@ -26,27 +39,19 @@ class JobMarket:
         根据比例初始化各类工作的数量
         :param total_count: 总工作数量
         """
-        professions_ratio = {
-            "农民": {"沿河": [0.25, 0.35], "非沿河": [0.7, 0.8]},
-            "商人": {"沿河": [0.05, 0.1], "非沿河": [0.0, 0.05]},
-            "叛军": {"沿河": [0.01, 0.05], "非沿河": [0.01, 0.02]},
-            "官员及士兵": {"沿河": [0.03, 0.05], "非沿河": [0.02, 0.03]},
-            "运河维护工": {"沿河": [0.4, 0.5], "非沿河": [0.0, 0.0]},
-            "普通工作者": {"沿河": [0.02, 0.05], "非沿河": [0.1, 0.15]}
-        }
         # 如果总岗位数小于总职业数，直接为每个职业分配一个岗位
-        if total_count < len(professions_ratio):
-            for job in professions_ratio:
+        if total_count < len(self.professions_ratio):
+            for job in self.professions_ratio:
                 self.jobs_info[job]["total"] += 1
         else:
             # 先为每个职业分配一个岗位
-            allocated_count = len(professions_ratio)
-            for job in professions_ratio:
+            allocated_count = len(self.professions_ratio)
+            for job in self.professions_ratio:
                 self.jobs_info[job]["total"] += 1
 
             # 根据城镇类型和职业比例范围，随机选择一个比例来分配剩余岗位
             remaining_count = total_count - allocated_count
-            for job, ratios in professions_ratio.items():
+            for job, ratios in self.professions_ratio.items():
                 ratio_range = ratios[self.town_type]
                 ratio = random.uniform(ratio_range[0], ratio_range[1])
                 additional_jobs = max(0, int(remaining_count * ratio))
@@ -100,24 +105,31 @@ class JobMarket:
         self.jobs_info[job_type]["employed"][resident.resident_id] = salary
         resident.employ(job_type, salary)  # 更新居民的工作和收入信息
         return True
-
-    def assign_rebel(self, resident):
+    
+    def assign_specific_job_withoutcheck(self, resident, job_type):
         """
-        分配叛军职业给指定居民，不判断空缺，直接增加工作总数和就职人数
+        分配指定职业给指定居民，不判断空缺，直接增加工作总数和就职人数
         :param resident: 居民对象
+        :param job_type: 职业类型
         """
-        job_type = "叛军"
+        
+        # 检查职业类型是否存在
+        if job_type not in self.jobs_info:
+            print(f"错误：不存在的职业类型 {job_type}")
+            return False
+        
         # 如果居民已经在其他职业就业，先移除原有工作
         for job, info in self.jobs_info.items():
             if resident.resident_id in info["employed"]:
                 del info["employed"][resident.resident_id]
                 break
-                
-        # 分配新工作，使用实际收入或基础收入
+
+        # 增加工作总数和就职人数
         salary = self.jobs_info[job_type]["base_salary"]
         self.jobs_info[job_type]["employed"][resident.resident_id] = salary
-        self.jobs_info[job_type]["total"] += 1 # 增加叛军工作总数
-        resident.employ(job_type, salary)  # 更新居民的工作和收入信息
+        self.jobs_info[job_type]["total"] += 1
+        resident.employ(job_type, salary)
+
         return True
 
     def assign_job(self, resident):
