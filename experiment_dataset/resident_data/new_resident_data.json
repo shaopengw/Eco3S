@@ -1,1 +1,20 @@
-[]
+[
+  {
+    "gender": "女性",
+    "lifespan": 13,
+    "residence": "非沿河",
+    "satisfaction": 82,
+    "health_index": 4,
+    "income": 0,
+    "personality": "仁善、激进"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 19,
+    "residence": "沿河",
+    "satisfaction": 43,
+    "health_index": 3,
+    "income": 5,
+    "personality": "坚韧、贪婪"
+  }
+]

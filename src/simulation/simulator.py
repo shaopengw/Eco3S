@@ -42,7 +42,7 @@ from src.agents.memory_manager import MemoryManager
 from src.agents.base_agent import BaseAgent
 
 class Simulator:
-    def __init__(self, map, time, government, government_officials, rebellion, rebels_agents, population, social_network, residents, towns, transport_economy, climate):
+    def __init__(self, map, time, government, government_officials, rebellion, rebels_agents, population, social_network, residents, towns, transport_economy, climate, config):
         """
         初始化模拟器类
         :param map: 地图对象
@@ -90,6 +90,7 @@ class Simulator:
             "gdp": [],
         }
         self.rebellion_history = []  # 存储叛乱历史记录
+        self.config = config
         
         # 保存初始数据
         self.gdp = self.calculate_gdp()  # 确保先计算初始GDP
@@ -144,7 +145,8 @@ class Simulator:
                 count=new_count,
                 map=self.map,
                 residents=self.residents,
-                social_network=self.social_network
+                social_network=self.social_network,
+                resident_prompt_path=self.config["data"]["resident_prompt_path"],
             )
             await self.integrate_new_residents(new_residents)
             self.population.birth(new_count)
@@ -562,16 +564,14 @@ class Simulator:
         print(f"{len(new_residents)} 名新居民已出生")
 
         # 添加到城镇
-        for resident in new_residents.values():
-            if resident.town:
-                self.towns.add_resident(resident, resident.town)
+        self.towns.initialize_resident_groups(new_residents)
         print("新居民已加入各自城镇")
 
         # 添加到社交网络
         if new_residents:
             self.social_network.add_new_residents(new_residents)
             print(f"{len(new_residents)} 名新居民已加入社交网络")
-            self.social_network.visualize()
+            # self.social_network.visualize()
 
     def calculate_average_satisfaction(self):
         """
@@ -1103,7 +1103,7 @@ class Simulator:
 
     
     @classmethod
-    def load_cache(cls, file_path, simulator_years):
+    def load_cache(cls, file_path, simulator_years, config):
         """从缓存文件加载模拟状态"""
         try:
             with open(file_path, 'rb') as f:
@@ -1115,6 +1115,7 @@ class Simulator:
             # 重建组件
             simulator.map = state.get('map')
             simulator.time = state.get('time')
+            simulator.config = config
 
             if simulator.time:
                 simulator.time.update_total_years(simulator_years)
@@ -1134,7 +1135,9 @@ class Simulator:
                             resident_id=res_state.get('resident_id'),
                             job_market=None,  # 临时设为None，后续更新
                             shared_pool=ResidentSharedInformationPool(),
-                            map=simulator.map
+                            map=simulator.map,
+                            resident_prompt_path=config["data"]["resident_prompt_path"],
+
                         )
                         # 初始化model_manager和model_backend
                         resident.model_manager = ModelManager()
@@ -1259,6 +1262,7 @@ class Simulator:
                     initial_budget=government_data.get('budget'),
                     time=simulator.time,
                     transport_economy=simulator.transport_economy,
+                    government_prompt_path=simulator.config["data"]["government_prompt_path"],
                 )
                 simulator.government.tax_rate = government_data.get('tax_rate')
 

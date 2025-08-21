@@ -1,11 +1,11 @@
 simulation:
   start_year: 1650
-  total_years: 5 # 模拟总年数
+  total_years: 20 # 模拟总年数
   map_width: 100         # 地图大小
   map_height: 150
-  initial_population: 5  # 初始人口数量
+  initial_population: 50  # 初始人口数量
   birth_rate: 0.05        # 出生率
-  resume_from_cache: False # 是否从缓存继续模拟
+  resume_from_cache: True # 是否从缓存继续模拟
 
   # 运河经济相关参数
   # transport_task: 10  # 运输任务（吨）

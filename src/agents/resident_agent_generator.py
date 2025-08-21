@@ -97,7 +97,7 @@ def assign_resident_location(resident_data, map):
     location = map.generate_random_location(town_name)
     return location, town_name
 
-async def generate_new_residents(count, map, residents, social_network):
+async def generate_new_residents(count, map, residents, social_network, resident_prompt_path):
     """生成新居民并初始化"""
     # 生成居民数据
     resident_data = generate_resident_data(count)
@@ -108,6 +108,7 @@ async def generate_new_residents(count, map, residents, social_network):
     new_residents = await generate_canal_agents(
         resident_info_path=new_resident_info_path,
         map=map,
+        resident_prompt_path=resident_prompt_path
     )
 
     # 分配新ID
