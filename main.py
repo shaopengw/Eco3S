@@ -103,7 +103,12 @@ async def run_simulation(config: dict[str, Any]) -> None:
                 try:
                     print(f"尝试从缓存文件 {found_cache_file} 加载模拟状态...")
                     simulator_years = total_years - found_year
-                    simulator = Simulator.load_cache(found_cache_file, simulator_years)
+                    simulator = Simulator.load_cache(
+                        found_cache_file,
+                        simulator_years,
+                        config=config,
+
+                    )
                     print(f"当前年份：{simulator.time.get_current_year()}，将继续模拟 {simulator_years} 年")
                 except Exception as e:
                     logging.error(f"加载缓存失败: {e}，将从头开始模拟。")
@@ -239,6 +244,7 @@ async def run_simulation(config: dict[str, Any]) -> None:
             towns=towns,
             transport_economy=transport_economy,
             climate=climate,
+            config=config,
         )
         
         print("初始化完成")

@@ -19,17 +19,18 @@ from src.agents.government import (
     InformationOfficer
 )
 from src.agents.resident_agent_generator import generate_new_residents
-from src.generator.resident_generate import generate_resident_data, save_resident_data
 from src.environment.social_network import SocialNetwork
 from src.environment.towns import Towns
 from src.environment.transport_economy import TransportEconomy
 from src.agents.model_manager import ModelManager
 from src.environment.map import Map
 from src.environment.time import Time
+from src.environment.job_market import JobMarket
 from src.environment.population import Population
 from src.environment.social_network import SocialNetwork
 from src.environment.climate import ClimateSystem
 from src.agents.government import Government, government_SharedInformationPool
+from src.agents.resident import Resident, ResidentGroup, ResidentSharedInformationPool
 
 from camel.configs import ChatGPTConfig
 from camel.memories import ScoreBasedContextCreator, MemoryRecord
@@ -53,7 +54,7 @@ if "sphinx" not in sys.modules:
     resident_log.addHandler(file_handler)
 
 class TEOGSimulator:
-    def __init__(self, map, time, government, government_officials, population, social_network, residents, towns, transport_economy, climate):
+    def __init__(self, map, time, government, government_officials, population, social_network, residents, towns, transport_economy, climate, config):
         """初始化模拟器类"""
         self.map = map
         self.time = time
@@ -69,6 +70,7 @@ class TEOGSimulator:
         self.average_satisfaction = None  # 平均满意度（0-100）
         self.gdp = 0  # 国内生产总值（单位：两）
         self.initialize_salaries()
+        self.config = config
         
         self.results = {
             "years": [],
@@ -129,7 +131,8 @@ class TEOGSimulator:
                 count=new_count,
                 map=self.map,
                 residents=self.residents,
-                social_network=self.social_network
+                social_network=self.social_network,
+                resident_prompt_path=self.config["data"]["resident_prompt_path"],
             )
             await self.integrate_new_residents(new_residents)
             self.population.birth(new_count)
@@ -163,6 +166,8 @@ class TEOGSimulator:
                         government_decision,
                         changes_summary
                     )
+            
+            print(f"城市居民：{self.get_urban_scale()}，农民：{self.population.get_population() - self.get_urban_scale()}")
             self.time.step()
 
     async def initialize_salaries(self):
@@ -349,7 +354,8 @@ class TEOGSimulator:
             
             # 收集居民行为决策
             tax_rate = self.government.get_tax_rate()
-            task = resident.decide_action_by_llm(tax_rate, self.basic_living_cost)
+            climate_impact_factor = self.climate.get_current_impact(self.time.get_current_year(), self.time.get_start_time())
+            task = resident.decide_action_by_llm(tax_rate, self.basic_living_cost, climate_impact_factor)
             tasks.append(task)
             resident_decisions.append(resident)  # 保存对应的居民对象
 
@@ -378,26 +384,23 @@ class TEOGSimulator:
     async def process_resident_action(self, resident, select, reason):
         """处理单个居民的行为结果"""
         if select == 1:  # 加入城邦
-            if resident.job == "城市居民":
-                resident_log.info(f"居民 {resident.resident_id} 继续留在城邦")
-            else:
+            if resident.job == "农民":
                 resident.job_market.assign_specific_job_withoutcheck(resident, "城市居民")
             
         elif select == 2:  # 迁徙
             # 尝试迁移
+            job = resident.job
             success = await resident.migrate_to_new_town(self.map)
+
             if success:
-                # 更新居民状态
-                resident.satisfaction = max(0, resident.satisfaction - 10)  # 迁移导致满意度降低
                 # 更新社交网络
+                resident.job_market.assign_specific_job_withoutcheck(resident, job) # 迁移后重新分配身份
                 self.social_network.update_network_edges()
             else:
                 print(f"居民 {resident.resident_id} 迁移失败")
         
         elif select == 3:  # 自给自足
-            if resident.job == "农民":
-                resident_log.info(f"居民 {resident.resident_id} 继续留在农村")
-            else:
+            if resident.job == "城市居民":
                 resident.job_market.assign_specific_job_withoutcheck(resident, "农民")
 
     def update_annual_results(self):
@@ -437,7 +440,7 @@ class TEOGSimulator:
         if not self.residents:
             return 0.0
         # 计算所有居民的收入总和
-        total_income = sum(resident.income for resident in self.residents.values())
+        total_income = sum(resident.income for resident in self.residents.values() if resident.job != "农民")
         gdp = total_income
         return gdp
     
@@ -447,8 +450,15 @@ class TEOGSimulator:
         :param climate_impact: 气候影响因子
         :param river_navigability: 运河通航能力因子 (仅对城市居民有影响)
         """
-        # 城市居民的综合影响因子
         print(f"收入更新：综合影响因子: (运河影响{river_navigability},天气影响{climate_impact}) ")
+        
+        # 初始化工资记录
+        income_records = {
+            '沿河农民': None,
+            '非沿河农民': None,
+            '沿河城市居民': None,
+            '非沿河城市居民': None
+        }
 
         for resident in self.residents.values():
             town_name = resident.town
@@ -468,19 +478,35 @@ class TEOGSimulator:
             base_salary = job_market.jobs_info[job_type]["base_salary"]
             original_income = resident.income
 
+            # 确定城镇类型
+            town_type = town_data.get('town_type', '非沿河')
+            is_river = town_type == "沿河"
+            
             if job_type == "农民":
                 new_income = round(base_salary * (1 - climate_impact), 2)
                 resident.income = max(0, new_income)
-                print(f"农民{resident.resident_id}收入更新：原收入 {original_income:.2f} -> 新收入 {resident.income:.2f} "
-                      f"(城镇基本工资 {base_salary:.2f} * (1 - 天气影响{climate_impact})) ")
+                
+                # 记录农民工资
+                key = '沿河农民' if is_river else '非沿河农民'
+                if income_records[key] is None:
+                    income_records[key] = resident.income
+                    
             elif job_type == "城市居民":
                 new_income = round(base_salary * river_navigability, 2)
                 resident.income = max(0, new_income)
-                print(f"城市居民{resident.resident_id}收入更新：原收入 {original_income:.2f} -> 新收入 {resident.income:.2f} "
-                      f"(城镇基本工资 {base_salary:.2f} * 运河影响{river_navigability}) ")
+                
+                # 记录城市居民工资
+                key = '沿河城市居民' if is_river else '非沿河城市居民'
+                if income_records[key] is None:
+                    income_records[key] = resident.income
             else:
-                # 对于其他职业，可以根据需要添加逻辑，或者保持不变
-                print(f"信息：居民 {resident.resident_id} 的职业 '{job_type}' 收入未特殊处理。")
+                print(f"警告：居民 {resident.resident_id} 的职业 '{job_type}' 未在就业市场中找到相应信息。")
+        
+        # 输出工资信息
+        print("\n===== 工资统计 =====")
+        for category, income in income_records.items():
+            if income is not None:
+                print(f"{category}: {income}")
 
     def summarize_time_step_results(self):
         """总结当前时间步的各项指标变化"""
@@ -546,16 +572,14 @@ class TEOGSimulator:
         print(f"{len(new_residents)} 名新居民已出生")
 
         # 添加到城镇
-        for resident in new_residents.values():
-            if resident.town:
-                self.towns.add_resident(resident, resident.town)
+        self.towns.initialize_resident_groups(new_residents)
         print("新居民已加入各自城镇")
 
         # 添加到社交网络
         if new_residents:
             self.social_network.add_new_residents(new_residents)
             print(f"{len(new_residents)} 名新居民已加入社交网络")
-            self.social_network.visualize()
+            # self.social_network.visualize()
 
     def calculate_total_salaries(self):
         """
@@ -581,3 +605,341 @@ class TEOGSimulator:
             if town_data.get('job_market'):
                 urban_scale += len(town_data['job_market'].jobs_info["城市居民"]["employed"])
         return urban_scale
+
+    def save_cache(self, file_path):
+        """保存模拟状态到缓存文件"""
+        cache_dir = "./backups_TEOG"  # 缓存文件存放的目录
+        
+        # 确保 backups 目录存在
+        os.makedirs(cache_dir, exist_ok=True)
+
+        if file_path is None:
+            # 如果没有指定文件路径，使用默认的命名规则
+            population = self.population.get_population()
+            total_years = self.time.total_years
+            file_path = os.path.join(cache_dir, f"simulation_cache_p{population}_y{total_years}.pkl")
+        try:
+            with open(file_path, 'wb') as f:
+                # 只保存关键状态数据
+                government_state = {
+                    'budget': self.government.budget,
+                    'tax_rate': self.government.tax_rate
+                }
+                
+                residents_state = [
+                    {
+                        'resident_id': resident.resident_id,
+                        'shared_pool': {
+                            'economic_status': resident.shared_pool.shared_info.get('economic_status', {}),
+                            'social_network': resident.shared_pool.shared_info.get('social_network', {}),
+                            'environment_awareness': resident.shared_pool.shared_info.get('environment_awareness', {})
+                        },
+                        'location': resident.location,
+                        'town': resident.town,
+                        'employed': resident.employed,
+                        'job': resident.job,
+                        'income': resident.income,
+                        'satisfaction': resident.satisfaction,
+                        'health_index': resident.health_index,
+                        'lifespan': resident.lifespan,
+                        'personality': resident.personality,
+                        'system_message': resident.system_message,
+                        'memory': {
+                            'chat_history': [{
+                                'role': record.memory_record.role_at_backend,
+                                'content': record.memory_record.message.content
+                            } for record in resident.memory.personal_memory.chat_history.retrieve()],
+                            'longterm_memory': resident.memory.personal_memory.longterm_memory
+                        } if resident.memory else None,
+                    } for resident in self.residents.values()
+                ]
+                
+                towns_state = {
+                    town_name: {
+                        'info': {
+                            'name': town_name,
+                            'location': town_data['info']['location'],
+                            'type': town_data['info']['type']
+                        },
+                        'residents': {
+                            resident_id: {
+                                'resident_id': resident.resident_id,
+                                'town': resident.town
+                            } for resident_id, resident in town_data['residents'].items()
+                        },
+                        'job_market': {
+                            'town_type': town_data['job_market'].town_type,
+                            'jobs_info': {
+                                job_type: {
+                                    'total': info['total'],
+                                    'employed': {
+                                        resident_id: salary 
+                                        for resident_id, salary in info['employed'].items()
+                                    },
+                                    'base_salary': info['base_salary']
+                                } for job_type, info in town_data['job_market'].jobs_info.items()
+                            }
+                        } if town_data['job_market'] else None
+                    } for town_name, town_data in self.towns.towns.items()
+                }
+                
+                government_officials_state = [
+                    {
+                        'agent_id': official.agent_id,
+                        'group_type': 'government',
+                        'function': getattr(official, 'function', None),
+                        'faction': getattr(official, 'faction', None),
+                        'personality': getattr(official, 'personality', None) if hasattr(official, 'personality') else None,
+                        'system_message': official.system_message,
+                        # 添加记忆系统状态
+                        'memory': {
+                            'chat_history': [{
+                                'role': record.memory_record.role_at_backend,
+                                'content': record.memory_record.message.content
+                            } for record in official.memory.personal_memory.chat_history.retrieve()],
+                            'longterm_memory': official.memory.personal_memory.longterm_memory
+                        } if official.memory else None
+                    } for official in self.government_officials.values()
+                ]
+
+                state = {
+                    'map': self.map,
+                    'time': self.time,
+                    'population': self.population,
+                    'government': government_state,
+                    'transport_economy': self.transport_economy,
+                    'residents': residents_state,
+                    'towns': towns_state,
+                    'government_officials': government_officials_state,
+                    'social_network': self.social_network.to_dict(),
+                    'climate': self.climate,
+                    'basic_living_cost': self.basic_living_cost,
+                    'average_satisfaction': self.average_satisfaction,
+                    'gdp': self.gdp,
+                    'results': self.results,
+                    'start_time': self.start_time,
+                    'end_time': self.end_time
+                }
+                pickle.dump(state, f)
+                print(f"缓存文件保存成功")
+        except Exception as e:
+            raise Exception(f"保存缓存失败: {e}")
+
+    @classmethod
+    def load_cache(cls, file_path, simulator_years, config):
+        """从缓存文件加载模拟状态"""
+        try:
+            with open(file_path, 'rb') as f:
+                state = pickle.load(f)
+            
+            # 创建新的模拟器实例
+            simulator = cls.__new__(cls)
+            
+            # 重建基础组件
+            simulator.map = state.get('map')
+            simulator.time = state.get('time')
+            if simulator.time:
+                simulator.time.update_total_years(simulator_years)
+            simulator.population = state.get('population')
+            simulator.transport_economy = state.get('transport_economy')
+            simulator.climate = state.get('climate')
+            simulator.config = config
+            
+            # 重建居民
+            simulator.residents = {}
+            residents_data = state.get('residents')
+            if residents_data and isinstance(residents_data, list):
+                for res_state in residents_data:
+                    resident = Resident(
+                        resident_id=res_state.get('resident_id'),
+                        job_market=None,  # 临时设为None，后续更新
+                        shared_pool=ResidentSharedInformationPool(),
+                        map=simulator.map,
+                        resident_prompt_path=simulator.config["data"]["resident_prompt_path"],
+                    )
+                    # 初始化model_manager和model_backend
+                    resident.model_manager = ModelManager()
+                    model_config = resident.model_manager.get_random_model_config()
+                    resident.model_type = ModelType(model_config["model_type"])
+                    resident.model_config = ChatGPTConfig(**model_config["model_config"])
+                    resident.model_backend = ModelFactory.create(
+                        model_platform=model_config["model_platform"],
+                        model_type=resident.model_type,
+                        model_config_dict=resident.model_config.as_dict(),
+                    )
+                    resident.token_counter = OpenAITokenCounter(resident.model_type)
+                    resident.context_creator = ScoreBasedContextCreator(resident.token_counter, 4096)
+                    # 恢复居民状态
+                    resident.shared_pool.shared_info = res_state.get('shared_pool', {})
+                    resident.location = res_state.get('location')
+                    resident.town = res_state.get('town')
+                    resident.employed = res_state.get('employed')
+                    resident.job = res_state.get('job')
+                    resident.income = res_state.get('income')
+                    resident.satisfaction = res_state.get('satisfaction')
+                    resident.health_index = res_state.get('health_index')
+                    resident.lifespan = res_state.get('lifespan')
+                    resident.personality = res_state.get('personality')
+                    resident.system_message = res_state.get('system_message')
+                    simulator.residents[resident.resident_id] = resident
+                    # 恢复记忆系统
+                    memory_state = res_state.get('memory')
+                    if memory_state:
+                        resident.memory = MemoryManager(
+                            agent_id=resident.resident_id,
+                            model_type=resident.model_type,
+                            group_type='resident',
+                            window_size=5
+                        )
+                        resident.memory.set_agent(resident)
+                        # 恢复聊天历史
+                        for msg in memory_state.get('chat_history', []):
+                            record = MemoryRecord(
+                                message=BaseMessage.make_assistant_message(
+                                    role_name='resident',
+                                    content=msg['content']
+                                ) if msg['role'] == 'assistant' else BaseMessage.make_user_message(
+                                    role_name='resident',
+                                    content=msg['content']
+                                ),
+                                role_at_backend=msg['role']
+                            )
+                            resident.memory.personal_memory.write_record(record)
+                            # 恢复长期记忆
+                            resident.memory.personal_memory.longterm_memory = memory_state.get('longterm_memory', [])
+                        simulator.residents[resident.resident_id] = resident
+            # 重建城镇
+            simulator.towns = Towns(simulator.map, simulator.population.get_population())
+            towns_state = state.get('towns')
+            if towns_state and isinstance(towns_state, dict):
+                for town_name, town_data in towns_state.items():
+                    simulator.towns.towns[town_name] = {
+                        'info': town_data.get('info', {}),
+                        'residents': {},
+                        'job_market': None,  # 临时设为None，后续更新
+                        'resident_group': ResidentGroup(town_name)  # 初始化ResidentGroup
+                    }
+
+                    # 恢复就业市场
+                    if town_data.get('job_market'):
+                        job_market = JobMarket(town_data['job_market'].get('town_type'))
+                        for job_type, info in town_data['job_market'].get('jobs_info', {}).items():
+                            job_market.jobs_info[job_type] = {
+                                'total': info.get('total'),
+                                'employed': info.get('employed', {}),
+                                'base_salary': info.get('base_salary')
+                            }
+                        simulator.towns.towns[town_name]['job_market'] = job_market
+                    else:
+                        simulator.towns.towns[town_name]['job_market'] = JobMarket(town_data.get('info', {}).get('type', '非沿河'))
+                    
+                    # 恢复居民关联
+                    for resident_id, resident_data in town_data.get('residents', {}).items():
+                        if resident_id in simulator.residents:
+                            simulator.towns.towns[town_name]['residents'][resident_id] = simulator.residents[resident_id]
+                            simulator.residents[resident_id].town = town_name
+                            simulator.residents[resident_id].job_market = simulator.towns.towns[town_name]['job_market']
+                            simulator.towns.towns[town_name]['resident_group'].add_resident(simulator.residents[resident_id])
+                            if resident_id in town_data.get('job_market', {}).get('jobs_info', {}).get('employed', {}):
+                                simulator.residents[resident_id].employed = True
+                                simulator.residents[resident_id].job = town_data['job_market']['jobs_info']['employed'][resident_id]
+
+            # 恢复社交网络
+            if state.get('social_network'):
+                simulator.social_network = SocialNetwork.from_dict(
+                    state.get('social_network', {}), 
+                    simulator.residents
+                )
+            else:
+                simulator.social_network = SocialNetwork()
+                simulator.social_network.initialize_network(simulator.residents, simulator.towns)
+                
+            # 为每个城镇的居民群组设置社交网络
+            for town_name, town_data in simulator.towns.towns.items():
+                resident_group = town_data.get('resident_group')
+                if resident_group:
+                    resident_group.set_social_network(simulator.social_network)
+
+            # 恢复政府数据
+            government_data = state.get('government')
+            if government_data:
+                simulator.government = Government(
+                    map=simulator.map,
+                    towns=simulator.towns,
+                    military_strength=0,
+                    initial_budget=government_data.get('budget'),
+                    time=simulator.time,
+                    transport_economy=simulator.transport_economy,
+                    government_prompt_path=simulator.config["data"]["government_prompt_path"],
+                )
+                simulator.government.tax_rate = government_data.get('tax_rate')
+
+            # 恢复政府官员
+            simulator.government_officials = {}
+            officials_data = state.get('government_officials')
+            if officials_data and isinstance(officials_data, list):
+                shared_pool = government_SharedInformationPool()
+                for off_state in officials_data:
+                    if off_state.get('personality'):
+                        if off_state.get('function'):
+                            official = OrdinaryGovernmentAgent(
+                                agent_id=off_state.get('agent_id'),
+                                government=simulator.government,
+                                shared_pool=shared_pool
+                            )
+                            official.function = off_state.get('function')
+                            official.faction = off_state.get('faction')
+                        else:
+                            official = HighRankingGovernmentAgent(
+                                agent_id=off_state.get('agent_id'),
+                                government=simulator.government,
+                                shared_pool=shared_pool
+                            )
+                    else:
+                        official = InformationOfficer(
+                            agent_id=off_state.get('agent_id'),
+                            government=simulator.government,
+                            shared_pool=shared_pool
+                        )
+                    official.personality = off_state.get('personality')
+                    official.system_message = off_state.get('system_message')
+                    simulator.government_officials[official.agent_id] = official
+                    # 恢复记忆系统
+                    memory_state = off_state.get('memory')
+                    if memory_state:
+                        official.memory = MemoryManager(
+                            agent_id=official.agent_id,
+                            model_type=official.model_type,
+                            group_type='government',
+                            window_size=5
+                        )
+                        official.memory.set_agent(official)
+                        # 恢复聊天历史
+                        for msg in memory_state.get('chat_history', []):
+                            record = MemoryRecord(
+                                message=BaseMessage.make_assistant_message(
+                                    role_name='government',
+                                    content=msg['content']
+                                ) if msg['role'] == 'assistant' else BaseMessage.make_user_message(
+                                    role_name='government',
+                                    content=msg['content']
+                                ),
+                                role_at_backend=msg['role']
+                            )
+                            official.memory.personal_memory.write_record(record)
+                        # 恢复长期记忆
+                        official.memory.personal_memory.longterm_memory = memory_state.get('longterm_memory', [])
+                    simulator.government_officials[official.agent_id] = official
+            # 恢复其他基本属性
+            simulator.basic_living_cost = state.get('basic_living_cost')
+            simulator.average_satisfaction = state.get('average_satisfaction')
+            simulator.gdp = state.get('gdp')
+            simulator.results = state.get('results')
+            simulator.start_time = state.get('start_time')
+            simulator.end_time = state.get('end_time')
+
+
+            
+            return simulator
+        except Exception as e:
+            raise Exception(f"加载缓存失败: {e}")

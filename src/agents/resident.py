@@ -207,15 +207,22 @@ class Resident(BaseAgent):
 
         return None
 
-    async def decide_action_by_llm(self, tax_rate, basic_living_cost):
-        """通过LLM决定居民的行动，并随机生成对政府的态度发言。同时更新满意度。"""
+    async def decide_action_by_llm(self, tax_rate, basic_living_cost, climate_impact=0):
+        """
+        通过LLM决定居民的行动，并随机生成对政府的态度发言。同时更新满意度。
+        
+        Args:
+            tax_rate: 当前税率
+            basic_living_cost: 基本生活成本
+            climate_impact: 天气影响因子，默认为0
+        """
         # 发言概率基于节点在社交网络中的度值
         speech_prob = 0.0
         social_network = self.get_social_network()
         if social_network:
             speech_prob = social_network.calculate_speech_probability(self.resident_id)
         need_speech = random.random() < speech_prob
-
+    
         # 如果是未就业居民，获取当前城镇的空缺岗位信息
         job_market_info = ""
         if not self.employed and self.town and self.job_market:
@@ -226,7 +233,8 @@ class Resident(BaseAgent):
                     for job, count in vacant_jobs.items()
                 )
         rebel_salary = self.job_market.get_job_salary("叛军")
-
+    
+        # 构建税率和天气状况信息
         tax_rate_message = ""
         if tax_rate < 0.05:
             tax_rate_message = "当前税率极低，几乎无税负担。\n"
@@ -237,24 +245,43 @@ class Resident(BaseAgent):
         else:
             tax_rate_message = "当前税率极高，负担极重。\n"
         
+        # 添加天气状况信息
+        weather_condition = ""
+        if climate_impact <= 0.2:
+            weather_condition = "天气良好，适宜农耕。"
+        elif climate_impact <= 0.4:
+            weather_condition = "天气一般，对农耕有轻微影响。"
+        elif climate_impact <= 0.6:
+            weather_condition = "天气较差，农耕受到明显影响。"
+        elif climate_impact <= 0.8:
+            weather_condition = "天气恶劣，农耕困难。"
+        else:
+            weather_condition = "天气极端恶劣，农耕几乎无法进行。"
+        
         employed = self.employed
-
+    
         # 根据是否就业选择不同的提示词模板
         if self.job == "城市居民":
             prompt = self.prompts_resident['decide_action_prompt_city_resident'].format(
-                tax_rate_message=tax_rate_message, job_market_info=job_market_info)
+                tax_rate_message=tax_rate_message, 
+                job_market_info=job_market_info,
+                weather_condition=weather_condition)
         elif employed:
             prompt = self.prompts_resident['decide_action_prompt_employed'].format(
-                tax_rate_message=tax_rate_message, job_market_info=job_market_info)
+                tax_rate_message=tax_rate_message, 
+                job_market_info=job_market_info,
+                weather_condition=weather_condition)
         else:
             prompt = self.prompts_resident['decide_action_prompt_unemployed'].format(
-                tax_rate_message=tax_rate_message, job_market_info=job_market_info)
-
+                tax_rate_message=tax_rate_message, 
+                job_market_info=job_market_info,
+                weather_condition=weather_condition)
+    
         # 构建 desired_job_and_min_salary 和 speech
         desired_job_and_min_salary = self.prompts_resident['decide_action_json'].format(
             desired_job_and_min_salary=', "desired_job": 期望职业（如果选择2，可选：农民、商人、官员及士兵、运河维护工、普通工作者）, "min_salary": 可接受的最低收入（数字）' if not self.employed and job_market_info else '',
             speech=', "speech": 一句有传播力的态度言论，允许负面、质疑或愤怒情绪。}' if need_speech else '}')
-
+    
         # 将 desired_job_and_min_salary 和 speech 插入到 prompt 中
         prompt += desired_job_and_min_salary
         try:
@@ -262,10 +289,11 @@ class Resident(BaseAgent):
             response = await self.generate_llm_response(prompt)
             if not response:
                 return "2", "发生错误，继续当前工作"
-
+    
             # 清理LLM返回的字符串，移除可能存在的```json和```标记
             cleaned_response = re.sub(r"^```json\s*|\s*```$", "", response, flags=re.DOTALL).strip()
-            
+            cleaned_response = re.sub(r'}(?=.*})', '', cleaned_response, flags=re.DOTALL)
+
             decision_data = json.loads(cleaned_response)
             select = decision_data.get("select")
             reason = decision_data.get("reason")
@@ -273,7 +301,7 @@ class Resident(BaseAgent):
             satisfaction_change = decision_data.get("satisfaction_change")
             desired_job = decision_data.get("desired_job")
             min_salary = decision_data.get("min_salary")
-
+    
             if satisfaction_change is not None:
                 # 确保满意度在0-100范围内
                 old_satisfaction = self.satisfaction
@@ -285,7 +313,7 @@ class Resident(BaseAgent):
                 resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}, 更新满意度：{self.satisfaction}")
             else:
                 resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}, 期望职业：{desired_job}, 最低收入：{min_salary}, 更新满意度：{self.satisfaction}")
-
+    
             # 返回决策结果
             if select == "3" and not self.employed and desired_job and min_salary:
                 # 返回求职信息
@@ -304,7 +332,7 @@ class Resident(BaseAgent):
             else:
                 # 返回普通决策结果
                 return select, reason
-
+    
         except Exception as e:
             resident_log.error(f"居民 {self.resident_id} 决策出错：{e}")
             resident_log.error(f"居民 {self.resident_id} 返回内容：{response}")
