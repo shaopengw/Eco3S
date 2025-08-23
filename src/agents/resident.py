@@ -290,8 +290,9 @@ class Resident(BaseAgent):
             if not response:
                 return "2", "发生错误，继续当前工作"
     
-            # 清理LLM返回的字符串，移除可能存在的```json和```标记
+            # 清理LLM返回的字符串，移除可能存在的```json和```标记以及换行符
             cleaned_response = re.sub(r"^```json\s*|\s*```$", "", response, flags=re.DOTALL).strip()
+            cleaned_response = re.sub(r'\s+', '', cleaned_response, flags=re.DOTALL)  # 删除所有空白字符，包括换行符
             cleaned_response = re.sub(r'}(?=.*})', '', cleaned_response, flags=re.DOTALL)
 
             decision_data = json.loads(cleaned_response)

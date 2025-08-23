@@ -27,7 +27,7 @@ make_decision_prompt: |
   {summary}
 
   请做出合理决策，确保总支出不超预算。输出JSON，无需说明理由：
-  {{"maintenance_investment": 水利建设资金（整数）, "tax_adjustment": 税率调整（-0.1到0.1）}}
+  {{"maintenance_investment": 水利建设资金（整数，不超过{current_budget:.2f}）, "tax_adjustment": 税率调整（-0.1到0.1）}}
 
 summarize_discussions_prompt: |
   你为朝廷信息整理官员，请根据下列{num_discussions}条朝堂讨论，用一句话尽可能简要地总结归纳核心观点，保留具体数值。
