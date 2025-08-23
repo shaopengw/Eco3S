@@ -161,7 +161,7 @@ class Simulator:
                 'ordinary_type': OrdinaryGovernmentAgent,
                 'leader_type': HighRankingGovernmentAgent,
             }
-            # government_decision = await self.collect_group_decision('government', government_config)
+            government_decision = await self.collect_group_decision('government', government_config)
             
             # 收集叛军决策
             rebellion_config = {
@@ -169,7 +169,7 @@ class Simulator:
                 'ordinary_type': OrdinaryRebel,
                 'leader_type': RebelLeader,
             }
-            # rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
+            rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
             
             # 统一执行决策
             if government_decision:
@@ -1192,7 +1192,7 @@ class Simulator:
                         simulator.residents[resident.resident_id] = resident
 
             # 重建城镇
-            simulator.towns = Towns(simulator.map, simulator.population.get_population())
+            simulator.towns = Towns(simulator.map, simulator.population.get_population(), simulator.config["data"]["jobs_config_path"])
             towns_state = state.get('towns')
             if towns_state:
                 # 处理元组包裹的情况

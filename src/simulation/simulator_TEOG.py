@@ -600,11 +600,14 @@ class TEOGSimulator:
         :return: 城市规模
         """
         urban_scale = 0
+        total_population = self.population.get_population()
         
         for town_name, town_data in self.towns.towns.items():
             if town_data.get('job_market'):
                 urban_scale += len(town_data['job_market'].jobs_info["城市居民"]["employed"])
-        return urban_scale
+        
+        # 确保城市规模不超过总人口
+        return min(urban_scale, total_population)
 
     def save_cache(self, file_path):
         """保存模拟状态到缓存文件"""
@@ -705,7 +708,7 @@ class TEOGSimulator:
                 state = {
                     'map': self.map,
                     'time': self.time,
-                    'population': self.population,
+                    'population': self.population.get_population(),
                     'government': government_state,
                     'transport_economy': self.transport_economy,
                     'residents': residents_state,
@@ -809,7 +812,7 @@ class TEOGSimulator:
                             resident.memory.personal_memory.longterm_memory = memory_state.get('longterm_memory', [])
                         simulator.residents[resident.resident_id] = resident
             # 重建城镇
-            simulator.towns = Towns(simulator.map, simulator.population.get_population())
+            simulator.towns = Towns(simulator.map, simulator.population.get_population(), simulator.config["data"]["jobs_config_path"])
             towns_state = state.get('towns')
             if towns_state and isinstance(towns_state, dict):
                 for town_name, town_data in towns_state.items():
@@ -822,7 +825,7 @@ class TEOGSimulator:
 
                     # 恢复就业市场
                     if town_data.get('job_market'):
-                        job_market = JobMarket(town_data['job_market'].get('town_type'))
+                        job_market = JobMarket(town_data['job_market'].get('town_type'), initial_jobs_count=0, config_path=simulator.config["data"]["jobs_config_path"])
                         for job_type, info in town_data['job_market'].get('jobs_info', {}).items():
                             job_market.jobs_info[job_type] = {
                                 'total': info.get('total'),
@@ -831,7 +834,7 @@ class TEOGSimulator:
                             }
                         simulator.towns.towns[town_name]['job_market'] = job_market
                     else:
-                        simulator.towns.towns[town_name]['job_market'] = JobMarket(town_data.get('info', {}).get('type', '非沿河'))
+                        simulator.towns.towns[town_name]['job_market'] = JobMarket(town_data.get('info', {}).get('type', '非沿河'), initial_jobs_count=simulator.population.get_population()*10, config_path=simulator.config["data"]["jobs_config_path"])
                     
                     # 恢复居民关联
                     for resident_id, resident_data in town_data.get('residents', {}).items():

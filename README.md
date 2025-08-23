@@ -8,10 +8,15 @@ conda activate AGENTWORLD
 pip install -r requirements.txt
 ```
 
-## 运行模拟
+## 运行模拟1
 ```bash
 python main.py --config_path config/simulation_config.yaml
 ```
+## 运行模拟2
+```bash
+python main_TEOG.py --config_path config_TEOG/simulation_config.yaml
+```
+
 
 注意，运行时确保以下语句未被注释掉：
 ```python
