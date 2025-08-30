@@ -85,16 +85,29 @@ def assign_resident_location(resident_data, map):
     canal_towns = [name for name, info in map.town_dict.items() if info['type'] == 'canal']
     non_canal_towns = [name for name, info in map.town_dict.items() if info['type'] == 'non_canal']
     
+    town_name = None
+    location = None
+
     if resident_data["residence"] == "沿河":
-        if not canal_towns:
-            return None
-        town_name = random.choice(canal_towns)
+        if canal_towns:
+            town_name = random.choice(canal_towns)
     else:
-        if not non_canal_towns:
-            return None
-        town_name = random.choice(non_canal_towns)
+        if non_canal_towns:
+            town_name = random.choice(non_canal_towns)
     
-    location = map.generate_random_location(town_name)
+    if town_name:
+        location = map.generate_random_location(town_name)
+    else:
+        # 如果没有合适的城镇，则随机选择一个城镇
+        all_towns = list(map.town_dict.keys())
+        if all_towns:
+            town_name = random.choice(all_towns)
+            location = map.generate_random_location(town_name)
+        else:
+            # 如果没有任何城镇，返回默认值或抛出错误
+            # 这里选择返回一个默认的无效位置和城镇名，或者可以根据需求抛出异常
+            return (0, 0), "UnknownTown"
+
     return location, town_name
 
 async def generate_new_residents(count, map, residents, social_network, resident_prompt_path):
