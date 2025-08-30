@@ -1,0 +1,12 @@
+{
+  "map_boundaries": {
+    "min_longitude": 68.0,
+    "max_longitude": 97.0,
+    "min_latitude": 8.0,
+    "max_latitude": 37.0
+  },
+  "canals": [],
+  "other_towns": [
+    {"name": "印度某村", "longitude": 76.9, "latitude": 28.9}
+  ]
+}

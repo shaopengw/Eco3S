@@ -1,0 +1,29 @@
+simulation:
+  # 基本配置
+  map_width: 100
+  map_height: 100
+  start_year: 2016
+  total_years: 2
+  initial_population: 3 #初始人口数量
+  birth_rate: 0.05
+
+  # 智能体相关参数
+  max_retry_attempts: 3  # 最大重试次数
+  retry_delay: 1.0       # 重试延迟时间（秒）
+  response_probability: 1  # 居民回应概率
+  
+  # 实验相关配置
+  experiment:
+    seed_count: 5  # 种子策略中的种子人物数量
+    broadcast_delay: 1  # 广播传播延迟（天）
+    seed_influence_radius: 2  # 种子人物影响半径
+
+
+# 数据文件路径
+data:
+  towns_data_path: "config_info_propagation/towns_data.json"
+  resident_info_path: "experiment_dataset/resident_data/resident_data.json"
+  resident_prompt_path: "config_info_propagation/residents_prompts.yaml"
+  jobs_config_path: "config_info_propagation/jobs_config.yaml"
+  message_config_path: "config_info_propagation/message_config.yaml"
+  questionnaire_path: "config_info_propagation/questionnaire.yaml"

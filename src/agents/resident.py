@@ -180,13 +180,6 @@ class Resident(BaseAgent):
         if random.random() < response_prob:
             # 构建回应提示词
             prompt = self.prompts_resident['receive_information_prompt'].format(message_content=message_content)
-            # prompt = (
-            #     # f"当前税率:为{tax_rate*100:.1f}%，基本生活所需为{basic_living_cost}两\n"
-            #     f"你听说了一条信息：[{message_content}]\n"
-            #     # f"对此，表达你的真实感受与想法，并用尽可能简短的一句话讲给更多人。"
-            #     # f"用你最真实的反应回一句话，要简短、带情绪，像市井小民聊天那样。"
-            #     f"现在你在和其他老百姓聊天，根据听说的消息发表一句尽可能简短的话，表达你的看法，注意考虑你的性格和处境，口语化。"
-            # )
 
             self.update_system_message()
             response_content = await self.generate_llm_response(prompt)
@@ -410,6 +403,79 @@ class Resident(BaseAgent):
                 return opinion,selected_type
         return "未发表煽动性言论"
 
+    async def receive_and_decide_response(self, message: dict):
+        """
+        接收公共知识通知，由LLM决定是否发言
+        """
+        content = message.get("content")
+        public_notice = message.get("public_notice")
+
+        # 构建提示词模板
+        prompt = self.prompts_resident['receive_and_decide_response_prompt'].format(
+            public_notice=public_notice if public_notice else ""
+        )
+
+        # 如果有具体内容，也加入到提示词中
+        if content:
+            prompt += f"\n你收到的具体信息是：{content}"
+
+        try:
+            self.update_system_message()
+            response = await self.generate_llm_response(prompt)
+            if not response:
+                return None
+                
+            # 清理LLM返回的字符串
+            cleaned_response = re.sub(r"^```json\s*|\s*```$", "", response, flags=re.DOTALL).strip()
+            cleaned_response = re.sub(r'\s+', '', cleaned_response, flags=re.DOTALL)
+            
+            response_data = json.loads(cleaned_response)
+            speech = response_data.get("speech", "")
+            if speech:
+                resident_log.info(f"居民 {self.resident_id} 发起讨论: {speech}")
+                # 返回带有发言的决策结果
+                relation_types = ["friend", "colleague", "family", "hometown"]
+                # 随机选择一种关系类型
+                selected_type = random.choice(relation_types)
+                return speech, selected_type
+
+            return None
+            
+        except Exception as e:
+            resident_log.error(f"居民 {self.resident_id} 处理公共知识出错: {e}")
+            return None
+
+    async def make_questionnaire_survey(self, questionnaire: dict):
+        """
+        居民参与问卷调查
+        """
+        try:
+            # 构建问卷提示词
+            prompt = self.prompts_resident['questionnaire_prompt'].format(
+                questionnaire_content=questionnaire
+            )
+            
+            # 更新系统消息以确保最新状态
+            self.update_system_message()
+            
+            # 获取LLM响应
+            response = await self.generate_llm_response(prompt)
+            if not response:
+                return None
+                
+            # 清理LLM返回的字符串，预期格式为“1Y2N...”
+            cleaned_response = response.strip()
+            
+            # 记录问卷结果
+            resident_log.info(f"居民 {self.resident_id} 问卷选择: {cleaned_response}")
+            
+            # 返回选择结果
+            return cleaned_response
+            
+        except Exception as e:
+            resident_log.error(f"居民 {self.resident_id} 处理问卷出错: {e}")
+            return None
+
     def print_resident_status(self):
         """
         打印居民状态（用于调试）
@@ -564,3 +630,11 @@ class Resident(BaseAgent):
         self.towns_manager = towns_manager
         if self.towns_manager and self.town:
             self.job_market = self.towns_manager.get_town_job_market(self.town)
+
+    async def reset_experimental_state(self):
+        """
+        重置居民实验状态，主要用于删除记忆
+        """
+        if self.memory:
+            await self.memory.clear()  # 清除所有记忆
+            resident_log.info(f"居民 {self.resident_id} 的记忆已重置")

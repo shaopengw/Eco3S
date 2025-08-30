@@ -1,0 +1,8 @@
+jobs_info:
+  农民:
+    base_salary: 7.5
+
+professions_ratio:
+  农民:
+    沿河: [0.9, 1]
+    非沿河: [0.9, 1]
