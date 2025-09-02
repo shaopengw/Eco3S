@@ -4,7 +4,7 @@ simulation:
   map_height: 100
   start_year: 2016
   total_years: 1
-  initial_population: 2 #初始人口数量
+  initial_population: 3 #初始人口数量
   birth_rate: 0.05
 
   # 智能体相关参数
