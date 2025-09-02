@@ -1,0 +1,174 @@
+{
+  "BC_CK": {
+    "conversation_volume": 60,
+    "questionnaire_survey": {
+      "choices": [
+        "NNNNYYNYNYAC",
+        "YNNNNNNNNBAC",
+        "NNNYNYNYYCA",
+        "对判断题和选择题的回答如下：\n1. Y\n2. N\n3. Y\n4. N\n5. N\n6. N\n7. Y\n8. Y\n9. Y\n10. N\n11. B\n12. C\n13. B\n\n综合回答：YNNNYNYNYBCB",
+        "NNYYNNYYCBC",
+        "NNYNYNYNYCABA",
+        "NNNYNYNYNYBAC",
+        "NNNYNYNYNYCAB",
+        "答案：YNYNYNYNYCAB",
+        "NNNYNNYNNBAC",
+        "NNYNNYNYCA",
+        "YYYNYYYNYABC",
+        "YNNYNYNYNYBAC",
+        "YYNYNNYNYCB\n\n感谢您的参与！如果有任何其他问题或需要进一步帮助，请随时告诉我。",
+        "NNNYNYNYNABC",
+        "NNNYNNYNYC",
+        "NNYNNYYNYCBB",
+        "NNYNYNYNAB",
+        "YNNYNYNNNAB",
+        "NNNYNYNYNYBAC"
+      ],
+      "question_accuracies": [
+        20.0,
+        50.0,
+        15.0,
+        40.0,
+        50.0,
+        45.0,
+        25.0,
+        35.0,
+        20.0,
+        0.0,
+        5.0
+      ],
+      "overall_accuracy": 27.727272727272727
+    },
+    "incentive_choices_a_count": 1,
+    "incentive_choices_b_count": 4
+  },
+  "BC_NCK": {
+    "conversation_volume": 60,
+    "questionnaire_survey": {
+      "choices": [
+        "YNYNYNYNYCBAC",
+        "对于给出的问卷调查，我的回答如下：\n\n判断题：\n1. Y\n2. N\n3. Y\n4. N\n5. N\n6. Y\n7. Y\n8. Y\n9. Y\n10. N\n\n选择题：\n11. C\n12. C\n13. B",
+        "NNNYNNNYBBB",
+        "NNYNNYNYNYACB",
+        "NNYNYNYYBCA",
+        "NNNNNNNYAAB",
+        "YNYNNNYNYC",
+        "NNNYNYNNYBAC",
+        "YNNYNYNYNYCAB",
+        "NNYNYNYNNC",
+        "NNNNNYNYNYC",
+        "NNYNYNNNYC",
+        "NNYYNYNYNYBAC",
+        "NNYNYNNYCBB",
+        "答案：YNNYNYYYBCA",
+        "NNNNYYNYB",
+        "NNYYNNNYAA",
+        "NNNYNNYNYCB",
+        "NNNYYNYNYC",
+        "NNNNNYNNNBBB"
+      ],
+      "question_accuracies": [
+        10.0,
+        30.0,
+        15.0,
+        20.0,
+        30.0,
+        25.0,
+        10.0,
+        15.0,
+        15.0,
+        0.0,
+        5.0
+      ],
+      "overall_accuracy": 15.909090909090908
+    },
+    "incentive_choices_a_count": 1,
+    "incentive_choices_b_count": 4
+  },
+  "S_CK": {
+    "conversation_volume": 60,
+    "questionnaire_survey": {
+      "choices": [
+        "YNYNYNYNYCAB",
+        "NNYNYNNNYAC",
+        "NNNYNYNYNNBAC",
+        "对判断题选择：\n\n1. Y\n2. N\n3. Y\n4. N\n5. Y\n6. Y\n7. Y\n8. Y\n9. Y\n10. N\n\n对选择题选择：\n\n11. C\n12. C\n13. B\n\n所以，我对所有问题的回答为：YNYNYNYNYN...C...B",
+        "NNNYNYNNNAC",
+        "对于题目的回答如下：\n判断题：\n1. Y\n2. N\n3. Y\n4. N\n5. N\n6. Y\n7. Y\n8. Y\n9. Y\n10. N\n\n选择题：\n11. C\n12. C\n13. B\n\n综合回答字符串为：YNNNYNYNYNCBCB",
+        "NNNNNNNYBBB",
+        "NNNYNNNNN...ACB",
+        "NNYNYNNYNAC",
+        "NNNYNNNBBB",
+        "NNYNNNYNCCB",
+        "NNNYNYNYNYC",
+        "NNYNYNNYBAC",
+        "YNYNNYNYNYCAB",
+        "判断题：\n1. Y\n2. N\n3. Y\n4. N\n5. Y\n6. N\n7. Y\n8. Y\n9. Y\n10. N\n\n选择题：\n11. B\n12. C\n13. B\n\n综合答案：\nYNYNYNYNNYBCB",
+        "NNNYNYNYNYBAC",
+        "NNNYNYNYNYCAB",
+        "YNNYYNYNYBAC",
+        "YNYNNYYNNACB",
+        "NNNYNNYYYB"
+      ],
+      "question_accuracies": [
+        20.0,
+        40.0,
+        15.0,
+        25.0,
+        30.0,
+        25.0,
+        15.0,
+        20.0,
+        15.0,
+        5.0,
+        15.0
+      ],
+      "overall_accuracy": 20.454545454545457
+    },
+    "incentive_choices_a_count": 0,
+    "incentive_choices_b_count": 8
+  },
+  "S_NCK": {
+    "conversation_volume": 60,
+    "questionnaire_survey": {
+      "choices": [
+        "YNNYNNYYNYCANA",
+        "NNNNNYNYNNC",
+        "NNYYNNNYCB",
+        "NNNNNYNYNNCB",
+        "NNNNNYNYC",
+        "YNYNYNYNYCABC",
+        "NNYYNYNYNYBAC",
+        "NNNNYNYNYAB",
+        "NNYYNYNYYYC",
+        "NNNYNNYNYC",
+        "NNNNYYNYNYABC",
+        "YNNNYNYNNCAB",
+        "NNNYNYNYNY...ACB",
+        "NNNYNYNBNAC",
+        "YNYNYNYNYNYBAC",
+        "YNYNYNYNYCAB",
+        "NNYNYNYNYAABC",
+        "YYNYNNYNYBAC",
+        "NNNYYNNNAB",
+        "NNNYNNNYCA"
+      ],
+      "question_accuracies": [
+        30.0,
+        50.0,
+        25.0,
+        20.0,
+        25.0,
+        20.0,
+        35.0,
+        25.0,
+        25.0,
+        10.0,
+        10.0
+      ],
+      "overall_accuracy": 25.0
+    },
+    "incentive_choices_a_count": 1,
+    "incentive_choices_b_count": 4
+  }
+}

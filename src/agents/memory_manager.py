@@ -46,15 +46,15 @@ class PersonalMemory:
 
         if group_type == 'government':
             self.summary_prompt_template = (
-                "你是清代{role}。用一句话总结这几年的施政重点、主要决策、产生的效果，以及从中得到的经验教训。\n"
+                "用一句话总结这几年的施政重点、主要决策、产生的效果，以及从中得到的经验教训。\n"
             )
         elif group_type =='rebellion':  # rebellion
             self.summary_prompt_template = (
-                "你是清代{role}。用一句话总结这几年的行动策略、主要行动、产生的效果，以及从中得到的经验教训。\n"
+                "用一句话总结这几年的行动策略、主要行动、产生的效果，以及从中得到的经验教训。\n"
             )
         else:
             self.summary_prompt_template = (
-                "你是清代{role}。用一句话总结这几年的行动、产生的效果，以及从中得到的经验教训。\n"
+                "现在，用一句话总结这几年的行动、发言、产生的效果，以及学习到的知识。要基于你的性格特质、当前处境。尽可能具体。\n"
             )
     
     def write_record(self, record):

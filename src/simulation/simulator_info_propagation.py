@@ -38,12 +38,19 @@ class InfoPropagationSimulator:
         # 实验相关参数
         self.current_strategy = None
         self.seed_count = 5  # 种子策略中的种子人物数量
+        
         self.experiment_results = {
-            "rounds": [],
-            "strategy": [],
-            "conversation_volume": [], #讨论数量
-            "questionnaire_survey": [], #问卷调查结果
-            "incentive_choices": [] #激励选项结果
+            strategy.value: {
+                'conversation_volume': 0,
+                'questionnaire_survey': {
+                    'choices': [],
+                    'question_accuracies': [],
+                    'overall_accuracy': 0.0
+                },
+                'incentive_choices_a_count': 0,
+                'incentive_choices_b_count': 0
+            }
+            for strategy in PropagationStrategy
         }
         
         # 初始化记录器
@@ -62,6 +69,7 @@ class InfoPropagationSimulator:
         # 对每种策略进行实验
         for strategy in PropagationStrategy:
             self.current_strategy = strategy
+            print(f"{Back.GREEN}策略 {strategy.value} 实验开始{Back.RESET}")
             self.logger.info(f"开始执行策略: {strategy.value}")
             self.conversation_volume = 0  # 重置讨论内容计数器
 
@@ -75,8 +83,12 @@ class InfoPropagationSimulator:
             # 实验结束后进行问卷调查
             await self.run_questionnaire_survey()
             
+            # 保存当前策略的结果
+            self.save_strategy_results()
+            
             # 重置居民状态，准备下一个策略的实验
-            self.reset_resident_states()
+            await self.reset_resident_states()
+            print(f"居民状态已重置")
 
     async def run_single_round(self, year: int):
         """运行单轮实验"""
@@ -88,20 +100,20 @@ class InfoPropagationSimulator:
             self.time.set_current_time(year)  # 设置当前时间
         
         # 1. 执行信息传播策略
-        await self.execute_propagation_strategy()
+        await self.execute_propagation_strategy(year)
 
         # 3. 收集数据
         self.collect_round_data(year)
 
-    async def execute_propagation_strategy(self):
+    async def execute_propagation_strategy(self, year):
         """执行当前的信息传播策略"""
         if self.current_strategy in [PropagationStrategy.BROADCAST_WITH_COMMON_KNOWLEDGE, 
                                    PropagationStrategy.BROADCAST_WITHOUT_COMMON_KNOWLEDGE]:
-            await self.execute_broadcast_strategy()
+            await self.execute_broadcast_strategy(year)
         else:
-            await self.execute_seed_strategy()
+            await self.execute_seed_strategy(year)
 
-    async def execute_broadcast_strategy(self):
+    async def execute_broadcast_strategy(self, year):
         """执行广播策略"""
         message = self.generate_propaganda_message()
         
@@ -114,7 +126,7 @@ class InfoPropagationSimulator:
         message = {"content": message, "public_notice": public_notice}
         
         # 并行执行所有居民的接收和决策
-        tasks = [resident.receive_and_decide_response(message) 
+        tasks = [resident.receive_and_decide_response(message,year) 
                 for resident in self.residents.values()]
         speech_tasks = []
         if tasks:
@@ -130,7 +142,7 @@ class InfoPropagationSimulator:
             if speech_tasks:
                 await asyncio.gather(*speech_tasks)
 
-    async def execute_seed_strategy(self):
+    async def execute_seed_strategy(self, year):
         """执行种子策略"""
         message = self.generate_propaganda_message()
         
@@ -153,9 +165,9 @@ class InfoPropagationSimulator:
         
         for resident in self.residents.values():
             if resident in seed_residents:
-                tasks.append(resident.receive_and_decide_response(seed_message))
+                tasks.append(resident.receive_and_decide_response(seed_message,year))
             else:
-                tasks.append(resident.receive_and_decide_response(normal_message))
+                tasks.append(resident.receive_and_decide_response(normal_message,year))
         
         if tasks:
             results = await asyncio.gather(*tasks)
@@ -207,16 +219,9 @@ class InfoPropagationSimulator:
 
     def collect_round_data(self, year: int):
         """收集本轮数据"""
-        conversation_volume = self.conversation_volume
-        
-        self.experiment_results["rounds"].append(year)
-        self.experiment_results["strategy"].append(self.current_strategy.value)
-        self.experiment_results["conversation_volume"].append(conversation_volume)
-        
-        # 初始化问卷调查和激励选择结果（只在每轮策略开始时）
-        if year == 0:
-            self.experiment_results["questionnaire_survey"].append(None)  # 占位符
-            self.experiment_results["incentive_choices"].append(None)     # 占位符
+        # 更新当前策略的对话量
+        strategy_key = self.current_strategy.value
+        self.experiment_results[strategy_key]['conversation_volume'] = self.conversation_volume
 
     async def run_questionnaire_survey(self):
         """运行问卷调查"""
@@ -262,30 +267,15 @@ class InfoPropagationSimulator:
         question_accuracies = [count/total_residents * 100 for count in correct_counts]
         overall_accuracy = sum(correct_counts) / (total_residents * total_questions_for_accuracy) * 100
         
-        # 将结果添加到experiment_results中
-        # 确保每次迭代都添加一个元素，即使没有问卷数据也添加None或默认值
-        if not self.experiment_results.get("questionnaire_survey"):
-            self.experiment_results["questionnaire_survey"] = []
-        if not self.experiment_results.get("incentive_choices"):
-            self.experiment_results["incentive_choices"] = []
-
-        # 只有当有choices时才添加实际数据，否则添加None或默认空字典
-        if choices:
-            self.experiment_results["questionnaire_survey"].append({
-                "strategy": self.current_strategy.value,
-                "choices": choices,
-                "question_accuracies": question_accuracies,
-                "overall_accuracy": overall_accuracy
-            })
-            self.experiment_results["incentive_choices"].append({
-                "strategy": self.current_strategy.value,
-                "incentive_choices_a_count": incentive_choices_a_count,
-                "incentive_choices_b_count": incentive_choices_b_count
-            })
-        else:
-            # 如果没有问卷数据，添加占位符以保持列表长度一致
-            self.experiment_results["questionnaire_survey"].append(None)
-            self.experiment_results["incentive_choices"].append(None)
+        # 更新当前策略的结果
+        strategy_key = self.current_strategy.value
+        self.experiment_results[strategy_key]['questionnaire_survey'] = {
+            'choices': choices,
+            'question_accuracies': question_accuracies,
+            'overall_accuracy': overall_accuracy
+        }
+        self.experiment_results[strategy_key]['incentive_choices_a_count'] = incentive_choices_a_count
+        self.experiment_results[strategy_key]['incentive_choices_b_count'] = incentive_choices_b_count
 
         # 输出准确率结果
         print(f"\n问卷调查结果分析:")
@@ -298,73 +288,55 @@ class InfoPropagationSimulator:
         print(f"选择A的人数: {incentive_choices_a_count}")
         print(f"选择B的人数: {incentive_choices_b_count}")
 
-    def reset_resident_states(self):
+    def save_strategy_results(self):
+        """保存当前策略的结果"""
+        strategy_key = self.current_strategy.value
+
+    async def reset_resident_states(self):
         """重置居民状态，准备下一轮实验"""
         for resident in self.residents.values():
-            resident.reset_experimental_state()
+            await resident.reset_experimental_state()
     
-    # def save_results(self, filename="data/info_propagation_results.csv"):
-    #     """保存实验结果"""
-    #     os.makedirs(os.path.dirname(filename), exist_ok=True)
-    #     df = pd.DataFrame(self.experiment_results)
-    #     df.to_csv(filename, index=False)
-    #     self.logger.info(f"实验结果已保存至 {filename}")
-    def save_results(self, filename="data/info_propagation_results.csv"):
-        """保存实验结果"""
+    def save_results(self, filename="data/info_propagation_results.json"):
+        """保存实验结果到JSON文件"""
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         
-        # 创建主实验结果DataFrame（每个时间步的数据）
-        main_results = pd.DataFrame({
-            "round": self.experiment_results["rounds"],
-            "strategy": self.experiment_results["strategy"],
-            "conversation_volume": self.experiment_results["conversation_volume"]
-        })
+        # 保存为JSON格式
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(self.experiment_results, f, ensure_ascii=False, indent=2)
         
-        # 创建问卷调查结果DataFrame（每个策略的数据）
+        # 同时保存为CSV格式以便分析
+        self.save_results_csv()
+        
+        self.logger.info(f"实验结果已保存至 {filename}")
+
+    def save_results_csv(self):
+        """保存实验结果到CSV文件"""
+        # 创建主结果DataFrame
+        main_data = []
+        for strategy, results in self.experiment_results.items():
+            main_data.append({
+                'strategy': strategy,
+                'conversation_volume': results['conversation_volume'],
+                'overall_accuracy': results['questionnaire_survey']['overall_accuracy'],
+                'incentive_choices_a_count': results['incentive_choices_a_count'],
+                'incentive_choices_b_count': results['incentive_choices_b_count']
+            })
+        
+        main_df = pd.DataFrame(main_data)
+        main_df.to_csv("data/info_propagation_main_results.csv", index=False)
+        
+        # 创建详细问卷结果DataFrame
         questionnaire_data = []
-        strategies = list(PropagationStrategy)  # 获取所有策略
-        
-        for i, survey in enumerate(self.experiment_results["questionnaire_survey"]):
-            strategy_name = strategies[i].value if i < len(strategies) else f"Unknown_{i}"
-            
-            if survey is not None:
+        for strategy, results in self.experiment_results.items():
+            for i, accuracy in enumerate(results['questionnaire_survey']['question_accuracies'], 1):
                 questionnaire_data.append({
-                    "strategy": strategy_name,
-                    "overall_accuracy": survey["overall_accuracy"],
-                    "question_accuracies": survey["question_accuracies"]
-                })
-            else:
-                questionnaire_data.append({
-                    "strategy": strategy_name,
-                    "overall_accuracy": None,
-                    "question_accuracies": None
+                    'strategy': strategy,
+                    'question_number': i,
+                    'accuracy': accuracy
                 })
         
         questionnaire_df = pd.DataFrame(questionnaire_data)
+        questionnaire_df.to_csv("data/info_propagation_questionnaire_results.csv", index=False)
         
-        # 创建激励选择结果DataFrame
-        incentive_data = []
-        for i, incentive in enumerate(self.experiment_results["incentive_choices"]):
-            strategy_name = strategies[i].value if i < len(strategies) else f"Unknown_{i}"
-            
-            if incentive is not None:
-                incentive_data.append({
-                    "strategy": strategy_name,
-                    "incentive_choices_a_count": incentive["incentive_choices_a_count"],
-                    "incentive_choices_b_count": incentive["incentive_choices_b_count"]
-                })
-            else:
-                incentive_data.append({
-                    "strategy": strategy_name,
-                    "incentive_choices_a_count": None,
-                    "incentive_choices_b_count": None
-                })
-        
-        incentive_df = pd.DataFrame(incentive_data)
-        
-        # 保存到不同的文件
-        main_results.to_csv(filename, index=False)
-        questionnaire_df.to_csv(filename.replace(".csv", "_questionnaire.csv"), index=False)
-        incentive_df.to_csv(filename.replace(".csv", "_incentive.csv"), index=False)
-        
-        self.logger.info(f"实验结果已保存至 {filename} 和相关文件")
+        self.logger.info("CSV格式结果已保存")
