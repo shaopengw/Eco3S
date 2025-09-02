@@ -437,14 +437,13 @@ class Resident(BaseAgent):
             resident_log.error(f"居民 {self.resident_id} 处理公共知识出错: {e}")
             return None
 
-    async def make_questionnaire_survey(self, questionnaire: dict):
-        """
-        居民参与问卷调查
-        """
+    async def make_questionnaire_survey(self, questionnaire: dict,total_questions):
+        """居民参与问卷调查"""
         try:
             # 构建问卷提示词
             prompt = self.prompts_resident['questionnaire_prompt'].format(
-                questionnaire_content=questionnaire
+                questionnaire_content=questionnaire,
+                total_questions=total_questions
             )
             
             # 更新系统消息以确保最新状态
@@ -455,7 +454,7 @@ class Resident(BaseAgent):
             if not response:
                 return None
                 
-            # 清理LLM返回的字符串，预期格式为“1Y2N...”
+            # 清理LLM返回的字符串
             cleaned_response = response.strip()
             
             # 记录问卷结果

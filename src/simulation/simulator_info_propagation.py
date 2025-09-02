@@ -231,28 +231,39 @@ class InfoPropagationSimulator:
             correct_answer = questionnaire_data['answer'].strip()
         
         choices = []
+        # 动态确定题目数量
+        total_questions = len(correct_answer) + 1  # 总题目数
+        total_questions_for_accuracy = len(correct_answer)  # 需要计算准确率的题目数（排除最后一题）
+
         for resident in self.residents.values():
-            choice = await resident.make_questionnaire_survey(questionnaire)
+            choice = await resident.make_questionnaire_survey(questionnaire,total_questions)
             if choice:  # 确保choice不为None
                 choices.append(choice)
         
-        # 初始化最后一题的A和B选项计数
+        # 初始化计数
         incentive_choices_a_count = 0
         incentive_choices_b_count = 0
-
-        # 动态确定题目数量，最后一题为激励选项，不计入准确率计算
-        total_questions_for_accuracy = len(correct_answer) - 1  # 使用正确答案长度来确定题目数量
-        total_residents = len(choices)
         correct_counts = [0] * total_questions_for_accuracy  # 每个非激励问题的正确回答数
+        total_residents = len(choices)
+
         
-        for resident_choice in choices:
-            # 确保resident_choice长度足够
-            if len(resident_choice) < len(correct_answer):
-                # 如果答案长度不足，跳过这个居民或填充默认值
+        for resident_choice_str in choices:
+            # 解析答案
+            parsed_choices = {}
+            import re
+            # 使用正则表达式匹配所有 "数字+字母" 的组合
+            matches = re.findall(r'(\d+)([A-Za-z])', resident_choice_str)
+            for q_num, ans in matches:
+                parsed_choices[int(q_num)] = ans.upper()
+
+            # 确保解析后的答案数量足够
+            if len(parsed_choices) < total_questions:
+                print(f"警告: 居民答案长度不足，期望{total_questions}，实际{len(parsed_choices)}")
                 continue
             
             # 统计最后一题（激励选项）的A和B选项
-            incentive_answer = resident_choice[-1]  # 最后一题的答案
+            # 最后一题的题号是 total_questions
+            incentive_answer = parsed_choices.get(total_questions) # 获取最后一题的答案
             if incentive_answer == 'A':
                 incentive_choices_a_count += 1
             elif incentive_answer == 'B':
@@ -260,12 +271,14 @@ class InfoPropagationSimulator:
 
             # 计算前 total_questions_for_accuracy 题的准确率
             for i in range(total_questions_for_accuracy):
-                if resident_choice[i] == correct_answer[i]:
+                question_num = i + 1 # 题号从1开始
+                if parsed_choices.get(question_num) == correct_answer[i]:
                     correct_counts[i] += 1
         
         # 计算每个非激励问题的准确率
-        question_accuracies = [count/total_residents * 100 for count in correct_counts]
-        overall_accuracy = sum(correct_counts) / (total_residents * total_questions_for_accuracy) * 100
+        question_accuracies = [count/total_residents * 100 if total_residents > 0 else 0 
+                            for count in correct_counts]
+        overall_accuracy = sum(correct_counts) / (total_residents * total_questions_for_accuracy) * 100 if total_residents > 0 else 0
         
         # 更新当前策略的结果
         strategy_key = self.current_strategy.value
