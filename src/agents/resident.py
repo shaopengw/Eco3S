@@ -52,6 +52,7 @@ class ResidentGroup(BaseAgent):
             group_type='resident',
             window_size=5
         )
+        # resident.memory.set_agent(resident)
         # 设置居民所属的群组
         resident.set_group(self)
 
@@ -93,7 +94,6 @@ class Resident(BaseAgent):
         self.model_backend = None
         self.token_counter = None
         self.context_creator = None
-        self.memory = None
 
     def set_group(self, group):
         """设置居民所属的群组"""
@@ -390,12 +390,6 @@ class Resident(BaseAgent):
                 opinion = await self.generate_llm_response(prompt)
 
             if opinion:
-                await self.memory.write_record(
-                    role_name="叛军",
-                    content=f"我的言论：{opinion}",
-                    is_user=False,
-                    store_in_shared=False  # 不存入共享记忆
-                )
                 resident_log.info(f"叛军 {self.agent_id} 发表煽动性言论：{opinion}")
                 # 随机选择一种关系类型
                 relation_types = ["friend", "colleague", "family", "hometown"]
@@ -403,7 +397,7 @@ class Resident(BaseAgent):
                 return opinion,selected_type
         return "未发表煽动性言论"
 
-    async def receive_and_decide_response(self, message: dict):
+    async def receive_and_decide_response(self, message: dict, year):
         """
         接收公共知识通知，由LLM决定是否发言
         """
@@ -411,35 +405,33 @@ class Resident(BaseAgent):
         public_notice = message.get("public_notice")
 
         # 构建提示词模板
-        prompt = self.prompts_resident['receive_and_decide_response_prompt'].format(
-            public_notice=public_notice if public_notice else ""
-        )
-
-        # 如果有具体内容，也加入到提示词中
-        if content:
-            prompt += f"\n你收到的具体信息是：{content}"
-
+        prompt = self.prompts_resident['receive_and_decide_response_prompt'].format()
+        if year == 0:
+            await self.memory.write_record(
+                    role_name="居民",
+                    content=f"你收到的具体信息是：{content}{public_notice}",
+                    is_user=False,
+                    store_in_shared=False,
+                    )
         try:
             self.update_system_message()
             response = await self.generate_llm_response(prompt)
-            if not response:
-                return None
-                
-            # 清理LLM返回的字符串
-            cleaned_response = re.sub(r"^```json\s*|\s*```$", "", response, flags=re.DOTALL).strip()
-            cleaned_response = re.sub(r'\s+', '', cleaned_response, flags=re.DOTALL)
-            
-            response_data = json.loads(cleaned_response)
-            speech = response_data.get("speech", "")
-            if speech:
-                resident_log.info(f"居民 {self.resident_id} 发起讨论: {speech}")
+            if response:
+                await self.memory.write_record(
+                    role_name="居民",
+                    content=f"我发表言论：{response}",
+                    is_user=False,
+                    store_in_shared=False
+                    )
+                resident_log.info(f"居民 {self.resident_id} 发起讨论: {response}")
                 # 返回带有发言的决策结果
                 relation_types = ["friend", "colleague", "family", "hometown"]
                 # 随机选择一种关系类型
                 selected_type = random.choice(relation_types)
-                return speech, selected_type
-
-            return None
+                return response, selected_type
+            else:
+                resident_log.info(f"居民 {self.resident_id} 选择沉默")
+                return None
             
         except Exception as e:
             resident_log.error(f"居民 {self.resident_id} 处理公共知识出错: {e}")
@@ -475,6 +467,40 @@ class Resident(BaseAgent):
         except Exception as e:
             resident_log.error(f"居民 {self.resident_id} 处理问卷出错: {e}")
             return None
+    
+    async def update_knowledge_memory(self):
+        """
+        定期更新居民的知识记忆，类似于 MemoryManager 的 maybe_create_summary 函数
+        但专注于居民个人的知识和经历总结
+        """
+        if self.memory and self.memory.record_count >= self.memory.summary_interval:
+            # 获取最近的记录
+            recent_records = self.memory.chat_history.retrieve(self.memory.summary_interval)
+            memories_text = "\n".join([
+                record.memory_record.message.content 
+                for record in recent_records if hasattr(record, 'memory_record')
+            ])
+            
+            # 构建提示词
+            prompt = self.prompts_resident['memory_update_prompt'].format(
+                resident_id=self.resident_id,
+                job=self.job if self.employed else "无业",
+                town=self.town,
+                count=self.memory.summary_interval,
+                memories=memories_text
+            )
+            
+            # 生成知识总结
+            self.update_system_message()  # 确保系统消息是最新的
+            knowledge_summary = await self.generate_llm_response(prompt)
+            
+            if knowledge_summary:
+                # 将新的知识总结添加到长期记忆中
+                self.memory.longterm_memory.append(knowledge_summary)
+                self.memory.record_count = 0  # 重置计数器
+                
+                # 记录日志
+                resident_log.info(f"居民 {self.resident_id} 更新了知识记忆：{knowledge_summary}")
 
     def print_resident_status(self):
         """
@@ -637,4 +663,3 @@ class Resident(BaseAgent):
         """
         if self.memory:
             await self.memory.clear()  # 清除所有记忆
-            resident_log.info(f"居民 {self.resident_id} 的记忆已重置")
