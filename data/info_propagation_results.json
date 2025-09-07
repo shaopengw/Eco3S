@@ -1,52 +1,25 @@
 {
-  "BC_CK": {
-    "conversation_volume": 3,
+  "S_NCK": {
+    "conversation_volume": 4,
     "questionnaire_survey": {
       "choices": [
-        "1Y2Y3Y4N5N6Y7Y8N9N10N11C12A13B",
-        "1Y2Y3N4N5N6Y7Y8N9Y10N11C12A13B",
-        "1Y2Y3Y4N5N6Y7Y8N9Y10N11C12A13B"
-      ],
-      "question_accuracies": [
-        100.0,
-        0.0,
-        66.66666666666666,
-        0.0,
-        100.0,
-        100.0,
-        100.0,
-        0.0,
-        66.66666666666666,
-        100.0,
-        100.0,
-        0.0
-      ],
-      "overall_accuracy": 61.111111111111114
-    },
-    "incentive_choices_a_count": 0,
-    "incentive_choices_b_count": 3
-  },
-  "BC_NCK": {
-    "conversation_volume": 3,
-    "questionnaire_survey": {
-      "choices": [
-        "1Y2N3N4N5N6Y7Y8Y9Y10N11C12C13A",
-        "1Y2N3Y4N5N6Y7Y8N9N10N11C12C13B",
-        "1Y2Y3N4N5N6Y7Y8N9Y10N11C12A13B"
+        "1Y2Y3Y4N5N6N7Y8Y9Y10N11C12A13B",
+        "1Y2N3Y4N5N6N7Y8Y9Y10N11C12A13A",
+        "1Y2N3N4N5N6N7Y8Y9Y10N11C12C13B"
       ],
       "question_accuracies": [
         100.0,
         66.66666666666666,
-        33.33333333333333,
+        66.66666666666666,
+        0.0,
+        100.0,
         0.0,
         100.0,
         100.0,
         100.0,
-        33.33333333333333,
-        66.66666666666666,
         100.0,
         100.0,
-        66.66666666666666
+        33.33333333333333
       ],
       "overall_accuracy": 72.22222222222221
     },
@@ -57,54 +30,81 @@
     "conversation_volume": 3,
     "questionnaire_survey": {
       "choices": [
-        "1Y2Y3N4N5N6Y7Y8Y9N10N11C12C13A",
-        "1Y2Y3N4N5N6Y7Y8N9Y10N11C12A13B",
-        "1Y2N3Y4N5N6Y7Y8Y9N10N11B12C13B"
+        "1Y2N3N4N5N6Y7Y8Y9Y10N11C12C13B",
+        "1Y2N3Y4N5N6N7Y8N9Y10N11C12A13B",
+        "YNYNYNYNYNYNABACB"
       ],
       "question_accuracies": [
-        100.0,
-        33.33333333333333,
+        66.66666666666666,
+        66.66666666666666,
         33.33333333333333,
         0.0,
-        100.0,
-        100.0,
-        100.0,
         66.66666666666666,
         33.33333333333333,
-        100.0,
         66.66666666666666,
-        66.66666666666666
+        33.33333333333333,
+        66.66666666666666,
+        66.66666666666666,
+        66.66666666666666,
+        33.33333333333333
       ],
-      "overall_accuracy": 66.66666666666666
+      "overall_accuracy": 50.0
     },
-    "incentive_choices_a_count": 1,
+    "incentive_choices_a_count": 0,
     "incentive_choices_b_count": 2
   },
-  "S_NCK": {
-    "conversation_volume": 3,
+  "BC_NCK": {
+    "conversation_volume": 6,
     "questionnaire_survey": {
       "choices": [
-        "1Y2Y3Y4N5N6Y7Y8Y9N10N11C12C13B",
-        "1Y2N3Y4N5N6Y7Y8Y9Y10N11C12C13B",
+        "YNYNYNYNYNYNNBNA",
+        "1Y2N3N4N5N6Y7Y8Y9Y10N11C12C13B",
+        "1Y2N3Y4N5N6N7Y8N9Y10N11C12A13B"
+      ],
+      "question_accuracies": [
+        66.66666666666666,
+        66.66666666666666,
+        33.33333333333333,
+        0.0,
+        66.66666666666666,
+        33.33333333333333,
+        66.66666666666666,
+        33.33333333333333,
+        66.66666666666666,
+        66.66666666666666,
+        66.66666666666666,
+        33.33333333333333
+      ],
+      "overall_accuracy": 50.0
+    },
+    "incentive_choices_a_count": 0,
+    "incentive_choices_b_count": 2
+  },
+  "BC_CK": {
+    "conversation_volume": 6,
+    "questionnaire_survey": {
+      "choices": [
+        "1Y2N3Y4N5N6N7Y8N9Y10N11C12A13B",
+        "1Y2N3Y4N5Y6N7Y8N9Y10N11C12A13A",
         "1Y2N3N4N5N6Y7Y8Y9Y10N11C12C13B"
       ],
       "question_accuracies": [
         100.0,
-        66.66666666666666,
+        100.0,
         66.66666666666666,
         0.0,
-        100.0,
-        100.0,
-        100.0,
-        100.0,
         66.66666666666666,
+        33.33333333333333,
+        100.0,
+        33.33333333333333,
         100.0,
         100.0,
-        100.0
+        100.0,
+        33.33333333333333
       ],
-      "overall_accuracy": 83.33333333333334
+      "overall_accuracy": 69.44444444444444
     },
-    "incentive_choices_a_count": 0,
-    "incentive_choices_b_count": 3
+    "incentive_choices_a_count": 1,
+    "incentive_choices_b_count": 2
   }
 }

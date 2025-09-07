@@ -2,7 +2,7 @@ from .shared_imports import *
 
 class BaseAgent:
     """基础Agent类，封装共同的大模型调用逻辑"""
-    def __init__(self, agent_id, group_type, window_size):
+    def __init__(self, agent_id, group_type, window_size=3):
         self.agent_id = agent_id
         self.model_manager = ModelManager()
         model_config = self.model_manager.get_random_model_config()
@@ -57,7 +57,7 @@ class BaseAgent:
             })
         messages.extend(prompt_messages)
 
-        # print("-------总提示信息-----------",messages)
+        print("-------总提示信息-----------",messages)
 
         attempts = 0
         while attempts < self.max_retry_attempts:

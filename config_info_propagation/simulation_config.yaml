@@ -3,7 +3,7 @@ simulation:
   map_width: 100
   map_height: 100
   start_year: 2016
-  total_years: 1
+  total_years: 2
   initial_population: 3 #初始人口数量
   birth_rate: 0.05
 
@@ -11,12 +11,7 @@ simulation:
   max_retry_attempts: 3  # 最大重试次数
   retry_delay: 1.0       # 重试延迟时间（秒）
   response_probability: 1  # 居民回应概率
-  
-  # 实验相关配置
-  experiment:
-    seed_count: 5  # 种子策略中的种子人物数量
-    broadcast_delay: 1  # 广播传播延迟（天）
-    seed_influence_radius: 2  # 种子人物影响半径
+  seed_count: 1      # 种子数量
 
 
 # 数据文件路径
