@@ -68,9 +68,9 @@ class ResidentGroup(BaseAgent):
             del self.residents[resident_id]
 
 class Resident(BaseAgent):
-    def __init__(self, resident_id, job_market, shared_pool, map, resident_prompt_path):
+    def __init__(self, resident_id, job_market, shared_pool, map, resident_prompt_path, window_size=3):
         """初始化居民"""
-        super().__init__(agent_id=resident_id, group_type='resident', window_size=3)
+        super().__init__(agent_id=resident_id, group_type='resident', window_size=window_size)
         self.resident_id = resident_id
         self.job_market = job_market
         self.shared_pool = shared_pool
@@ -184,7 +184,7 @@ class Resident(BaseAgent):
             self.update_system_message()
             response_content = await self.generate_llm_response(prompt)
             
-            if response_content:
+            if response_content and "None" not in response_content:
                 relation_types = ["friend", "colleague", "family", "hometown"]
                 selected_type = random.choice(relation_types)
                 resident_log.info(f"居民 {self.resident_id} 对收到的信息「{message_content}」做出回应：{response_content}")
@@ -403,20 +403,23 @@ class Resident(BaseAgent):
         """
         content = message.get("content")
         public_notice = message.get("public_notice")
-
+        if content:
+            message_content = (f"{public_notice}" if public_notice else "") + f"你收到了具体信息：{content}" 
+        else:
+            message_content = (f"{public_notice}" if public_notice else "") + "你没有收到具体信息。" 
         # 构建提示词模板
         prompt = self.prompts_resident['receive_and_decide_response_prompt'].format()
         if year == 0:
             await self.memory.write_record(
                     role_name="居民",
-                    content=f"你收到的具体信息是：{content}{public_notice}",
+                    content=message_content,
                     is_user=False,
                     store_in_shared=False,
                     )
         try:
             self.update_system_message()
             response = await self.generate_llm_response(prompt)
-            if response:
+            if response and "None" not in response:
                 await self.memory.write_record(
                     role_name="居民",
                     content=f"我发表言论：{response}",
@@ -469,34 +472,24 @@ class Resident(BaseAgent):
     
     async def update_knowledge_memory(self):
         """
-        定期更新居民的知识记忆，类似于 MemoryManager 的 maybe_create_summary 函数
-        但专注于居民个人的知识和经历总结
+        定期更新居民的知识记忆,专注于居民个人的知识和经历总结
         """
-        if self.memory and self.memory.record_count >= self.memory.summary_interval:
-            # 获取最近的记录
-            recent_records = self.memory.chat_history.retrieve(self.memory.summary_interval)
-            memories_text = "\n".join([
-                record.memory_record.message.content 
-                for record in recent_records if hasattr(record, 'memory_record')
-            ])
-            
+        # 确保 self.memory 和 self.memory.personal_memory 都存在
+        if self.memory and hasattr(self.memory, 'personal_memory'):
             # 构建提示词
-            prompt = self.prompts_resident['memory_update_prompt'].format(
-                resident_id=self.resident_id,
-                job=self.job if self.employed else "无业",
-                town=self.town,
-                count=self.memory.summary_interval,
-                memories=memories_text
-            )
+            prompt = self.prompts_resident['memory_update_prompt'].format()
             
             # 生成知识总结
             self.update_system_message()  # 确保系统消息是最新的
             knowledge_summary = await self.generate_llm_response(prompt)
             
             if knowledge_summary:
+                # 清空原有记忆
+                await self.memory.clear()  # 清除所有记忆
+                
                 # 将新的知识总结添加到长期记忆中
-                self.memory.longterm_memory.append(knowledge_summary)
-                self.memory.record_count = 0  # 重置计数器
+                self.memory.personal_memory.longterm_memory.append(knowledge_summary)
+                self.memory.personal_memory.record_count = 0  # 重置计数器
                 
                 # 记录日志
                 resident_log.info(f"居民 {self.resident_id} 更新了知识记忆：{knowledge_summary}")

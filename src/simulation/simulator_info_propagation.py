@@ -18,10 +18,10 @@ from src.environment.time import Time
 
 class PropagationStrategy(Enum):
     """信息传播策略枚举"""
-    BROADCAST_WITH_COMMON_KNOWLEDGE = "BC_CK"
-    BROADCAST_WITHOUT_COMMON_KNOWLEDGE = "BC_NCK"
-    SEED_WITH_COMMON_KNOWLEDGE = "S_CK"
     SEED_WITHOUT_COMMON_KNOWLEDGE = "S_NCK"
+    SEED_WITH_COMMON_KNOWLEDGE = "S_CK"
+    BROADCAST_WITHOUT_COMMON_KNOWLEDGE = "BC_NCK"
+    BROADCAST_WITH_COMMON_KNOWLEDGE = "BC_CK"
 
 class InfoPropagationSimulator:
     def __init__(self, map, time, population, social_network, residents, towns, config):
@@ -37,7 +37,7 @@ class InfoPropagationSimulator:
         
         # 实验相关参数
         self.current_strategy = None
-        self.seed_count = 5  # 种子策略中的种子人物数量
+        self.seed_count = self.config["simulation"]["seed_count"]  # 种子策略中的种子人物数量
         
         self.experiment_results = {
             strategy.value: {
@@ -119,9 +119,9 @@ class InfoPropagationSimulator:
         
         # 如果是带公共知识的策略，添加公共通知
         if self.current_strategy == PropagationStrategy.BROADCAST_WITH_COMMON_KNOWLEDGE:
-            public_notice = "所有村民都收到了这个信息。"
+            public_notice = "你得知所有村民都收到了具体信息，并且所有村民都得知你收到了具体信息。"
         else:
-            public_notice = None
+            public_notice = "你并不清楚其他村民是否收到了具体信息。"
         
         message = {"content": message, "public_notice": public_notice}
         
@@ -141,6 +141,10 @@ class InfoPropagationSimulator:
             # 并发执行所有发言传播任务
             if speech_tasks:
                 await asyncio.gather(*speech_tasks)
+        #更新所有居民的知识记忆
+        memory_update_tasks = [resident.update_knowledge_memory() for resident in self.residents.values()]
+        if memory_update_tasks:
+            await asyncio.gather(*memory_update_tasks)
 
     async def execute_seed_strategy(self, year):
         """执行种子策略"""
@@ -152,12 +156,13 @@ class InfoPropagationSimulator:
         # 准备不同类型的消息
         if self.current_strategy == PropagationStrategy.SEED_WITH_COMMON_KNOWLEDGE:
             seed_ids = [str(resident.resident_id) for resident in seed_residents]  # 转换为字符串
-            public_notice = f"以下居民收到了信息：{', '.join(seed_ids)}"
+            public_notice = f"全村只有部分村民收到了信息：{', '.join(seed_ids)}"
             seed_message = {"content": message, "public_notice": public_notice}
             normal_message = {"content": None, "public_notice": public_notice}
         else:
-            seed_message = {"content": message, "public_notice": None}
-            normal_message = {"content": None, "public_notice": None}
+            public_notice = "你并不清楚其他村民是否收到了具体信息。"
+            seed_message = {"content": message, "public_notice": public_notice}
+            normal_message = {"content": None, "public_notice": public_notice}
         
         # 并行执行所有居民的接收和决策
         tasks = []
@@ -181,7 +186,10 @@ class InfoPropagationSimulator:
             # 并发执行所有发言传播任务
             if speech_tasks:
                 await asyncio.gather(*speech_tasks)
-        
+        #更新所有居民的知识记忆
+        memory_update_tasks = [resident.update_knowledge_memory() for resident in self.residents.values()]
+        if memory_update_tasks:
+            await asyncio.gather(*memory_update_tasks)
         return
 
     def select_seed_residents(self) -> List[Resident]:
