@@ -119,9 +119,9 @@ class InfoPropagationSimulator:
         
         # 如果是带公共知识的策略，添加公共通知
         if self.current_strategy == PropagationStrategy.BROADCAST_WITH_COMMON_KNOWLEDGE:
-            public_notice = "你得知所有村民都收到了具体信息，并且所有村民都得知你收到了具体信息。"
+            public_notice = "你得知所有村民都收到了政府信息，并且所有村民都得知你收到了政府信息。"
         else:
-            public_notice = "你并不清楚其他村民是否收到了具体信息。"
+            public_notice = "你并不清楚其他村民是否收到了政府信息。"
         
         message = {"content": message, "public_notice": public_notice}
         
@@ -141,7 +141,7 @@ class InfoPropagationSimulator:
             # 并发执行所有发言传播任务
             if speech_tasks:
                 await asyncio.gather(*speech_tasks)
-        #更新所有居民的知识记忆
+        #更新所有居民的记忆
         memory_update_tasks = [resident.update_knowledge_memory() for resident in self.residents.values()]
         if memory_update_tasks:
             await asyncio.gather(*memory_update_tasks)
@@ -155,12 +155,12 @@ class InfoPropagationSimulator:
         
         # 准备不同类型的消息
         if self.current_strategy == PropagationStrategy.SEED_WITH_COMMON_KNOWLEDGE:
-            seed_ids = [str(resident.resident_id) for resident in seed_residents]  # 转换为字符串
-            public_notice = f"全村只有部分村民收到了信息：{', '.join(seed_ids)}"
-            seed_message = {"content": message, "public_notice": public_notice}
-            normal_message = {"content": None, "public_notice": public_notice}
+            public_notice_normal = f"全村只有部分村民收到了政府信息。"
+            public_notice_seed = f"全村只有部分村民收到政府信息，所有村民都得知你收到了政府信息。"
+            seed_message = {"content": message, "public_notice": public_notice_seed}
+            normal_message = {"content": None, "public_notice": public_notice_normal}
         else:
-            public_notice = "你并不清楚其他村民是否收到了具体信息。"
+            public_notice = "你并不清楚其他村民是否收到了政府信息。"
             seed_message = {"content": message, "public_notice": public_notice}
             normal_message = {"content": None, "public_notice": public_notice}
         
@@ -186,7 +186,7 @@ class InfoPropagationSimulator:
             # 并发执行所有发言传播任务
             if speech_tasks:
                 await asyncio.gather(*speech_tasks)
-        #更新所有居民的知识记忆
+        #更新所有居民的记忆
         memory_update_tasks = [resident.update_knowledge_memory() for resident in self.residents.values()]
         if memory_update_tasks:
             await asyncio.gather(*memory_update_tasks)
@@ -237,29 +237,62 @@ class InfoPropagationSimulator:
             questionnaire_data = yaml.safe_load(f)
             questionnaire = questionnaire_data['questionnaire']
             correct_answer = questionnaire_data['answer'].strip()
-        
+
         choices = []
         # 动态确定题目数量
         total_questions = len(correct_answer) + 1  # 总题目数
         total_questions_for_accuracy = len(correct_answer)  # 需要计算准确率的题目数（排除最后一题）
 
+        problematic_residents = []  # 用于记录有问题的居民
+
         for resident in self.residents.values():
-            choice = await resident.make_questionnaire_survey(questionnaire,total_questions)
+            choice = await resident.make_questionnaire_survey(questionnaire, total_questions)
             if choice:  # 确保choice不为None
+                parsed_choices = {}
+                import re
+                # 使用正则表达式匹配所有 "数字+字母" 的组合
+                matches = re.findall(r'(\d+)([A-Za-z])', choice)
+                for q_num, ans in matches:
+                    parsed_choices[int(q_num)] = ans.upper()
+
+                # 确保解析后的答案数量足够
+                if len(parsed_choices) < total_questions:
+                    print(f"警告: 居民 {resident} 答案长度不足，期望{total_questions}，实际{len(parsed_choices)}")
+                    problematic_residents.append((resident, 0))  # 记录居民及尝试次数
+                    continue
+
                 choices.append(choice)
-        
+
+        # 如果有有问题的居民，重新进行问卷调查，最多3次
+        while problematic_residents:
+            resident, attempts = problematic_residents.pop()
+            if attempts >= 3:
+                print(f"警告: 居民 {resident} 已经尝试3次，仍然答案长度不足")
+                continue
+
+            choice = await resident.make_questionnaire_survey(questionnaire, total_questions)
+            if choice:
+                parsed_choices = {}
+                matches = re.findall(r'(\d+)([A-Za-z])', choice)
+                for q_num, ans in matches:
+                    parsed_choices[int(q_num)] = ans.upper()
+
+                if len(parsed_choices) < total_questions:
+                    print(f"警告: 居民 {resident} 答案长度不足，期望{total_questions}，实际{len(parsed_choices)}")
+                    problematic_residents.append((resident, attempts + 1))  # 再次记录居民及增加尝试次数
+                else:
+                    choices.append(choice)
+
         # 初始化计数
         incentive_choices_a_count = 0
         incentive_choices_b_count = 0
         correct_counts = [0] * total_questions_for_accuracy  # 每个非激励问题的正确回答数
         total_residents = len(choices)
 
-        
         for resident_choice_str in choices:
             # 解析答案
             parsed_choices = {}
             import re
-            # 使用正则表达式匹配所有 "数字+字母" 的组合
             matches = re.findall(r'(\d+)([A-Za-z])', resident_choice_str)
             for q_num, ans in matches:
                 parsed_choices[int(q_num)] = ans.upper()
@@ -268,10 +301,9 @@ class InfoPropagationSimulator:
             if len(parsed_choices) < total_questions:
                 print(f"警告: 居民答案长度不足，期望{total_questions}，实际{len(parsed_choices)}")
                 continue
-            
+
             # 统计最后一题（激励选项）的A和B选项
-            # 最后一题的题号是 total_questions
-            incentive_answer = parsed_choices.get(total_questions) # 获取最后一题的答案
+            incentive_answer = parsed_choices.get(total_questions)  # 获取最后一题的答案
             if incentive_answer == 'A':
                 incentive_choices_a_count += 1
             elif incentive_answer == 'B':
@@ -279,15 +311,15 @@ class InfoPropagationSimulator:
 
             # 计算前 total_questions_for_accuracy 题的准确率
             for i in range(total_questions_for_accuracy):
-                question_num = i + 1 # 题号从1开始
+                question_num = i + 1  # 题号从1开始
                 if parsed_choices.get(question_num) == correct_answer[i]:
                     correct_counts[i] += 1
-        
+
         # 计算每个非激励问题的准确率
-        question_accuracies = [count/total_residents * 100 if total_residents > 0 else 0 
-                            for count in correct_counts]
+        question_accuracies = [count / total_residents * 100 if total_residents > 0 else 0
+                               for count in correct_counts]
         overall_accuracy = sum(correct_counts) / (total_residents * total_questions_for_accuracy) * 100 if total_residents > 0 else 0
-        
+
         # 更新当前策略的结果
         strategy_key = self.current_strategy.value
         self.experiment_results[strategy_key]['questionnaire_survey'] = {
@@ -304,7 +336,7 @@ class InfoPropagationSimulator:
         print("各题目准确率:")
         for i, accuracy in enumerate(question_accuracies, 1):
             print(f"问题 {i}: {accuracy:.2f}%")
-        
+
         print(f"\n最后一题统计:")
         print(f"选择A的人数: {incentive_choices_a_count}")
         print(f"选择B的人数: {incentive_choices_b_count}")
