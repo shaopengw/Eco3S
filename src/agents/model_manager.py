@@ -33,7 +33,7 @@ class ModelManager:
         }
         # 统一模型配置
         self.model_config = {
-            "temperature": 0.7,
+            "temperature": 1,
             "max_tokens": 2048,
             "top_p": 0.9,
         }

@@ -404,11 +404,14 @@ class Resident(BaseAgent):
         content = message.get("content")
         public_notice = message.get("public_notice")
         if content:
-            message_content = (f"{public_notice}" if public_notice else "") + f"你收到了具体信息：{content}" 
+            message_content = f"你收到了政府信息：{content}" 
         else:
-            message_content = (f"{public_notice}" if public_notice else "") + "你没有收到具体信息。" 
+            message_content = "你没有收到政府信息。" 
+        
         # 构建提示词模板
-        prompt = self.prompts_resident['receive_and_decide_response_prompt'].format()
+        prompt = self.prompts_resident['receive_and_decide_response_prompt'].format(
+            public_notice=public_notice
+        )
         if year == 0:
             await self.memory.write_record(
                     role_name="居民",
@@ -433,6 +436,12 @@ class Resident(BaseAgent):
                 selected_type = random.choice(relation_types)
                 return response, selected_type
             else:
+                await self.memory.write_record(
+                    role_name="居民",
+                    content=f"我保持沉默",
+                    is_user=False,
+                    store_in_shared=False
+                    )
                 resident_log.info(f"居民 {self.resident_id} 选择沉默")
                 return None
             
@@ -492,7 +501,7 @@ class Resident(BaseAgent):
                 self.memory.personal_memory.record_count = 0  # 重置计数器
                 
                 # 记录日志
-                resident_log.info(f"居民 {self.resident_id} 更新了知识记忆：{knowledge_summary}")
+                resident_log.info(f"居民 {self.resident_id} 更新了记忆：{knowledge_summary}")
 
     def print_resident_status(self):
         """
