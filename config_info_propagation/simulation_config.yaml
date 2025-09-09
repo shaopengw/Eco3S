@@ -3,15 +3,17 @@ simulation:
   map_width: 100
   map_height: 100
   start_year: 2016
-  total_years: 2
-  initial_population: 3 #初始人口数量
+  total_years: 3
+  initial_population: 20 #初始人口数量
   birth_rate: 0.05
+  seed_count: 5      # 种子数量
 
   # 智能体相关参数
   max_retry_attempts: 3  # 最大重试次数
   retry_delay: 1.0       # 重试延迟时间（秒）
-  response_probability: 1  # 居民回应概率
-  seed_count: 1      # 种子数量
+  response_probability: 0.5  # 居民回应概率
+
+  message_type: S     #信息类型（S:短信息，L:长信息）
 
 
 # 数据文件路径

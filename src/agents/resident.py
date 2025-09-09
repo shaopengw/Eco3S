@@ -422,26 +422,47 @@ class Resident(BaseAgent):
         try:
             self.update_system_message()
             response = await self.generate_llm_response(prompt)
-            if response and "None" not in response:
-                await self.memory.write_record(
-                    role_name="居民",
-                    content=f"我发表言论：{response}",
-                    is_user=False,
-                    store_in_shared=False
-                    )
-                resident_log.info(f"居民 {self.resident_id} 发起讨论: {response}")
-                # 返回带有发言的决策结果
-                relation_types = ["friend", "colleague", "family", "hometown"]
-                # 随机选择一种关系类型
-                selected_type = random.choice(relation_types)
-                return response, selected_type
+            import json
+            if response:
+                try:
+                    response_json = json.loads(response)
+                    select_choice = response_json.get("select")
+                    select_reason = response_json.get("reason")
+                    speech_content = response_json.get("speech", "")
+                    resident_log.info(f"居民 {self.resident_id} 选择：{select_choice}, 原因：{select_reason}")
+
+                    if select_choice == 2 and speech_content:
+                        await self.memory.write_record(
+                            role_name="居民",
+                            content=f"我发表言论：{speech_content}",
+                            is_user=False,
+                            store_in_shared=False
+                        )
+                        resident_log.info(f"居民 {self.resident_id}发起讨论: {speech_content}")
+                        # 返回带有发言的决策结果
+                        relation_types = ["friend", "colleague", "family", "hometown"]
+                        # 随机选择一种关系类型
+                        selected_type = random.choice(relation_types)
+                        return speech_content, selected_type
+                    else:
+                        await self.memory.write_record(
+                            role_name="居民",
+                            content=f"我保持沉默",
+                            is_user=False,
+                            store_in_shared=False
+                        )
+                        resident_log.info(f"居民 {self.resident_id} 选择沉默")
+                        return None
+                except json.JSONDecodeError:
+                    resident_log.error(f"居民 {self.resident_id} 解析LLM响应失败: {response}")
+                    return None
             else:
                 await self.memory.write_record(
                     role_name="居民",
                     content=f"我保持沉默",
                     is_user=False,
                     store_in_shared=False
-                    )
+                )
                 resident_log.info(f"居民 {self.resident_id} 选择沉默")
                 return None
             
