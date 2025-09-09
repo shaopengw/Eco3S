@@ -160,9 +160,10 @@ class InfoPropagationSimulator:
             seed_message = {"content": message, "public_notice": public_notice_seed}
             normal_message = {"content": None, "public_notice": public_notice_normal}
         else:
-            public_notice = "你并不清楚其他村民是否收到了政府信息。"
-            seed_message = {"content": message, "public_notice": public_notice}
-            normal_message = {"content": None, "public_notice": public_notice}
+            public_notice_normal = f"你不清楚其他村民是否收到了政府信息。"
+            public_notice_seed = f"你不清楚其他村民是否收到了政府信息，其他村民也不知道你收到了政府信息。"
+            seed_message = {"content": message, "public_notice": public_notice_seed}
+            normal_message = {"content": None, "public_notice": public_notice_normal}
         
         # 并行执行所有居民的接收和决策
         tasks = []
@@ -223,7 +224,10 @@ class InfoPropagationSimulator:
         """从配置文件读取宣传信息"""
         with open(self.config['data']['message_config_path'], 'r', encoding='utf-8') as f:
             messages = yaml.safe_load(f)
-        return messages['propaganda_message']
+        if self.config['simulation']['message_type'] == 'S':
+            return messages['propaganda_message_short']
+        else:
+            return messages['propaganda_message_long']
 
     def collect_round_data(self, year: int):
         """收集本轮数据"""
@@ -250,8 +254,10 @@ class InfoPropagationSimulator:
             if choice:  # 确保choice不为None
                 parsed_choices = {}
                 import re
-                # 使用正则表达式匹配所有 "数字+字母" 的组合
-                matches = re.findall(r'(\d+)([A-Za-z])', choice)
+                # 预处理：去除LLM可能添加的```json```标记和多余的换行符
+                cleaned_choice = choice.replace('```json', '').replace('```', '').replace('\n', '')
+                # 使用正则表达式匹配所有 "数字. 字母" 的组合（忽略括号内的选择理由）
+                matches = re.findall(r'(\d+)\.\s*([A-Za-z])\([^)]*\)', cleaned_choice)
                 for q_num, ans in matches:
                     parsed_choices[int(q_num)] = ans.upper()
 
@@ -273,7 +279,9 @@ class InfoPropagationSimulator:
             choice = await resident.make_questionnaire_survey(questionnaire, total_questions)
             if choice:
                 parsed_choices = {}
-                matches = re.findall(r'(\d+)([A-Za-z])', choice)
+                # 预处理：去除LLM可能添加的```json```标记和多余的换行符
+                cleaned_choice = choice.replace('```json', '').replace('```', '').replace('\n', '')
+                matches = re.findall(r'(\d+)\.\s*([A-Za-z])\([^)]*\)', cleaned_choice)
                 for q_num, ans in matches:
                     parsed_choices[int(q_num)] = ans.upper()
 
@@ -293,9 +301,13 @@ class InfoPropagationSimulator:
             # 解析答案
             parsed_choices = {}
             import re
-            matches = re.findall(r'(\d+)([A-Za-z])', resident_choice_str)
+            # 预处理：去除LLM可能添加的```json```标记和多余的换行符
+            cleaned_resident_choice_str = resident_choice_str.replace('```json', '').replace('```', '').replace('\n', '')
+            matches = re.findall(r'(\d+)\.\s*([A-Za-z])\([^)]*\)', cleaned_resident_choice_str)
             for q_num, ans in matches:
                 parsed_choices[int(q_num)] = ans.upper()
+
+            print(f"调试: 居民答案字符串 {resident_choice_str} 解析后的答案: {parsed_choices}")
 
             # 确保解析后的答案数量足够
             if len(parsed_choices) < total_questions:
