@@ -121,7 +121,7 @@ class InfoPropagationSimulator:
         if self.current_strategy == PropagationStrategy.BROADCAST_WITH_COMMON_KNOWLEDGE:
             public_notice = "你得知所有村民都收到了政府信息，并且所有村民都得知你收到了政府信息。"
         else:
-            public_notice = "你并不清楚其他村民是否收到了政府信息。"
+            public_notice = ""
         
         message = {"content": message, "public_notice": public_notice}
         
@@ -160,8 +160,8 @@ class InfoPropagationSimulator:
             seed_message = {"content": message, "public_notice": public_notice_seed}
             normal_message = {"content": None, "public_notice": public_notice_normal}
         else:
-            public_notice_normal = f"你不清楚其他村民是否收到了政府信息。"
-            public_notice_seed = f"你不清楚其他村民是否收到了政府信息，其他村民也不知道你收到了政府信息。"
+            public_notice_normal = f""
+            public_notice_seed = f""
             seed_message = {"content": message, "public_notice": public_notice_seed}
             normal_message = {"content": None, "public_notice": public_notice_normal}
         
@@ -239,8 +239,12 @@ class InfoPropagationSimulator:
         """运行问卷调查"""
         with open(self.config['data']['questionnaire_path'], 'r', encoding='utf-8') as f:
             questionnaire_data = yaml.safe_load(f)
-            questionnaire = questionnaire_data['questionnaire']
-            correct_answer = questionnaire_data['answer'].strip()
+            if self.config['simulation']['message_type'] == 'S':
+                questionnaire = questionnaire_data['questionnaire_short']
+                correct_answer = questionnaire_data['answer_short'].strip()
+            else:
+                questionnaire = questionnaire_data['questionnaire_long']
+                correct_answer = questionnaire_data['answer_long'].strip()
 
         choices = []
         # 动态确定题目数量
@@ -294,7 +298,7 @@ class InfoPropagationSimulator:
         # 初始化计数
         incentive_choices_a_count = 0
         incentive_choices_b_count = 0
-        correct_counts = [0] * total_questions_for_accuracy  # 每个非激励问题的正确回答数
+        correct_counts = [0] * total_questions_for_accuracy  # 每个知识问题的正确回答数
         total_residents = len(choices)
 
         for resident_choice_str in choices:
@@ -314,7 +318,7 @@ class InfoPropagationSimulator:
                 print(f"警告: 居民答案长度不足，期望{total_questions}，实际{len(parsed_choices)}")
                 continue
 
-            # 统计最后一题（激励选项）的A和B选项
+            # 统计最后一题（奖励选项）的A和B选项
             incentive_answer = parsed_choices.get(total_questions)  # 获取最后一题的答案
             if incentive_answer == 'A':
                 incentive_choices_a_count += 1
@@ -327,7 +331,7 @@ class InfoPropagationSimulator:
                 if parsed_choices.get(question_num) == correct_answer[i]:
                     correct_counts[i] += 1
 
-        # 计算每个非激励问题的准确率
+        # 计算每个知识问题的准确率
         question_accuracies = [count / total_residents * 100 if total_residents > 0 else 0
                                for count in correct_counts]
         overall_accuracy = sum(correct_counts) / (total_residents * total_questions_for_accuracy) * 100 if total_residents > 0 else 0

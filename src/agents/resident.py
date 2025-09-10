@@ -404,21 +404,26 @@ class Resident(BaseAgent):
         content = message.get("content")
         public_notice = message.get("public_notice")
         if content:
-            message_content = f"你收到了政府信息：{content}" 
+            message_content = f"你收到了政府发布的详细信息：[{content}]" 
         else:
             message_content = "你没有收到政府信息。" 
         
-        # 构建提示词模板
-        prompt = self.prompts_resident['receive_and_decide_response_prompt'].format(
-            public_notice=public_notice
-        )
         if year == 0:
-            await self.memory.write_record(
-                    role_name="居民",
-                    content=message_content,
-                    is_user=False,
-                    store_in_shared=False,
-                    )
+            # await self.memory.write_record(
+            #         role_name="居民",
+            #         content=message_content,
+            #         is_user=False,
+            #         store_in_shared=False,
+            #         )
+            prompt = self.prompts_resident['receive_and_decide_response_prompt'].format(
+                public_notice=public_notice,
+                message_content=message_content
+            )
+        else:
+            prompt = self.prompts_resident['receive_and_decide_response_prompt'].format(
+                public_notice=public_notice,
+                message_content=""
+            )
         try:
             self.update_system_message()
             response = await self.generate_llm_response(prompt)
