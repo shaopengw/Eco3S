@@ -311,8 +311,6 @@ class InfoPropagationSimulator:
             for q_num, ans in matches:
                 parsed_choices[int(q_num)] = ans.upper()
 
-            print(f"调试: 居民答案字符串 {resident_choice_str} 解析后的答案: {parsed_choices}")
-
             # 确保解析后的答案数量足够
             if len(parsed_choices) < total_questions:
                 print(f"警告: 居民答案长度不足，期望{total_questions}，实际{len(parsed_choices)}")
