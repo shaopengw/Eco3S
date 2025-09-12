@@ -408,6 +408,7 @@ class Resident(BaseAgent):
         else:
             message_content = "你没有收到政府信息。" 
         
+        # 构建提示词
         if year == 0:
             # await self.memory.write_record(
             #         role_name="居民",
@@ -421,7 +422,7 @@ class Resident(BaseAgent):
             )
         else:
             prompt = self.prompts_resident['receive_and_decide_response_prompt'].format(
-                public_notice=public_notice,
+                public_notice="",
                 message_content=""
             )
         try:
@@ -435,7 +436,13 @@ class Resident(BaseAgent):
                     select_reason = response_json.get("reason")
                     speech_content = response_json.get("speech", "")
                     resident_log.info(f"居民 {self.resident_id} 选择：{select_choice}, 原因：{select_reason}")
-
+                    if year == 0:
+                        await self.memory.write_record(
+                            role_name="居民",
+                            content=message_content + public_notice,
+                            is_user=False,
+                            store_in_shared=False,
+                        )
                     if select_choice == 2 and speech_content:
                         await self.memory.write_record(
                             role_name="居民",
