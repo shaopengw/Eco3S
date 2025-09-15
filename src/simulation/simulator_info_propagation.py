@@ -2,6 +2,7 @@ import asyncio
 import json
 import random
 import pandas as pd
+import re
 import os
 import yaml
 from colorama import Back
@@ -42,13 +43,15 @@ class InfoPropagationSimulator:
         self.experiment_results = {
             strategy.value: {
                 'conversation_volume': 0,
-                'questionnaire_survey': {
+                'knowledge_survey': {
                     'choices': [],
                     'question_accuracies': [],
                     'overall_accuracy': 0.0
                 },
-                'incentive_choices_a_count': 0,
-                'incentive_choices_b_count': 0
+                'incentive_survey': {
+                    'incentive_choices_a_count': 0,
+                    'incentive_choices_b_count': 0
+                }
             }
             for strategy in PropagationStrategy
         }
@@ -80,8 +83,13 @@ class InfoPropagationSimulator:
             for year in range(self.config["simulation"]["total_years"]):
                 await self.run_single_round(year)
             
-            # 实验结束后进行问卷调查
-            await self.run_questionnaire_survey()
+            # 运行知识问答调查
+            print("\n开始进行知识问答调查...")
+            await self.run_knowledge_survey()
+            
+            # 运行奖励问题调查
+            print("\n开始进行奖励问题调查...")
+            await self.run_incentive_survey()
             
             # 保存当前策略的结果
             self.save_strategy_results()
@@ -235,8 +243,8 @@ class InfoPropagationSimulator:
         strategy_key = self.current_strategy.value
         self.experiment_results[strategy_key]['conversation_volume'] = self.conversation_volume
 
-    async def run_questionnaire_survey(self):
-        """运行问卷调查"""
+    async def run_knowledge_survey(self):
+        """运行知识问答调查"""
         with open(self.config['data']['questionnaire_path'], 'r', encoding='utf-8') as f:
             questionnaire_data = yaml.safe_load(f)
             if self.config['simulation']['message_type'] == 'S':
@@ -247,14 +255,15 @@ class InfoPropagationSimulator:
                 correct_answer = questionnaire_data['answer_long'].strip()
 
         choices = []
-        # 动态确定题目数量
-        total_questions = len(correct_answer) + 1  # 总题目数
-        total_questions_for_accuracy = len(correct_answer)  # 需要计算准确率的题目数（排除最后一题）
-
+        total_questions = len(correct_answer)  # 总题目数
         problematic_residents = []  # 用于记录有问题的居民
 
         for resident in self.residents.values():
-            choice = await resident.make_questionnaire_survey(questionnaire, total_questions)
+            prompt = resident.prompts_resident['questionnaire_prompt'].format(
+                questionnaire_content=questionnaire,
+                total_questions=total_questions
+            )
+            choice = await resident.make_survey_request(prompt)
             if choice:  # 确保choice不为None
                 parsed_choices = {}
                 import re
@@ -279,8 +288,11 @@ class InfoPropagationSimulator:
             if attempts >= 3:
                 print(f"警告: 居民 {resident} 已经尝试3次，仍然答案长度不足")
                 continue
-
-            choice = await resident.make_questionnaire_survey(questionnaire, total_questions)
+            prompt = resident.prompts_resident['questionnaire_prompt'].format(
+                questionnaire_content=questionnaire,
+                total_questions=total_questions
+            )
+            choice = await resident.make_survey_request(prompt)
             if choice:
                 parsed_choices = {}
                 # 预处理：去除LLM可能添加的```json```标记和多余的换行符
@@ -296,15 +308,12 @@ class InfoPropagationSimulator:
                     choices.append(choice)
 
         # 初始化计数
-        incentive_choices_a_count = 0
-        incentive_choices_b_count = 0
-        correct_counts = [0] * total_questions_for_accuracy  # 每个知识问题的正确回答数
+        correct_counts = [0] * total_questions  # 每个知识问题的正确回答数
         total_residents = len(choices)
 
         for resident_choice_str in choices:
             # 解析答案
             parsed_choices = {}
-            import re
             # 预处理：去除LLM可能添加的```json```标记和多余的换行符
             cleaned_resident_choice_str = resident_choice_str.replace('```json', '').replace('```', '').replace('\n', '')
             matches = re.findall(r'(\d+)\.\s*([A-Za-z])\([^)]*\)', cleaned_resident_choice_str)
@@ -316,15 +325,8 @@ class InfoPropagationSimulator:
                 print(f"警告: 居民答案长度不足，期望{total_questions}，实际{len(parsed_choices)}")
                 continue
 
-            # 统计最后一题（奖励选项）的A和B选项
-            incentive_answer = parsed_choices.get(total_questions)  # 获取最后一题的答案
-            if incentive_answer == 'A':
-                incentive_choices_a_count += 1
-            elif incentive_answer == 'B':
-                incentive_choices_b_count += 1
-
-            # 计算前 total_questions_for_accuracy 题的准确率
-            for i in range(total_questions_for_accuracy):
+            # 计算每题的准确率
+            for i in range(total_questions):
                 question_num = i + 1  # 题号从1开始
                 if parsed_choices.get(question_num) == correct_answer[i]:
                     correct_counts[i] += 1
@@ -332,28 +334,62 @@ class InfoPropagationSimulator:
         # 计算每个知识问题的准确率
         question_accuracies = [count / total_residents * 100 if total_residents > 0 else 0
                                for count in correct_counts]
-        overall_accuracy = sum(correct_counts) / (total_residents * total_questions_for_accuracy) * 100 if total_residents > 0 else 0
+        overall_accuracy = sum(correct_counts) / (total_residents * total_questions) * 100 if total_residents > 0 else 0
 
         # 更新当前策略的结果
         strategy_key = self.current_strategy.value
-        self.experiment_results[strategy_key]['questionnaire_survey'] = {
+        self.experiment_results[strategy_key]['knowledge_survey'] = {
             'choices': choices,
             'question_accuracies': question_accuracies,
             'overall_accuracy': overall_accuracy
         }
-        self.experiment_results[strategy_key]['incentive_choices_a_count'] = incentive_choices_a_count
-        self.experiment_results[strategy_key]['incentive_choices_b_count'] = incentive_choices_b_count
 
         # 输出准确率结果
-        print(f"\n问卷调查结果分析:")
+        print(f"\n知识问答结果分析:")
         print(f"总体准确率: {overall_accuracy:.2f}%")
         print("各题目准确率:")
         for i, accuracy in enumerate(question_accuracies, 1):
             print(f"问题 {i}: {accuracy:.2f}%")
 
-        print(f"\n最后一题统计:")
-        print(f"选择A的人数: {incentive_choices_a_count}")
-        print(f"选择B的人数: {incentive_choices_b_count}")
+    async def run_incentive_survey(self):
+        """运行奖励问题调查"""
+        incentive_choices_a_count = 0
+        incentive_choices_b_count = 0
+        total_responses = 0
+
+        for resident in self.residents.values():
+            prompt = resident.prompts_resident['incentive_questionnaire_prompt'].format()
+            response = await resident.make_survey_request(prompt)
+            if response:
+                # 清理LLM返回的字符串并解析JSON
+                cleaned_response = response.strip()
+                cleaned_response = re.sub(r"^```json\s*|\s*```$", "", cleaned_response, flags=re.DOTALL).strip()
+
+                try:
+                    response_json = json.loads(cleaned_response)
+                    select = response_json.get("select", '').upper()
+                    reason = response_json.get("reason", '')
+                    
+                    total_responses += 1
+                    if select == 'A':
+                        incentive_choices_a_count += 1
+                    elif select == 'B':
+                        incentive_choices_b_count += 1
+
+                except json.JSONDecodeError as e:
+                    self.logger.error(f"居民 {resident.resident_id} 解析奖励问题JSON响应出错: {e}, 原始响应: '{cleaned_response}'")
+                    continue
+
+        # 更新当前策略的结果
+        strategy_key = self.current_strategy.value
+        self.experiment_results[strategy_key]['incentive_survey'] = {
+            'incentive_choices_a_count': incentive_choices_a_count,
+            'incentive_choices_b_count': incentive_choices_b_count
+        }
+
+        # 输出统计结果
+        print(f"\n奖励问题统计:")
+        print(f"总回答人数: {total_responses}，选择A的人数: {incentive_choices_a_count}，选择B的人数: {incentive_choices_b_count}")
 
     def save_strategy_results(self):
         """保存当前策略的结果"""
@@ -372,38 +408,4 @@ class InfoPropagationSimulator:
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(self.experiment_results, f, ensure_ascii=False, indent=2)
         
-        # 同时保存为CSV格式以便分析
-        self.save_results_csv()
-        
         self.logger.info(f"实验结果已保存至 {filename}")
-
-    def save_results_csv(self):
-        """保存实验结果到CSV文件"""
-        # 创建主结果DataFrame
-        main_data = []
-        for strategy, results in self.experiment_results.items():
-            main_data.append({
-                'strategy': strategy,
-                'conversation_volume': results['conversation_volume'],
-                'overall_accuracy': results['questionnaire_survey']['overall_accuracy'],
-                'incentive_choices_a_count': results['incentive_choices_a_count'],
-                'incentive_choices_b_count': results['incentive_choices_b_count']
-            })
-        
-        main_df = pd.DataFrame(main_data)
-        main_df.to_csv("data/info_propagation_main_results.csv", index=False)
-        
-        # 创建详细问卷结果DataFrame
-        questionnaire_data = []
-        for strategy, results in self.experiment_results.items():
-            for i, accuracy in enumerate(results['questionnaire_survey']['question_accuracies'], 1):
-                questionnaire_data.append({
-                    'strategy': strategy,
-                    'question_number': i,
-                    'accuracy': accuracy
-                })
-        
-        questionnaire_df = pd.DataFrame(questionnaire_data)
-        questionnaire_df.to_csv("data/info_propagation_questionnaire_results.csv", index=False)
-        
-        self.logger.info("CSV格式结果已保存")

@@ -152,9 +152,9 @@ def plot_conversation_volume(results, output_dir):
 
 
 def plot_questionnaire_accuracy(results, output_dir):
-    """绘制问卷调查准确率柱状图"""
+    """绘制知识问答准确率柱状图"""
     strategies = list(results.keys())
-    accuracies = [results[strategy]['questionnaire_survey']['overall_accuracy'] for strategy in strategies]
+    accuracies = [results[strategy]['knowledge_survey']['overall_accuracy'] for strategy in strategies]
     
     plt.figure(figsize=(10, 6))
     bars = plt.bar(strategies, accuracies, color=['#DBF1FA', '#BAD2E1', '#96C2D4', '#6CBAD8'])
@@ -162,27 +162,26 @@ def plot_questionnaire_accuracy(results, output_dir):
     # 添加数值标签
     for bar in bars:
         height = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width()/2., height + 0.5,
-                f'{height:.1f}%', ha='center', va='bottom', fontsize=12)
+        plt.text(bar.get_x() + bar.get_width()/2., height + 0.1,
+                f'{height:.2f}%', ha='center', va='bottom', fontsize=12)
     
-    plt.title('questionnaire_accuracy', fontsize=16, fontweight='bold')
+    plt.title('knowledge_survey_accuracy', fontsize=16, fontweight='bold')
     plt.xlabel('strategies', fontsize=12)
-    plt.ylabel('questionnaire_accuracy', fontsize=12)
-    plt.ylim(0, 100)  # 设置y轴范围为0-100%
+    plt.ylabel('accuracy(%)', fontsize=12)
     plt.grid(axis='y', alpha=0.3)
     plt.tight_layout()
     
     # 添加时间戳到文件名
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    plt.savefig(os.path.join(output_dir, f'questionnaire_accuracy_{current_time}.png'), dpi=300, bbox_inches='tight')
+    plt.savefig(os.path.join(output_dir, f'knowledge_survey_accuracy_{current_time}.png'), dpi=300, bbox_inches='tight')
     plt.close()
 
 
 def plot_incentive_choices(results, output_dir):
-    """绘制激励性选择结果图"""
+    """绘制奖励问题选择结果图"""
     strategies = list(results.keys())
-    a_counts = [results[strategy]['incentive_choices_a_count'] for strategy in strategies]
-    b_counts = [results[strategy]['incentive_choices_b_count'] for strategy in strategies]
+    a_counts = [results[strategy]['incentive_survey']['incentive_choices_a_count'] for strategy in strategies]
+    b_counts = [results[strategy]['incentive_survey']['incentive_choices_b_count'] for strategy in strategies]
     
     x = np.arange(len(strategies))
     width = 0.35
@@ -211,7 +210,7 @@ def plot_incentive_choices(results, output_dir):
     
     # 添加时间戳到文件名
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    plt.savefig(os.path.join(output_dir, f'incentive_choices_{current_time}.png'), dpi=300, bbox_inches='tight')
+    plt.savefig(os.path.join(output_dir, f'incentive_survey_{current_time}.png'), dpi=300, bbox_inches='tight')
     plt.close()
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ simulation:
   total_years: 3
   initial_population: 20 #初始人口数量
   birth_rate: 0.05
-  seed_count: 2      # 种子数量
+  seed_count: 5      # 种子数量
 
   # 智能体相关参数
   max_retry_attempts: 3  # 最大重试次数

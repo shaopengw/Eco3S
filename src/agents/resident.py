@@ -482,15 +482,9 @@ class Resident(BaseAgent):
             resident_log.error(f"居民 {self.resident_id} 处理公共知识出错: {e}")
             return None
 
-    async def make_questionnaire_survey(self, questionnaire: dict,total_questions):
-        """居民参与问卷调查"""
+    async def make_survey_request(self, prompt: str):
+        """通用方法：构建提示词，获取LLM响应并进行初步清理"""
         try:
-            # 构建问卷提示词
-            prompt = self.prompts_resident['questionnaire_prompt'].format(
-                questionnaire_content=questionnaire,
-                total_questions=total_questions
-            )
-            
             # 更新系统消息以确保最新状态
             self.update_system_message()
             
@@ -503,13 +497,13 @@ class Resident(BaseAgent):
             cleaned_response = response.strip()
             
             # 记录问卷结果
-            resident_log.info(f"居民 {self.resident_id} 问卷选择: {cleaned_response}")
+            resident_log.info(f"居民 {self.resident_id} 回应: {cleaned_response}")
             
             # 返回选择结果
             return cleaned_response
             
         except Exception as e:
-            resident_log.error(f"居民 {self.resident_id} 处理问卷出错: {e}")
+            resident_log.error(f"居民 {self.resident_id} 进行信息请求出错: {e}")
             return None
     
     async def update_knowledge_memory(self):
