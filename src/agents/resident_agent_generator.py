@@ -14,6 +14,7 @@ async def generate_canal_agents(
     shared_pool: Optional[ResidentSharedInformationPool] = None, # 共享资源池，默认为空
     resident_id_mapping: Optional[Dict[int, int]] = None,  # 居民 ID 与 Agent ID 的映射关系，默认为空
     resident_prompt_path: Optional[str] = None,  # 居民提示语文件路径，默认为空
+    window_size: int = 3
 ) -> Dict[int, Resident]:
     """
     生成并返回运河居民的居民图。
@@ -47,6 +48,7 @@ async def generate_canal_agents(
             shared_pool=shared_pool,
             map=map,
             resident_prompt_path=resident_prompt_path,
+            window_size=window_size
         )
 
         # 设置居民的初始属性
