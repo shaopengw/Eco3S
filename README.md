@@ -9,14 +9,40 @@ pip install -r requirements.txt
 ```
 
 ## 运行模拟1
+配置文件及提示词位于config文件夹下，具体如下：
+ - 总配置：config/simulation_config.yaml
+ - 居民提示词：config/residents_prompts.yaml
+ - 政府提示词：config/government_prompts.yaml
+ - 叛军提示词：config/rebels_prompts.yaml
+ - 职业分布及配置：config/jobs_config.yaml
+ - 城市配置：config/towns_data.json
+
+运行命令如下：
 ```bash
 python main.py --config_path config/simulation_config.yaml
 ```
 ## 运行模拟2
+配置文件及提示词位于config_TEOG文件夹下，具体如下：
+ - 总配置：config_TEOG/simulation_config.yaml
+ - 居民提示词：config_TEOG/residents_prompts.yaml
+ - 政府提示词：config_TEOG/government_prompts.yaml
+ - 职业分布及配置：config_TEOG/jobs_config.yaml
+ - 城市配置：config_TEOG/towns_data.json
+
+运行命令如下：
 ```bash
 python main_TEOG.py --config_path config_TEOG/simulation_config.yaml
 ```
 ## 运行模拟3-信息传播
+配置文件及提示词位于config_info_propagation文件夹下，具体如下：
+ - 总配置：config_info_propagation/simulation_config.yaml
+ - 居民提示词：config_info_propagation/residents_prompts.yaml
+ - 原传播信息：config_info_propagation/message_config.yaml
+ - 调查问卷：config_info_propagation/questionnaire.yaml
+ - 职业分布及配置：config_info_propagation/jobs_config.yaml
+ - 城市配置：config_info_propagation/towns_data.json
+
+运行命令如下：
 ```bash
 python main_info_propagation.py --config_path config_info_propagation/simulation_config.yaml
 ```

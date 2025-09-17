@@ -276,7 +276,7 @@ class InfoPropagationSimulator:
 
                 # 确保解析后的答案数量足够
                 if len(parsed_choices) < total_questions:
-                    print(f"警告: 居民 {resident} 答案长度不足，期望{total_questions}，实际{len(parsed_choices)}")
+                    print(f"警告: 居民 {resident.resident_id} 答案长度不足，期望{total_questions}，实际{len(parsed_choices)}")
                     problematic_residents.append((resident, 0))  # 记录居民及尝试次数
                     continue
 
@@ -286,7 +286,7 @@ class InfoPropagationSimulator:
         while problematic_residents:
             resident, attempts = problematic_residents.pop()
             if attempts >= 3:
-                print(f"警告: 居民 {resident} 已经尝试3次，仍然答案长度不足")
+                print(f"警告: 居民 {resident.resident_id} 已经尝试3次，仍然答案长度不足")
                 continue
             prompt = resident.prompts_resident['questionnaire_prompt'].format(
                 questionnaire_content=questionnaire,
@@ -302,7 +302,7 @@ class InfoPropagationSimulator:
                     parsed_choices[int(q_num)] = ans.upper()
 
                 if len(parsed_choices) < total_questions:
-                    print(f"警告: 居民 {resident} 答案长度不足，期望{total_questions}，实际{len(parsed_choices)}")
+                    print(f"警告: 居民 {resident.resident_id} 答案长度不足，期望{total_questions}，实际{len(parsed_choices)}")
                     problematic_residents.append((resident, attempts + 1))  # 再次记录居民及增加尝试次数
                 else:
                     choices.append(choice)
@@ -322,7 +322,7 @@ class InfoPropagationSimulator:
 
             # 确保解析后的答案数量足够
             if len(parsed_choices) < total_questions:
-                print(f"警告: 居民答案长度不足，期望{total_questions}，实际{len(parsed_choices)}")
+                print(f"警告: 居民{resident.resident_id}答案长度不足，期望{total_questions}，实际{len(parsed_choices)}")
                 continue
 
             # 计算每题的准确率

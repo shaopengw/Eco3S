@@ -62,6 +62,7 @@ async def run_simulation(config):
         map=map,
         initial_population=config["simulation"]["initial_population"],
         resident_prompt_path=config["data"]["resident_prompt_path"],
+        window_size=10
     )
 
     # 初始化城镇
