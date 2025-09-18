@@ -270,7 +270,7 @@ class InfoPropagationSimulator:
                 # 预处理：去除LLM可能添加的```json```标记和多余的换行符
                 cleaned_choice = choice.replace('```json', '').replace('```', '').replace('\n', '')
                 # 使用正则表达式匹配所有 "数字. 字母" 的组合（忽略括号内的选择理由）
-                matches = re.findall(r'(\d+)\.\s*([A-Za-z])\([^)]*\)', cleaned_choice)
+                matches = re.findall(r'(\d+)\.\s*([A-Za-z])[（(][^）)]*[）)]', cleaned_choice)
                 for q_num, ans in matches:
                     parsed_choices[int(q_num)] = ans.upper()
 
@@ -297,7 +297,7 @@ class InfoPropagationSimulator:
                 parsed_choices = {}
                 # 预处理：去除LLM可能添加的```json```标记和多余的换行符
                 cleaned_choice = choice.replace('```json', '').replace('```', '').replace('\n', '')
-                matches = re.findall(r'(\d+)\.\s*([A-Za-z])\([^)]*\)', cleaned_choice)
+                matches = re.findall(r'(\d+)\.\s*([A-Za-z])[（(][^）)]*[）)]', cleaned_choice)
                 for q_num, ans in matches:
                     parsed_choices[int(q_num)] = ans.upper()
 
@@ -316,7 +316,7 @@ class InfoPropagationSimulator:
             parsed_choices = {}
             # 预处理：去除LLM可能添加的```json```标记和多余的换行符
             cleaned_resident_choice_str = resident_choice_str.replace('```json', '').replace('```', '').replace('\n', '')
-            matches = re.findall(r'(\d+)\.\s*([A-Za-z])\([^)]*\)', cleaned_resident_choice_str)
+            matches = re.findall(r'(\d+)\.\s*([A-Za-z])[（(][^）)]*[）)]', cleaned_resident_choice_str)
             for q_num, ans in matches:
                 parsed_choices[int(q_num)] = ans.upper()
 

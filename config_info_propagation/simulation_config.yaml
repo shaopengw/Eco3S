@@ -13,7 +13,7 @@ simulation:
   retry_delay: 1.0       # 重试延迟时间（秒）
   response_probability: 0.2  # 居民回应概率
 
-  message_type: S    #信息类型（S:短信息，L:长信息）
+  message_type: L    #信息类型（S:短信息，L:长信息）
 
 
 # 数据文件路径
