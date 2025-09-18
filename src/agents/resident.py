@@ -506,14 +506,14 @@ class Resident(BaseAgent):
             resident_log.error(f"居民 {self.resident_id} 进行信息请求出错: {e}")
             return None
     
-    async def update_knowledge_memory(self):
+    async def update_knowledge_memory(self,prompt:str):
         """
         定期更新居民的知识记忆,专注于居民个人的知识和经历总结
         """
         # 确保 self.memory 和 self.memory.personal_memory 都存在
         if self.memory and hasattr(self.memory, 'personal_memory'):
             # 构建提示词
-            prompt = self.prompts_resident['memory_update_prompt'].format()
+            prompt = self.prompts_resident[prompt].format()
             
             # 生成知识总结
             self.update_system_message()  # 确保系统消息是最新的

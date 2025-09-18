@@ -150,7 +150,11 @@ class InfoPropagationSimulator:
             if speech_tasks:
                 await asyncio.gather(*speech_tasks)
         #更新所有居民的记忆
-        memory_update_tasks = [resident.update_knowledge_memory() for resident in self.residents.values()]
+        if self.config['simulation']['message_type'] == 'S':
+            prompt = "memory_update_prompt_short"
+        else:
+            prompt = "memory_update_prompt_long"
+        memory_update_tasks = [resident.update_knowledge_memory(prompt = prompt) for resident in self.residents.values()]
         if memory_update_tasks:
             await asyncio.gather(*memory_update_tasks)
 
@@ -196,7 +200,11 @@ class InfoPropagationSimulator:
             if speech_tasks:
                 await asyncio.gather(*speech_tasks)
         #更新所有居民的记忆
-        memory_update_tasks = [resident.update_knowledge_memory() for resident in self.residents.values()]
+        if self.config['simulation']['message_type'] == 'S':
+            prompt = "memory_update_prompt_short"
+        else:
+            prompt = "memory_update_prompt_long"
+        memory_update_tasks = [resident.update_knowledge_memory(prompt = prompt) for resident in self.residents.values()]
         if memory_update_tasks:
             await asyncio.gather(*memory_update_tasks)
         return
