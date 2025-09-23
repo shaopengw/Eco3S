@@ -7,13 +7,13 @@ data:
   towns_data_path: config_info_propagation/towns_data.json
 simulation:
   birth_rate: 0.05
-  initial_population: 3
+  initial_population: 20
   map_height: 100
   map_width: 100
   max_retry_attempts: 3
-  message_type: S
+  message_type: L
   response_probability: 0.2
   retry_delay: 1
-  seed_count: 1
+  seed_count: 5
   start_year: 2016
-  total_years: 1
+  total_years: 3
