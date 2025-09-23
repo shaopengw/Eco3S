@@ -266,54 +266,70 @@ class InfoPropagationSimulator:
         total_questions = len(correct_answer)  # 总题目数
         problematic_residents = []  # 用于记录有问题的居民
 
-        for resident in self.residents.values():
+        # 并发执行首次问卷调查
+        tasks = []
+        residents_list = list(self.residents.values())
+        for resident in residents_list:
             prompt = resident.prompts_resident['questionnaire_prompt'].format(
                 questionnaire_content=questionnaire,
                 total_questions=total_questions
             )
-            choice = await resident.make_survey_request(prompt)
-            if choice:  # 确保choice不为None
-                parsed_choices = {}
-                import re
-                # 预处理：去除LLM可能添加的```json```标记和多余的换行符
-                cleaned_choice = choice.replace('```json', '').replace('```', '').replace('\n', '')
-                # 使用正则表达式匹配所有 "数字. 字母" 的组合（忽略括号内的选择理由）
-                matches = re.findall(r'(\d+)\.\s*([A-Za-z])[（(][^）)]*[）)]', cleaned_choice)
-                for q_num, ans in matches:
-                    parsed_choices[int(q_num)] = ans.upper()
+            tasks.append(resident.make_survey_request(prompt))
 
-                # 确保解析后的答案数量足够
-                if len(parsed_choices) < total_questions:
-                    print(f"警告: 居民 {resident.resident_id} 答案长度不足，期望{total_questions}，实际{len(parsed_choices)}")
-                    problematic_residents.append((resident, 0))  # 记录居民及尝试次数
-                    continue
+        if tasks:
+            results = await asyncio.gather(*tasks)
+            for i, choice in enumerate(results):
+                resident = residents_list[i]
+                if choice:
+                    parsed_choices = {}
+                    import re
+                    # 预处理：去除LLM可能添加的```json```标记和多余的换行符
+                    cleaned_choice = choice.replace('```json', '').replace('```', '').replace('\n', '')
+                    # 使用正则表达式匹配所有 "数字. 字母" 的组合（忽略括号内的选择理由）
+                    matches = re.findall(r'(\d+)\.\s*([A-Za-z])[(（][^)）]*[)）]', cleaned_choice)
+                    for q_num, ans in matches:
+                        parsed_choices[int(q_num)] = ans.upper()
 
-                choices.append(choice)
+                    # 确保解析后的答案数量足够
+                    if len(parsed_choices) < total_questions:
+                        print(f"警告: 居民 {resident.resident_id} 答案长度不足，期望{total_questions}，实际{len(parsed_choices)}")
+                        problematic_residents.append((resident, 0))  # 记录居民及尝试次数
+                    else:
+                        choices.append(choice)
 
         # 如果有有问题的居民，重新进行问卷调查，最多3次
         while problematic_residents:
-            resident, attempts = problematic_residents.pop()
-            if attempts >= 3:
-                print(f"警告: 居民 {resident.resident_id} 已经尝试3次，仍然答案长度不足")
-                continue
-            prompt = resident.prompts_resident['questionnaire_prompt'].format(
-                questionnaire_content=questionnaire,
-                total_questions=total_questions
-            )
-            choice = await resident.make_survey_request(prompt)
-            if choice:
-                parsed_choices = {}
-                # 预处理：去除LLM可能添加的```json```标记和多余的换行符
-                cleaned_choice = choice.replace('```json', '').replace('```', '').replace('\n', '')
-                matches = re.findall(r'(\d+)\.\s*([A-Za-z])[（(][^）)]*[）)]', cleaned_choice)
-                for q_num, ans in matches:
-                    parsed_choices[int(q_num)] = ans.upper()
+            new_tasks = []
+            residents_to_retry = []
+            for resident, attempts in problematic_residents:
+                if attempts >= 3:
+                    print(f"警告: 居民 {resident.resident_id} 已经尝试3次，仍然答案长度不足")
+                    continue
+                prompt = resident.prompts_resident['questionnaire_prompt'].format(
+                    questionnaire_content=questionnaire,
+                    total_questions=total_questions
+                )
+                new_tasks.append(resident.make_survey_request(prompt))
+                residents_to_retry.append((resident, attempts))
+            
+            problematic_residents = [] # 清空，准备重新填充
 
-                if len(parsed_choices) < total_questions:
-                    print(f"警告: 居民 {resident.resident_id} 答案长度不足，期望{total_questions}，实际{len(parsed_choices)}")
-                    problematic_residents.append((resident, attempts + 1))  # 再次记录居民及增加尝试次数
-                else:
-                    choices.append(choice)
+            if new_tasks:
+                retry_results = await asyncio.gather(*new_tasks)
+                for i, choice in enumerate(retry_results):
+                    resident, attempts = residents_to_retry[i]
+                    if choice:
+                        parsed_choices = {}
+                        cleaned_choice = choice.replace('```json', '').replace('```', '').replace('\n', '')
+                        matches = re.findall(r'(\d+)\.\s*([A-Za-z])[(（][^)）]*[)）]', cleaned_choice)
+                        for q_num, ans in matches:
+                            parsed_choices[int(q_num)] = ans.upper()
+
+                        if len(parsed_choices) < total_questions:
+                            print(f"警告: 居民 {resident.resident_id} 答案长度不足，期望{total_questions}，实际{len(parsed_choices)}")
+                            problematic_residents.append((resident, attempts + 1))  # 再次记录居民及增加尝试次数
+                        else:
+                            choices.append(choice)
 
         # 初始化计数
         correct_counts = [0] * total_questions  # 每个知识问题的正确回答数
@@ -365,28 +381,34 @@ class InfoPropagationSimulator:
         incentive_choices_b_count = 0
         total_responses = 0
 
+        # 并发执行奖励问题调查
+        incentive_tasks = []
         for resident in self.residents.values():
             prompt = resident.prompts_resident['incentive_questionnaire_prompt'].format()
-            response = await resident.make_survey_request(prompt)
-            if response:
-                # 清理LLM返回的字符串并解析JSON
-                cleaned_response = response.strip()
-                cleaned_response = re.sub(r"^```json\s*|\s*```$", "", cleaned_response, flags=re.DOTALL).strip()
+            incentive_tasks.append(resident.make_survey_request(prompt))
 
-                try:
-                    response_json = json.loads(cleaned_response)
-                    select = response_json.get("select", '').upper()
-                    reason = response_json.get("reason", '')
-                    
-                    total_responses += 1
-                    if select == 'A':
-                        incentive_choices_a_count += 1
-                    elif select == 'B':
-                        incentive_choices_b_count += 1
+        if incentive_tasks:
+            incentive_responses = await asyncio.gather(*incentive_tasks)
+            for response in incentive_responses:
+                if response:
+                    # 清理LLM返回的字符串并解析JSON
+                    cleaned_response = response.strip()
+                    cleaned_response = re.sub(r"^```json\\s*|\\s*```$", "", cleaned_response, flags=re.DOTALL).strip()
 
-                except json.JSONDecodeError as e:
-                    self.logger.error(f"居民 {resident.resident_id} 解析奖励问题JSON响应出错: {e}, 原始响应: '{cleaned_response}'")
-                    continue
+                    try:
+                        response_json = json.loads(cleaned_response)
+                        select = response_json.get("select", '').upper()
+                        reason = response_json.get("reason", '')
+                        
+                        total_responses += 1
+                        if select == 'A':
+                            incentive_choices_a_count += 1
+                        elif select == 'B':
+                            incentive_choices_b_count += 1
+
+                    except json.JSONDecodeError as e:
+                        self.logger.error(f"解析奖励问题JSON响应出错: {e}, 原始响应: '{cleaned_response}'")
+                        continue
 
         # 更新当前策略的结果
         strategy_key = self.current_strategy.value
