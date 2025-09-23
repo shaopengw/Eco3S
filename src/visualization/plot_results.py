@@ -25,6 +25,7 @@ def plot_rebellions_over_time(years, rebellions):
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"叛乱次数图表已保存至：{save_path}")
     plt.close()
+    return save_path
 
 def plot_unemployment_rate_over_time(years, unemployment_rate):
     """
@@ -50,6 +51,7 @@ def plot_unemployment_rate_over_time(years, unemployment_rate):
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"失业率图表已保存至：{save_path}")
     plt.close()
+    return save_path
 
 def plot_population_over_time(years, population):
     """
@@ -75,6 +77,7 @@ def plot_population_over_time(years, population):
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"人口数量图表已保存至：{save_path}")
     plt.close()
+    return save_path
 
 def plot_government_budget_over_time(years, government_budget):
     """
@@ -98,6 +101,7 @@ def plot_government_budget_over_time(years, government_budget):
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"政府预算图表已保存至：{save_path}")
     plt.close()
+    return save_path
 
 def plot_rebellion_strength_over_time(years, rebellion_strength):
     plt.figure(figsize=(10, 6))
@@ -116,6 +120,7 @@ def plot_rebellion_strength_over_time(years, rebellion_strength):
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"叛乱强度图表已保存至：{save_path}")
     plt.close()
+    return save_path
 
 def plot_satisfaction_over_time(years, average_satisfaction):
     plt.figure(figsize=(10, 6))
@@ -134,6 +139,7 @@ def plot_satisfaction_over_time(years, average_satisfaction):
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"平均满意度图表已保存至：{save_path}")
     plt.close()
+    return save_path
 
 def plot_tax_rate_over_time(years, tax_rate):
     plt.figure(figsize=(10, 6))
@@ -152,6 +158,7 @@ def plot_tax_rate_over_time(years, tax_rate):
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"税率图表已保存至：{save_path}")
     plt.close()
+    return save_path
 
 def plot_river_navigability_over_time(years, river_navigability):
     plt.figure(figsize=(10, 6))
@@ -170,6 +177,7 @@ def plot_river_navigability_over_time(years, river_navigability):
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"河流通航性图表已保存至：{save_path}")
     plt.close()
+    return save_path
 
 def plot_gdp_over_time(years, gdp):
     plt.figure(figsize=(10, 6))
@@ -188,6 +196,7 @@ def plot_gdp_over_time(years, gdp):
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"GDP图表已保存至：{save_path}")
     plt.close()
+    return save_path
 
 def plot_urban_scale_over_time(years, urban_scale):
     plt.figure(figsize=(10, 6))
@@ -206,35 +215,38 @@ def plot_urban_scale_over_time(years, urban_scale):
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"城市规模图表已保存至：{save_path}")
     plt.close()
+    return save_path
 
 def plot_all_results(years, rebellions=None, unemployment_rate=None, population=None, government_budget=None,
                     rebellion_strength=None, average_satisfaction=None, tax_rate=None, river_navigability=None, gdp=None, urban_scale=None):
     """
     绘制所有结果的图表并保存数据表格
     """
+    plot_paths = []
+
     # 绘制各个指标的图表
     if rebellions is not None:
-        plot_rebellions_over_time(years, rebellions)
+        plot_paths.append(plot_rebellions_over_time(years, rebellions))
     if unemployment_rate is not None:
-        plot_unemployment_rate_over_time(years, unemployment_rate)
+        plot_paths.append(plot_unemployment_rate_over_time(years, unemployment_rate))
     if population is not None:
-        plot_population_over_time(years, population)
+        plot_paths.append(plot_population_over_time(years, population))
     if government_budget is not None:
-        plot_government_budget_over_time(years, government_budget)
+        plot_paths.append(plot_government_budget_over_time(years, government_budget))
     if rebellion_strength is not None:
-        plot_rebellion_strength_over_time(years, rebellion_strength)
+        plot_paths.append(plot_rebellion_strength_over_time(years, rebellion_strength))
     if average_satisfaction is not None:
-        plot_satisfaction_over_time(years, average_satisfaction)
+        plot_paths.append(plot_satisfaction_over_time(years, average_satisfaction))
     if tax_rate is not None:
-        plot_tax_rate_over_time(years, tax_rate)
+        plot_paths.append(plot_tax_rate_over_time(years, tax_rate))
     if river_navigability is not None:
-        plot_river_navigability_over_time(years, river_navigability)
+        plot_paths.append(plot_river_navigability_over_time(years, river_navigability))
     if gdp is not None:
-        plot_gdp_over_time(years, gdp)
+        plot_paths.append(plot_gdp_over_time(years, gdp))
     if urban_scale is not None:
-        plot_urban_scale_over_time(years, urban_scale)
-
+        plot_paths.append(plot_urban_scale_over_time(years, urban_scale))
     
+    return plot_paths
 
 if __name__ == "__main__":
     # 示例数据
@@ -248,7 +260,9 @@ if __name__ == "__main__":
         'average_satisfaction': [0.5 + i * 0.01 for i in range(51)],
         'tax_rate': [0.1 + i * 0.001 for i in range(51)],
         'river_navigability': [0.8 - i * 0.01 for i in range(51)],
-        'gdp': [5000 + i * 100 for i in range(51)]
+        'gdp': [5000 + i * 100 for i in range(51)],
+        'urban_scale': [100 + i * 5 for i in range(51)]
     }
     
-    plot_all_results(data_dict)
+    plot_paths = plot_all_results(data_dict)
+    print("Generated plot paths:", plot_paths)

@@ -8,6 +8,19 @@ conda activate AGENTWORLD
 pip install -r requirements.txt
 ```
 
+## 运行可视化页面
+```bash
+cd src
+python app.py
+```
+在一个新的终端：
+```bash
+cd src
+python app.py
+```
+通过http://localhost:5173/访问 Web 界面
+
+##命令行
 ## 运行模拟1
 配置文件及提示词位于config文件夹下，具体如下：
  - 总配置：config/simulation_config.yaml
