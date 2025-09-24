@@ -40,10 +40,17 @@
       </el-menu>
 
       <div class="main-content">
-        <template v-if="!showSimulation">
+        <template v-if="!showSimulation && !showHistory">
           <SimulationDescription
             :config-type="activeSimulation"
             @start-simulation="startSimulation"
+            @view-history="viewHistory"
+          />
+        </template>
+        <template v-else-if="showHistory">
+          <SimulationHistory
+            :config-type="activeSimulation"
+            @back-to-description="showHistory = false"
           />
         </template>
         <template v-else>
@@ -74,9 +81,11 @@ import './style.css';
 import ConfigEditor from './components/ConfigEditor.vue'
 import SimulationRunner from './components/SimulationRunner.vue'
 import SimulationDescription from './components/SimulationDescription.vue'
+import SimulationHistory from './components/SimulationHistory.vue'
 
 const activeSimulation = ref('default')
 const showSimulation = ref(false)
+const showHistory = ref(false)
 const isDark = ref(false)
 const language = ref('zh')
 
@@ -101,10 +110,17 @@ const t = (key) => {
 const handleSelect = (index) => {
   activeSimulation.value = index
   showSimulation.value = false
+  showHistory.value = false
 }
 
 const startSimulation = () => {
   showSimulation.value = true
+  showHistory.value = false
+}
+
+const viewHistory = () => {
+  showHistory.value = true
+  showSimulation.value = false
 }
 
 const handleConfigSaved = () => {

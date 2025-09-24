@@ -16,6 +16,7 @@ python app.py
 在一个新的终端：
 ```bash
 cd frontend
+npm install
 npm run dev
 ```
 通过 http://localhost:5173 访问 Web 界面

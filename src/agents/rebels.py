@@ -1,25 +1,6 @@
 from .shared_imports import *
+from ..utils.logger import LogManager
 load_dotenv()
-
-try:
-    with open('config/simulation_config.yaml', 'r', encoding='utf-8') as f:
-        config = yaml.safe_load(f)
-        rebels_prompt_path = config['data']['rebels_prompt_path']
-    with open(rebels_prompt_path, 'r', encoding='utf-8') as file:
-        prompts_rebels = yaml.safe_load(file)
-except Exception as e:
-    logging.warning(f"读取提示词失败")
-
-if "sphinx" not in sys.modules:
-    rebellion_log = logging.getLogger(name="rebels.agent")
-    rebellion_log.setLevel("DEBUG")
-    now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    file_handler = logging.FileHandler(f"./log/rebels.agent-{str(now)}.log")
-    file_handler.setLevel("DEBUG")
-    file_handler.setFormatter(
-        logging.Formatter(
-            "%(levelname)s - %(asctime)s - %(name)s - %(message)s"))
-    rebellion_log.addHandler(file_handler)
 
 class OrdinaryRebel(BaseAgent):
     def __init__(self, agent_id, rebellion, shared_pool):
@@ -60,7 +41,7 @@ class OrdinaryRebel(BaseAgent):
                 store_in_shared=False  # 不存入共享记忆
                 )
             await self.shared_pool.add_discussion(opinion)
-            rebellion_log.info(f"普通叛军 {self.agent_id} 生成的意见：{opinion}")
+            self.rebellion_log.info(f"普通叛军 {self.agent_id} 生成的意见：{opinion}")
             return opinion
         return "无法生成意见"
 
@@ -78,14 +59,14 @@ class OrdinaryRebel(BaseAgent):
                 opinion = await self.generate_llm_response(prompt)
                 if opinion:
                     await self.shared_pool.add_discussion(opinion)
-                    rebellion_log.info(f"普通叛军 {self.agent_id} 回应了讨论：{opinion}")
+                    self.rebellion_log.info(f"普通叛军 {self.agent_id} 回应了讨论：{opinion}")
             except Exception as e:
-                rebellion_log.error(f"普通叛军 {self.agent_id} 在生成回应时出错：{e}")
+                self.rebellion_log.error(f"普通叛军 {self.agent_id} 在生成回应时出错：{e}")
         else:
             # 如果没有讨论内容，生成新话题
             opinion = await self.generate_opinion(salary)
             await self.shared_pool.add_discussion(opinion)
-            rebellion_log.info(f"普通叛军 {self.agent_id} 发起了新讨论：{opinion}")
+            self.rebellion_log.info(f"普通叛军 {self.agent_id} 发起了新讨论：{opinion}")
 
     def analysis_towns_stats(self, towns_stats):
         """分析各城镇的力量对比"""
@@ -139,12 +120,12 @@ class RebelLeader(BaseAgent):
             decision = await self.generate_llm_response(prompt)
 
             if decision:
-                rebellion_log.info(f"叛军头子 {self.agent_id} 的决策：{decision}")
+                self.rebellion_log.info(f"叛军头子 {self.agent_id} 的决策：{decision}")
                 # 清空共享信息池
                 await self.shared_pool.clear_discussions()
                 return decision
         except Exception as e:
-            rebellion_log.error(f"叛军头子 {self.agent_id} 在做出决策时出错：{e}")
+            self.rebellion_log.error(f"叛军头子 {self.agent_id} 在做出决策时出错：{e}")
             return "无法做出决策"
 
     def analysis_towns_stats(self, towns_stats):
@@ -161,10 +142,10 @@ class RebelLeader(BaseAgent):
         """
         打印叛军头子的状态
         """
-        rebellion_log.info(f"叛军头子 {self.agent_id} 的状态：")
-        rebellion_log.info(f"  当前时间：{self.time}年")
-        rebellion_log.info(f"  角色：{self.role}")
-        rebellion_log.info(f"  人物性格：{self.personality}")
+        self.rebellion_log.info(f"叛军头子 {self.agent_id} 的状态：")
+        self.rebellion_log.info(f"  当前时间：{self.time}年")
+        self.rebellion_log.info(f"  角色：{self.role}")
+        self.rebellion_log.info(f"  人物性格：{self.personality}")
 
 class InformationOfficer(BaseAgent):
     def __init__(self, agent_id, rebellion, shared_pool):
@@ -188,11 +169,11 @@ class InformationOfficer(BaseAgent):
         try:
             summary = await self.generate_llm_response(prompt)
             if summary:
-                rebellion_log.info(f"叛军信息整理官 {self.agent_id} 生成的总结报告：{summary}")
+                self.rebellion_log.info(f"叛军信息整理官 {self.agent_id} 生成的总结报告：{summary}")
                 return summary
             return "无法生成总结报告"
         except Exception as e:
-            rebellion_log.error(f"叛军信息整理官 {self.agent_id} 在生成总结报告时出错：{e}")
+            self.rebellion_log.error(f"叛军信息整理官 {self.agent_id} 在生成总结报告时出错：{e}")
             return "无法生成总结报告"
 
 # TODO： 所有决策的后果需要存储到记忆中，叛军可以从中学习。
@@ -206,6 +187,7 @@ class Rebellion:
         self.strength = initial_strength
         self.resources = initial_resources
         self.towns = towns
+        self.rebellion_log = LogManager.get_logger("rebels")
 
     def maintain_status(self):
         """

@@ -1,17 +1,6 @@
 from .shared_imports import *
+from ..utils.logger import LogManager
 load_dotenv()
-
-if "sphinx" not in sys.modules:
-    government_log = logging.getLogger(name="government.agent")
-    government_log.setLevel("DEBUG")
-    now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    os.makedirs("./log", exist_ok=True)
-    file_handler = logging.FileHandler(f"./log/government.agent-{str(now)}.log")
-    file_handler.setLevel("DEBUG")
-    file_handler.setFormatter(
-        logging.Formatter(
-            "%(levelname)s - %(asctime)s - %(name)s - %(message)s"))
-    government_log.addHandler(file_handler)
 
 class OrdinaryGovernmentAgent(BaseAgent):
     def __init__(self, agent_id, government, shared_pool):
@@ -62,7 +51,7 @@ class OrdinaryGovernmentAgent(BaseAgent):
                 store_in_shared=False  # 不存入共享记忆
                 )
             await self.shared_pool.add_discussion(opinion)
-            government_log.info(f"普通政府官员 {self.agent_id} 生成的意见：{opinion}")
+            self.government_log.info(f"普通政府官员 {self.agent_id} 生成的意见：{opinion}")
             return opinion
         return "无法生成意见"
 
@@ -82,9 +71,9 @@ class OrdinaryGovernmentAgent(BaseAgent):
                 opinion = await self.generate_llm_response(prompt)
                 if opinion:
                     await self.shared_pool.add_discussion(opinion)
-                    government_log.info(f"普通官员 {self.agent_id} 回应了讨论：{opinion}")
+                    self.government_log.info(f"普通官员 {self.agent_id} 回应了讨论：{opinion}")
             except Exception as e:
-                government_log.error(f"普通官员 {self.agent_id} 在生成回应时出错：{e}")
+                self.government_log.error(f"普通官员 {self.agent_id} 在生成回应时出错：{e}")
         else:
             print("没有讨论内容")
 
@@ -120,12 +109,6 @@ class HighRankingGovernmentAgent(BaseAgent):
         # 政府状态删去运河维护政策支持，改为运河状态（通航比率），增加当前失业率
         #       决策为多个动作的组合。如果支出之和大于财政预算，则优先满足重要的（决策按照重要性排序）。
         # TODO: (考虑)政府和叛军的决策，只计算比例， 然后系统根据现有资源自动计算绝对值。这样避免LLM输出结果超过预算。
-        # ... existing code ...
-
-        river_price = self.government.transport_economy.river_price
-        sea_price = self.government.transport_economy.sea_price
-        maintenance_cost_base = self.government.transport_economy.maintenance_cost_base
-        transport_task = self.government.transport_economy.transport_task
         current_budget = self.government.get_budget()
         
         # 计算各项支出的成本基准
@@ -145,21 +128,21 @@ class HighRankingGovernmentAgent(BaseAgent):
             decision = await self.generate_llm_response(prompt)
 
             if decision:
-                government_log.info(f"高级政府官员 {self.agent_id} 的决策：{decision}")
+                self.government_log.info(f"高级政府官员 {self.agent_id} 的决策：{decision}")
                 # 清空共享信息池
                 await self.shared_pool.clear_discussions()
                 return decision
         except Exception as e:
-            government_log.error(f"高级政府官员 {self.agent_id} 在做出决策时出错：{e}")
+            self.government_log.error(f"高级政府官员 {self.agent_id} 在做出决策时出错：{e}")
             return "无法做出决策"
 
     def print_agent_status(self):
         """
         打印高级政府官员的状态
         """
-        government_log.info(f"高级政府官员 {self.agent_id} 的状态：")
-        government_log.info(f"  当前时间：{self.time}年")
-        government_log.info(f"  人物性格：{self.personality}")
+        self.government_log.info(f"高级政府官员 {self.agent_id} 的状态：")
+        self.government_log.info(f"  当前时间：{self.time}年")
+        self.government_log.info(f"  人物性格：{self.personality}")
 
 class Government:
     def __init__(self, map, towns, military_strength, initial_budget, time, transport_economy, government_prompt_path):
@@ -177,16 +160,18 @@ class Government:
         with open(government_prompt_path, 'r', encoding='utf-8') as file:
             self.prompts = yaml.safe_load(file)
 
+        self.government_log = LogManager.get_logger("government")
+
     def handle_public_budget(self, budget_allocation, salary, job_total_count,residents):
         """处理公共预算决策"""
         # 获取维持当前就业所需的资金
         maintain_employment_cost = salary * 0.07
         if budget_allocation == 0:
-            government_log.info(f"政府执行决策 - 公共预算决策：不分配公共预算。")
+            self.government_log.info(f"政府执行决策 - 公共预算决策：不分配公共预算。")
             return
         if self.budget < budget_allocation:
             budget_allocation = self.budget
-            government_log.info(f"政府执行决策 - 公共预算决策：预算不足，自动调整预算为{budget_allocation:.2f}两。")
+            self.government_log.info(f"政府执行决策 - 公共预算决策：预算不足，自动调整预算为{budget_allocation:.2f}两。")
             
         if budget_allocation > maintain_employment_cost:
             # 增加就业，根据比例计算增加的岗位数量
@@ -194,16 +179,16 @@ class Government:
             job_increase_amount = int(job_total_count * job_increase_proportion)
             if job_increase_amount > 0:
                 self.towns.add_jobs_across_towns(job_increase_amount)
-                government_log.info(f"政府执行决策 - 公共预算决策：增加 {job_increase_amount} 个工作岗位。")
+                self.government_log.info(f"政府执行决策 - 公共预算决策：增加 {job_increase_amount} 个工作岗位。")
         elif budget_allocation < maintain_employment_cost:
             # 减少就业，根据比例计算减少的岗位数量
             job_decrease_proportion = (maintain_employment_cost - budget_allocation) / maintain_employment_cost
             job_decrease_amount = int(job_total_count * job_decrease_proportion)
             if job_decrease_amount > 0:
                 self.towns.remove_jobs_across_towns(job_decrease_amount, residents = residents)
-                government_log.info(f"政府执行决策 - 公共预算决策：减少 {job_decrease_amount} 个工作岗位。")
+                self.government_log.info(f"政府执行决策 - 公共预算决策：减少 {job_decrease_amount} 个工作岗位。")
         else:
-            government_log.info(f"政府执行决策 - 维持现有就业岗位数量不变。")
+            self.government_log.info(f"政府执行决策 - 维持现有就业岗位数量不变。")
         
         self.budget = max(0, self.budget - budget_allocation)
 
@@ -213,23 +198,23 @@ class Government:
         :param maintenance_investment: 投资金额
         :return: 是否维护成功
         """
-        # 维护运河有三个方面的影响：
+        # 维护运河有各方面的影响：
         # 1. 改善运河状态（运河通航能力，取值范围：[0,1]），从而降低运输成本。否则运输成本上升，政府需要支出更多的预算来完成运输。
         # 2. 提供就业机会，增加居民满意度。但是提供的就业机会仅限运河沿线地区。（隐性）
         # 3. 政府预算减少
         # 计算并更新改善后的通航能力
         if maintenance_investment == 0:
-            government_log.info(f"政府执行决策 - 未维护运河。")
+            self.government_log.info(f"政府执行决策 - 未维护运河。")
             return
         if self.budget < maintenance_investment:
-            government_log.info(f"政府执行决策 - 预算不足，未维护运河。")
+            self.government_log.info(f"政府执行决策 - 预算不足，未维护运河。")
             return
         maintenance_ratio = maintenance_investment / self.transport_economy.maintenance_cost_base
         self.map.update_river_condition(maintenance_ratio) 
         
         # 扣除支出
         self.budget = max(0, self.budget - maintenance_investment)
-        government_log.info(f"政府执行决策 - 投入{maintenance_investment:.2f}两维护运河")
+        self.government_log.info(f"政府执行决策 - 投入{maintenance_investment:.2f}两维护运河")
         return True
 
     def handle_transport_decision(self, transport_ratio):
@@ -250,7 +235,7 @@ class Government:
             
         # 扣除运输成本
         self.budget = max(0, self.budget - total_cost)
-        government_log.info(f"政府执行决策 - 河运比例：{transport_ratio:.2f}，实际支出：{total_cost:.2f}两")
+        self.government_log.info(f"政府执行决策 - 河运比例：{transport_ratio:.2f}，实际支出：{total_cost:.2f}两")
         return True
 
     def support_military(self, budget_allocation):
@@ -263,9 +248,9 @@ class Government:
             self.towns.add_jobs_across_towns(job_increase_amount,"官员及士兵")
             self.military_strength += job_increase_amount
             self.budget = max(0, self.budget - budget_allocation)
-            government_log.info(f"政府执行决策 - 政府军事拨款{budget_allocation}两，军事力量增加了 {job_increase_amount}。")
+            self.government_log.info(f"政府执行决策 - 政府军事拨款{budget_allocation}两，军事力量增加了 {job_increase_amount}。")
         else:
-            government_log.info(f"政府执行决策 - 政府因预算限制未支持军事力量。")
+            self.government_log.info(f"政府执行决策 - 政府因预算限制未支持军事力量。")
 
     def get_budget(self):
         """
@@ -289,7 +274,7 @@ class Government:
         old_rate = self.tax_rate
         # 限制税率在 0% 到 50% 之间
         self.tax_rate = max(0.0, min(0.5, self.tax_rate + adjustment))
-        government_log.info(f"政府执行决策 - 税率从 {old_rate*100:.1f}% 调整为 {self.tax_rate*100:.1f}%")
+        self.government_log.info(f"政府执行决策 - 税率从 {old_rate*100:.1f}% 调整为 {self.tax_rate*100:.1f}%")
         return self.tax_rate
 
     def get_tax_rate(self):
@@ -392,9 +377,9 @@ class InformationOfficer(BaseAgent):
         try:
             summary = await self.generate_llm_response(prompt)
             if summary:
-                government_log.info(f"信息整理官 {self.agent_id} 生成总结报告：{summary}")
+                self.government_log.info(f"信息整理官 {self.agent_id} 生成总结报告：{summary}")
                 return summary
             return "无法生成总结报告"
         except Exception as e:
-            government_log.error(f"信息整理官 {self.agent_id} 在生成总结报告时出错：{e}")
+            self.government_log.error(f"信息整理官 {self.agent_id} 在生成总结报告时出错：{e}")
             return "无法生成总结报告"

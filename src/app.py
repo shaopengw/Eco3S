@@ -206,7 +206,7 @@ def get_description(config_type):
     except FileNotFoundError:
         return jsonify({'description': '暂无描述'})
 
-@app.route('/api/experiment_dataset/plot_results/<path:filename>')
+@app.route('/experiment_dataset/plot_results/<path:filename>')
 def serve_plot_results(filename):
     plot_results_dir = os.path.join(BASE_DIR, '..', 'experiment_dataset', 'plot_results')
     file_path = os.path.join(plot_results_dir, filename)
@@ -216,6 +216,45 @@ def serve_plot_results(filename):
         return send_from_directory(plot_results_dir, filename)
     else:
         return jsonify({'error': f'File not found: {filename}', 'searched_path': file_path}), 404
+
+@app.route('/history/<config_type>')
+def get_history(config_type):
+    log_dir = os.path.join(BASE_DIR, '..', 'log', config_type)
+    plot_dir = os.path.join(BASE_DIR, '..', 'experiment_dataset', 'plot_results', config_type)
+
+    logs = []
+    plots = []
+
+    if os.path.exists(log_dir):
+        for f in os.listdir(log_dir):
+            if f.endswith('.log'):
+                logs.append({
+                    'name': f,
+                    'path': os.path.join('log', config_type, f).replace('\\', '/')
+                })
+
+    if os.path.exists(plot_dir):
+        for f in os.listdir(plot_dir):
+            if f.endswith('.png'):
+                plots.append({
+                    'name': f,
+                    'path': os.path.join('experiment_dataset', 'plot_results', config_type, f).replace('\\', '/')
+                })
+    
+    return jsonify({'logs': logs, 'plots': plots})
+
+@app.route('/log/<path:log_path>')
+def get_log_content(log_path):
+    full_path = os.path.join(BASE_DIR, '..', log_path)
+    if not os.path.exists(full_path):
+        return jsonify({'error': 'Log file not found'}), 404
+    
+    try:
+        with open(full_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        return content, 200, {'Content-Type': 'text/plain; charset=utf-8'}
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

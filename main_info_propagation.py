@@ -16,11 +16,12 @@ from src.simulation.simulator_info_propagation import InfoPropagationSimulator
 from src.visualization.plot_results import plot_all_results
 from src.agents.resident_agent_generator import generate_canal_agents
 from src.environment.towns import Towns
+from src.utils.logger import LogManager
 from dotenv import load_dotenv
+from src.utils.simulation_context import SimulationContext
 
-# 确保日志目录存在
-log_dir = "./log"
-os.makedirs(log_dir, exist_ok=True)
+# 设置当前模拟类型
+SimulationContext.set_simulation_type("info_propagation")
 
 # 参数解析
 parser = argparse.ArgumentParser(description="信息传播实验参数配置")

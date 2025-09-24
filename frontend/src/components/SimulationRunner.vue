@@ -28,9 +28,9 @@
           <div v-for="(path, index) in plotPaths" :key="index" class="plot-item">
             <div class="plot-title">{{ getPlotTitle(path) }}</div>
             <el-image 
-              :src="`http://localhost:5000/api/${path.replace(/\\/g, '/')}`" 
+              :src="`http://localhost:5000/${path.replace(/\\/g, '/')}`" 
               :alt="getPlotTitle(path)"
-              :preview-src-list="[`http://localhost:5000/api/${path.replace(/\\/g, '/')}`]"
+              :preview-src-list="[`http://localhost:5000/${path.replace(/\\/g, '/')}`]"
               fit="contain"
             />
           </div>

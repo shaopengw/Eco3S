@@ -1,17 +1,7 @@
 from .shared_imports import *
-import re
+from ..utils.logger import LogManager
 load_dotenv()
-
-if "sphinx" not in sys.modules:
-    resident_log = logging.getLogger(name="resident.agent")
-    resident_log.setLevel("DEBUG")
-    now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    file_handler = logging.FileHandler(f"./log/resident.agent-{str(now)}.log")
-    file_handler.setLevel("DEBUG")
-    file_handler.setFormatter(
-        logging.Formatter(
-            "%(levelname)s - %(asctime)s - %(name)s - %(message)s"))
-    resident_log.addHandler(file_handler)
+from src.utils.simulation_context import SimulationContext
 
 class ResidentSharedInformationPool:
     def __init__(self):
@@ -95,6 +85,8 @@ class Resident(BaseAgent):
         self.token_counter = None
         self.context_creator = None
 
+        self.resident_log = LogManager.get_logger("resident")
+
     def set_group(self, group):
         """设置居民所属的群组"""
         self.group = group
@@ -121,9 +113,9 @@ class Resident(BaseAgent):
             self.income = 0
         if self.job == "叛军":
             # self.satisfaction = max(0, self.satisfaction - 50)  # 叛军降低满意度
-            resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 加入了叛军。")
+            self.resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 加入了叛军。")
         else:
-            resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 找到了工作：{job}，收入：{self.income}。")
+            self.resident_log.info(f"居民 {self.resident_id} 在城镇 {self.town} 找到了工作：{job}，收入：{self.income}。")
     
     def unemploy(self):
         """
@@ -133,11 +125,11 @@ class Resident(BaseAgent):
         self.job = None
         self.income = 0
         # self.satisfaction = max(0, self.satisfaction - 20)  # 失业降低满意度
-        resident_log.info(f"居民 {self.resident_id} 目前无业")
+        self.resident_log.info(f"居民 {self.resident_id} 目前无业")
         # if old_job:
-        #     resident_log.info(f"居民 {self.resident_id} 失去工作工作：{old_job}")
+        #     self.resident_log.info(f"居民 {self.resident_id} 失去工作工作：{old_job}")
         # else:
-        #     resident_log.info(f"居民 {self.resident_id} 目前无业")
+        #     self.resident_log.info(f"居民 {self.resident_id} 目前无业")
 
     def update_system_message(self, basic_living_cost=0, tax_rate=0):
         """
@@ -187,7 +179,7 @@ class Resident(BaseAgent):
             if response_content and "None" not in response_content:
                 relation_types = ["friend", "colleague", "family", "hometown"]
                 selected_type = random.choice(relation_types)
-                resident_log.info(f"居民 {self.resident_id} 对收到的信息「{message_content}」做出回应：{response_content}")
+                self.resident_log.info(f"居民 {self.resident_id} 对收到的信息「{message_content}」做出回应：{response_content}")
                 
                 # 将自己的回应存入记忆
                 await self.memory.write_record(
@@ -304,9 +296,9 @@ class Resident(BaseAgent):
 
             # 记录居民的决策信息
             if desired_job is None and min_salary is None:
-                resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}, 更新满意度：{self.satisfaction}")
+                self.resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}, 更新满意度：{self.satisfaction}")
             else:
-                resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}, 期望职业：{desired_job}, 最低收入：{min_salary}, 更新满意度：{self.satisfaction}")
+                self.resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}, 期望职业：{desired_job}, 最低收入：{min_salary}, 更新满意度：{self.satisfaction}")
     
             # 返回决策结果
             if select == "3" and not self.employed and desired_job and min_salary:
@@ -328,8 +320,8 @@ class Resident(BaseAgent):
                 return select, reason
     
         except Exception as e:
-            resident_log.error(f"居民 {self.resident_id} 决策出错：{e}")
-            resident_log.error(f"居民 {self.resident_id} 返回内容：{response}")
+            self.resident_log.error(f"居民 {self.resident_id} 决策出错：{e}")
+            self.resident_log.error(f"居民 {self.resident_id} 返回内容：{response}")
             return "2", "发生错误，继续当前工作"  # 默认选择继续工作
 
     async def execute_decision(self, select, desired_job=None, min_salary=None):
@@ -347,12 +339,12 @@ class Resident(BaseAgent):
                 # self.satisfaction = max(0, self.satisfaction - 20)  # 降低满意度
                 success = await self.migrate_to_new_town(self.map)
                 if not success:
-                    resident_log.info(f"居民 {self.resident_id} 迁移失败，保持原位置")
+                    self.resident_log.info(f"居民 {self.resident_id} 迁移失败，保持原位置")
                 return success
             
             elif select == 3:  # 寻找工作或继续工作
                 if self.job_market and self.employed:
-                    resident_log.info(f"居民 {self.resident_id} 已有工作：{self.job}，继续目前工作")
+                    self.resident_log.info(f"居民 {self.resident_id} 已有工作：{self.job}，继续目前工作")
                     return True
                 elif desired_job and min_salary:
                     # 返回求职信息
@@ -365,11 +357,11 @@ class Resident(BaseAgent):
                 return True
             
             else:
-                resident_log.error(f"居民 {self.resident_id} 的选择无效：{select}")
+                self.resident_log.error(f"居民 {self.resident_id} 的选择无效：{select}")
                 return False
 
         except Exception as e:
-            resident_log.error(f"居民 {self.resident_id} 执行决策时出错：{e}")
+            self.resident_log.error(f"居民 {self.resident_id} 执行决策时出错：{e}")
             return False
 
     async def generate_provocative_opinion(self, probability, speech):
@@ -390,7 +382,7 @@ class Resident(BaseAgent):
                 opinion = await self.generate_llm_response(prompt)
 
             if opinion:
-                resident_log.info(f"叛军 {self.agent_id} 发表煽动性言论：{opinion}")
+                self.resident_log.info(f"叛军 {self.agent_id} 发表煽动性言论：{opinion}")
                 # 随机选择一种关系类型
                 relation_types = ["friend", "colleague", "family", "hometown"]
                 selected_type = random.choice(relation_types)
@@ -435,7 +427,7 @@ class Resident(BaseAgent):
                     select_choice = response_json.get("select")
                     select_reason = response_json.get("reason")
                     speech_content = response_json.get("speech", "")
-                    resident_log.info(f"居民 {self.resident_id} 选择：{select_choice}, 原因：{select_reason}")
+                    self.resident_log.info(f"居民 {self.resident_id} 选择：{select_choice}, 原因：{select_reason}")
                     if year == 0:
                         await self.memory.write_record(
                             role_name="居民",
@@ -450,7 +442,7 @@ class Resident(BaseAgent):
                             is_user=False,
                             store_in_shared=False
                         )
-                        resident_log.info(f"居民 {self.resident_id}发起讨论: {speech_content}")
+                        self.resident_log.info(f"居民 {self.resident_id}发起讨论: {speech_content}")
                         # 返回带有发言的决策结果
                         relation_types = ["friend", "colleague", "family", "hometown"]
                         # 随机选择一种关系类型
@@ -463,10 +455,10 @@ class Resident(BaseAgent):
                             is_user=False,
                             store_in_shared=False
                         )
-                        resident_log.info(f"居民 {self.resident_id} 选择沉默")
+                        self.resident_log.info(f"居民 {self.resident_id} 选择沉默")
                         return None
                 except json.JSONDecodeError:
-                    resident_log.error(f"居民 {self.resident_id} 解析LLM响应失败: {response}")
+                    self.resident_log.error(f"居民 {self.resident_id} 解析LLM响应失败: {response}")
                     return None
             else:
                 await self.memory.write_record(
@@ -475,11 +467,11 @@ class Resident(BaseAgent):
                     is_user=False,
                     store_in_shared=False
                 )
-                resident_log.info(f"居民 {self.resident_id} 选择沉默")
+                self.resident_log.info(f"居民 {self.resident_id} 选择沉默")
                 return None
             
         except Exception as e:
-            resident_log.error(f"居民 {self.resident_id} 处理公共知识出错: {e}")
+            self.resident_log.error(f"居民 {self.resident_id} 处理公共知识出错: {e}")
             return None
 
     async def make_survey_request(self, prompt: str):
@@ -497,13 +489,13 @@ class Resident(BaseAgent):
             cleaned_response = response.strip()
             
             # 记录问卷结果
-            resident_log.info(f"居民 {self.resident_id} 回应: {cleaned_response}")
+            self.resident_log.info(f"居民 {self.resident_id} 回应: {cleaned_response}")
             
             # 返回选择结果
             return cleaned_response
             
         except Exception as e:
-            resident_log.error(f"居民 {self.resident_id} 进行信息请求出错: {e}")
+            self.resident_log.error(f"居民 {self.resident_id} 进行信息请求出错: {e}")
             return None
     
     async def update_knowledge_memory(self,prompt:str):
@@ -528,20 +520,20 @@ class Resident(BaseAgent):
                 self.memory.personal_memory.record_count = 0  # 重置计数器
                 
                 # 记录日志
-                resident_log.info(f"居民 {self.resident_id} 更新了记忆：{knowledge_summary}")
+                self.resident_log.info(f"居民 {self.resident_id} 更新了记忆：{knowledge_summary}")
 
     def print_resident_status(self):
         """
         打印居民状态（用于调试）
         """
-        resident_log.info(f"居民 {self.resident_id} 在 {self.town} 的 {self.location} 的状态：")
-        resident_log.info(f"  是否就业：{self.employed}")
-        resident_log.info(f"  工作：{self.job}")
-        resident_log.info(f"  收入：{self.income}")
-        resident_log.info(f"  满意度：{self.satisfaction}")
-        resident_log.info(f"  健康状况：{self.health_index}")
-        resident_log.info(f"  寿命：{self.lifespan}")
-        resident_log.info(f"  性格：{self.personality}")
+        self.resident_log.info(f"居民 {self.resident_id} 在 {self.town} 的 {self.location} 的状态：")
+        self.resident_log.info(f"  是否就业：{self.employed}")
+        self.resident_log.info(f"  工作：{self.job}")
+        self.resident_log.info(f"  收入：{self.income}")
+        self.resident_log.info(f"  满意度：{self.satisfaction}")
+        self.resident_log.info(f"  健康状况：{self.health_index}")
+        self.resident_log.info(f"  寿命：{self.lifespan}")
+        self.resident_log.info(f"  性格：{self.personality}")
 
     def handle_death(self):
         """
@@ -561,7 +553,7 @@ class Resident(BaseAgent):
             # 从超图中移除
             social_network.hyper_graph.remove_node(self.resident_id)
 
-        resident_log.info(f"居民 {self.resident_id} 已死亡。")
+        self.resident_log.info(f"居民 {self.resident_id} 已死亡。")
         return True
 
     def update_resident_status(self, basic_living_cost):
@@ -619,7 +611,7 @@ class Resident(BaseAgent):
         if self.lifespan <= 0:
             return self.handle_death()
         else:
-            # resident_log.info(f"居民 {self.resident_id} 的健康状况为 {self.health_index}，寿命更新为 {self.lifespan}。")
+            # self.resident_log.info(f"居民 {self.resident_id} 的健康状况为 {self.health_index}，寿命更新为 {self.lifespan}。")
             return False
 
     def get_random_direction_town(self, map):
@@ -628,13 +620,13 @@ class Resident(BaseAgent):
             current_town_name = self.town
             
             if not current_town_name:
-                resident_log.info(f"居民 {self.resident_id} 无法找到当前位置对应的城市")
+                self.resident_log.info(f"居民 {self.resident_id} 无法找到当前位置对应的城市")
                 return None
 
             # 获取相连的城市
             connected_towns = map.get_connected_towns(current_town_name)
             if not connected_towns:
-                resident_log.info(f"城市 {current_town_name} 没有相连的城市")
+                self.resident_log.info(f"城市 {current_town_name} 没有相连的城市")
                 return None
 
             # 随机选择一个相连的城市
@@ -642,7 +634,7 @@ class Resident(BaseAgent):
             return next_town
             
         except Exception as e:
-            resident_log.error(f"选择迁移目标城市时出错: {e}")
+            self.resident_log.error(f"选择迁移目标城市时出错: {e}")
             return None
 
     async def migrate_to_new_town(self, map):
@@ -650,7 +642,7 @@ class Resident(BaseAgent):
         # 获取目标城市
         target_town = self.get_random_direction_town(map)
         if not target_town:
-            resident_log.info(f"居民 {self.resident_id} 未找到合适的迁移目标城市")
+            self.resident_log.info(f"居民 {self.resident_id} 未找到合适的迁移目标城市")
             return False
 
         # 生成新位置
@@ -673,7 +665,7 @@ class Resident(BaseAgent):
         if self.towns_manager:
             self.towns_manager.add_resident(self, target_town)
 
-        resident_log.info(f"居民 {self.resident_id} 从 {old_town} 迁移到了 {target_town}")
+        self.resident_log.info(f"居民 {self.resident_id} 从 {old_town} 迁移到了 {target_town}")
         return True
 
     def set_town(self, town_name, towns_manager):
