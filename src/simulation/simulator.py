@@ -161,7 +161,7 @@ class Simulator:
                 'ordinary_type': OrdinaryGovernmentAgent,
                 'leader_type': HighRankingGovernmentAgent,
             }
-            government_decision = await self.collect_group_decision('government', government_config)
+            # government_decision = await self.collect_group_decision('government', government_config)
             
             # 收集叛军决策
             rebellion_config = {
@@ -169,7 +169,7 @@ class Simulator:
                 'ordinary_type': OrdinaryRebel,
                 'leader_type': RebelLeader,
             }
-            rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
+            # rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
             
             # 统一执行决策
             if government_decision:
@@ -187,10 +187,10 @@ class Simulator:
                 resident = self.residents[resident_name]
                 tax_rate = self.government.get_tax_rate()
                 # 基于LLM的决策--测试时建议暂时注释
-                if resident.job == "叛军":
-                    tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
-                else:
-                    tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost))
+                # if resident.job == "叛军":
+                #     tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
+                # else:
+                #     tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost))
 
                 # 更新居民寿命（每年）
                 if resident.update_resident_status(self.basic_living_cost):

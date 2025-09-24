@@ -84,15 +84,26 @@ def run_process(command, process_id, config_type):
             simulation_info['status'] = 'completed'
             # 获取已生成的图表路径
             try:
-                plot_results_dir = os.path.join(BASE_DIR, '..', 'experiment_dataset', 'plot_results')
+                # 根据运行的脚本确定实验类型
+                # 从 command 字符串中提取脚本名称
+                script_name = command.split(' ')[1]
+                if script_name == 'main_info_propagation.py':
+                    experiment_type = 'info_propagation'
+                elif script_name == 'main_TEOG.py':
+                    experiment_type = 'TEOG'
+                else:
+                    experiment_type = 'default'
+
+                # 构建实验特定的图表目录路径
+                plot_results_dir = os.path.join(BASE_DIR, '..', 'experiment_dataset', 'plot_results', experiment_type)
                 if os.path.exists(plot_results_dir):
                     # 获取最新生成的图片文件
                     plot_files = [f for f in os.listdir(plot_results_dir) 
                                 if f.endswith('.png') and 
                                 os.path.getmtime(os.path.join(plot_results_dir, f)) >= simulation_info['start_time'].timestamp()]
-                    plot_paths = [os.path.join('experiment_dataset', 'plot_results', f) for f in plot_files]
+                    plot_paths = [os.path.join('experiment_dataset', 'plot_results', experiment_type, f) for f in plot_files]
                     simulation_info['plot_paths'] = plot_paths
-                    output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 找到 {len(plot_paths)} 个结果图表')
+                    output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 在{experiment_type}目录下找到 {len(plot_paths)} 个结果图表')
                     print(f"图表路径：{plot_paths}")  # 调试信息
             except Exception as e:
                 output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 获取图表路径时出错: {str(e)}')
