@@ -6,7 +6,6 @@ import re
 import os
 import yaml
 from colorama import Back
-import logging
 import networkx as nx
 from datetime import datetime
 from enum import Enum
@@ -55,17 +54,6 @@ class InfoPropagationSimulator:
             }
             for strategy in PropagationStrategy
         }
-        
-        # 初始化记录器
-        self.setup_logger()
-        
-    def setup_logger(self):
-        """设置日志记录器"""
-        self.logger = logging.getLogger("info_propagation")
-        self.logger.setLevel(logging.INFO)
-        handler = logging.FileHandler(f"log/info_propagation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
-        handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-        self.logger.addHandler(handler)
 
     async def run(self):
         """运行实验"""
@@ -73,7 +61,6 @@ class InfoPropagationSimulator:
         for strategy in PropagationStrategy:
             self.current_strategy = strategy
             print(f"{Back.GREEN}策略 {strategy.value} 实验开始{Back.RESET}")
-            self.logger.info(f"开始执行策略: {strategy.value}")
             self.conversation_volume = 0  # 重置讨论内容计数器
 
             # 重置时间状态，确保每个策略从初始时间开始
@@ -100,7 +87,7 @@ class InfoPropagationSimulator:
 
     async def run_single_round(self, year: int):
         """运行单轮实验"""
-        self.logger.info(f"时间步 {year}, 策略 {self.current_strategy.value}")
+        print(f"时间步 {year}, 策略 {self.current_strategy.value}")
         self.start_time = datetime.now()  # 记录模拟开始时间
 
         # 重置或确保时间状态正确
@@ -407,7 +394,7 @@ class InfoPropagationSimulator:
                             incentive_choices_b_count += 1
 
                     except json.JSONDecodeError as e:
-                        self.logger.error(f"解析奖励问题JSON响应出错: {e}, 原始响应: '{cleaned_response}'")
+                        print(f"解析奖励问题JSON响应出错: {e}, 原始响应: '{cleaned_response}'")
                         continue
 
         # 更新当前策略的结果
@@ -438,4 +425,4 @@ class InfoPropagationSimulator:
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(self.experiment_results, f, ensure_ascii=False, indent=2)
         
-        self.logger.info(f"实验结果已保存至 {filename}")
+        print(f"实验结果已保存至 {filename}")

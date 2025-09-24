@@ -2,9 +2,8 @@
   <div class="simulation-description">
     <div class="description-content" v-html="renderedDescription"></div>
     <div class="action-buttons">
-      <el-button type="primary" @click="$emit('start-simulation')">
-        开始模拟
-      </el-button>
+      <el-button @click="$emit('view-history')">模拟历史</el-button>
+      <el-button type="primary" @click="$emit('start-simulation')">开始模拟</el-button>
     </div>
   </div>
 </template>
@@ -91,6 +90,7 @@ onMounted(loadDescription)
 .action-buttons {
   display: flex;
   justify-content: flex-end;
+  gap: 12px;
   padding: 16px;
   border-top: 1px solid var(--el-border-color-light);
 }

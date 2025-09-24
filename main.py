@@ -25,9 +25,10 @@ from src.environment.towns import Towns
 from src.environment.transport_economy import TransportEconomy
 from dotenv import load_dotenv
 import json
+from src.utils.simulation_context import SimulationContext
 
-# 确保 log 目录存在
-log_dir = "./log"
+# 设置当前模拟类型
+SimulationContext.set_simulation_type("default")
 
 # 参数解析
 parser = argparse.ArgumentParser(description="Arguments for simulation.")
