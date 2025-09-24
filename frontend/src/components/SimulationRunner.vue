@@ -26,9 +26,10 @@
         <h3>实验结果</h3>
         <div class="plots-container">
           <div v-for="(path, index) in plotPaths" :key="index" class="plot-item">
+            <div class="plot-title">{{ getPlotTitle(path) }}</div>
             <el-image 
               :src="`http://localhost:5000/api/${path.replace(/\\/g, '/')}`" 
-              :alt="'结果图表 ' + (index + 1)"
+              :alt="getPlotTitle(path)"
               :preview-src-list="[`http://localhost:5000/api/${path.replace(/\\/g, '/')}`]"
               fit="contain"
             />
@@ -73,6 +74,31 @@ const runSimulation = async () => {
     console.error('启动模拟失败:', error)
     isRunning.value = false
   }
+}
+
+const getPlotTitle = (path) => {
+  // 从文件名中提取图表类型
+  const filename = path.split('/').pop()
+  const plotType = filename.split('_')[0]
+  
+  // 映射图表类型到中文标题
+  const titleMap = {
+    'rebellions': '叛乱次数',
+    'unemployment': '失业率',
+    'population': '人口数量',
+    'government': '政府预算',
+    'rebellion': '叛乱强度',
+    'average': '平均满意度',
+    'tax': '税率',
+    'river': '河流通航性',
+    'gdp': 'GDP',
+    'urban': '城市规模',
+    'conversation': '对话量',
+    'knowledge': '知识问答准确率',
+    'incentive': '激励性选择'
+  }
+  
+  return titleMap[plotType] || '结果图表'
 }
 
 const startStatusCheck = () => {
@@ -166,6 +192,14 @@ onUnmounted(() => {
   border-radius: 8px;
   box-shadow: var(--el-box-shadow-light);
   height: fit-content;
+}
+
+.plot-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--el-text-color-primary);
+  margin-bottom: 12px;
+  text-align: center;
 }
 
 .plot-item :deep(.el-image) {

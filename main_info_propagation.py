@@ -149,6 +149,7 @@ def plot_conversation_volume(results, output_dir):
     # 添加时间戳到文件名
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
     plt.savefig(os.path.join(output_dir, f'conversation_volume_{current_time}.png'), dpi=300, bbox_inches='tight')
+    print(f"对话量图表已保存至：{os.path.join(output_dir, f'conversation_volume_{current_time}.png')}")
     plt.close()
 
 
@@ -175,6 +176,7 @@ def plot_questionnaire_accuracy(results, output_dir):
     # 添加时间戳到文件名
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
     plt.savefig(os.path.join(output_dir, f'knowledge_survey_accuracy_{current_time}.png'), dpi=300, bbox_inches='tight')
+    print(f"知识问答准确率图表已保存至：{os.path.join(output_dir, f'knowledge_survey_accuracy_{current_time}.png')}")
     plt.close()
 
 
@@ -212,6 +214,7 @@ def plot_incentive_choices(results, output_dir):
     # 添加时间戳到文件名
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
     plt.savefig(os.path.join(output_dir, f'incentive_survey_{current_time}.png'), dpi=300, bbox_inches='tight')
+    print(f"激励性选择结果图表已保存至：{os.path.join(output_dir, f'incentive_survey_{current_time}.png')}")
     plt.close()
 
 if __name__ == "__main__":
