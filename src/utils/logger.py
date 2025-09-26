@@ -15,25 +15,20 @@ class LogManager:
         :param agent_type: 代理类型，如'resident', 'government', 'rebels'等
         :return: 配置好的日志记录器
         """
-        # 获取当前模拟类型
-        simulation_type = SimulationContext.get_simulation_type()
+        # 确保目录结构存在
+        SimulationContext.ensure_directories()
         
-        # 创建基本日志目录
-        base_log_dir = "./log"
-        os.makedirs(base_log_dir, exist_ok=True)
-        
-        # 创建模拟类型特定的日志目录
-        sim_log_dir = os.path.join(base_log_dir, simulation_type)
-        os.makedirs(sim_log_dir, exist_ok=True)
+        # 获取日志目录
+        log_dir = SimulationContext.get_logs_dir()
         
         # 生成日志文件名
         now = datetime.now().strftime("%Y%m%d_%H%M%S")
         if agent_type:
-            logger_name = f"{simulation_type}.{agent_type}"
-            log_file = os.path.join(sim_log_dir, f"{agent_type}_{now}.log")
+            logger_name = f"{SimulationContext.get_simulation_type()}.{agent_type}"
+            log_file = os.path.join(log_dir, f"{agent_type}_{now}.log")
         else:
-            logger_name = simulation_type
-            log_file = os.path.join(sim_log_dir, f"{simulation_type}_{now}.log")
+            logger_name = SimulationContext.get_simulation_type()
+            log_file = os.path.join(log_dir, f"{SimulationContext.get_simulation_type()}_{now}.log")
             
         # 检查是否已存在相同的logger
         if logger_name in cls._instances:

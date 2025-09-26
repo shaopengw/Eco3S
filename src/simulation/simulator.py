@@ -544,12 +544,24 @@ class Simulator:
             print(f"执行决策时出错：{e}")
             return False
 
-    def save_results(self, filename="data/simulation_results.csv"):
+    def save_results(self, filename=None):
         """
         保存模拟结果到CSV文件
         :param filename: 文件名
         """
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        from src.utils.simulation_context import SimulationContext
+        
+        # 使用 SimulationContext 获取数据目录
+        data_dir = SimulationContext.get_data_dir()
+        
+        # 确保数据目录存在
+        SimulationContext.ensure_data_dir_exists()
+
+        if filename is None:
+            # 如果没有指定文件名，使用默认的命名规则
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = os.path.join(data_dir, f"running_data_{timestamp}.csv")
+        
         df = pd.DataFrame(self.results)
         df.to_csv(filename, index=False)
         print(f"模拟结果已保存至 {filename}")

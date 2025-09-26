@@ -47,9 +47,14 @@ const saveConfig = async () => {
               }
             }
           } else {
-            const numValue = Number(processedConfigData.simulation[key]);
-            if (!isNaN(numValue)) {
-              processedConfigData.simulation[key] = numValue;
+            // 避免将 simulation_name 转换为数字，它应该始终是字符串
+            if (key === 'simulation_name') {
+              processedConfigData.simulation[key] = String(processedConfigData.simulation[key]);
+            } else {
+              const numValue = Number(processedConfigData.simulation[key]);
+              if (!isNaN(numValue)) {
+                processedConfigData.simulation[key] = numValue;
+              }
             }
           }
         }

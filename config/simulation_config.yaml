@@ -1,36 +1,29 @@
+data:
+  climate_info_path: experiment_dataset/climate_data/climate.csv
+  government_info_path: experiment_dataset/government_data/official_data.json
+  government_prompt_path: config/government_prompts.yaml
+  jobs_config_path: config/jobs_config.yaml
+  rebellion_info_path: experiment_dataset/rebellion_data/rebels_data.json
+  rebels_prompt_path: config/rebels_prompts.yaml
+  resident_info_path: experiment_dataset/resident_data/resident_data.json
+  resident_prompt_path: config/residents_prompts.yaml
+  towns_data_path: config/towns_data.json
 simulation:
-  start_year: 1650
-  total_years: 1 # 模拟总年数
-  map_width: 100         # 地图大小
-  map_height: 150
-  initial_population: 5 # 初始人口数量
-  birth_rate: 0.05        # 出生率
-  resume_from_cache: False # 是否从缓存继续模拟
-
-  # 智能体相关参数
-  max_retry_attempts: 3  # 最大重试次数
-  retry_delay: 1.0       # 重试延迟时间（秒）
-  response_probability: 0.5  # 居民回应概率
+  birth_rate: 0.05
   group_decision:
     government:
-      enabled: true  # 是否启用政府群体决策
-      max_rounds: 2   # 政府最大讨论轮数
+      enabled: 1
+      max_rounds: 2
     rebellion:
-      enabled: false  # 是否启用叛军群体决策
-      max_rounds: 2   # 叛军最大讨论轮数
-
-data:
-  resident_info_path: "experiment_dataset/resident_data/resident_data.json"  # 居民信息文件路径
-  government_info_path: "experiment_dataset/government_data/official_data.json"  # 政府官员信息文件路径
-  rebellion_info_path: "experiment_dataset/rebellion_data/rebels_data.json"  # 叛乱信息文件路径
-  climate_info_path: "experiment_dataset/climate_data/climate.csv"
-  resident_prompt_path: "config/residents_prompts.yaml"
-  government_prompt_path: "config/government_prompts.yaml"
-  rebels_prompt_path: "config/rebels_prompts.yaml"
-  jobs_config_path: "config/jobs_config.yaml"
-  towns_data_path: "config/towns_data.json"
-
-
-# api_settings:
-#   api_type: openai  # 或 deepseek
-#   base_url: "https://api.chatanywhere.tech"
+      enabled: 0
+      max_rounds: 2
+  initial_population: 5
+  map_height: 150
+  map_width: 100
+  max_retry_attempts: 3
+  response_probability: 0.5
+  resume_from_cache: 0
+  retry_delay: 1
+  simulation_name: ""
+  start_year: 1650
+  total_years: 1

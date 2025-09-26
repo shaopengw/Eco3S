@@ -8,32 +8,28 @@
     </div>
 
     <div class="history-content">
-      <el-tabs v-model="activeTab">
-        <el-tab-pane label="日志文件" name="logs">
-          <div class="history-list">
-            <el-collapse v-model="activeNames">
-              <el-collapse-item v-for="(logs, timestamp) in groupedLogs" :key="timestamp" :title="formatTimestamp(timestamp)" :name="timestamp">
+      <el-timeline>
+        <el-timeline-item
+          v-for="timestamp in allTimestamps"
+          :key="timestamp"
+          :timestamp="formatTimestamp(timestamp)"
+          placement="top"
+        >
+          <el-card>
+            <el-tabs>
+              <el-tab-pane label="运行日志" name="logs">
                 <div class="log-files">
-                  <div v-for="log in logs" :key="log.path" class="log-file">
+                  <div v-for="log in groupedLogs[timestamp]" :key="log.path" class="log-file">
                     <el-button @click="viewLog(log.path)" text>
                       {{ log.name }}
                     </el-button>
                   </div>
                 </div>
-              </el-collapse-item>
-            </el-collapse>
-          </div>
-          <el-dialog v-model="logDialogVisible" title="日志内容" width="80%" class="log-dialog">
-            <pre class="log-content">{{ selectedLogContent }}</pre>
-          </el-dialog>
-        </el-tab-pane>
-        
-        <el-tab-pane label="结果图表" name="plots">
-          <div class="history-list">
-            <el-collapse v-model="activePlotNames">
-              <el-collapse-item v-for="(plots, timestamp) in groupedPlots" :key="timestamp" :title="formatTimestamp(timestamp)" :name="timestamp">
+              </el-tab-pane>
+              
+              <el-tab-pane label="结果图表" name="plots">
                 <div class="plot-grid">
-                  <div v-for="plot in plots" :key="plot.path" class="plot-item">
+                  <div v-for="plot in groupedPlots[timestamp]" :key="plot.path" class="plot-item">
                     <div class="plot-title">{{ getPlotTitle(plot.name) }}</div>
                     <el-image 
                       :src="`/api/${plot.path}`"
@@ -42,12 +38,16 @@
                     />
                   </div>
                 </div>
-              </el-collapse-item>
-            </el-collapse>
-          </div>
-        </el-tab-pane>
-      </el-tabs>
+              </el-tab-pane>
+            </el-tabs>
+          </el-card>
+        </el-timeline-item>
+      </el-timeline>
     </div>
+
+    <el-dialog v-model="logDialogVisible" title="日志内容" width="80%" class="log-dialog">
+      <pre class="log-content">{{ selectedLogContent }}</pre>
+    </el-dialog>
   </div>
 </template>
 
@@ -61,9 +61,6 @@ const props = defineProps({
   }
 })
 
-const activeTab = ref('logs')
-const activeNames = ref([])
-const activePlotNames = ref([])
 const logDialogVisible = ref(false)
 const selectedLogContent = ref('')
 const historyData = ref({
@@ -101,6 +98,15 @@ const groupedPlots = computed(() => {
   return groups
 })
 
+// 获取所有时间戳并按时间倒序排序
+const allTimestamps = computed(() => {
+  const timestamps = new Set([
+    ...Object.keys(groupedLogs.value),
+    ...Object.keys(groupedPlots.value)
+  ])
+  return Array.from(timestamps).sort().reverse()
+})
+
 const formatTimestamp = (timestamp) => {
   const year = timestamp.slice(0, 4)
   const month = timestamp.slice(4, 6)
@@ -133,7 +139,7 @@ const getPlotTitle = (filename) => {
 
 const viewLog = async (logPath) => {
   try {
-    const response = await fetch(`/api/log/${logPath}`)
+    const response = await fetch(`/api/${logPath}`)
     const content = await response.text()
     selectedLogContent.value = content
     logDialogVisible.value = true
@@ -178,17 +184,14 @@ onMounted(() => {
 .history-content {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
-}
-
-.history-list {
-  margin-top: 16px;
+  padding: 24px;
 }
 
 .log-files {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  padding: 16px;
 }
 
 .log-file {
@@ -229,5 +232,19 @@ onMounted(() => {
   white-space: pre-wrap;
   overflow-x: auto;
   max-height: 70vh;
+}
+
+:deep(.el-timeline-item__node) {
+  background-color: var(--el-color-primary);
+}
+
+:deep(.el-timeline-item__timestamp) {
+  font-size: 16px;
+  color: var(--el-text-color-primary);
+  font-weight: 500;
+}
+
+:deep(.el-card) {
+  margin-top: 8px;
 }
 </style>

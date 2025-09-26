@@ -11,9 +11,10 @@ simulation:
   map_height: 100
   map_width: 100
   max_retry_attempts: 3
-  message_type: L
+  message_type: S
   response_probability: 0.2
   retry_delay: 1
   seed_count: 1
+  simulation_name: ''
   start_year: 2016
   total_years: 1

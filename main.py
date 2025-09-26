@@ -300,5 +300,8 @@ if __name__ == "__main__":
     # 将命令行参数添加到配置中
     config["resume_from_cache"] = args.resume_from_cache
 
+    # 设置模拟名称
+    SimulationContext.set_simulation_name(config["simulation"].get("simulation_name"))
+
     # 运行模拟
     asyncio.run(run_simulation(config))
