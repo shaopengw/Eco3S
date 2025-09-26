@@ -417,9 +417,20 @@ class InfoPropagationSimulator:
         for resident in self.residents.values():
             await resident.reset_experimental_state()
     
-    def save_results(self, filename="data/info_propagation_results.json"):
+    def save_results(self, filename=None):
         """保存实验结果到JSON文件"""
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        from src.utils.simulation_context import SimulationContext
+        
+        # 使用 SimulationContext 获取数据目录
+        data_dir = SimulationContext.get_data_dir()
+        
+        # 确保数据目录存在
+        SimulationContext.ensure_directories()
+
+        if filename is None:
+            # 如果没有指定文件名，使用默认的命名规则
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = os.path.join(data_dir, f"running_data_{timestamp}.json")
         
         # 保存为JSON格式
         with open(filename, 'w', encoding='utf-8') as f:

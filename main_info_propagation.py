@@ -102,9 +102,17 @@ async def run_simulation(config):
         await simulator.run()
         
         # 可视化实验结果
+        from src.utils.simulation_context import SimulationContext
+        
+        # 使用 SimulationContext 获取图表目录
+        plot_dir = SimulationContext.get_plots_dir()
+        
+        # 确保图表目录存在
+        SimulationContext.ensure_directories()
+        
         plot_info_propagation_results(
             results=simulator.experiment_results,
-            output_dir="experiment_dataset/plot_results/info_propagation"
+            output_dir=plot_dir
         )
         simulator.save_results()
         print("实验完成，结果已保存")
@@ -231,6 +239,9 @@ if __name__ == "__main__":
             config = yaml.safe_load(f)
     else:
         raise FileNotFoundError(f"配置文件未找到: {args.config_path}")
+
+    # 设置模拟名称
+    SimulationContext.set_simulation_name(config["simulation"].get("simulation_name"))
 
     # 运行实验
     asyncio.run(run_simulation(config))

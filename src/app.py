@@ -6,8 +6,12 @@ import threading
 import queue
 import uuid
 import json
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from datetime import datetime
 from visualization.plot_results import plot_all_results
+from utils.simulation_context import SimulationContext
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -84,30 +88,44 @@ def run_process(command, process_id, config_type):
             simulation_info['status'] = 'completed'
             # 获取已生成的图表路径
             try:
-                # 根据运行的脚本确定实验类型
-                # 从 command 字符串中提取脚本名称
-                script_name = command.split(' ')[1]
-                if script_name == 'main_info_propagation.py':
-                    experiment_type = 'info_propagation'
-                elif script_name == 'main_TEOG.py':
-                    experiment_type = 'TEOG'
+                # 从 SimulationContext 获取实验类型
+                experiment_type = SimulationContext.get_simulation_type()
+    
+                # 构建基础历史目录路径
+                base_experiment_history_dir = os.path.join(SimulationContext._base_history_dir, experiment_type)
+    
+                plot_results_dir = None
+                if os.path.exists(base_experiment_history_dir):
+                    # 获取所有子目录
+                    test_dirs = [d for d in os.listdir(base_experiment_history_dir)
+                                 if os.path.isdir(os.path.join(base_experiment_history_dir, d))]
+                    test_dirs.sort() # 确保按时间戳排序，最新的在最后
+    
+                    if test_dirs:
+                        latest_test_dir_name = test_dirs[-1] # 获取最新的子目录名称
+                        latest_test_dir_path = os.path.join(base_experiment_history_dir, latest_test_dir_name)
+                        plot_results_dir = latest_test_dir_path
+                    else:
+                        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 未找到 {experiment_type} 类型的任何测试目录')
                 else:
-                    experiment_type = 'default'
-
-                # 构建实验特定的图表目录路径
-                plot_results_dir = os.path.join(BASE_DIR, '..', 'experiment_dataset', 'plot_results', experiment_type)
-                if os.path.exists(plot_results_dir):
-                    # 获取最新生成的图片文件
-                    plot_files = [f for f in os.listdir(plot_results_dir) 
-                                if f.endswith('.png') and 
-                                os.path.getmtime(os.path.join(plot_results_dir, f)) >= simulation_info['start_time'].timestamp()]
-                    plot_paths = [os.path.join('experiment_dataset', 'plot_results', experiment_type, f) for f in plot_files]
+                    output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 实验类型 {experiment_type} 的历史目录不存在')
+    
+    
+                if plot_results_dir and os.path.exists(plot_results_dir):
+                    # 获取所有图片文件
+                    plot_results_dir = os.path.join(plot_results_dir, 'plot_results').replace('\\', '/')
+                    plot_files = [f for f in os.listdir(plot_results_dir) if f.endswith('.png')]
+                    
+                    plot_paths = [os.path.join('history', experiment_type, latest_test_dir_name, 'plot_results', f).replace('\\', '/') for f in plot_files]
                     simulation_info['plot_paths'] = plot_paths
-                    output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 在{experiment_type}目录下找到 {len(plot_paths)} 个结果图表')
-                    print(f"图表路径：{plot_paths}")  # 调试信息
+                    output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 在{plot_results_dir}目录下找到 {len(plot_paths)} 个结果图表')
+                elif plot_results_dir:
+                    output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 图表目录 {plot_results_dir} 不存在')
+                else:
+                    output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 未能确定图表目录')
             except Exception as e:
                 output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 获取图表路径时出错: {str(e)}')
-                print(f"Error getting plot paths: {str(e)}")  # 调试信息
+                print(f"Error getting plot paths: {str(e)}") # 调试信息
         else:
             simulation_info['status'] = 'error'
             output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 进程退出代码: {process.returncode}')
@@ -147,6 +165,10 @@ def run_simulation(config_type):
         'start_time': datetime.now(),
         'plot_paths': []
     }
+
+    # 设置SimulationContext
+    SimulationContext.set_simulation_type(config_type)
+    SimulationContext.set_simulation_name(running_simulations[process_id]['start_time'].strftime("%Y%m%d_%H%M%S"))
     
     # 在新线程中启动模拟
     thread = threading.Thread(target=run_process, args=(command, process_id, config_type))
@@ -206,42 +228,47 @@ def get_description(config_type):
     except FileNotFoundError:
         return jsonify({'description': '暂无描述'})
 
-@app.route('/experiment_dataset/plot_results/<path:filename>')
-def serve_plot_results(filename):
-    plot_results_dir = os.path.join(BASE_DIR, '..', 'experiment_dataset', 'plot_results')
-    file_path = os.path.join(plot_results_dir, filename)
-    print(f"Attempting to serve file: {file_path}")
-    print(f"File exists: {os.path.exists(file_path)}")
-    if os.path.exists(file_path):
-        return send_from_directory(plot_results_dir, filename)
-    else:
-        return jsonify({'error': f'File not found: {filename}', 'searched_path': file_path}), 404
-
 @app.route('/history/<config_type>')
 def get_history(config_type):
-    log_dir = os.path.join(BASE_DIR, '..', 'log', config_type)
-    plot_dir = os.path.join(BASE_DIR, '..', 'experiment_dataset', 'plot_results', config_type)
+    SimulationContext.set_simulation_type(config_type)
+    base_history_dir = os.path.join(BASE_DIR, '..', SimulationContext.get_current_simulation_dir())
 
     logs = []
     plots = []
 
-    if os.path.exists(log_dir):
-        for f in os.listdir(log_dir):
-            if f.endswith('.log'):
-                logs.append({
-                    'name': f,
-                    'path': os.path.join('log', config_type, f).replace('\\', '/')
-                })
-
-    if os.path.exists(plot_dir):
-        for f in os.listdir(plot_dir):
-            if f.endswith('.png'):
-                plots.append({
-                    'name': f,
-                    'path': os.path.join('experiment_dataset', 'plot_results', config_type, f).replace('\\', '/')
-                })
+    if os.path.exists(base_history_dir):
+        for timestamp_dir_name in os.listdir(base_history_dir):
+            timestamp_dir_path = os.path.join(base_history_dir, timestamp_dir_name)
+            if os.path.isdir(timestamp_dir_path):
+                # 查找日志文件
+                for f in os.listdir(timestamp_dir_path):
+                    if f.endswith('.log'):
+                        logs.append({
+                            'name': f,
+                            'path': os.path.join('history', config_type, timestamp_dir_name, f).replace('\\', '/')
+                        })
+                
+                # 查找图表文件
+                plot_results_dir = os.path.join(timestamp_dir_path, 'plot_results')
+                if os.path.exists(plot_results_dir):
+                    for f in os.listdir(plot_results_dir):
+                        if f.endswith('.png'):
+                            plots.append({
+                                'name': f,
+                                'path': os.path.join('history', config_type, timestamp_dir_name, 'plot_results', f).replace('\\', '/')
+                            })
     
     return jsonify({'logs': logs, 'plots': plots})
+
+@app.route('/history/<path:filename>')
+def serve_history_files(filename):
+    project_root = os.path.abspath(os.path.join(BASE_DIR, '..'))
+    full_path = os.path.join(project_root, 'history', filename)
+    print(f"Attempting to serve history file: {full_path}")
+    if os.path.exists(full_path):
+        return send_from_directory(os.path.join(project_root, 'history'), filename)
+    else:
+        return jsonify({'error': f'File not found: {filename}', 'searched_path': full_path}), 404
 
 @app.route('/log/<path:log_path>')
 def get_log_content(log_path):

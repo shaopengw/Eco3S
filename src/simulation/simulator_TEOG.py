@@ -425,9 +425,21 @@ class TEOGSimulator:
             return 0
         return sum(resident.satisfaction for resident in self.residents.values()) / len(self.residents)
 
-    def save_results(self, filename="data/TEOG_simulation_results.csv"):
+    def save_results(self, filename=None):
         """保存模拟结果"""
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        from src.utils.simulation_context import SimulationContext
+        
+        # 使用 SimulationContext 获取数据目录
+        data_dir = SimulationContext.get_data_dir()
+        
+        # 确保数据目录存在
+        SimulationContext.ensure_directories()
+
+        if filename is None:
+            # 如果没有指定文件名，使用默认的命名规则
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = os.path.join(data_dir, f"running_data_{timestamp}.csv")
+        
         df = pd.DataFrame(self.results)
         df.to_csv(filename, index=False)
         print(f"模拟结果已保存至 {filename}")
@@ -611,16 +623,20 @@ class TEOGSimulator:
 
     def save_cache(self, file_path):
         """保存模拟状态到缓存文件"""
-        cache_dir = "./backups_TEOG"  # 缓存文件存放的目录
+        from src.utils.simulation_context import SimulationContext
         
-        # 确保 backups 目录存在
-        os.makedirs(cache_dir, exist_ok=True)
+        # 使用 SimulationContext 获取数据目录
+        data_dir = SimulationContext.get_data_dir()
+        
+        # 确保数据目录存在
+        SimulationContext.ensure_data_dir_exists()
 
         if file_path is None:
             # 如果没有指定文件路径，使用默认的命名规则
             population = self.population.get_population()
             total_years = self.time.total_years
-            file_path = os.path.join(cache_dir, f"simulation_cache_p{population}_y{total_years}.pkl")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            file_path = os.path.join(data_dir, f"simulation_cache_p{population}_y{total_years}_{timestamp}.pkl")
         try:
             with open(file_path, 'wb') as f:
                 # 只保存关键状态数据
