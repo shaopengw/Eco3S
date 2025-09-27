@@ -146,13 +146,13 @@ class TEOGSimulator:
                 'ordinary_type': OrdinaryGovernmentAgent,
                 'leader_type': HighRankingGovernmentAgent,
             }
-            government_decision = await self.collect_group_decision(government_config)
+            # government_decision = await self.collect_group_decision(government_config)
             
             if government_decision:
                 self.execute_government_decision(government_decision)
             
             # 居民行为阶段
-            await self.handle_resident_actions()
+            # await self.handle_resident_actions()
 
             # 4. 年终：更新和记录数据
             self.update_annual_results()
@@ -623,20 +623,16 @@ class TEOGSimulator:
 
     def save_cache(self, file_path):
         """保存模拟状态到缓存文件"""
-        from src.utils.simulation_context import SimulationContext
+        cache_dir = "./backups_TEOG"  # 缓存文件存放的目录
         
-        # 使用 SimulationContext 获取数据目录
-        data_dir = SimulationContext.get_data_dir()
-        
-        # 确保数据目录存在
-        SimulationContext.ensure_data_dir_exists()
+        # 确保 backups 目录存在
+        os.makedirs(cache_dir, exist_ok=True)
 
         if file_path is None:
             # 如果没有指定文件路径，使用默认的命名规则
             population = self.population.get_population()
             total_years = self.time.total_years
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            file_path = os.path.join(data_dir, f"simulation_cache_p{population}_y{total_years}_{timestamp}.pkl")
+            file_path = os.path.join(cache_dir, f"simulation_cache_p{population}_y{total_years}.pkl")
         try:
             with open(file_path, 'wb') as f:
                 # 只保存关键状态数据

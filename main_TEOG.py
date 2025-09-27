@@ -215,17 +215,17 @@ async def run_simulation(config):
     print("开始模拟......")
     try:
         await simulator.run()
-
-        plot_all_results(
-            years=simulator.results["years"],
-            population=simulator.results["population"],
-            government_budget=simulator.results["government_budget"],
-            average_satisfaction=simulator.results["average_satisfaction"],
-            tax_rate=simulator.results["tax_rate"],
-            river_navigability=simulator.results["river_navigability"],
-            gdp=simulator.results["gdp"],
-            urban_scale=simulator.results["urban_scale"],
-        )
+        data_dict = {
+            'years': simulator.results["years"],
+            'population': simulator.results["population"],
+            'government_budget': simulator.results["government_budget"],
+            'average_satisfaction': simulator.results["average_satisfaction"],
+            'tax_rate': simulator.results["tax_rate"],
+            'river_navigability': simulator.results["river_navigability"],
+            'gdp': simulator.results["gdp"],
+            'urban_scale': simulator.results["urban_scale"],
+        }
+        plot_all_results(data_dict)
 
         # 保存结果
         print("模拟结束")

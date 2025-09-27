@@ -12,14 +12,14 @@ simulation:
   birth_rate: 0.05
   group_decision:
     government:
-      enabled: true
+      enabled: 1
       max_rounds: 2
-  initial_population: 10
+  initial_population: 6
   map_height: 150
   map_width: 100
   max_retry_attempts: 3
   response_probability: 0.5
-  resume_from_cache: true
+  resume_from_cache: 1
   retry_delay: 1
   start_year: 1650
   total_years: 1
