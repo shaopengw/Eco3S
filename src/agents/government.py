@@ -13,6 +13,7 @@ class OrdinaryGovernmentAgent(BaseAgent):
         self.faction = None
         self.personality = None
         self.system_message = None
+        self.government_log = self.government.government_log
 
     def update_system_message(self):
         """
@@ -91,6 +92,7 @@ class HighRankingGovernmentAgent(BaseAgent):
         self.map = government.map
         self.system_message = None
         self.personality = None  # 人物性格
+        self.government_log = self.government.government_log
     
     def update_system_message(self):
         """
@@ -110,6 +112,12 @@ class HighRankingGovernmentAgent(BaseAgent):
         #       决策为多个动作的组合。如果支出之和大于财政预算，则优先满足重要的（决策按照重要性排序）。
         # TODO: (考虑)政府和叛军的决策，只计算比例， 然后系统根据现有资源自动计算绝对值。这样避免LLM输出结果超过预算。
         current_budget = self.government.get_budget()
+
+        # 获取运输经济相关参数
+        river_price = self.government.transport_economy.river_price
+        sea_price = self.government.transport_economy.sea_price
+        transport_task = self.government.transport_economy.transport_task
+        maintenance_cost_base = self.government.transport_economy.maintenance_cost_base
         
         # 计算各项支出的成本基准
         transport_cost_river = river_price * transport_task  # 全部河运成本
@@ -360,6 +368,7 @@ class InformationOfficer(BaseAgent):
         self.shared_pool = shared_pool
         self.memory = None
         self.prompts = government.prompts
+        self.government_log = government.government_log
 
 
     async def summarize_discussions(self) -> str:

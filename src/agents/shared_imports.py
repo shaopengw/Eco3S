@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 import json
 import asyncio
 import random
+import re
 
 from .model_manager import ModelManager
 from .memory_manager import MemoryManager

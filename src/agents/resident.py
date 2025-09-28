@@ -336,10 +336,10 @@ class Resident(BaseAgent):
             
             elif select == 2:
                 # 迁移到新城镇
-                # self.satisfaction = max(0, self.satisfaction - 20)  # 降低满意度
                 success = await self.migrate_to_new_town(self.map)
                 if not success:
                     self.resident_log.info(f"居民 {self.resident_id} 迁移失败，保持原位置")
+                    return False
                 return success
             
             elif select == 3:  # 寻找工作或继续工作

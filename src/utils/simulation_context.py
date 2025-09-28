@@ -18,10 +18,15 @@ class SimulationContext:
         return cls._current_simulation
     
     @classmethod
-    def set_simulation_name(cls, simulation_name: str = None):
-        """设置当前模拟名称，如果不提供或为空字符串则使用时间戳"""
+    def set_simulation_name(cls, simulation_name: str = None, population: int = None, total_years: int = None):
+        """设置当前模拟名称，如果不提供或为空字符串则使用时间戳+p人口数+y时间步数"""
         if simulation_name is None or simulation_name == "":
-            simulation_name = datetime.now().strftime("%Y%m%d_%H%M%S")
+            print(f"设置名称：population: {population}, total_years: {total_years}--------------------")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            if population is not None and total_years is not None:
+                simulation_name = f"{timestamp}_p{population}_y{total_years}"
+            else:
+                simulation_name = timestamp
         cls._simulation_name = simulation_name
 
     @classmethod

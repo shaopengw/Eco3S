@@ -11,12 +11,13 @@ class OrdinaryRebel(BaseAgent):
         self.role = None  # 角色
         self.personality = None  # 人物性格
         self.system_message = None  # 系统提示词
+        self.rebellion_log = self.rebellion.rebellion_log
     
     def update_system_message(self):
         """
         更新系统提示词，包含居民当前的状态信息
         """
-        self.system_message = prompts_rebels['ordinary_rebel_system_message'].format(
+        self.system_message = self.rebellion.prompts['ordinary_rebel_system_message'].format(
             role=self.role, personality=self.personality)
     
     async def generate_opinion(self, towns_stats):
@@ -28,7 +29,7 @@ class OrdinaryRebel(BaseAgent):
         strength = self.rebellion.get_strength()
         resources = self.rebellion.get_resources()
 
-        prompt = prompts_rebels['generate_opinion_prompt'].format(
+        prompt = self.rebellion.prompts['generate_opinion_prompt'].format(
             strength=strength, resources=resources, towns_analysis="\n".join(towns_analysis))
         
         self.update_system_message()
@@ -52,7 +53,7 @@ class OrdinaryRebel(BaseAgent):
         # 获取所有讨论内容
         all_discussion = await self.shared_pool.get_all_discussions()
         if all_discussion:
-            prompt = prompts_rebels['generate_and_share_opinion_prompt'].format(all_discussion=all_discussion)
+            prompt = self.rebellion.prompts['generate_and_share_opinion_prompt'].format(all_discussion=all_discussion)
 
             try:
                 self.update_system_message()
@@ -90,12 +91,13 @@ class RebelLeader(BaseAgent):
         self.personality = None  # 人物性格
         # 系统消息
         self.system_message = None
+        self.rebellion_log = self.rebellion.rebellion_log
     
     def update_system_message(self):
         """
         更新系统提示词，包含居民当前的状态信息
         """
-        self.system_message = prompts_rebels['rebel_leader_system_message'].format(personality=self.personality)
+        self.system_message = self.rebellion.prompts['rebel_leader_system_message'].format(personality=self.personality)
 
     async def make_decision(self, summary, towns_stats):
         """
@@ -111,7 +113,7 @@ class RebelLeader(BaseAgent):
         resources = self.rebellion.get_resources()
         summary = ("下属建议：" + summary) if summary else ""
 
-        prompt = prompts_rebels['make_decision_prompt'].format(
+        prompt = self.rebellion.prompts['make_decision_prompt'].format(
             strength=strength, resources=resources, towns_analysis="\n".join(towns_analysis), summary=summary)
 
         try:
@@ -152,6 +154,7 @@ class InformationOfficer(BaseAgent):
         super().__init__(agent_id, group_type='rebellion', window_size=0)
         self.shared_pool = shared_pool
         self.role = "信息整理官"
+        self.rebellion_log = rebellion.rebellion_log
 
     async def summarize_discussions(self) -> str:
         """
@@ -163,7 +166,7 @@ class InformationOfficer(BaseAgent):
             return "暂无讨论内容"
 
         # 构建提示信息
-        prompt = prompts_rebels['summarize_discussions_prompt'].format(
+        prompt = self.rebellion.prompts['summarize_discussions_prompt'].format(
             num_discussions=len(discussions), discussions="\n".join([f"{i+1}. {d}" for i, d in enumerate(discussions)]))
 
         try:
@@ -178,7 +181,7 @@ class InformationOfficer(BaseAgent):
 
 # TODO： 所有决策的后果需要存储到记忆中，叛军可以从中学习。
 class Rebellion:
-    def __init__(self, initial_strength, initial_resources, towns):
+    def __init__(self, initial_strength, initial_resources, towns, rebels_prompt_path):
         """
         初始化叛军类
         :param initial_strength: 初始力量
@@ -187,6 +190,8 @@ class Rebellion:
         self.strength = initial_strength
         self.resources = initial_resources
         self.towns = towns
+        with open(rebels_prompt_path, 'r', encoding='utf-8') as file:
+            self.prompts = yaml.safe_load(file)
         self.rebellion_log = LogManager.get_logger("rebels")
 
     def maintain_status(self):

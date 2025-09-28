@@ -146,13 +146,13 @@ class TEOGSimulator:
                 'ordinary_type': OrdinaryGovernmentAgent,
                 'leader_type': HighRankingGovernmentAgent,
             }
-            # government_decision = await self.collect_group_decision(government_config)
+            government_decision = await self.collect_group_decision(government_config)
             
             if government_decision:
                 self.execute_government_decision(government_decision)
             
             # 居民行为阶段
-            # await self.handle_resident_actions()
+            await self.handle_resident_actions()
 
             # 4. 年终：更新和记录数据
             self.update_annual_results()
