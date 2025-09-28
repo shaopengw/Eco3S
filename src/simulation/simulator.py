@@ -161,7 +161,7 @@ class Simulator:
                 'ordinary_type': OrdinaryGovernmentAgent,
                 'leader_type': HighRankingGovernmentAgent,
             }
-            # government_decision = await self.collect_group_decision('government', government_config)
+            government_decision = await self.collect_group_decision('government', government_config)
             
             # 收集叛军决策
             rebellion_config = {
@@ -169,7 +169,7 @@ class Simulator:
                 'ordinary_type': OrdinaryRebel,
                 'leader_type': RebelLeader,
             }
-            # rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
+            rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
             
             # 统一执行决策
             if government_decision:
@@ -187,10 +187,10 @@ class Simulator:
                 resident = self.residents[resident_name]
                 tax_rate = self.government.get_tax_rate()
                 # 基于LLM的决策--测试时建议暂时注释
-                # if resident.job == "叛军":
-                #     tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
-                # else:
-                #     tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost))
+                if resident.job == "叛军":
+                    tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
+                else:
+                    tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost))
 
                 # 更新居民寿命（每年）
                 if resident.update_resident_status(self.basic_living_cost):
@@ -309,7 +309,7 @@ class Simulator:
             
             if government_decision or rebellion_decision:
                 changes_summary = self.summarize_time_step_results()
-                # 存储到政府和叛军的记忆中
+                # 存储到政府、叛军的记忆中
                 if government_decision:
                     await self.store_decision_memory(
                         'government', 
@@ -555,7 +555,7 @@ class Simulator:
         data_dir = SimulationContext.get_data_dir()
         
         # 确保数据目录存在
-        SimulationContext.ensure_data_dir_exists()
+        SimulationContext.ensure_directories()
 
         if filename is None:
             # 如果没有指定文件名，使用默认的命名规则
@@ -1343,6 +1343,7 @@ class Simulator:
                 initial_strength=rebellion_state.get('strength'),
                 initial_resources=rebellion_state.get('resources'),
                 towns=simulator.towns,
+                rebels_prompt_path=simulator.config["data"]["rebels_prompt_path"],
             )
 
             # 恢复叛军

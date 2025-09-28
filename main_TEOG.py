@@ -258,7 +258,10 @@ if __name__ == "__main__":
     config["resume_from_cache"] = args.resume_from_cache
 
     # 设置模拟名称
-    SimulationContext.set_simulation_name(config["simulation"].get("simulation_name"))
+    population = config["simulation"].get("initial_population")
+    total_years = config["simulation"].get("total_years")
+    print(f"population: {population}, total_years: {total_years}--------------------")
+    SimulationContext.set_simulation_name(config["simulation"].get("simulation_name"), population, total_years)
 
     # 运行模拟
     asyncio.run(run_simulation(config))
