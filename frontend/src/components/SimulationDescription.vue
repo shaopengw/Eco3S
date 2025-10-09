@@ -3,6 +3,7 @@
     <div class="description-content" v-html="renderedDescription"></div>
     <div class="action-buttons">
       <el-button @click="$emit('view-history')">模拟历史</el-button>
+      <el-button @click="$emit('analyze-data')">数据分析</el-button>
       <el-button type="primary" @click="$emit('start-simulation')">开始模拟</el-button>
     </div>
   </div>

@@ -283,5 +283,64 @@ def get_log_content(log_path):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/analyze', methods=['POST'])
+def analyze_data():
+    try:
+        data = request.json
+        config_type = data.get('type')
+        if not config_type:
+            return jsonify({'error': '必须提供模拟类型'}), 400
+
+        # 构建分析命令
+        cmd = ['python', 'src/analyzer/simulation_analyzer.py', '--type', config_type]
+        
+        # 添加可选参数
+        if 'p' in data:
+            cmd.extend(['--p', str(data['p'])])
+        if 'y' in data:
+            cmd.extend(['--y', str(data['y'])])
+
+        # 设置工作目录为项目根目录
+        working_dir = os.path.join(BASE_DIR, '..')
+        
+        # 运行分析器
+        result = subprocess.run(
+            cmd,
+            cwd=working_dir,
+            capture_output=True,
+            text=True,
+            encoding='utf-8'
+        )
+
+        if result.returncode != 0:
+            return jsonify({
+                'error': f'分析失败: {result.stderr}'
+            }), 500
+
+        # 获取分析报告
+        report = result.stdout
+
+        # 获取生成的图表
+        analysis_dir = os.path.join(working_dir, 'history', config_type, 'analysis_results')
+        plots = []
+        if os.path.exists(analysis_dir):
+            for file in os.listdir(analysis_dir):
+                if file.endswith('.png'):
+                    plot_path = os.path.join('history', config_type, 'analysis_results', file).replace('\\', '/')
+                    plots.append({
+                        'name': file,
+                        'path': plot_path
+                    })
+
+        return jsonify({
+            'report': report,
+            'plots': plots
+        })
+
+    except Exception as e:
+        return jsonify({
+            'error': f'分析过程出错: {str(e)}'
+        }), 500
+
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
