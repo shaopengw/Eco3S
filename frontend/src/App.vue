@@ -40,17 +40,24 @@
       </el-menu>
 
       <div class="main-content">
-        <template v-if="!showSimulation && !showHistory">
+        <template v-if="!showSimulation && !showHistory && !showAnalyzer">
           <SimulationDescription
             :config-type="activeSimulation"
             @start-simulation="startSimulation"
             @view-history="viewHistory"
+            @analyze-data="showAnalyzer = true"
           />
         </template>
         <template v-else-if="showHistory">
           <SimulationHistory
             :config-type="activeSimulation"
             @back-to-description="showHistory = false"
+          />
+        </template>
+        <template v-else-if="showAnalyzer">
+          <DataAnalyzer
+            :config-type="activeSimulation"
+            @back-to-description="showAnalyzer = false"
           />
         </template>
         <template v-else>
@@ -82,10 +89,12 @@ import ConfigEditor from './components/ConfigEditor.vue'
 import SimulationRunner from './components/SimulationRunner.vue'
 import SimulationDescription from './components/SimulationDescription.vue'
 import SimulationHistory from './components/SimulationHistory.vue'
+import DataAnalyzer from './components/DataAnalyzer.vue'
 
 const activeSimulation = ref('default')
 const showSimulation = ref(false)
 const showHistory = ref(false)
+const showAnalyzer = ref(false) // 新增状态
 const isDark = ref(false)
 const language = ref('zh')
 
@@ -111,16 +120,19 @@ const handleSelect = (index) => {
   activeSimulation.value = index
   showSimulation.value = false
   showHistory.value = false
+  showAnalyzer.value = false // 重置状态
 }
 
 const startSimulation = () => {
   showSimulation.value = true
   showHistory.value = false
+  showAnalyzer.value = false // 重置状态
 }
 
 const viewHistory = () => {
   showHistory.value = true
   showSimulation.value = false
+  showAnalyzer.value = false // 重置状态
 }
 
 const handleConfigSaved = () => {
