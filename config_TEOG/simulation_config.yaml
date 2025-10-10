@@ -3,8 +3,6 @@ data:
   government_info_path: experiment_dataset/government_data/official_data.json
   government_prompt_path: config_TEOG/government_prompts.yaml
   jobs_config_path: config_TEOG/jobs_config.yaml
-  rebellion_info_path: experiment_dataset/rebellion_data/rebels_data.json
-  rebels_prompt_path: config_TEOG/rebels_prompts.yaml
   resident_info_path: experiment_dataset/resident_data/resident_data.json
   resident_prompt_path: config_TEOG/residents_prompts.yaml
   towns_data_path: config_TEOG/towns_data.json
@@ -22,4 +20,4 @@ simulation:
   resume_from_cache: 1
   retry_delay: 1
   start_year: 1650
-  total_years: 3
+  total_years: 2

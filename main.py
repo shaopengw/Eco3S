@@ -26,6 +26,7 @@ from src.environment.transport_economy import TransportEconomy
 from dotenv import load_dotenv
 import json
 from src.utils.simulation_context import SimulationContext
+from src.utils.simulation_cache import SimulationCache
 
 # 设置当前模拟类型
 SimulationContext.set_simulation_type("default")
@@ -57,68 +58,57 @@ async def run_simulation(config: dict[str, Any]) -> None:
     resume_from_cache = config.get('simulation', {}).get('resume_from_cache', False)
     cache_dir = "./backups"  # 缓存文件存放的目录
 
-    # 根据参数生成缓存文件名
+    # 获取模拟参数
     population = config['simulation']['initial_population']
     total_years = config['simulation']['total_years']
-    cache_filename = f"simulation_cache_p{population}_y{total_years}.pkl"
-    cache_file = os.path.join(cache_dir, cache_filename)
-    cache_file_prefix = f"simulation_cache_p{population}_y"
-
-    # 确保 backups 目录存在
-    os.makedirs(cache_dir, exist_ok=True)
-    # 获取当前目录下所有匹配的缓存文件名
-    matching_files = [f for f in os.listdir(cache_dir) if os.path.isfile(os.path.join(cache_dir, f)) and f.startswith(cache_file_prefix)]
-
-    found_cache_file = None
-    found_year = None
-    for file in matching_files:
-        try:
-            current_year = int(file.split('y')[-1].split('.')[0])
-            if current_year == total_years:
-                found_cache_file = os.path.join(cache_dir, file)
-                found_year = current_year
-                print(f"发现已有的模拟文件 {file}，模拟年份等于配置文件中年份。")
-                break
-            elif current_year < total_years and (found_year is None or current_year > found_year):
-                found_cache_file = os.path.join(cache_dir, file)
-                found_year = current_year
-                print(f"发现已有的模拟文件 {file}，模拟年份小于配置文件中年份。")
-        except ValueError:
-            logging.warning(f"缓存文件名 {file} 格式不正确，跳过。")
+    
+    # 使用SimulationCache查找最新的缓存文件
+    result = SimulationCache.find_latest_cache(
+        population=population,
+        target_years=total_years,
+        cache_dir=cache_dir
+    )
+    found_cache_file = result[0] if result else None
+    found_year = result[1] if result else None
     
     simulator = None
-    
+    # 总是为当前运行生成一个新的缓存文件名
+    # 这确保了如果模拟继续，cache_file 总是有效的路径
+    cache_file = SimulationCache.generate_cache_filename(
+        population=population,
+        total_years=total_years,
+        cache_dir=cache_dir,
+        with_timestamp=True
+    )
+
     if found_cache_file:
         if os.path.exists(found_cache_file):
             if found_year == total_years:
                 response = input(f"发现已有的模拟文件 {found_cache_file}，是否需要重新模拟？(Y/N): ")
                 if response.upper() == 'Y':
                     print(f"将从头开始模拟...")
-                    now = datetime.now()
-                    cache_filename_with_timestamp = f"simulation_cache_p{population}_y{total_years}_{now.strftime('%Y%m%d_%H%M%S')}.pkl"
-                    cache_file = os.path.join(cache_dir, cache_filename_with_timestamp)
                 else:
-                    # print(f"模拟结果地址: {found_cache_file}")
                     return  # 结束函数，不再继续
             elif found_year < total_years:
                 try:
                     print(f"尝试从缓存文件 {found_cache_file} 加载模拟状态...")
                     simulator_years = total_years - found_year
-                    simulator = Simulator.load_cache(
-                        found_cache_file,
-                        simulator_years,
-                        config=config,
-
+                    # 使用SimulationCache加载缓存
+                    simulator = SimulationCache.load_cache(
+                        file_path=found_cache_file,
+                        simulator_class=Simulator,
+                        simulator_years=simulator_years,
+                        config=config
                     )
-                    print(f"当前年份：{simulator.time.get_current_year()}，将继续模拟 {simulator_years} 年")
+                    if simulator:
+                        print(f"成功从缓存加载模拟状态，将继续模拟 {simulator_years} 年...")
+                    else:
+                        print("缓存加载失败，将从头开始模拟...")
+                        simulator = None # 确保如果加载失败，会创建一个新的模拟器
                 except Exception as e:
-                    logging.error(f"加载缓存失败: {e}，将从头开始模拟。")
-                    simulator = None
-        else:
-            logging.warning(f"文件 {found_cache_file} 不存在，将从头开始模拟...")
-    else:
-        print("没有发现匹配的缓存文件，将从头开始模拟...")
-
+                    print(f"加载缓存失败: {e}")
+                    simulator = None # 确保如果加载失败，会创建一个新的模拟器
+    
     if simulator is None:
         print("开始初始化......")
         # 初始化地图
@@ -280,8 +270,11 @@ async def run_simulation(config: dict[str, Any]) -> None:
     finally:
         if simulator and resume_from_cache: # 只有当 resume_from_cache 为 True 时才保存缓存
             try:
-                simulator.save_cache(cache_file)
-                print(f"模拟状态已保存到缓存文件 {cache_file}。")
+                # 使用SimulationCache保存缓存
+                if SimulationCache.save_cache(simulator, cache_file):
+                    print(f"模拟状态已保存到缓存文件 {cache_file}。")
+                else:
+                    print("保存缓存失败。")
             except Exception as e:
                 print(f"保存缓存失败: {e}")
 

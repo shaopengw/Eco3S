@@ -173,3 +173,9 @@ cython_debug/
 # experimental results
 *.png
 *.csv
+
+# backup files
+*.pkl
+
+# history folder
+history/

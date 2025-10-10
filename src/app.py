@@ -98,9 +98,9 @@ def run_process(command, process_id, config_type):
                 if os.path.exists(base_experiment_history_dir):
                     # 获取所有子目录
                     test_dirs = [d for d in os.listdir(base_experiment_history_dir)
-                                 if os.path.isdir(os.path.join(base_experiment_history_dir, d))]
-                    test_dirs.sort() # 确保按时间戳排序，最新的在最后
-    
+                               if os.path.isdir(os.path.join(base_experiment_history_dir, d)) and d != 'analysis_results']
+                    test_dirs.sort() # 按时间戳排序，最新的在最后
+                    
                     if test_dirs:
                         latest_test_dir_name = test_dirs[-1] # 获取最新的子目录名称
                         latest_test_dir_path = os.path.join(base_experiment_history_dir, latest_test_dir_name)
@@ -283,7 +283,7 @@ def get_log_content(log_path):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/analyze', methods=['POST'])
+@app.route('/analyze', methods=['POST'])
 def analyze_data():
     try:
         data = request.json
@@ -320,17 +320,29 @@ def analyze_data():
         # 获取分析报告
         report = result.stdout
 
-        # 获取生成的图表
+        # 获取最新生成的图表
         analysis_dir = os.path.join(working_dir, 'history', config_type, 'analysis_results')
         plots = []
         if os.path.exists(analysis_dir):
-            for file in os.listdir(analysis_dir):
-                if file.endswith('.png'):
-                    plot_path = os.path.join('history', config_type, 'analysis_results', file).replace('\\', '/')
-                    plots.append({
-                        'name': file,
-                        'path': plot_path
-                    })
+            # 获取所有png文件及其修改时间
+            png_files = [(f, os.path.getmtime(os.path.join(analysis_dir, f))) 
+                        for f in os.listdir(analysis_dir) if f.endswith('.png')]
+            
+            if png_files:
+                # 按修改时间排序，获取最新的文件
+                png_files.sort(key=lambda x: x[1], reverse=True)
+                latest_files = []
+                latest_time = png_files[0][1]
+                
+                # 获取所有最新时间戳的文件（同一批次生成的文件）
+                for f, mtime in png_files:
+                    if abs(mtime - latest_time) < 5:  # 5秒内的文件视为同一批次
+                        plot_path = os.path.join('history', config_type, 'analysis_results', f).replace('\\', '/')
+                        latest_files.append({
+                            'name': f,
+                            'path': plot_path
+                        })
+                plots = latest_files
 
         return jsonify({
             'report': report,

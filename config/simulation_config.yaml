@@ -22,7 +22,7 @@ simulation:
   map_width: 100
   max_retry_attempts: 3
   response_probability: 0.5
-  resume_from_cache: 0
+  resume_from_cache: 1
   retry_delay: 1
   simulation_name: ""
   start_year: 1650
