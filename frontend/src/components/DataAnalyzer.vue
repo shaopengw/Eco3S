@@ -78,10 +78,20 @@ const renderedReport = computed(() => {
 })
 
 const getPlotTitle = (filename) => {
-  // 从文件名中提取图表标题
-  const match = filename.match(/statistics_(.+)_\d{8}_\d{6}\.png/)
+  // 从文件名中提取图表标题和时间戳
+  const match = filename.match(/statistics_(.+)_(\d{8}_\d{6})\.png/)
   if (match) {
-    return match[1].replace(/_/g, ' ')
+    const metric = match[1].replace(/_/g, ' ')
+    const timestamp = match[2]
+    const date = new Date(
+      timestamp.slice(0, 4) + '-' + 
+      timestamp.slice(4, 6) + '-' + 
+      timestamp.slice(6, 8) + ' ' + 
+      timestamp.slice(9, 11) + ':' + 
+      timestamp.slice(11, 13) + ':' + 
+      timestamp.slice(13, 15)
+    )
+    return `${metric} (${date.toLocaleString()})`
   }
   return filename
 }
