@@ -14,6 +14,7 @@ from src.agents.government import (
 )
 from src.agents.rebels import OrdinaryRebel, RebelLeader, InformationOfficer as RebelsInformationOfficer
 from src.agents.resident_agent_generator import generate_new_residents
+from src.utils.simulation_context import SimulationContext
 
 class Simulator:
     def __init__(self, map, time, government, government_officials, rebellion, rebels_agents, population, social_network, residents, towns, transport_economy, climate, config):
@@ -90,12 +91,20 @@ class Simulator:
         运行模拟
         """
         self.start_time = datetime.now()  # 记录模拟开始时间
+        
+        # 创建结果文件
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        data_dir = SimulationContext.get_data_dir()
+        SimulationContext.ensure_directories()
+        result_file = os.path.join(data_dir, f"running_data_{timestamp}.csv")
+        
         while not self.time.is_end():
             # 打印当前时间步信息
             print(Back.GREEN + f"年份:{self.time.get_current_time()}" + Back.RESET)
             current_year = self.time.get_current_year()
             start_year = self.time.get_start_time()
             print(f"天气影响因子：{self.climate.get_current_impact(current_year,start_year)}")
+            
             # 更新属性变量
             # 政府
             self.gdp = self.calculate_gdp() # 更新GDP
@@ -106,7 +115,7 @@ class Simulator:
             self.rebellion_income = self.rebellion.get_strength() * 6 # 假设叛军收入为6两/人
             self.rebellion.resources = round(self.rebellion.resources + self.rebellion_income, 2)
             self.rebellion.strength = self.calculate_total_rebels()
-
+        
             self.average_satisfaction = self.calculate_average_satisfaction() # 更新平均满意度
             self.population.update_birth_rate(self.average_satisfaction) # 更新出生率
             self.rebellion_records = 0
@@ -135,7 +144,7 @@ class Simulator:
                 'ordinary_type': OrdinaryGovernmentAgent,
                 'leader_type': HighRankingGovernmentAgent,
             }
-            government_decision = await self.collect_group_decision('government', government_config)
+            # government_decision = await self.collect_group_decision('government', government_config)
             
             # 收集叛军决策
             rebellion_config = {
@@ -143,7 +152,7 @@ class Simulator:
                 'ordinary_type': OrdinaryRebel,
                 'leader_type': RebelLeader,
             }
-            rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
+            # rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
             
             # 统一执行决策
             if government_decision:
@@ -161,10 +170,10 @@ class Simulator:
                 resident = self.residents[resident_name]
                 tax_rate = self.government.get_tax_rate()
                 # 基于LLM的决策--测试时建议暂时注释
-                if resident.job == "叛军":
-                    tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
-                else:
-                    tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost))
+                # if resident.job == "叛军":
+                #     tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
+                # else:
+                #     tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost))
 
                 # 更新居民寿命（每年）
                 if resident.update_resident_status(self.basic_living_cost):
@@ -231,77 +240,14 @@ class Simulator:
             #     social_network = resident.get_social_network()
             #     social_network.calculate_speech_probability(resident.resident_id, self.population.get_population())
 
-            # 更新运河价格与状态
-            self.transport_economy.calculate_river_price(self.map.get_navigability())
-            climate_impact_factor = self.climate.get_current_impact(self.time.get_current_year(),self.time.get_start_time())
-            self.map.decay_river_condition_naturally(climate_impact_factor)
 
-            # 更新就业市场
-            old_navigability = self.results["river_navigability"][len(self.results["years"])-1]
-            current_navigability = self.map.get_navigability()
-            change_rate = (current_navigability - old_navigability) / old_navigability if old_navigability != 0 else 0
-            self.towns.adjust_job_market(change_rate, self.residents)
-
-            # 每3-5年更新一次社交网络
-            current_year = self.time.get_current_year()
-            if current_year % random.randint(3, 5) == 0:
-                self.social_network.update_network_edges()  # 更新社交网络边
+            # 更新结果数据
+            self.update_results()
             
-            self.propaganda_prob = 0
+            # 在每个时间步结束时保存结果
+            self.save_results(result_file, append=True)
             
-            total_unemployment_rate = self.calculate_total_unemployment_rate()
-
-            # 更新政府和叛军力量
-            self.rebellion.strength = self.calculate_total_rebels()
-            self.government.military_strength = self.calculate_total_government_military()
-
-            # 记录数据
-            self.results["years"].append(self.time.get_current_time())
-            self.results["rebellions"].append(self.rebellion_records)
-            self.results["unemployment_rate"].append(total_unemployment_rate)
-            self.results["population"].append(self.population.get_population())
-            self.results["government_budget"].append(self.government.get_budget())
-            self.results["rebellion_strength"].append(self.rebellion.get_strength())
-            self.results["rebellion_resources"].append(self.rebellion.get_resources())
-            self.results["average_satisfaction"].append(self.average_satisfaction)
-            self.results["tax_rate"].append(self.government.get_tax_rate())
-            self.results["river_navigability"].append(self.map.get_navigability())
-            self.results["gdp"].append(self.gdp)
-
-            # 打印当前状态
-            print(f"年份: {self.time.get_current_time()}, "
-                  f"叛乱次数: {self.rebellion_records}, "
-                  f"人口数量: {self.population.get_population()}, "
-                  f"失业率: {self.results['unemployment_rate'][-1]:.2f}%, "
-                  f"平均满意度: {self.results['average_satisfaction'][-1]:.2f}, "
-                  f"税率: {self.government.get_tax_rate():.2f}, "
-                  f"GDP: {self.results['gdp'][-1]:.2f}, "
-                  f"叛军强度: {self.results['rebellion_strength'][-1]}, "
-                  f"运河通航能力: {self.map.get_navigability():.2f}"
-            )
-            # 在时间步结束前，总结本次决策结果
-            
-            if government_decision or rebellion_decision:
-                changes_summary = self.summarize_time_step_results()
-                # 存储到政府、叛军的记忆中
-                if government_decision:
-                    await self.store_decision_memory(
-                        'government', 
-                        government_decision,
-                        changes_summary
-                    )
-                if rebellion_decision:
-                    await self.store_decision_memory(
-                        'rebellion', 
-                        rebellion_decision,
-                        changes_summary
-                    )
-
-            # if self.map.get_navigability() < 0.2:
-            #     print(Back.RED + f"运河因通航能力过低（{self.map.get_navigability()}）而废弃" + Back.RESET)
-            #     break
-            # else:
-            #     self.time.step()
+            # 时间前进
             self.time.step()
 
         self.end_time = datetime.now()  # 记录模拟结束时间
@@ -518,27 +464,40 @@ class Simulator:
             print(f"执行决策时出错：{e}")
             return False
 
-    def save_results(self, filename=None):
+    def save_results(self, filename=None, append=False):
         """
         保存模拟结果到CSV文件
         :param filename: 文件名
+        :param append: 是否追加模式，用于增量更新
         """
-        from src.utils.simulation_context import SimulationContext
         
         # 使用 SimulationContext 获取数据目录
         data_dir = SimulationContext.get_data_dir()
         
         # 确保数据目录存在
         SimulationContext.ensure_directories()
-
+    
         if filename is None:
             # 如果没有指定文件名，使用默认的命名规则
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = os.path.join(data_dir, f"running_data_{timestamp}.csv")
         
-        df = pd.DataFrame(self.results)
-        df.to_csv(filename, index=False)
-        print(f"模拟结果已保存至 {filename}")
+        if append:
+            # 创建一个字典，包含每个指标的最新数据点
+            last_row_data = {key: [value[-1]] for key, value in self.results.items() if value}
+            df = pd.DataFrame(last_row_data)
+        else:
+            df = pd.DataFrame(self.results)
+        
+        if append and os.path.exists(filename):
+            # 追加模式，不写入表头
+            df.to_csv(filename, mode='a', header=False, index=False)
+        else:
+            # 新文件或覆盖模式
+            df.to_csv(filename, index=False)
+        
+        if not append:
+            print(f"模拟结果已保存至 {filename}")
 
     async def integrate_new_residents(self, new_residents):
         """将新居民整合到系统中"""
@@ -937,3 +896,54 @@ class Simulator:
         else:
             self.propaganda_prob = round(speech_count / total_rebels, 2)
             self.propaganda_prob = max(0.0, min(1.0, self.propaganda_prob))  # 确保概率在0到1之间
+
+    def update_results(self):
+        """更新结果数据"""
+        # 更新运河价格与状态
+        self.transport_economy.calculate_river_price(self.map.get_navigability())
+        climate_impact_factor = self.climate.get_current_impact(self.time.get_current_year(),self.time.get_start_time())
+        self.map.decay_river_condition_naturally(climate_impact_factor)
+
+        # 更新就业市场
+        old_navigability = self.results["river_navigability"][-1] if self.results["river_navigability"] else self.map.get_navigability()
+        current_navigability = self.map.get_navigability()
+        change_rate = (current_navigability - old_navigability) / old_navigability if old_navigability != 0 else 0
+        self.towns.adjust_job_market(change_rate, self.residents)
+
+        # 每3-5年更新一次社交网络
+        current_year = self.time.get_current_year()
+        if current_year % random.randint(3, 5) == 0:
+            self.social_network.update_network_edges()  # 更新社交网络边
+        
+        self.propaganda_prob = 0
+        
+        total_unemployment_rate = self.calculate_total_unemployment_rate()
+
+        # 更新政府和叛军力量
+        self.rebellion.strength = self.calculate_total_rebels()
+        self.government.military_strength = self.calculate_total_government_military()
+
+        # 记录数据
+        self.results["years"].append(self.time.get_current_time())
+        self.results["rebellions"].append(self.rebellion_records)
+        self.results["unemployment_rate"].append(total_unemployment_rate)
+        self.results["population"].append(self.population.get_population())
+        self.results["government_budget"].append(self.government.get_budget())
+        self.results["rebellion_strength"].append(self.rebellion.get_strength())
+        self.results["rebellion_resources"].append(self.rebellion.get_resources())
+        self.results["average_satisfaction"].append(self.average_satisfaction)
+        self.results["tax_rate"].append(self.government.get_tax_rate())
+        self.results["river_navigability"].append(self.map.get_navigability())
+        self.results["gdp"].append(self.gdp)
+
+        # 打印当前状态
+        print(f"年份: {self.time.get_current_time()}, "
+              f"叛乱次数: {self.rebellion_records}, "
+              f"人口数量: {self.population.get_population()}, "
+              f"失业率: {self.results['unemployment_rate'][-1]:.2f}%, "
+              f"平均满意度: {self.results['average_satisfaction'][-1]:.2f}, "
+              f"税率: {self.government.get_tax_rate():.2f}, "
+              f"GDP: {self.results['gdp'][-1]:.2f}, "
+              f"叛军强度: {self.results['rebellion_strength'][-1]}, "
+              f"运河通航能力: {self.map.get_navigability():.2f}"
+        )

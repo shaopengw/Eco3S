@@ -261,9 +261,7 @@ async def run_simulation(config: dict[str, Any]) -> None:
         }
         plot_all_results(data_dict)
         
-        # 保存结果
         print("模拟结束")
-        simulator.save_results()
 
     except Exception as e:
         logging.error(f"模拟运行过程中发生错误: {e}")
