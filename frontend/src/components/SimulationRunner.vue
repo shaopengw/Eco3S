@@ -24,13 +24,12 @@
 
       <div class="results-panel">
         <h3>实验结果</h3>
-        <div class="plots-container">
-          <div v-for="(path, index) in plotPaths" :key="index" class="plot-item">
-            <el-image 
-              :src="`/api/${path.replace(/\\/g, '/')}`" 
-              :alt="'结果图表 ' + (index + 1)"
-              :preview-src-list="[`/api/${path.replace(/\\/g, '/')}`]"
-              fit="contain"
+        <div class="charts-container">
+          <div v-for="(chart, key) in chartData" :key="key" class="chart-item">
+            <Line
+              v-if="chart.datasets[0].data.length > 0"
+              :data="chart"
+              :options="getChartOptions(chart.title)"
             />
           </div>
         </div>
@@ -40,7 +39,29 @@
 </template>
 
 <script setup>
-import { ref, onUnmounted } from 'vue'
+import { ref, onUnmounted, reactive } from 'vue'
+import { Line } from 'vue-chartjs'
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+} from 'chart.js'
+
+// 注册 Chart.js 组件
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+)
 
 const props = defineProps({
   configType: {
@@ -51,7 +72,6 @@ const props = defineProps({
 
 const isRunning = ref(false)
 const output = ref('')
-const plotPaths = ref([])
 const processId = ref(null)
 const statusCheckInterval = ref(null)
 const outputPanel = ref(null)
@@ -60,7 +80,11 @@ const runSimulation = async () => {
   try {
     isRunning.value = true
     output.value = ''
-    plotPaths.value = []
+    // 重置图表数据
+    Object.keys(chartData).forEach(key => {
+      chartData[key].labels = []
+      chartData[key].datasets[0].data = []
+    })
     
     const response = await fetch(`/api/run/${props.configType}`)
     const data = await response.json()
@@ -75,6 +99,80 @@ const runSimulation = async () => {
   }
 }
 
+// 图表数据结构重构
+const chartData = reactive({})
+
+// 图表基础配置
+const getChartOptions = (title) => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: {
+    duration: 300
+  },
+  plugins: {
+    title: {
+      display: true,
+      text: title,
+      font: {
+        size: 16,
+        weight: 'bold'
+      }
+    },
+    legend: {
+      display: true,
+      position: 'top'
+    }
+  },
+  scales: {
+    y: {
+      beginAtZero: true,
+      grid: {
+        drawBorder: false,
+        color: 'rgba(0, 0, 0, 0.1)'
+      }
+    },
+    x: {
+      grid: {
+        display: false
+      }
+    }
+  }
+})
+
+const updateCharts = (data) => {
+  if (!data) return
+  console.log('接收到的数据:', data);
+  
+  // 确保数据格式正确
+  if (!data.years || !Array.isArray(data.years)) return;
+  
+  // 遍历数据并更新或创建对应的图表
+  Object.entries(data).forEach(([key, values]) => {
+    // 跳过非数组类型的数据和years键
+    if (!Array.isArray(values) || key === 'years') return;
+    
+    // 如果图表不存在，创建新图表
+    if (!chartData[key]) {
+      chartData[key] = {
+        title: getChartTitle(key),
+        labels: [],
+        datasets: [{
+          label: getDatasetLabel(key),
+          data: [],
+          borderColor: getChartColor(key),
+          backgroundColor: getChartColor(key, 0.2),
+          tension: 0.1,
+          fill: true
+        }]
+      }
+    }
+    
+    // 更新图表数据
+    chartData[key].labels = data.years;
+    chartData[key].datasets[0].data = values;
+  });
+}
+
 const startStatusCheck = () => {
   statusCheckInterval.value = setInterval(async () => {
     try {
@@ -83,15 +181,13 @@ const startStatusCheck = () => {
       
       if (data.output) {
         output.value += data.output
-        // 自动滚动到底部
         if (outputPanel.value) {
           outputPanel.value.scrollTop = outputPanel.value.scrollHeight
         }
       }
-      
-      if (data.plot_paths) {
-        plotPaths.value = data.plot_paths
-        console.log('plot_paths:', plotPaths.value)
+      if (data.running_data && Object.keys(data.running_data).length > 0) {
+        console.log('接收到实时数据:', data.running_data);
+        updateCharts(data.running_data)
       }
       
       if (data.status === 'completed' || data.status === 'error') {
@@ -103,7 +199,58 @@ const startStatusCheck = () => {
       isRunning.value = false
       clearInterval(statusCheckInterval.value)
     }
-  }, 1000)
+  }, 1000)  // 每秒检查一次状态
+}
+
+// 获取图表标题
+const getChartTitle = (key) => {
+  const titles = {
+    population: '人口数量变化',
+    unemployment_rate: '失业率变化',
+    government_budget: '政府预算变化',
+    rebellions: '叛乱次数变化',
+    rebellion_strength: '叛乱强度变化',
+    average_satisfaction: '平均满意度变化',
+    tax_rate: '税率变化',
+    river_navigability: '河流通航性变化',
+    gdp: 'GDP变化',
+    urban_scale: '城市规模变化'
+  }
+  return titles[key] || key
+}
+
+// 获取数据集标签
+const getDatasetLabel = (key) => {
+  const labels = {
+    population: '人口数量',
+    unemployment_rate: '失业率',
+    government_budget: '政府预算',
+    rebellions: '叛乱次数',
+    rebellion_strength: '叛乱强度',
+    average_satisfaction: '平均满意度',
+    tax_rate: '税率',
+    river_navigability: '河流通航性',
+    gdp: 'GDP',
+    urban_scale: '城市规模'
+  }
+  return labels[key] || key
+}
+
+// 获取图表颜色
+const getChartColor = (key, alpha = 1) => {
+  const colors = {
+    population: `rgba(75, 192, 192, ${alpha})`,
+    unemployment_rate: `rgba(255, 99, 132, ${alpha})`,
+    government_budget: `rgba(153, 102, 255, ${alpha})`,
+    rebellions: `rgba(255, 159, 64, ${alpha})`,
+    rebellion_strength: `rgba(255, 99, 132, ${alpha})`,
+    average_satisfaction: `rgba(75, 192, 192, ${alpha})`,
+    tax_rate: `rgba(153, 102, 255, ${alpha})`,
+    river_navigability: `rgba(54, 162, 235, ${alpha})`,
+    gdp: `rgba(255, 206, 86, ${alpha})`,
+    urban_scale: `rgba(75, 192, 192, ${alpha})`
+  }
+  return colors[key] || `rgba(75, 192, 192, ${alpha})`
 }
 
 onUnmounted(() => {
@@ -151,39 +298,22 @@ onUnmounted(() => {
   padding-top: 16px;
 }
 
-.plots-container {
+.charts-container {
   flex: 1;
   overflow-y: auto;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
   gap: 24px;
   padding: 8px;
 }
 
-.plot-item {
+.chart-item {
   background-color: var(--el-bg-color-page);
   padding: 16px;
   border-radius: 8px;
   box-shadow: var(--el-box-shadow-light);
-  height: fit-content;
-}
-
-.plot-item :deep(.el-image) {
-  width: 100%;
-  height: auto;
-  cursor: pointer;
-  display: block;
-}
-
-.plot-item :deep(.el-image img) {
-  width: 100%;
-  height: auto;
-  border-radius: 4px;
-  transition: transform 0.3s ease;
-  display: block;
-}
-
-.plot-item :deep(.el-image img:hover) {
-  transform: scale(1.02);
+  height: 300px;
+  min-width: 400px;
+  flex: 1;
 }
 </style>

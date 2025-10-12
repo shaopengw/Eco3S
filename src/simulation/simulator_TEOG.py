@@ -14,6 +14,7 @@ from src.agents.government import (
     InformationOfficer
 )
 from src.agents.resident_agent_generator import generate_new_residents
+from src.utils.simulation_context import SimulationContext
 
 if "sphinx" not in sys.modules:
     resident_log = logging.getLogger(name="resident.agent")
@@ -59,6 +60,13 @@ class TEOGSimulator:
         # 保存初始数据
         self.gdp = self.calculate_gdp()  # 确保先计算初始GDP
         self.average_satisfaction = self.calculate_average_satisfaction()  # 计算初始满意度
+        
+        # 创建结果文件
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        data_dir = SimulationContext.get_data_dir()
+        SimulationContext.ensure_directories()
+        self.result_file = os.path.join(data_dir, f"running_data_{timestamp}.csv")
+        
         self.save_initial_results()
         self.start_time = None  # 用于记录模拟开始时间
         self.end_time = None    # 用于记录模拟结束时间
@@ -119,16 +127,18 @@ class TEOGSimulator:
                 'ordinary_type': OrdinaryGovernmentAgent,
                 'leader_type': HighRankingGovernmentAgent,
             }
-            government_decision = await self.collect_group_decision(government_config)
+            # government_decision = await self.collect_group_decision(government_config)
             
             if government_decision:
                 self.execute_government_decision(government_decision)
             
             # 居民行为阶段
-            await self.handle_resident_actions()
+            # await self.handle_resident_actions()
 
             # 4. 年终：更新和记录数据
             self.update_annual_results()
+            # 在每个时间步结束时保存结果
+            self.save_results(self.result_file, append=True)
             # 记录年度记忆
             if government_decision:
                 changes_summary = self.summarize_time_step_results()
@@ -398,24 +408,40 @@ class TEOGSimulator:
             return 0
         return sum(resident.satisfaction for resident in self.residents.values()) / len(self.residents)
 
-    def save_results(self, filename=None):
-        """保存模拟结果"""
-        from src.utils.simulation_context import SimulationContext
+    def save_results(self, filename=None, append=False):
+        """
+        保存模拟结果到CSV文件
+        :param filename: 文件名
+        :param append: 是否追加模式，用于增量更新
+        """
         
         # 使用 SimulationContext 获取数据目录
         data_dir = SimulationContext.get_data_dir()
         
         # 确保数据目录存在
         SimulationContext.ensure_directories()
-
+    
         if filename is None:
             # 如果没有指定文件名，使用默认的命名规则
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = os.path.join(data_dir, f"running_data_{timestamp}.csv")
         
-        df = pd.DataFrame(self.results)
-        df.to_csv(filename, index=False)
-        print(f"模拟结果已保存至 {filename}")
+        if append:
+            # 创建一个字典，包含每个指标的最新数据点
+            last_row_data = {key: [value[-1]] for key, value in self.results.items() if value}
+            df = pd.DataFrame(last_row_data)
+        else:
+            df = pd.DataFrame(self.results)
+        
+        if append and os.path.exists(filename):
+            # 追加模式，不写入表头
+            df.to_csv(filename, mode='a', header=False, index=False)
+        else:
+            # 新文件或覆盖模式
+            df.to_csv(filename, index=False)
+        
+        if not append:
+            print(f"模拟结果已保存至 {filename}")
     
     def calculate_gdp(self):
         """

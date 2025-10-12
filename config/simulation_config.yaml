@@ -17,7 +17,7 @@ simulation:
     rebellion:
       enabled: 0
       max_rounds: 2
-  initial_population: 6
+  initial_population: 3
   map_height: 150
   map_width: 100
   max_retry_attempts: 3

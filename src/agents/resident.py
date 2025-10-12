@@ -1,7 +1,6 @@
 from .shared_imports import *
 from ..utils.logger import LogManager
 load_dotenv()
-from src.utils.simulation_context import SimulationContext
 
 class ResidentSharedInformationPool:
     def __init__(self):
