@@ -29,6 +29,7 @@ python app.py
 ```bash
 cd frontend
 npm install
+npm install chart.js vue-chartjs
 npm run dev
 ```
 

@@ -8,6 +8,7 @@ import uuid
 import json
 import sys
 import os
+import pandas as pd
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from datetime import datetime
 from visualization.plot_results import plot_all_results
@@ -163,7 +164,8 @@ def run_simulation(config_type):
         'output_queue': queue.Queue(),
         'process': None,
         'start_time': datetime.now(),
-        'plot_paths': []
+        'plot_paths': [],
+        'config_type': config_type  # 添加 config_type
     }
 
     # 设置SimulationContext
@@ -203,10 +205,73 @@ def simulation_status(process_id):
             simulation_info['process'].stdout.close()
             simulation_info['process'].stderr.close()
     
+    # 尝试读取 running_data 文件
+    running_data = {}
+    try:
+        base_history_dir = os.path.join(BASE_DIR, '..', 'history', simulation_info.get('config_type', ''))
+        print(f"开始读取running_data文件: {base_history_dir}")
+        
+        if os.path.exists(base_history_dir):
+            simulation_folders = [f for f in os.listdir(base_history_dir) if os.path.isdir(os.path.join(base_history_dir, f))]
+            print(f"找到 {len(simulation_folders)} 个模拟目录")
+            
+            if simulation_folders:
+                latest_folder = max(simulation_folders)
+                latest_folder_path = os.path.join(base_history_dir, latest_folder)
+                
+                for filename in os.listdir(latest_folder_path):
+                    if filename.startswith('running_data') and (filename.endswith('.json') or filename.endswith('.csv')):
+                        file_path = os.path.join(latest_folder_path, filename)
+                        print(f"找到数据文件: {file_path}")
+                        
+                        if filename.endswith('.json'):
+                            with open(file_path, 'r', encoding='utf-8') as f:
+                                data_list = json.load(f)
+                                if isinstance(data_list, list):
+                                    # 将数据转换为与 plot_results.py 相同的格式
+                                    running_data = {
+                                        'years': [],
+                                        'rebellions': [],
+                                        'unemployment_rate': [],
+                                        'population': [],
+                                        'government_budget': [],
+                                        'rebellion_strength': [],
+                                        'average_satisfaction': [],
+                                        'tax_rate': [],
+                                        'river_navigability': [],
+                                        'gdp': [],
+                                        'urban_scale': []
+                                    }
+                                    
+                                    for data in data_list:
+                                        year = data.get('year') or data.get('time')
+                                        if year is not None:
+                                            running_data['years'].append(year)
+                                            for key in running_data.keys():
+                                                if key != 'years' and key in data:
+                                                    running_data[key].append(data[key])
+                                                elif key != 'years':
+                                                    running_data[key].append(None)
+                        else:  # CSV 文件
+                            df = pd.read_csv(file_path)
+                            # 转换为与 plot_results.py 相同的格式
+                            running_data = {
+                                'years': df['year'].tolist() if 'year' in df.columns else df['time'].tolist() if 'time' in df.columns else [],
+                            }
+                            for col in df.columns:
+                                if col not in ['year', 'time']:
+                                    running_data[col] = df[col].tolist()
+                        break
+        else:
+            print(f"未找到模拟目录: {base_history_dir}")
+    except Exception as e:
+        print(f"读取running_data文件失败: {str(e)}")
+    
     return jsonify({
         'status': simulation_info['status'],
         'output': '\n'.join(output),
-        'plot_paths': simulation_info.get('plot_paths', [])
+        'plot_paths': simulation_info.get('plot_paths', []),
+        'running_data': running_data
     })
 
 @app.route('/description/<config_type>')
