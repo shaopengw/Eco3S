@@ -150,26 +150,20 @@ const updateCharts = (data) => {
   Object.entries(data).forEach(([key, values]) => {
     // 跳过非数组类型的数据和years键
     if (!Array.isArray(values) || key === 'years') return;
-    
-    // 如果图表不存在，创建新图表
-    if (!chartData[key]) {
-      chartData[key] = {
-        title: getChartTitle(key),
-        labels: [],
-        datasets: [{
-          label: getDatasetLabel(key),
-          data: [],
-          borderColor: getChartColor(key),
-          backgroundColor: getChartColor(key, 0.2),
-          tension: 0.1,
-          fill: true
-        }]
-      }
+
+    // 每次都重新创建图表数据
+    chartData[key] = {
+      title: getChartTitle(key),
+      labels: [...data.years],
+      datasets: [{
+        label: getDatasetLabel(key),
+        data: [...values],
+        borderColor: getChartColor(key),
+        backgroundColor: getChartColor(key, 0.2),
+        tension: 0.1,
+        fill: true
+      }]
     }
-    
-    // 更新图表数据
-    chartData[key].labels = data.years;
-    chartData[key].datasets[0].data = values;
   });
 }
 
