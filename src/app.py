@@ -209,16 +209,12 @@ def simulation_status(process_id):
     running_data = {}
     try:
         base_history_dir = os.path.join(BASE_DIR, '..', 'history', simulation_info.get('config_type', ''))
-        print(f"开始读取running_data文件: {base_history_dir}")
         
         if os.path.exists(base_history_dir):
-            simulation_folders = [f for f in os.listdir(base_history_dir) if os.path.isdir(os.path.join(base_history_dir, f))]
-            print(f"找到 {len(simulation_folders)} 个模拟目录")
-            
+            simulation_folders = [f for f in os.listdir(base_history_dir) if os.path.isdir(os.path.join(base_history_dir, f)) and f != 'analysis_results']
             if simulation_folders:
                 latest_folder = max(simulation_folders)
                 latest_folder_path = os.path.join(base_history_dir, latest_folder)
-                
                 for filename in os.listdir(latest_folder_path):
                     if filename.startswith('running_data') and (filename.endswith('.json') or filename.endswith('.csv')):
                         file_path = os.path.join(latest_folder_path, filename)
@@ -228,7 +224,6 @@ def simulation_status(process_id):
                             with open(file_path, 'r', encoding='utf-8') as f:
                                 data_list = json.load(f)
                                 if isinstance(data_list, list):
-                                    # 将数据转换为与 plot_results.py 相同的格式
                                     running_data = {
                                         'years': [],
                                         'rebellions': [],
@@ -254,7 +249,6 @@ def simulation_status(process_id):
                                                     running_data[key].append(None)
                         else:  # CSV 文件
                             df = pd.read_csv(file_path)
-                            # 转换为与 plot_results.py 相同的格式
                             running_data = {
                                 'years': df['year'].tolist() if 'year' in df.columns else df['time'].tolist() if 'time' in df.columns else [],
                             }
