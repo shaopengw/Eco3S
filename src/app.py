@@ -170,7 +170,6 @@ def run_simulation(config_type):
 
     # 设置SimulationContext
     SimulationContext.set_simulation_type(config_type)
-    SimulationContext.set_simulation_name(running_simulations[process_id]['start_time'].strftime("%Y%m%d_%H%M%S"))
     
     # 在新线程中启动模拟
     thread = threading.Thread(target=run_process, args=(command, process_id, config_type))
@@ -215,9 +214,29 @@ def simulation_status(process_id):
             if simulation_folders:
                 latest_folder = max(simulation_folders)
                 latest_folder_path = os.path.join(base_history_dir, latest_folder)
+                
+                start_time_str = simulation_info.get('start_time')
+                start_timestamp = None
+                if start_time_str:
+                    try:
+                        from datetime import datetime
+                        if isinstance(start_time_str, datetime):
+                            start_timestamp = start_time_str.timestamp()
+                        else:
+                            start_timestamp = datetime.strptime(start_time_str, '%Y-%m-%d %H:%M:%S').timestamp()
+                    except ValueError:
+                        print(f"警告: 无法解析 simulation_info['start_time']: {start_time_str}")
+
                 for filename in os.listdir(latest_folder_path):
                     if filename.startswith('running_data') and (filename.endswith('.json') or filename.endswith('.csv')):
                         file_path = os.path.join(latest_folder_path, filename)
+                        
+                        if start_timestamp:
+                            file_creation_time = os.path.getctime(file_path)
+                            if file_creation_time < start_timestamp:
+                                print(f"跳过旧数据文件: {file_path} (创建时间: {datetime.fromtimestamp(file_creation_time)}, 模拟开始时间: {start_time_str})")
+                                continue
+
                         print(f"找到数据文件: {file_path}")
                         
                         if filename.endswith('.json'):
