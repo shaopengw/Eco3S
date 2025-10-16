@@ -24,12 +24,22 @@
 
       <div class="results-panel">
         <h3>实验结果</h3>
-        <div class="charts-container">
+        <div v-if="Object.keys(chartData).length > 0" class="charts-container">
           <div v-for="(chart, key) in chartData" :key="key" class="chart-item">
             <Line
               v-if="chart.datasets[0].data.length > 0"
               :data="chart"
               :options="getChartOptions(chart.title)"
+            />
+          </div>
+        </div>
+        <div v-else-if="plotPaths.length > 0" class="plots-container">
+          <div v-for="(path, index) in plotPaths" :key="index" class="plot-item">
+            <el-image
+              :src="`/api/${path.replace(/\\/g, '/')}`"
+              :alt="'结果图表 ' + (index + 1)"
+              :preview-src-list="[`/api/${path.replace(/\\/g, '/')}`]"
+              fit="contain"
             />
           </div>
         </div>
@@ -75,6 +85,7 @@ const output = ref('')
 const processId = ref(null)
 const statusCheckInterval = ref(null)
 const outputPanel = ref(null)
+const plotPaths = ref([])
 
 const runSimulation = async () => {
   try {
@@ -187,6 +198,9 @@ const startStatusCheck = () => {
       if (data.status === 'completed' || data.status === 'error') {
         isRunning.value = false
         clearInterval(statusCheckInterval.value)
+        if (Object.keys(data.running_data || {}).length === 0) {
+          plotPaths.value = data.plot_paths || []
+        }
       }
     } catch (error) {
       console.error('检查状态失败:', error)
@@ -301,6 +315,15 @@ onUnmounted(() => {
   padding: 8px;
 }
 
+.plots-container {
+  flex: 1;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 24px;
+  padding: 8px;
+}
+
 .chart-item {
   background-color: var(--el-bg-color-page);
   padding: 16px;
@@ -309,5 +332,23 @@ onUnmounted(() => {
   height: 300px;
   min-width: 400px;
   flex: 1;
+}
+
+.plot-item {
+  background-color: var(--el-bg-color-page);
+  padding: 16px;
+  border-radius: 8px;
+  box-shadow: var(--el-box-shadow-light);
+  height: 300px;
+  min-width: 400px;
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.plot-item .el-image {
+  max-width: 100%;
+  max-height: 100%;
 }
 </style>

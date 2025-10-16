@@ -55,13 +55,6 @@ class InfoPropagationSimulator:
             }
             for strategy in PropagationStrategy
         }
-        
-        # 创建结果文件
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        data_dir = SimulationContext.get_data_dir()
-        SimulationContext.ensure_directories()
-        self.result_file = os.path.join(data_dir, f"running_data_{timestamp}.csv")
-        self.all_strategy_results = [] # 用于存储所有策略的扁平化结果
 
     async def run(self):
         """运行实验"""
@@ -419,35 +412,14 @@ class InfoPropagationSimulator:
     def save_strategy_results(self):
         """保存当前策略的结果"""
         strategy_key = self.current_strategy.value
-        results = self.experiment_results[strategy_key]
-
-        # 扁平化结果以便保存到CSV
-        flattened_results = {
-            'strategy': strategy_key,
-            'conversation_volume': results['conversation_volume'],
-            'knowledge_overall_accuracy': results['knowledge_survey']['overall_accuracy'],
-            'incentive_choices_a_count': results['incentive_survey']['incentive_choices_a_count'],
-            'incentive_choices_b_count': results['incentive_survey']['incentive_choices_b_count']
-        }
-        # 添加每个知识问题的准确率
-        for i, acc in enumerate(results['knowledge_survey']['question_accuracies']):
-            flattened_results[f'knowledge_q{i+1}_accuracy'] = acc
-        
-        self.all_strategy_results.append(flattened_results)
-        self.save_results(self.result_file, self.all_strategy_results, append=True)
 
     async def reset_resident_states(self):
         """重置居民状态，准备下一轮实验"""
         for resident in self.residents.values():
             await resident.reset_experimental_state()
     
-    def save_results(self, filename=None, all_results=None, append=False):
-        """
-        保存实验结果到CSV文件
-        :param filename: 文件名
-        :param all_results: 包含所有策略结果的列表
-        :param append: 是否追加模式，用于增量更新
-        """
+    def save_results(self, filename=None):
+        """保存实验结果到JSON文件"""
         from src.utils.simulation_context import SimulationContext
         
         # 使用 SimulationContext 获取数据目录
@@ -459,19 +431,10 @@ class InfoPropagationSimulator:
         if filename is None:
             # 如果没有指定文件名，使用默认的命名规则
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = os.path.join(data_dir, f"running_data_{timestamp}.csv")
+            filename = os.path.join(data_dir, f"running_data_{timestamp}.json")
         
-        if all_results is None:
-            all_results = self.all_strategy_results
-
-        df = pd.DataFrame(all_results)
+        # 保存为JSON格式
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(self.experiment_results, f, ensure_ascii=False, indent=2)
         
-        if append and os.path.exists(filename):
-            # 追加模式，不写入表头
-            df.to_csv(filename, mode='a', header=False, index=False)
-        else:
-            # 新文件或覆盖模式
-            df.to_csv(filename, index=False)
-        
-        if not append:
-            print(f"模拟结果已保存至 {filename}")
+        print(f"实验结果已保存至 {filename}")

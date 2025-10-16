@@ -239,34 +239,7 @@ def simulation_status(process_id):
 
                         print(f"找到数据文件: {file_path}")
                         
-                        if filename.endswith('.json'):
-                            with open(file_path, 'r', encoding='utf-8') as f:
-                                data_list = json.load(f)
-                                if isinstance(data_list, list):
-                                    running_data = {
-                                        'years': [],
-                                        'rebellions': [],
-                                        'unemployment_rate': [],
-                                        'population': [],
-                                        'government_budget': [],
-                                        'rebellion_strength': [],
-                                        'average_satisfaction': [],
-                                        'tax_rate': [],
-                                        'river_navigability': [],
-                                        'gdp': [],
-                                        'urban_scale': []
-                                    }
-                                    
-                                    for data in data_list:
-                                        year = data.get('year') or data.get('time')
-                                        if year is not None:
-                                            running_data['years'].append(year)
-                                            for key in running_data.keys():
-                                                if key != 'years' and key in data:
-                                                    running_data[key].append(data[key])
-                                                elif key != 'years':
-                                                    running_data[key].append(None)
-                        else:  # CSV 文件
+                        if filename.endswith('.csv'):
                             df = pd.read_csv(file_path)
                             running_data = {
                                 'years': df['year'].tolist() if 'year' in df.columns else df['time'].tolist() if 'time' in df.columns else [],
