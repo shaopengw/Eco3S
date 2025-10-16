@@ -114,7 +114,7 @@ async def run_simulation(config):
             results=simulator.experiment_results,
             output_dir=plot_dir
         )
-
+        simulator.save_results()
         print("实验完成，结果已保存")
         
         
