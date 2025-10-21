@@ -128,11 +128,16 @@ class InfoPropagationSimulator:
         if tasks:
             results = await asyncio.gather(*tasks)
             # 处理结果
+            residents_list = list(self.residents.values())  # 获取当前的居民列表
             for i, result in enumerate(results):
-                resident = list(self.residents.values())[i]
+                if i >= len(residents_list):  # 安全检查
+                    break
+                resident = residents_list[i]
                 if result:
                     speech, relation_type = result
-                    speech_tasks.append(self.social_network.spread_speech_in_network(resident.resident_id, speech, relation_type))
+                    speech_tasks.append(asyncio.create_task(
+                        self.social_network.spread_speech_in_network(resident.resident_id, speech, relation_type)
+                    ))
                     self.conversation_volume += 1
             # 并发执行所有发言传播任务
             if speech_tasks:
@@ -178,11 +183,17 @@ class InfoPropagationSimulator:
         if tasks:
             results = await asyncio.gather(*tasks)
             # 处理结果
+            residents_list = list(self.residents.values())  # 获取当前的居民列表
             for i, result in enumerate(results):
-                resident = list(self.residents.values())[i]
+                if i >= len(residents_list):  # 安全检查
+                    break
+                resident = residents_list[i]
                 if result:
                     speech, relation_type = result
-                    speech_tasks.append(self.social_network.spread_speech_in_network(resident.resident_id, speech, relation_type))
+                    # 使用create_task包装协程
+                    speech_tasks.append(asyncio.create_task(
+                        self.social_network.spread_speech_in_network(resident.resident_id, speech, relation_type)
+                    ))
                     self.conversation_volume += 1
             # 并发执行所有发言传播任务
             if speech_tasks:

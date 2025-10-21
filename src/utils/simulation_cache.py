@@ -305,6 +305,7 @@ class SimulationCache:
                                 shared_pool=ResidentSharedInformationPool(),
                                 map=simulator.map,
                                 resident_prompt_path=simulator.config["data"]["resident_prompt_path"],
+                                resident_actions_path=simulator.config["data"]["resident_actions_path"],
                             )
                             # 初始化model_manager和model_backend
                             resident.model_manager = ModelManager()

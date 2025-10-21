@@ -1,5 +1,7 @@
 from .shared_imports import *
 from ..utils.logger import LogManager
+import inspect
+import importlib
 load_dotenv()
 
 class ResidentSharedInformationPool:
@@ -57,7 +59,7 @@ class ResidentGroup(BaseAgent):
             del self.residents[resident_id]
 
 class Resident(BaseAgent):
-    def __init__(self, resident_id, job_market, shared_pool, map, resident_prompt_path, window_size=3):
+    def __init__(self, resident_id, job_market, shared_pool, map, resident_prompt_path, resident_actions_path, window_size=3):
         """初始化居民"""
         super().__init__(agent_id=resident_id, group_type='resident', window_size=window_size)
         self.resident_id = resident_id
@@ -76,8 +78,11 @@ class Resident(BaseAgent):
         self.group = None  # 所属群组的引用
         self.personality = None
         self.system_message = None  # 系统提示词
-        with open(resident_prompt_path, 'r', encoding='utf-8') as file:
+        with open(os.path.join(resident_prompt_path), 'r', encoding='utf-8') as file:
             self.prompts_resident = yaml.safe_load(file)
+        # 加载行为配置
+        with open(os.path.join(resident_actions_path), 'r', encoding='utf-8') as file:
+            self.actions_config = yaml.safe_load(file)
 
         # 由 ResidentGroup 设置agent属性
         self.model_backend = None
@@ -123,12 +128,7 @@ class Resident(BaseAgent):
         self.employed = False
         self.job = None
         self.income = 0
-        # self.satisfaction = max(0, self.satisfaction - 20)  # 失业降低满意度
         self.resident_log.info(f"居民 {self.resident_id} 目前无业")
-        # if old_job:
-        #     self.resident_log.info(f"居民 {self.resident_id} 失去工作工作：{old_job}")
-        # else:
-        #     self.resident_log.info(f"居民 {self.resident_id} 目前无业")
 
     def update_system_message(self, basic_living_cost=0, tax_rate=0):
         """
@@ -323,45 +323,92 @@ class Resident(BaseAgent):
             self.resident_log.error(f"居民 {self.resident_id} 返回内容：{response}")
             return "2", "发生错误，继续当前工作"  # 默认选择继续工作
 
-    async def execute_decision(self, select, desired_job=None, min_salary=None):
+    async def execute_decision(self, select, *args, **kwargs):
         """
-        执行居民的决策
+        根据配置动态执行居民的决策。
         """
         try:
-            if select == 1:  # 参加叛乱
-                if self.job_market:
-                    self.job_market.assign_specific_job_withoutcheck(self,"叛军")
-                    return True
+            actions = self.actions_config.get('actions', {}) if self.actions_config else {}
             
-            elif select == 2:
-                # 迁移到新城镇
-                success = await self.migrate_to_new_town(self.map)
-                if not success:
-                    self.resident_log.info(f"居民 {self.resident_id} 迁移失败，保持原位置")
-                    return False
-                return success
-            
-            elif select == 3:  # 寻找工作或继续工作
-                if self.job_market and self.employed:
-                    self.resident_log.info(f"居民 {self.resident_id} 已有工作：{self.job}，继续目前工作")
-                    return True
-                elif desired_job and min_salary:
-                    # 返回求职信息
-                    return {
-                        "town": self.town, 
-                        "desired_job": desired_job, 
-                        "min_salary": min_salary,
-                        "resident_id": self.resident_id 
-                    }
-                return True
-            
-            else:
-                self.resident_log.error(f"居民 {self.resident_id} 的选择无效：{select}")
+            # 统一转换select并查找动作
+            action = actions.get(select) or actions.get(str(select)) or (
+                actions.get(int(select)) if str(select).isdigit() else None
+            )
+            if not action or not (func_path := action.get('function')):
+                self.resident_log.error(f"居民 {self.resident_id} 未找到有效的动作配置：{select}")
                 return False
+
+            # 解析函数路径
+            parts = func_path.split('.') if isinstance(func_path, str) else []
+            callable_obj = None
+
+            # 尝试在self对象上解析
+            try:
+                obj = self
+                for p in parts:
+                    obj = getattr(obj, p)
+                callable_obj = obj
+            except AttributeError:
+                # 尝试作为模块路径导入
+                try:
+                    if len(parts) > 1:
+                        module = importlib.import_module('.'.join(parts[:-1]))
+                        callable_obj = getattr(module, parts[-1])
+                except (ImportError, AttributeError):
+                    pass
+
+            if not callable_obj:
+                self.resident_log.error(f"居民 {self.resident_id} 无法解析函数：{func_path}")
+                return False
+
+            # 构建参数
+            available = {**{k: v for k, v in self.__dict__.items()}, **kwargs}
+            default_values = {
+                param['name']: param.get('default') 
+                for param in action.get('parameters', []) 
+                if 'default' in param
+            }
+
+            bound_kwargs = {}
+            if sig := inspect.signature(callable_obj, follow_wrapped=True):
+                for pname, param in sig.parameters.items():
+                    if pname in available:
+                        bound_kwargs[pname] = available[pname]
+                    elif pname in default_values and default_values[pname] is not None:
+                        bound_kwargs[pname] = default_values[pname]
+                    elif param.default is inspect.Parameter.empty:
+                        bound_kwargs[pname] = self
+            else:
+                bound_kwargs = available
+
+            # 执行函数
+            is_async = action.get('is_async', False) or inspect.iscoroutinefunction(callable_obj)
+            try:
+                return await callable_obj(**bound_kwargs) if is_async else callable_obj(**bound_kwargs)
+            except TypeError:
+                # 参数绑定失败时的降级处理
+                return await kwargs if is_async else callable_obj(**kwargs)
 
         except Exception as e:
             self.resident_log.error(f"居民 {self.resident_id} 执行决策时出错：{e}")
             return False
+
+    def handle_work(self, desired_job=None, min_salary=None):
+        """
+        处理居民寻找工作或继续工作的逻辑
+        """
+        if self.job_market and self.employed:
+            self.resident_log.info(f"居民 {self.resident_id} 已有工作：{self.job}，继续目前工作")
+            return True
+        elif desired_job and min_salary:
+            # 返回求职信息
+            return {
+                "town": self.town, 
+                "desired_job": desired_job, 
+                "min_salary": min_salary,
+                "resident_id": self.resident_id 
+            }
+        return True
 
     async def generate_provocative_opinion(self, probability, speech):
         """
@@ -636,8 +683,14 @@ class Resident(BaseAgent):
             self.resident_log.error(f"选择迁移目标城市时出错: {e}")
             return None
 
-    async def migrate_to_new_town(self, map):
-        """迁移到新城镇"""
+    async def migrate_to_new_town(self, map, update_job=True):
+        """
+        迁移到新城镇
+        
+        Args:
+            map: 地图对象
+            update_job: 是否更新职业，如果为False则保留原职业
+        """
         # 获取目标城市
         target_town = self.get_random_direction_town(map)
         if not target_town:
@@ -658,11 +711,17 @@ class Resident(BaseAgent):
         # 更新居民信息
         self.location = new_location
         self.town = target_town
-        self.unemploy()
+        
+        # 根据update_job参数决定是否清除职业信息
+        if update_job:
+            self.unemploy()
         
         # 将居民添加到新城镇
         if self.towns_manager:
             self.towns_manager.add_resident(self, target_town)
+            # 如果不更新职业，则重新分配原来的工作
+            if not update_job and old_job:
+                self.job_market.assign_specific_job_withoutcheck(self, old_job)
 
         self.resident_log.info(f"居民 {self.resident_id} 从 {old_town} 迁移到了 {target_town}")
         return True

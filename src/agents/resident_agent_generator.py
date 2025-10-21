@@ -14,6 +14,7 @@ async def generate_canal_agents(
     shared_pool: Optional[ResidentSharedInformationPool] = None, # 共享资源池，默认为空
     resident_id_mapping: Optional[Dict[int, int]] = None,  # 居民 ID 与 Agent ID 的映射关系，默认为空
     resident_prompt_path: Optional[str] = None,  # 居民提示语文件路径，默认为空
+    resident_actions_path: Optional[str] = None,  # 居民行为配置文件路径，默认为空
     window_size: int = 3
 ) -> Dict[int, Resident]:
     """
@@ -48,6 +49,7 @@ async def generate_canal_agents(
             shared_pool=shared_pool,
             map=map,
             resident_prompt_path=resident_prompt_path,
+            resident_actions_path=resident_actions_path,
             window_size=window_size
         )
 
@@ -112,7 +114,7 @@ def assign_resident_location(resident_data, map):
 
     return location, town_name
 
-async def generate_new_residents(count, map, residents, social_network, resident_prompt_path):
+async def generate_new_residents(count, map, residents, social_network, resident_prompt_path, resident_actions_path):
     """生成新居民并初始化"""
     # 生成居民数据
     resident_data = generate_resident_data(count)
@@ -123,7 +125,8 @@ async def generate_new_residents(count, map, residents, social_network, resident
     new_residents = await generate_canal_agents(
         resident_info_path=new_resident_info_path,
         map=map,
-        resident_prompt_path=resident_prompt_path
+        resident_prompt_path=resident_prompt_path,
+        resident_actions_path=resident_actions_path,
     )
 
     # 分配新ID

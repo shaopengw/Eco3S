@@ -4,6 +4,7 @@ data:
   questionnaire_path: config_info_propagation/questionnaire.yaml
   resident_info_path: experiment_dataset/resident_data/resident_data.json
   resident_prompt_path: config_info_propagation/residents_prompts.yaml
+  resident_actions_path: config_info_propagation/resident_actions.yaml
   towns_data_path: config_info_propagation/towns_data.json
 simulation:
   birth_rate: 0.05
