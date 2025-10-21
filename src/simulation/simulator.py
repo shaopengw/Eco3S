@@ -130,6 +130,7 @@ class Simulator:
                 residents=self.residents,
                 social_network=self.social_network,
                 resident_prompt_path=self.config["data"]["resident_prompt_path"],
+                resident_actions_path=self.config["data"]["resident_actions_path"],
             )
             await self.integrate_new_residents(new_residents)
             self.population.birth(new_count)
@@ -170,10 +171,10 @@ class Simulator:
                 resident = self.residents[resident_name]
                 tax_rate = self.government.get_tax_rate()
                 # 基于LLM的决策--测试时建议暂时注释
-                # if resident.job == "叛军":
-                #     tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
-                # else:
-                #     tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost))
+                if resident.job == "叛军":
+                    tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
+                else:
+                    tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost))
 
                 # 更新居民寿命（每年）
                 if resident.update_resident_status(self.basic_living_cost):
@@ -186,8 +187,11 @@ class Simulator:
                 results = await asyncio.gather(*tasks)
                 
                 # 处理返回的结果
+                residents_list = list(self.residents.values())  # 获取当前的居民列表
                 for i, result in enumerate(results):
-                    resident = list(self.residents.values())[i]
+                    if i >= len(residents_list):  # 安全检查
+                        break
+                    resident = residents_list[i]
                     if isinstance(result, dict) and "town" in result:
                         # 处理求职请求
                         town_job_requests[result["town"]].append(result)
@@ -197,7 +201,9 @@ class Simulator:
                         # 执行决策
                         await resident.execute_decision(select)
                         # 收集发言传播任务
-                        speech_tasks.append(self.social_network.spread_speech_in_network(resident.resident_id, speech, relation_type))
+                        speech_tasks.append(asyncio.create_task(
+                            self.social_network.spread_speech_in_network(resident.resident_id, speech, relation_type)
+                        ))
                     elif isinstance(result, tuple) and len(result) == 2:
                         # 处理普通决策结果
                         select, reason = result

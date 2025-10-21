@@ -5,6 +5,7 @@ data:
   jobs_config_path: config_TEOG/jobs_config.yaml
   resident_info_path: experiment_dataset/resident_data/resident_data.json
   resident_prompt_path: config_TEOG/residents_prompts.yaml
+  resident_actions_path: config_TEOG/resident_actions.yaml
   towns_data_path: config_TEOG/towns_data.json
 simulation:
   birth_rate: 0.05
@@ -12,7 +13,7 @@ simulation:
     government:
       enabled: 1
       max_rounds: 2
-  initial_population: 3
+  initial_population: 4
   map_height: 150
   map_width: 100
   max_retry_attempts: 3

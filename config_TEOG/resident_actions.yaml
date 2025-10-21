@@ -1,0 +1,42 @@
+# 居民行为配置（TEOG 专用）
+actions:
+  1:
+    name: "join_country"
+    description: "加入城邦"
+    function: "job_market.assign_specific_job_withoutcheck"
+    is_async: false
+    parameters:
+      - name: "job_type"
+        type: "string"
+        required: true
+        default: "城市居民"
+        description: "要分配的工作类型"
+  
+  2:
+    name: "migrate"
+    description: "迁移到新城镇"
+    function: "migrate_to_new_town"
+    is_async: true
+    parameters:
+      - name: "map"
+        type: "object"
+        required: true
+        default: null
+        description: "地图对象"
+      - name: "update_job"
+        type: "boolean"
+        required: false
+        default: false
+        description: "是否更新职业，如果为false则保留原职业"
+  
+  3:
+    name: "self_sufficiency"
+    description: "自给自足（城市居民转为农民）"
+    function: "job_market.assign_specific_job_withoutcheck"
+    is_async: false
+    parameters:
+      - name: "job_type"
+        type: "string"
+        required: true
+        default: "农民"
+        description: "要分配的工作类型（默认: 农民）"

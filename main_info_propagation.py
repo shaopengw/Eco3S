@@ -63,6 +63,7 @@ async def run_simulation(config):
         map=map,
         initial_population=config["simulation"]["initial_population"],
         resident_prompt_path=config["data"]["resident_prompt_path"],
+        resident_actions_path=config["data"]["resident_actions_path"],
         window_size=10
     )
 

@@ -114,6 +114,7 @@ class TEOGSimulator:
                 residents=self.residents,
                 social_network=self.social_network,
                 resident_prompt_path=self.config["data"]["resident_prompt_path"],
+                resident_actions_path=self.config["data"]["resident_actions_path"],
             )
             await self.integrate_new_residents(new_residents)
             self.population.birth(new_count)
@@ -133,7 +134,7 @@ class TEOGSimulator:
                 self.execute_government_decision(government_decision)
             
             # 居民行为阶段
-            # await self.handle_resident_actions()
+            await self.handle_resident_actions()
 
             # 4. 年终：更新和记录数据
             self.update_annual_results()
@@ -351,40 +352,27 @@ class TEOGSimulator:
                     # 处理带有发言的决策结果
                     select, reason, speech, relation_type = result
                     # 收集发言传播任务
-                    speech_tasks.append(self.social_network.spread_speech_in_network(
-                        resident.resident_id, speech, relation_type
+                    speech_tasks.append(asyncio.create_task(
+                        self.social_network.spread_speech_in_network(
+                            resident.resident_id, speech, relation_type
+                        )
                     ))
-                    await self.process_resident_action(resident, select, reason)
+                    try:
+                        await resident.execute_decision(select, reason=reason)
+                    except Exception as e:
+                        print(f"执行居民 {resident.resident_id} 动作失败: {e}")
+
                 elif isinstance(result, tuple) and len(result) == 2:
                     select, reason = result
-                    await self.process_resident_action(resident, select, reason)
+                    try:
+                        await resident.execute_decision(select, reason=reason)
+                    except Exception as e:
+                        print(f"执行居民 {resident.resident_id} 动作失败: {e}")
                 
             
             # 并发执行所有发言传播任务
             if speech_tasks:
                 await asyncio.gather(*speech_tasks)
-
-    async def process_resident_action(self, resident, select, reason):
-        """处理单个居民的行为结果"""
-        if select == 1:  # 加入城邦
-            if resident.job == "农民":
-                resident.job_market.assign_specific_job_withoutcheck(resident, "城市居民")
-            
-        elif select == 2:  # 迁徙
-            # 尝试迁移
-            job = resident.job
-            success = await resident.migrate_to_new_town(self.map)
-
-            if success:
-                # 更新社交网络
-                resident.job_market.assign_specific_job_withoutcheck(resident, job) # 迁移后重新分配身份
-                self.social_network.update_network_edges()
-            else:
-                print(f"居民 {resident.resident_id} 迁移失败")
-        
-        elif select == 3:  # 自给自足
-            if resident.job == "城市居民":
-                resident.job_market.assign_specific_job_withoutcheck(resident, "农民")
 
     def update_annual_results(self):
         """更新年度结果"""
