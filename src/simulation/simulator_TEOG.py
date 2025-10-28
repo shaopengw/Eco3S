@@ -1,20 +1,4 @@
-import asyncio
-import json
-import sys
-import random
-import pandas as pd
-import os
-import yaml
-import logging
-from datetime import datetime
-from colorama import Back
-from src.agents.government import (
-    OrdinaryGovernmentAgent,
-    HighRankingGovernmentAgent,
-    InformationOfficer
-)
-from src.agents.resident_agent_generator import generate_new_residents
-from src.utils.simulation_context import SimulationContext
+from .simulator_imports import *
 
 if "sphinx" not in sys.modules:
     resident_log = logging.getLogger(name="resident.agent")

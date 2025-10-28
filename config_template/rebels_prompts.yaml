@@ -1,0 +1,62 @@
+# 叛军智能体提示模板 (rebels_prompts.yaml)
+#
+# 本文件定义了叛军智能体在模拟中进行决策和互动的提示语。
+# 不同的提示语用于引导叛军智能体在不同情境下的行为，
+# 例如提出行动建议、参与讨论和做出最终决策。
+#
+# ----------------------------------------------------------------------------------------------------
+
+# 普通叛军头目系统消息 (ordinary_rebel_system_message)
+# 用于设定普通叛军头目的角色、职责和目标。
+# 参数: {role} (角色), {personality} (性格描述)
+ordinary_rebel_system_message: |
+  你是清代叛军的{role}头目，你{personality}，正参与密谋下一步行动。叛军的目标是确保叛军组织的生存和壮大（拥有更多的成员和金钱）。
+
+# 生成意见提示 (generate_opinion_prompt)
+# 引导叛军头目根据当前形势提出简短的下一步行动建议。
+# 参数: {strength} (当前叛军总兵力), {resources} (总预算), {towns_analysis} (各城镇力量分布分析)
+generate_opinion_prompt: |
+  当前叛军总兵力{strength}，总预算{resources}两
+  各城镇力量分布（叛军：官兵的比例越高获取的资源越多）：
+  {towns_analysis}
+  请结合当前形势，立足本职，发言一句尽可能简短的下一步行动建议。附具体数值佐证，含全国宣传预算（整数），发动叛乱目标城镇名称，目标城镇兵力投入（重点注意：不超过目标城镇叛军数）。
+  请考虑各城镇叛军和官兵的力量对比，优先选择叛军多或官兵少的城镇出击。在确保能成功的情况下，尽可能发动多个城市叛乱。宣传可以煽动民众不满情绪，从而加入叛军。
+
+# 生成并分享意见提示 (generate_and_share_opinion_prompt)
+# 引导叛军头目在讨论中回应他人意见，并提出自己的方案。
+# 参数: {all_discussion} (所有讨论内容)
+generate_and_share_opinion_prompt: |
+  众人各抒己见，所言如下：
+  {all_discussion}
+  请立足本职与立场，发言一句尽可能简短的回应，可表支持、反对，或另陈己见。
+
+# 叛军首领系统消息 (rebel_leader_system_message)
+# 用于设定叛军组织首领的角色，负责根据下属讨论做出最终决策。
+# 参数: {personality} (性格描述)
+rebel_leader_system_message: |
+  你是清代叛军组织的首领，负责根据下属的讨论和当前叛军状态做出最终决策，你{personality}，你的目标是确保叛军组织的生存和壮大（拥有更多的成员和金钱）。叛军正密谋下一步行动。
+
+# 做出决策提示 (make_decision_prompt)
+# 引导叛军首领根据讨论和当前叛军状况做出最终决策。
+# 参数: {strength} (当前叛军总兵力), {resources} (总预算), {towns_analysis} (各城镇力量分布分析), {summary} (下属讨论总结)
+make_decision_prompt: |
+  当前叛军总兵力{strength}，资源总计{resources}两
+  各城镇力量分布（叛军比官兵多则成功，比例越高获取的资源越多）：
+  {towns_analysis}
+  {summary}
+  在做决策时，请在确保能成功的情况下，尽可能多地发动城市叛乱。宣传可以煽动民众不满情绪，从而加入叛军。
+  输出JSON，无需说明理由：
+  {{"propaganda_budget": 宣传预算（整数）, "target_towns": [{{"town_name": 发动叛乱目标城镇名称1（字符串）, "stage_rebellion": 发动叛乱的兵力投入1（整数，不超过该城镇叛军数）}}, ...], "provocative_speech": 直接号召清代百姓加入叛军的言论，必须包含“叛军”一词， }}
+
+# 总结讨论提示 (summarize_discussions_prompt)
+# 引导叛军信息整理官总结讨论的核心观点。
+# 参数: {num_discussions} (讨论数量), {discussions} (讨论内容)
+summarize_discussions_prompt: |
+  作为叛军信息整理官，请根据下列{num_discussions}条讨论内容，用一句话尽可能简要地总结归纳核心观点，保留具体数值。
+  讨论内容：
+  {discussions}
+
+# 使用说明:
+# - 在配置新的模拟场景时，请根据实际需求调整上述提示语。
+# - 确保提示语中的参数与模拟系统中的实际变量名称一致。
+# - 针对不同的叛军角色和决策阶段，设计清晰、具体的提示语，以引导智能体做出符合预期的行为。

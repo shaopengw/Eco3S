@@ -17,6 +17,7 @@ conda activate AGENTWORLD
 pip install -r requirements.txt
 ```
 
+
 ### 启动可视化界面
 
 1. **启动后端服务**
@@ -35,21 +36,23 @@ npm run dev
 
 访问 http://localhost:5173 查看 Web 界面。
 
-## 模拟场景
+---
+
+## 传统模拟场景
 
 ### 模拟1：基础多智能体交互
 ```bash
-python main.py --config_path config/simulation_config.yaml
+python entrypoints/main.py --config_path config/simulation_config.yaml
 ```
 
 ### 模拟2：TEOG 场景
 ```bash
-python main_TEOG.py --config_path config_TEOG/simulation_config.yaml
+python entrypoints/main_TEOG.py --config_path config_TEOG/simulation_config.yaml
 ```
 
 ### 模拟3：信息传播
 ```bash
-python main_info_propagation.py --config_path config_info_propagation/simulation_config.yaml
+python entrypoints/main_info_propagation.py --config_path config_info_propagation/simulation_config.yaml
 ```
 
 ## 数据分析
@@ -83,9 +86,11 @@ python src/analyzer/simulation_analyzer.py --type default --p 5 --y 2
 │   ├── environment/  # 环境模块
 │   ├── simulation/   # 模拟器模块
 │   └── visualization/# 可视化模块
-├── main.py           # 模拟1入口
-├── main_TEOG.py      # 模拟2入口
-└── main_info_propagation.py  # 模拟3入口
+├─ entrypoints/
+│    ├─ main.py       # 模拟1入口
+│    ├─ main_TEOG.py  # 模拟2入口
+│    └─ main_info_propagation.py  # 模拟3入口
+│    └─ ```
 ```
 
 ## 核心功能

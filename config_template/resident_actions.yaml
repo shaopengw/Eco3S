@@ -1,0 +1,97 @@
+# 居民行为配置模板 (resident_actions.yaml)
+#
+# 本文件定义了模拟中居民智能体可以执行的各种行为及其对应的函数和参数。
+# 不同的模拟场景可能包含不同的居民行为集。
+#
+# ----------------------------------------------------------------------------------------------------
+
+actions:
+  # 行为ID 1: 参加叛乱
+  # 描述: 居民选择加入叛军组织。
+  1:
+    name: "join_rebellion"
+    description: "参加叛乱"
+    function: "job_market.assign_specific_job_withoutcheck" # 对应的内部函数调用
+    is_async: false # 是否异步执行
+    parameters:
+      - name: "job_type"
+        type: "string"
+        required: true
+        default: "叛军"
+        description: "要分配的工作类型，默认为叛军"
+    
+  # 行为ID 2: 迁移到新城镇
+  # 描述: 居民从当前城镇迁移到另一个城镇。
+  2:
+    name: "migrate"
+    description: "迁移到新城镇"
+    function: "migrate_to_new_town"
+    is_async: true
+    parameters:
+      - name: "map"
+        type: "object"
+        required: true
+        default: null
+        description: "地图对象，用于确定迁移目标"
+      - name: "update_job"
+        type: "boolean"
+        required: false
+        # 注意：默认模拟中此参数默认值为 true，TEOG模拟中为 false。
+        # 请根据实际模拟需求选择合适的默认值。
+        default: true # 是否更新职业，如果为false则保留原职业
+    
+  # 行为ID 3: 寻找工作或继续工作
+  # 描述: 居民寻找新的工作或继续从事现有工作。
+  3:
+    name: "work"
+    description: "寻找工作或继续工作"
+    function: "handle_work"
+    is_async: false
+    parameters:
+      - name: "desired_job"
+        type: "string"
+        required: false
+        description: "期望的工作类型"
+      - name: "min_salary"
+        type: "number"
+        required: false
+        description: "可接受的最低薪资"
+
+  # 行为ID 4: 加入城邦
+  # 描述: 居民选择加入城邦，成为城市居民。
+  4:
+    name: "join_country"
+    description: "加入城邦"
+    function: "job_market.assign_specific_job_withoutcheck"
+    is_async: false
+    parameters:
+      - name: "job_type"
+        type: "string"
+        required: true
+        default: "城市居民"
+        description: "要分配的工作类型，默认为城市居民"
+
+  # 行为ID 5: 自给自足
+  # 描述: 城市居民转变为农民，实现自给自足。
+  5:
+    name: "self_sufficiency"
+    description: "自给自足（城市居民转为农民）"
+    function: "job_market.assign_specific_job_withoutcheck"
+    is_async: false
+    parameters:
+      - name: "job_type"
+        type: "string"
+        required: true
+        default: "农民"
+        description: "要分配的工作类型，默认为农民"
+
+
+# 使用说明:
+# - 行为配置中的每个行为标号需要与居民提示词对应。
+# - 每个行为都应有一个唯一的数字ID。
+# - `name` 字段是行为的唯一标识符。
+# - `description` 字段提供行为的简要说明。
+# - `function` 字段指定行为触发时调用的内部函数。
+# - `is_async` 字段指示行为是否异步执行。
+# - `parameters` 列表定义了行为函数所需的参数，包括名称、类型、是否必需、默认值和描述。
+# - 在创建新的模拟配置时，请根据实际需求添加、修改或删除居民行为。

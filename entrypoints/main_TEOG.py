@@ -1,35 +1,7 @@
-import argparse
-import asyncio
-import logging
-import os
-import random
-from datetime import datetime, timedelta
-from typing import Any
-
-from src.environment.map import Map
-from src.environment.time import Time
-from src.environment.job_market import JobMarket
-from src.environment.population import Population
-# from src.environment.information_spread import InformationSpread
-from src.environment.social_network import SocialNetwork
-from src.environment.climate import ClimateSystem
-from src.agents.government import Government
-from src.agents.rebels import Rebellion
-from src.simulation.simulator import Simulator
-from src.visualization.plot_results import plot_all_results
-from src.agents.resident_agent_generator import generate_canal_agents
-from src.agents.government_agent_generator import generate_government_agents
-from src.agents.rebels_agent_generator import generate_rebels_agents
-from src.generator.resident_generate import generate_resident_data, save_resident_data
-from src.environment.towns import Towns
-from src.environment.transport_economy import TransportEconomy
-from dotenv import load_dotenv
-import json
-from src.utils.simulation_context import SimulationContext
-from src.utils.simulation_cache import SimulationCache
+from shared_imports import *
 
 # 设置当前模拟类型
-SimulationContext.set_simulation_type("default")
+SimulationContext.set_simulation_type("TEOG")
 
 # 参数解析
 parser = argparse.ArgumentParser(description="Arguments for simulation.")
@@ -45,18 +17,14 @@ parser.add_argument(
     action="store_true",
     help="Resume simulation from cached data if available.",
 )
-
-# 主运行函数
-async def run_simulation(config: dict[str, Any]) -> None:
-    """
-    运行模拟
-    :param config: 配置字典
-    """
+async def run_simulation(config):
+    """运行模拟"""
     print(f"开始读取缓存文件...")
 
     # 从配置文件中获取 resume_from_cache
     resume_from_cache = config.get('simulation', {}).get('resume_from_cache', False)
-    cache_dir = "./backups"  # 缓存文件存放的目录
+    cache_dir = "./backups_TEOG"  # 缓存文件存放的目录
+    cache_file = None  # 初始化 cache_file 变量
 
     # 获取模拟参数
     population = config['simulation']['initial_population']
@@ -96,39 +64,39 @@ async def run_simulation(config: dict[str, Any]) -> None:
                     # 使用SimulationCache加载缓存
                     simulator = SimulationCache.load_cache(
                         file_path=found_cache_file,
-                        simulator_class=Simulator,
+                        simulator_class=TEOGSimulator,
                         simulator_years=simulator_years,
                         config=config
                     )
                     if simulator:
                         print(f"成功从缓存加载模拟状态，将继续模拟 {simulator_years} 年...")
+                        simulator.total_years = total_years  # 更新总年份
                     else:
                         print("缓存加载失败，将从头开始模拟...")
                         simulator = None # 确保如果加载失败，会创建一个新的模拟器
                 except Exception as e:
                     print(f"加载缓存失败: {e}")
                     simulator = None # 确保如果加载失败，会创建一个新的模拟器
-    
+        else:
+            logging.warning(f"文件 {found_cache_file} 不存在，将从头开始模拟...")
+    else:
+        print("没有发现匹配的缓存文件，将从头开始模拟...")
+
     if simulator is None:
         print("开始初始化......")
-        # 初始化地图
-
-        # # 角色生成-测试时注销
-        # N = config["simulation"]["initial_population"]
-        # resident_data = generate_resident_data(N)
-        # output_path = 'experiment_dataset/resident_data/resident_data.json'
-        # save_resident_data(resident_data, output_path)
-        # print(f"生成了{N} 名居民数据，并保存到 {output_path}")
-
+    
         # 初始化地图
         map = Map(width=config["simulation"]["map_width"], height=config["simulation"]["map_height"], data_file=config["data"]["towns_data_path"])
         map.initialize_map()
         
-        # 初始化时间
-        time = Time(start_year=config["simulation"]["start_year"], 
-                   total_years=config["simulation"]["total_years"])
-
-        # 初始化人口
+        
+        # 初始化时间系统
+        time = Time(
+            start_year=config["simulation"]["start_year"],
+            total_years=config["simulation"]["total_years"]
+        )
+        
+        # 初始化人口系统
         population = Population(
             initial_population=config["simulation"]["initial_population"],
             birth_rate=config["simulation"]["birth_rate"]
@@ -140,7 +108,7 @@ async def run_simulation(config: dict[str, Any]) -> None:
             transport_task=population.get_population() / 2,
             maintenance_cost_base=population.get_population() * 0.4,
         )
-
+        
         # 初始化居民
         resident_info_path = config["data"]["resident_info_path"]  # 居民信息文件路径
         residents = await generate_canal_agents(
@@ -152,19 +120,19 @@ async def run_simulation(config: dict[str, Any]) -> None:
         )
 
         # 初始化城镇
-        towns = Towns(map=map,initial_population=config["simulation"]["initial_population"],job_market_config_path=config["data"]["jobs_config_path"])
+        towns = Towns(map=map,initial_population=config["simulation"]["initial_population"]*20,job_market_config_path=config["data"]["jobs_config_path"])
         towns.initialize_resident_groups(residents)
-        
+            
         # 初始化社交网络
         social_network = SocialNetwork()
         social_network.initialize_network(residents, towns)
-        
+            
         # 为每个城镇的居民群组设置社交网络
         for town_name, town_data in towns.towns.items():
             resident_group = town_data.get('resident_group')
             if resident_group:
                 resident_group.set_social_network(social_network)
-        
+            
         # 可视化社交网络
         try:
             social_network.visualize()
@@ -175,28 +143,15 @@ async def run_simulation(config: dict[str, Any]) -> None:
         except Exception as e:
             print(f"社交网络节点度分布可视化失败：{e}")
 
-        # 计算所有城镇的总叛军和官兵数量
-        total_rebels = 0
-        total_military = 0
-        for city_name, town_data in towns.towns.items():
-            job_market = town_data['job_market']
-            if job_market:
-                # 获取已就业的叛军和官兵数量
-                rebels_count = len(job_market.jobs_info["叛军"]["employed"])
-                military_count = len(job_market.jobs_info["官员及士兵"]["employed"])
-                total_rebels += rebels_count
-                total_military += military_count
-
         # 初始化政府
         government = Government(
             map=map,
             towns=towns,
-            military_strength=total_military,
+            military_strength=0,
             initial_budget=0,
             time=time,
             transport_economy=transport_economy,
             government_prompt_path=config["data"]["government_prompt_path"],
-
         )
 
         # 初始化政府官员
@@ -206,31 +161,17 @@ async def run_simulation(config: dict[str, Any]) -> None:
             government=government,
         )
 
-        # 初始化叛军
-        rebellion = Rebellion(
-            initial_strength=total_rebels,
-            initial_resources=total_rebels * 10,
-            towns=towns,
-            rebels_prompt_path=config["data"]["rebels_prompt_path"],
-        )
-
-        # 初始化叛军成员
-        rebellion_info_path = config["data"]["rebellion_info_path"]  # 叛军信息文件路径
-        rebels_agents = await generate_rebels_agents(
-            rebellion_info_path=rebellion_info_path,
-            rebellion=rebellion,
-        )
         climate_info_path = config["data"]["climate_info_path"]  # 气候信息文件路径
         climate = ClimateSystem(climate_info_path)  # 气候系统
+        
 
-        # 初始化模拟器
-        simulator = Simulator(
+        
+        # 修改模拟器实例化
+        simulator = TEOGSimulator(
             map=map,
             time=time,
             government=government,
             government_officials=government_officials,
-            rebellion=rebellion,
-            rebels_agents=rebels_agents,
             population=population,
             social_network=social_network,
             residents=residents,
@@ -238,30 +179,26 @@ async def run_simulation(config: dict[str, Any]) -> None:
             transport_economy=transport_economy,
             climate=climate,
             config=config,
-        )
-        
+            )
         print("初始化完成")
 
-        # 运行模拟
+    # 运行模拟
     print("开始模拟......")
     try:
         await simulator.run()
-        # 可视化结果
-        # if config["simulation"]["total_years"] > 2:
         data_dict = {
             'years': simulator.results["years"],
-            'rebellions': simulator.results["rebellions"],
-            'unemployment_rate': simulator.results["unemployment_rate"],
             'population': simulator.results["population"],
             'government_budget': simulator.results["government_budget"],
-            'rebellion_strength': simulator.results["rebellion_strength"],
             'average_satisfaction': simulator.results["average_satisfaction"],
             'tax_rate': simulator.results["tax_rate"],
             'river_navigability': simulator.results["river_navigability"],
             'gdp': simulator.results["gdp"],
+            'urban_scale': simulator.results["urban_scale"],
         }
         plot_all_results(data_dict)
-        
+
+        # 保存结果
         print("模拟结束")
 
     except Exception as e:
@@ -277,7 +214,6 @@ async def run_simulation(config: dict[str, Any]) -> None:
             except Exception as e:
                 print(f"保存缓存失败: {e}")
 
-
 if __name__ == "__main__":
     load_dotenv()  # 加载.env环境变量
     # 解析命令行参数
@@ -285,7 +221,6 @@ if __name__ == "__main__":
 
     # 加载配置文件
     if os.path.exists(args.config_path):
-        import yaml
         with open(args.config_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
     else:
@@ -295,10 +230,9 @@ if __name__ == "__main__":
     config["resume_from_cache"] = args.resume_from_cache
 
     # 设置模拟名称
-    if SimulationContext.get_simulation_name() is None:
-        population = config["simulation"].get("initial_population")
-        total_years = config["simulation"].get("total_years")
-        SimulationContext.set_simulation_name(config["simulation"].get("simulation_name"), population, total_years)
+    population = config["simulation"].get("initial_population")
+    total_years = config["simulation"].get("total_years")
+    SimulationContext.set_simulation_name(config["simulation"].get("simulation_name"), population, total_years)
 
     # 运行模拟
     asyncio.run(run_simulation(config))

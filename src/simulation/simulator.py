@@ -1,20 +1,4 @@
-import asyncio
-import json
-import random
-import pandas as pd
-import os
-import yaml
-from datetime import datetime
-from collections import defaultdict
-from colorama import Back
-from src.agents.government import (
-    OrdinaryGovernmentAgent,
-    HighRankingGovernmentAgent,
-    InformationOfficer
-)
-from src.agents.rebels import OrdinaryRebel, RebelLeader, InformationOfficer as RebelsInformationOfficer
-from src.agents.resident_agent_generator import generate_new_residents
-from src.utils.simulation_context import SimulationContext
+from .simulator_imports import *
 
 class Simulator:
     def __init__(self, map, time, government, government_officials, rebellion, rebels_agents, population, social_network, residents, towns, transport_economy, climate, config):

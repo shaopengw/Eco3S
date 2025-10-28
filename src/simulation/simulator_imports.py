@@ -1,0 +1,40 @@
+"""
+Simulator 模块统一导入文件
+包含所有 simulator 需要的标准库、第三方库和项目内部模块
+"""
+
+import asyncio
+import json
+import random
+import sys
+import os
+import re
+import logging
+from datetime import datetime
+from collections import defaultdict
+from enum import Enum
+from typing import List, Dict, Optional
+import pandas as pd
+import yaml
+import networkx as nx
+from colorama import Back
+
+from src.agents.government import (
+    OrdinaryGovernmentAgent,
+    HighRankingGovernmentAgent,
+    InformationOfficer
+)
+from src.agents.rebels import (
+    OrdinaryRebel, 
+    RebelLeader, 
+    InformationOfficer as RebelsInformationOfficer
+)
+from src.agents.resident import Resident
+from src.agents.resident_agent_generator import generate_new_residents
+from src.environment.social_network import SocialNetwork
+from src.environment.towns import Towns
+from src.environment.time import Time
+
+from src.utils.simulation_context import SimulationContext
+
+

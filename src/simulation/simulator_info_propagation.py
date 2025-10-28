@@ -1,21 +1,4 @@
-import asyncio
-import json
-import random
-import pandas as pd
-import re
-import os
-import yaml
-from colorama import Back
-import networkx as nx
-from datetime import datetime
-from enum import Enum
-from typing import List, Dict, Optional
-
-from src.agents.resident import Resident
-from src.environment.social_network import SocialNetwork
-from src.environment.towns import Towns
-from src.environment.time import Time
-from src.utils.simulation_context import SimulationContext
+from .simulator_imports import *
 
 class PropagationStrategy(Enum):
     """信息传播策略枚举"""
