@@ -1,0 +1,47 @@
+# simulation_config.yaml - 模拟核心配置
+
+# 数据路径
+data:
+  climate_info_path: "experiment_dataset/climate_data/climate.csv"
+  government_info_path: "experiment_dataset/government_data/official_data.json"
+  government_prompt_path: "config_template/government_prompts.yaml"
+  jobs_config_path: "config_template/jobs_config.yaml"
+  message_config_path: "config_template/message_config.yaml"  # 信息传播模块
+  questionnaire_path: "config_template/questionnaire.yaml"  # 信息传播模块
+  rebellion_info_path: "experiment_dataset/rebellion_data/rebels_data.json"
+  rebels_prompt_path: "config_template/rebels_prompts.yaml"
+  resident_info_path: "experiment_dataset/resident_data/resident_data.json"
+  resident_prompt_path: "config_template/residents_prompts.yaml"
+  resident_actions_path: "config_template/resident_actions.yaml"
+  towns_data_path: "config_template/towns_data.json"
+
+# 模拟参数
+simulation:
+  start_year: 1650  # 模拟开始年份
+  total_years: 5  # 模拟总年数
+  initial_population: 5  # 初始人口数量
+  birth_rate: 0.05  # 出生率
+  
+  # 地图设置
+  map_width: 100
+  map_height: 150
+  
+  # 群体决策配置
+  group_decision:
+    government:
+      enabled: 1  # 是否启用（1=是，0=否）
+      max_rounds: 2  # 最大讨论轮数
+    rebellion:
+      enabled: 0
+      max_rounds: 2
+  
+  # 行为参数
+  response_probability: 0.5  # 响应概率
+  max_retry_attempts: 3  # 最大重试次数
+  retry_delay: 1  # 重试延迟（秒）
+  
+  # 可选参数
+  resume_from_cache: 0  # 是否从缓存恢复
+  simulation_name: ""  # 模拟名称
+  message_type: "S"  # 消息类型（信息传播模块）
+  seed_count: 1  # 种子数量（信息传播模块）

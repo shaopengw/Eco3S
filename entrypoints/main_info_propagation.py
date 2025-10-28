@@ -1,24 +1,4 @@
-import argparse
-import asyncio
-import logging
-import os
-import yaml
-from datetime import datetime
-from typing import Dict, Any
-import matplotlib.pyplot as plt
-import numpy as np
-from datetime import datetime
-from src.environment.map import Map
-from src.environment.time import Time
-from src.environment.population import Population
-from src.environment.social_network import SocialNetwork
-from src.simulation.simulator_info_propagation import InfoPropagationSimulator
-from src.visualization.plot_results import plot_all_results
-from src.agents.resident_agent_generator import generate_canal_agents
-from src.environment.towns import Towns
-from src.utils.logger import LogManager
-from dotenv import load_dotenv
-from src.utils.simulation_context import SimulationContext
+from shared_imports import *
 
 # 设置当前模拟类型
 SimulationContext.set_simulation_type("info_propagation")

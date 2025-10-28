@@ -1,15 +1,14 @@
 # 实验配置模板
+# 根据实验需求选择和配置模块，不需要的模块可删除或设为 enabled: false
 
-## 基础配置
 simulation:
   name: "default_experiment"
   total_years: 10
   initial_population: 1000
   random_seed: 42
 
-## 模块配置
 modules:
-  # 居民系统配置
+  # 居民系统
   resident:
     enabled: true
     order: 1
@@ -19,88 +18,66 @@ modules:
       health_index_range: [0.3, 1.0]
       lifespan_range: [60, 90]
       
-  # 政府系统配置
+  # 政府系统
   government:
-    enabled: true
+    enabled: false
     order: 2
     parameters:
       initial_budget: 1000000
       initial_military_strength: 100
       tax_rate_range: [0.1, 0.3]
-      policy_impact_factor: 1.0
 
-  # 叛军系统配置
+  # 叛军系统
   rebels:
-    enabled: true
+    enabled: false
     order: 3
     parameters:
       initial_strength: 50
       initial_resources: 10000
       recruitment_rate: 0.01
-      action_threshold: 0.7
 
-  # 环境系统配置
+  # 环境系统
   environment:
     enabled: true
     order: 0
     parameters:
       climate:
-        enabled: true
+        enabled: false
         change_rate: 0.1
-        impact_factor: 1.0
-      
       towns:
         count: 5
         types: ["沿河", "非沿河"]
-        distribution: {"沿河": 0.4, "非沿河": 0.6}
-      
       job_market:
-        job_types: ["农民", "工人", "商人", "官员"]
+        job_types: ["农民", "工人", "商人"]
         base_salary:
-          农民: 15
-          工人: 30
-          商人: 40
-          官员: 50
-        
+          农民: 2000
+          工人: 3000
+          商人: 4000
       transport_economy:
-        base_cost: 10
-        distance_factor: 0.1
+        base_cost: 100
 
-  # 社交网络配置
+  # 社交网络
   social_network:
     enabled: true
     order: 4
     parameters:
       network_density: 0.3
-      connection_radius: 2
       information_spread_rate: 0.5
-      group_threshold: 0.6
 
-## 数据收集配置
+# 数据收集（可选）
 data_collection:
   metrics:
     - population
-    - gdp
     - average_satisfaction
     - employment_rate
-    - stability_index
-  frequency: "monthly"
+  frequency: "yearly"
   format: "csv"
 
-## 分析配置
+# 分析（可选）
 analysis:
-  enabled: true
+  enabled: false
   methods:
     - "time_series"
-    - "network_analysis"
-    - "event_correlation"
   visualization:
     - type: "line_plot"
-      metrics: ["population", "gdp", "average_satisfaction"]
-    - type: "heat_map"
-      metrics: ["social_network_density"]
-    - type: "event_timeline"
-      metrics: ["government_actions", "rebel_activities"]
-  export:
-    format: "json"
-    path: "experiment_results/"
+      metrics: ["population", "average_satisfaction"]
