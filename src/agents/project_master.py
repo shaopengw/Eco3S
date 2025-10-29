@@ -292,8 +292,21 @@ class ProjectMasterAgent(BaseAgent):
         simulator_file_path = simulator_files[0]
         self.logger.info(f"Simulator代码已生成: {simulator_file_path}")
         
-        # === 步骤2: 生成main入口文件框架 ===
-        self.logger.info("步骤 2: 生成main入口文件框架")
+        # === 步骤2: 检查并补完simulator函数 ===
+        self.logger.info("步骤 2: 检查并补完simulator函数实现")
+        refined_simulator = await coder.refine_simulator_functions(
+            simulator_file_path,
+            description_with_context,
+            design_results['modules']
+        )
+        
+        if refined_simulator:
+            self.logger.info("Simulator函数已补完")
+        else:
+            self.logger.warning("Simulator函数补完失败，保持原文件")
+        
+        # === 步骤3: 生成main入口文件完整代码 ===
+        self.logger.info("步骤 3: 生成main入口文件完整代码")
         main_files = await coder.generate_main_file(
             description_with_context,
             simulator_file_path
@@ -305,19 +318,6 @@ class ProjectMasterAgent(BaseAgent):
         
         main_file_path = main_files[0]
         self.logger.info(f"Main文件已生成: {main_file_path}")
-        
-        # === 步骤3: 检查并补完simulator函数 ===
-        self.logger.info("步骤 3: 检查并补完simulator函数实现")
-        refined_simulator = await coder.refine_simulator_functions(
-            simulator_file_path,
-            description_with_context,
-            design_results['modules']
-        )
-        
-        if refined_simulator:
-            self.logger.info("Simulator函数已补完")
-        else:
-            self.logger.warning("Simulator函数补完失败，保持原文件")
         
         # === 步骤4: 检查并补完main函数 ===
         self.logger.info("步骤 4: 检查并补完main函数实现")

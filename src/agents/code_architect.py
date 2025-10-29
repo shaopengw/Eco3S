@@ -47,8 +47,18 @@ class CodeArchitectAgent(BaseAgent):
 2. 根据实验需求初始化所需的环境对象
 3. 实现核心方法：__init__, init_results, prepare_experiment, update_state, execute_actions, collect_results, save_results
 4. 先生成框架，具体实现可以用pass或简单逻辑
+5. 文件名为 simulator_{self.simulation_name}.py
+6. 必须在文件开头添加导入语句：from .simulator_imports import *
+7. 不要在文件末尾添加测试代码（如 sim = ... 或 sim.run()）
+8. 如果要添加测试代码，请放在 if __name__ == "__main__": 块中并注释掉
 
-请生成完整的Python代码，文件名为 simulator_{self.simulation_name}.py"""
+请生成完整的Python代码，使用以下格式返回：
+
+```python
+# 你的代码
+```
+
+确保代码包含在 ```python 和 ``` 标记之间。"""
 		
 		response = await self.generate_llm_response(prompt)
 		if not response:
@@ -57,7 +67,19 @@ class CodeArchitectAgent(BaseAgent):
 		
 		# 提取代码块并写入文件
 		import re
+		# 首先尝试匹配 ```python 标记的代码块
 		code_blocks = re.findall(r'```python\s*([^`]+)```', response, re.DOTALL)
+		
+		# 如果没找到，尝试匹配任意代码块标记
+		if not code_blocks:
+			code_blocks = re.findall(r'```\s*([^`]+)```', response, re.DOTALL)
+		
+		# 如果还是没找到，可能LLM直接返回了代码（没有代码块标记）
+		# 检查响应中是否包含类定义
+		if not code_blocks and ('class ' in response and 'def ' in response):
+			self.logger.warning("未找到代码块标记，尝试直接使用响应内容")
+			code_blocks = [response]
+		
 		file_paths = []
 		if code_blocks:
 			fname = f'simulator_{self.simulation_name}.py'
@@ -68,6 +90,8 @@ class CodeArchitectAgent(BaseAgent):
 			self.logger.info(f"生成simulator代码: {fpath}")
 		else:
 			self.logger.warning("未找到代码块")
+			# 记录LLM响应的前500字符用于调试
+			self.logger.debug(f"LLM响应预览: {response[:500]}")
 		return file_paths
 
 	async def generate_main_file(self, description_md, simulator_file_path):
@@ -105,7 +129,9 @@ class CodeArchitectAgent(BaseAgent):
 
 要求：
 1. 文件名为 main_{self.simulation_name}.py
-2. 导入simulator_{self.simulation_name}模块
+2. 导入语句格式（重要）：
+   - from shared_imports import *
+   - from src.simulation.simulator_{self.simulation_name} import [模拟器类名]
 3. 加载config_{self.simulation_name}/目录下的配置文件
 4. 实现run_simulation函数：
    - 根据simulator的__init__参数，初始化所需的环境对象
@@ -115,8 +141,15 @@ class CodeArchitectAgent(BaseAgent):
 5. 实现main函数：解析参数、加载配置、运行模拟
 6. 代码风格与模板一致
 7. 注意：先生成框架，具体对象初始化可以用注释标注TODO
+8. 不要在文件中直接执行测试代码
 
-请生成完整的Python代码。"""
+请生成完整的Python代码，使用以下格式返回：
+
+```python
+# 你的代码
+```
+
+确保代码包含在 ```python 和 ``` 标记之间。"""
 		
 		response = await self.generate_llm_response(prompt)
 		if not response:
@@ -124,7 +157,18 @@ class CodeArchitectAgent(BaseAgent):
 			return []
 		
 		import re
+		# 首先尝试匹配 ```python 标记的代码块
 		code_blocks = re.findall(r'```python\s*([^`]+)```', response, re.DOTALL)
+		
+		# 如果没找到，尝试匹配任意代码块标记
+		if not code_blocks:
+			code_blocks = re.findall(r'```\s*([^`]+)```', response, re.DOTALL)
+		
+		# 如果还是没找到，可能LLM直接返回了代码（没有代码块标记）
+		if not code_blocks and ('import ' in response and 'def ' in response):
+			self.logger.warning("未找到代码块标记，尝试直接使用响应内容")
+			code_blocks = [response]
+		
 		file_paths = []
 		if code_blocks:
 			fname = f'main_{self.simulation_name}.py'
@@ -135,6 +179,8 @@ class CodeArchitectAgent(BaseAgent):
 			self.logger.info(f"生成main文件: {fpath}")
 		else:
 			self.logger.warning("未找到代码块")
+			# 记录LLM响应的前500字符用于调试
+			self.logger.debug(f"LLM响应预览: {response[:500]}")
 		return file_paths
 
 	async def refine_simulator_functions(self, simulator_file_path, description_md, modules):
