@@ -13,7 +13,7 @@ class CodeArchitectAgent(BaseAgent):
 		self.config_dir = config_dir  # config_[模拟名称]/
 		self.config_template_dir = config_template_dir  # config_template/
 		self.simulation_name = simulation_name
-		self.logger = logging.getLogger(self.__class__.__name__)
+		self.logger = LogManager.get_logger('code_architect')
 
 	async def generate_simulator_code(self, description_md, experiment_template_yaml):
 		"""
@@ -302,8 +302,9 @@ Simulator代码：
 			new_function_code = code_blocks[0].strip()
 			
 			# 找到原函数并替换
-			# 匹配函数定义到下一个同级def或类结束
-			pattern = rf'(\s*)(def {re.escape(function_name)}\([^)]*\):.*?)(?=\n\s*def\s|\n\s*class\s|\Z)'
+			# 支持普通 def 和 async def，匹配函数定义到下一个同级 def 或 class 结束
+			# 允许前置可选的 async 关键字，并在向前查找下一个函数时也允许 async
+			pattern = rf"(\s*)(?:async\s+)?def {re.escape(function_name)}\([^)]*\):.*?(?=\n\s*(?:async\s+)?def\s|\n\s*class\s|\Z)"
 			match = re.search(pattern, current_code, re.DOTALL)
 			
 			if match:

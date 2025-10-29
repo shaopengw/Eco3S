@@ -9,10 +9,13 @@ class LogManager:
     _instances = {}
     
     @classmethod
-    def get_logger(cls, agent_type: Optional[str] = None) -> logging.Logger:
+    def get_logger(cls, agent_type: Optional[str] = None, console_output: bool = True, 
+                    console_level: int = logging.INFO) -> logging.Logger:
         """
         获取或创建一个日志记录器
         :param agent_type: 代理类型，如'resident', 'government', 'rebels'等
+        :param console_output: 是否输出到控制台，默认True
+        :param console_level: 控制台输出级别，默认INFO
         :return: 配置好的日志记录器
         """
         # 确保目录结构存在
@@ -38,18 +41,23 @@ class LogManager:
         logger = logging.getLogger(logger_name)
         logger.setLevel(logging.DEBUG)
         
-        # 创建文件处理器
-        file_handler = logging.FileHandler(log_file, encoding='utf-8')
-        file_handler.setLevel(logging.DEBUG)
-        
         # 设置日志格式
         formatter = logging.Formatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
-        file_handler.setFormatter(formatter)
         
-        # 添加处理器
+        # 创建文件处理器
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
+        
+        # 可选：添加控制台处理器
+        if console_output:
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(console_level)
+            console_handler.setFormatter(formatter)
+            logger.addHandler(console_handler)
         
         # 保存实例
         cls._instances[logger_name] = logger

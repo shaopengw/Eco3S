@@ -11,7 +11,7 @@ class SystemArchitectAgent(BaseAgent):
 		self.output_dir = output_dir
 		self.docs_dir = docs_dir
 		self.config_dir = config_dir
-		self.logger = logging.getLogger(f'{self.__class__.__name__}_{agent_id}')
+		self.logger = LogManager.get_logger('system_architect')
 
 	async def parse_requirement(self, requirement_text):
 		"""
