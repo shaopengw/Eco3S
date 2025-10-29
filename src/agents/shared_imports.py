@@ -18,6 +18,7 @@ import re
 from .model_manager import ModelManager
 from .memory_manager import MemoryManager
 from .base_agent import BaseAgent
+from ..utils.logger import LogManager
 
 import yaml
 import os

@@ -14,48 +14,10 @@ class ProjectMasterAgent(BaseAgent):
         self.docs_dir = docs_dir
         self.config_template_dir = config_template_dir
         self.current_project_dir = None
-        self.current_config_dir = None  # 新增：配置文件夹路径
-        self.current_simulation_name = None  # 新增：模拟名称
+        self.current_config_dir = None
+        self.current_simulation_name = None
         self.max_regeneration_attempts = 3
-        self._logger = None  # 延迟初始化
-        
-    @property
-    def logger(self):
-        """延迟初始化日志记录器"""
-        if self._logger is None:
-            # 创建基本的logger，输出到文件和控制台
-            log_dir = os.path.join(self.workspace_dir, 'logs')
-            os.makedirs(log_dir, exist_ok=True)
-            
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            log_file = os.path.join(log_dir, f'project_master_{timestamp}.log')
-            
-            self._logger = logging.getLogger(f'ProjectMaster_{self.agent_id}')
-            self._logger.setLevel(logging.DEBUG)
-            
-            # 避免重复添加handler
-            if not self._logger.handlers:
-                # 文件处理器
-                file_handler = logging.FileHandler(log_file, encoding='utf-8')
-                file_handler.setLevel(logging.DEBUG)
-                
-                # 控制台处理器
-                console_handler = logging.StreamHandler()
-                console_handler.setLevel(logging.INFO)
-                
-                # 设置格式
-                formatter = logging.Formatter(
-                    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-                )
-                file_handler.setFormatter(formatter)
-                console_handler.setFormatter(formatter)
-                
-                self._logger.addHandler(file_handler)
-                self._logger.addHandler(console_handler)
-                
-                self._logger.info(f"日志文件创建: {log_file}")
-        
-        return self._logger
+        self.logger = LogManager.get_logger('project_master')
 
     async def parse_user_requirement(self, requirement_text):
         """

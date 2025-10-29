@@ -32,6 +32,9 @@ class SimulationContext:
     @classmethod
     def get_simulation_name(cls) -> str:
         """获取当前模拟名称，如果未设置则返回基于时间戳的默认名称"""
+        if cls._simulation_name is None:
+            # 如果未设置，自动设置为时间戳
+            cls.set_simulation_name()
         return cls._simulation_name
     
     @classmethod

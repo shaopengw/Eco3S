@@ -9,6 +9,7 @@ class ResearchAnalystAgent(BaseAgent):
         super().__init__(agent_id, group_type='research_analyst', window_size=3)
         self.output_dir = output_dir
         self.docs_dir = docs_dir
+        self.logger = LogManager.get_logger('research_analyst')
 
     async def evaluate_simulation(self, simulation_results):
         """
