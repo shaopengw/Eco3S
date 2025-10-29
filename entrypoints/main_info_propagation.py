@@ -1,4 +1,5 @@
 from shared_imports import *
+from src.simulation.simulator_info_propagation import InfoPropagationSimulator
 
 # 设置当前模拟类型
 SimulationContext.set_simulation_type("info_propagation")

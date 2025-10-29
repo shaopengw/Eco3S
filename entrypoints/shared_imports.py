@@ -39,11 +39,6 @@ from src.agents.government_agent_generator import generate_government_agents
 from src.agents.rebels_agent_generator import generate_rebels_agents
 from src.agents.resident import ResidentGroup
 
-# 模拟器模块
-from src.simulation.simulator import Simulator
-from src.simulation.simulator_TEOG import TEOGSimulator
-from src.simulation.simulator_info_propagation import InfoPropagationSimulator
-
 # 可视化模块
 from src.visualization.plot_results import plot_all_results
 

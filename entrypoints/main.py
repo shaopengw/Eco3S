@@ -1,4 +1,5 @@
 from shared_imports import *
+from src.simulation.simulator import Simulator
 
 # 设置当前模拟类型
 SimulationContext.set_simulation_type("default")
