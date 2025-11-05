@@ -4,6 +4,9 @@ from camel.messages import BaseMessage
 from camel.models import ModelFactory
 from camel.types import ModelPlatformType, ModelType, OpenAIBackendRole
 from camel.utils import OpenAITokenCounter
+from camel.configs import AnthropicConfig
+from camel.agents import ChatAgent
+
 from datetime import datetime
 from typing import List, Dict, Optional
 import sys

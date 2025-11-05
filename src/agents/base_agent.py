@@ -6,19 +6,42 @@ class BaseAgent:
         self.agent_id = agent_id
         self.model_manager = ModelManager()
         model_config = self.model_manager.get_random_model_config()
-        self.model_type = ModelType(model_config["model_type"])
+        
+        # 对于 OPENAI_COMPATIBLE_MODEL，直接使用字符串作为 model_type
+        if model_config["model_platform"] == ModelPlatformType.OPENAI_COMPATIBLE_MODEL:
+            self.model_type = model_config["model_type"]
+        else:
+            self.model_type = ModelType(model_config["model_type"])
+            
         self.model_config = ChatGPTConfig(**model_config["model_config"])
-        # self.model_config = ChatGPTConfig(model_config["model_config"])
-        self.model_backend = ModelFactory.create(
-            model_platform=model_config["model_platform"],
-            model_type=self.model_type,
-            model_config_dict=self.model_config.as_dict(),
-        )
-        self.token_counter = OpenAITokenCounter(self.model_type)
+        
+        # 构建 ModelFactory.create 的参数
+        create_params = {
+            "model_platform": model_config["model_platform"],
+            "model_type": self.model_type,
+            "model_config_dict": self.model_config.as_dict(),
+        }
+        
+        # 如果是 OPENAI_COMPATIBLE_MODEL，添加 url 和 api_key
+        if model_config["model_platform"] == ModelPlatformType.OPENAI_COMPATIBLE_MODEL:
+            create_params["url"] = model_config["url"]
+            create_params["api_key"] = model_config["api_key"]
+        
+        self.model_backend = ModelFactory.create(**create_params)
+        
+        # 对于 token counter，如果是自定义模型，使用一个通用的模型类型
+        if isinstance(self.model_type, str):
+            # 使用 GPT-4 的 token counter 作为通用计数器
+            self.token_counter = OpenAITokenCounter(ModelType.GPT_4O_MINI)
+            memory_model_type = ModelType.GPT_4O_MINI  # 用于 MemoryManager
+        else:
+            self.token_counter = OpenAITokenCounter(self.model_type)
+            memory_model_type = self.model_type
+            
         self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
         self.memory = MemoryManager(
             agent_id=self.agent_id,
-            model_type=self.model_type,
+            model_type=memory_model_type,
             group_type=group_type,
             window_size=window_size
         )
