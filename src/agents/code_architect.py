@@ -1,6 +1,9 @@
 from .shared_imports import *
 
 class CodeArchitectAgent(BaseAgent):
+	# 常量定义
+	MAX_RETRY_ATTEMPTS = 5  # 每个步骤的最大重试次数
+	MAX_FIX_ATTEMPTS = 2     # 总体检查的最大修复次数
 	"""
 	编码师Agent，继承BaseAgent，负责根据设计文档和配置，自动生成模拟器代码、详细配置和提示词。
 	工作流程：每次只生成一个文件，逐步完成所有任务。
@@ -18,6 +21,7 @@ class CodeArchitectAgent(BaseAgent):
 	async def generate_simulator_code(self, description_md, experiment_template_yaml):
 		"""
 		步骤1: 生成模拟器主代码（simulator_[模拟名称].py）
+		策略：先复制模板文件，然后让LLM在模板基础上进行修改
 		输入：设计文档 + 实验模板配置
 		参考：src/simulation/simulator_template.py
 		"""
@@ -30,32 +34,42 @@ class CodeArchitectAgent(BaseAgent):
 		if os.path.exists(template_path):
 			with open(template_path, 'r', encoding='utf-8') as f:
 				template_content = f.read()
+		else:
+			self.logger.error(f"模板文件不存在: {template_path}")
+			return []
 		
-		prompt = f"""你是多智能体模拟系统的编码师，请根据设计文档和实验模板，生成模拟器代码框架。
+		# 先复制模板文件到目标位置
+		fname = f'simulator_{self.simulation_name}.py'
+		fpath = os.path.join(self.simulator_output_dir, fname)
+		
+		import shutil
+		shutil.copy2(template_path, fpath)
+		self.logger.info(f"✓ 已复制模板文件到: {fpath}")
+		
+		# 让LLM在模板基础上进行修改
+		prompt = f"""你是多智能体模拟系统的编码师。现在有一个模板代码文件，请根据设计文档在模板基础上进行修改。
 
-设计文档：
-{description_md}
-
-实验模板配置：
-{experiment_template_yaml}
-
-代码格式参考（仅参考结构，不要继承）：
+【当前模板代码】
 {template_content}
 
-要求：
-1. 参考模板中的类结构和方法定义格式
-2. 根据实验需求初始化所需的环境对象
-3. 实现核心方法：__init__, init_results, prepare_experiment, update_state, execute_actions, collect_results, save_results
-4. 先生成框架，具体实现可以用pass或简单逻辑
-5. 文件名为 simulator_{self.simulation_name}.py
-6. 必须在文件开头添加导入语句：from .simulator_imports import *
-7. 不要在文件末尾添加测试代码（如 sim = ... 或 sim.run()）
-8. 如果要添加测试代码，请放在 if __name__ == "__main__": 块中并注释掉
+【设计文档】
+{description_md}
 
-请生成完整的Python代码，使用以下格式返回：
+【实验模板配置】
+{experiment_template_yaml}
+
+【修改要求】
+1. 修改类名：从 TemplateSimulator 改为 {self.simulation_name.replace('_', ' ').title().replace(' ', '')}Simulator
+2. 根据设计文档修改 __init__ 方法中的环境对象初始化
+3. 根据实验需求修改各个方法（prepare_experiment, update_state, execute_actions, collect_results）的具体实现
+4. 保留模板中已有的错误处理和日志记录逻辑
+5. 不要在文件末尾添加测试代码
+
+【输出格式】
+请返回修改后的完整代码，使用以下格式：
 
 ```python
-# 你的代码
+# 修改后的完整代码
 ```
 
 确保代码包含在 ```python 和 ``` 标记之间。"""
@@ -63,40 +77,33 @@ class CodeArchitectAgent(BaseAgent):
 		response = await self.generate_llm_response(prompt)
 		if not response:
 			self.logger.error("LLM返回空响应")
-			return []
+			return [fpath]  # 返回模板文件路径（虽然未修改）
 		
 		# 提取代码块并写入文件
 		import re
-		# 首先尝试匹配 ```python 标记的代码块
 		code_blocks = re.findall(r'```python\s*([^`]+)```', response, re.DOTALL)
 		
-		# 如果没找到，尝试匹配任意代码块标记
 		if not code_blocks:
 			code_blocks = re.findall(r'```\s*([^`]+)```', response, re.DOTALL)
 		
-		# 如果还是没找到，可能LLM直接返回了代码（没有代码块标记）
-		# 检查响应中是否包含类定义
 		if not code_blocks and ('class ' in response and 'def ' in response):
 			self.logger.warning("未找到代码块标记，尝试直接使用响应内容")
 			code_blocks = [response]
 		
-		file_paths = []
 		if code_blocks:
-			fname = f'simulator_{self.simulation_name}.py'
-			fpath = os.path.join(self.simulator_output_dir, fname)
 			with open(fpath, 'w', encoding='utf-8') as f:
 				f.write(code_blocks[0].strip())
-			file_paths.append(fpath)
-			self.logger.info(f"生成simulator代码: {fpath}")
+			self.logger.info(f"✓ 已在模板基础上修改并保存: {fpath}")
 		else:
-			self.logger.warning("未找到代码块")
-			# 记录LLM响应的前500字符用于调试
+			self.logger.warning("未找到代码块，保留原模板文件")
 			self.logger.debug(f"LLM响应预览: {response[:500]}")
-		return file_paths
+		
+		return [fpath]
 
 	async def generate_main_file(self, description_md, simulator_file_path):
 		"""
 		步骤2: 生成main入口文件（main_[模拟名称].py）
+		策略：先复制模板文件，然后让LLM在模板基础上进行修改
 		输入：设计文档 + 已生成的simulator文件路径
 		参考：entrypoints/main_template.py
 		"""
@@ -109,6 +116,9 @@ class CodeArchitectAgent(BaseAgent):
 		if os.path.exists(template_path):
 			with open(template_path, 'r', encoding='utf-8') as f:
 				template_content = f.read()
+		else:
+			self.logger.error(f"模板文件不存在: {template_path}")
+			return []
 		
 		# 读取已生成的simulator代码
 		simulator_content = ""
@@ -116,37 +126,41 @@ class CodeArchitectAgent(BaseAgent):
 			with open(simulator_file_path, 'r', encoding='utf-8') as f:
 				simulator_content = f.read()
 		
-		prompt = f"""你是多智能体模拟系统的编码师，请根据设计文档和已生成的simulator代码，生成main入口文件。
+		# 先复制模板文件到目标位置
+		fname = f'main_{self.simulation_name}.py'
+		fpath = os.path.join(self.main_output_dir, fname)
+		
+		import shutil
+		shutil.copy2(template_path, fpath)
+		self.logger.info(f"✓ 已复制模板文件到: {fpath}")
+		
+		# 让LLM在模板基础上进行修改
+		prompt = f"""你是多智能体模拟系统的编码师。现在有一个main入口文件模板，请根据设计文档和simulator代码在模板基础上进行修改。
 
-设计文档：
-{description_md}
-
-已生成的Simulator代码：
-{simulator_content}
-
-代码模板参考：
+【当前模板代码】
 {template_content}
 
-要求：
-1. 文件名为 main_{self.simulation_name}.py
-2. 导入语句格式（重要）：
-   - from shared_imports import *
-   - from src.simulation.simulator_{self.simulation_name} import [模拟器类名]
-3. 加载config_{self.simulation_name}/目录下的配置文件
-4. 实现run_simulation函数：
-   - 根据simulator的__init__参数，初始化所需的环境对象
-   - 创建simulator实例
-   - 调用simulator.run()
-   - 保存结果
-5. 实现main函数：解析参数、加载配置、运行模拟
-6. 代码风格与模板一致
-7. 注意：先生成框架，具体对象初始化可以用注释标注TODO
-8. 不要在文件中直接执行测试代码
+【已生成的Simulator代码】
+{simulator_content}
 
-请生成完整的Python代码，使用以下格式返回：
+【设计文档】
+{description_md}
+
+【修改要求】
+1. 保持模板的整体结构和导入语句（from shared_imports import *）
+2. 修改simulator的导入语句：
+   - 从 from src.simulation.simulator_template import TemplateSimulator
+   - 改为 from src.simulation.simulator_{self.simulation_name} import [实际的Simulator类名]
+3. 修改配置文件路径：从 config_template 改为 config_{self.simulation_name}
+4. 根据simulator的__init__参数，在run_simulation函数中初始化所需的环境对象
+5. 保留模板中已有的参数解析、配置加载、错误处理逻辑
+6. 保持代码风格与模板一致
+
+【输出格式】
+请返回修改后的完整代码，使用以下格式：
 
 ```python
-# 你的代码
+# 修改后的完整代码
 ```
 
 确保代码包含在 ```python 和 ``` 标记之间。"""
@@ -154,42 +168,35 @@ class CodeArchitectAgent(BaseAgent):
 		response = await self.generate_llm_response(prompt)
 		if not response:
 			self.logger.error("LLM返回空响应")
-			return []
+			return [fpath]  # 返回模板文件路径（虽然未修改）
 		
 		import re
-		# 首先尝试匹配 ```python 标记的代码块
 		code_blocks = re.findall(r'```python\s*([^`]+)```', response, re.DOTALL)
 		
-		# 如果没找到，尝试匹配任意代码块标记
 		if not code_blocks:
 			code_blocks = re.findall(r'```\s*([^`]+)```', response, re.DOTALL)
 		
-		# 如果还是没找到，可能LLM直接返回了代码（没有代码块标记）
 		if not code_blocks and ('import ' in response and 'def ' in response):
 			self.logger.warning("未找到代码块标记，尝试直接使用响应内容")
 			code_blocks = [response]
 		
-		file_paths = []
 		if code_blocks:
-			fname = f'main_{self.simulation_name}.py'
-			fpath = os.path.join(self.main_output_dir, fname)
 			with open(fpath, 'w', encoding='utf-8') as f:
 				f.write(code_blocks[0].strip())
-			file_paths.append(fpath)
-			self.logger.info(f"生成main文件: {fpath}")
+			self.logger.info(f"✓ 已在模板基础上修改并保存: {fpath}")
 		else:
-			self.logger.warning("未找到代码块")
-			# 记录LLM响应的前500字符用于调试
+			self.logger.warning("未找到代码块，保留原模板文件")
 			self.logger.debug(f"LLM响应预览: {response[:500]}")
-		return file_paths
+		
+		return [fpath]
 
 	async def refine_simulator_functions(self, simulator_file_path, description_md, modules):
 		"""
-		步骤3: 检查并补完simulator文件的函数
-		分为三个子步骤：
-		3.1 创建工作列表 - 识别不完整的函数
-		3.2 逐个补完函数 - 针对每个函数单独实现
-		3.3 总体检查与修复 - 检查问题并自动修复
+		步骤3: 检查并补完simulator文件的函数（循环重试版本）
+		分为三个子步骤，每个步骤都有重试机制：
+		3.1 创建工作列表 - 识别不完整的函数（最多5次重试）
+		3.2 逐个补完函数 - 针对每个函数单独实现（每个函数最多5次重试）
+		3.3 总体检查与修复 - 检查问题并自动修复（最多2次重试）
 		"""
 		self.logger.info("=== 步骤3: 开始补完simulator函数 ===")
 		
@@ -198,40 +205,93 @@ class CodeArchitectAgent(BaseAgent):
 			self.logger.error(f"Simulator文件不存在: {simulator_file_path}")
 			return []
 		
-		with open(simulator_file_path, 'r', encoding='utf-8') as f:
-			simulator_content = f.read()
-		
-		# 3.1 创建工作列表
+		# ============ 步骤3.1: 创建工作列表（循环重试） ============
 		self.logger.info("步骤3.1: 创建工作列表...")
-		todo_list = await self._create_simulator_todo_list(simulator_content, description_md)
-		if not todo_list:
-			self.logger.info("✓ 未发现需要补完的函数")
-		else:
-			self.logger.info(f"\n{'='*60}")
-			self.logger.info(f"📋 工作列表（共 {len(todo_list)} 项）:")
-			for idx, item in enumerate(todo_list, 1):
-				self.logger.info(f"  {idx}. {item['function_name']}")
-				self.logger.info(f"     描述: {item['description']}")
-				self.logger.info(f"     模块: {', '.join(item.get('required_modules', []))}")
-			self.logger.info(f"{'='*60}\n")
+		todo_list = None
+		for attempt in range(1, self.MAX_RETRY_ATTEMPTS + 1):
+			with open(simulator_file_path, 'r', encoding='utf-8') as f:
+				simulator_content = f.read()
 			
-			# 3.2 逐个补完函数
-			self.logger.info("步骤3.2: 逐个补完函数...")
-			for idx, todo_item in enumerate(todo_list, 1):
-				self.logger.info(f"正在处理 [{idx}/{len(todo_list)}]: {todo_item['function_name']}")
+			self.logger.info(f"  尝试 [{attempt}/{self.MAX_RETRY_ATTEMPTS}] 创建工作列表...")
+			todo_list = await self._create_simulator_todo_list(simulator_content, description_md)
+			
+			# 验证工作列表质量
+			if todo_list is not None:  # 即使是空列表也是有效的
+				if len(todo_list) == 0:
+					self.logger.info("✓ 未发现需要补完的函数，代码已完整")
+					break
+				else:
+					self.logger.info(f"✓ 成功创建工作列表（共 {len(todo_list)} 项）")
+					break
+			else:
+				self.logger.warning(f"⚠️ 第 {attempt} 次创建工作列表失败")
+				if attempt == self.MAX_RETRY_ATTEMPTS:
+					# 超过5次，让大模型直接修复
+					self.logger.error("❌ 创建工作列表失败次数过多，请求大模型修复...")
+					fixed = await self._diagnose_failure(
+						step_name="创建工作列表",
+						file_path=simulator_file_path,
+						error_info="无法成功解析代码并生成工作列表",
+						attempt_count=attempt
+					)
+					if not fixed:
+						self.logger.error("❌ 大模型修复失败")
+						return []
+					# 修复成功，重新读取代码并继续
+		
+		if not todo_list:
+			return [simulator_file_path]  # 代码已完整
+		
+		# 显示工作列表
+		self.logger.info(f"\n{'='*60}")
+		self.logger.info(f"📋 工作列表（共 {len(todo_list)} 项）:")
+		for idx, item in enumerate(todo_list, 1):
+			self.logger.info(f"  {idx}. {item['function_name']}")
+			self.logger.info(f"     描述: {item['description']}")
+			self.logger.info(f"     模块: {', '.join(item.get('required_modules', []))}")
+		self.logger.info(f"{'='*60}\n")
+		
+		# ============ 步骤3.2: 逐个补完函数（每个函数循环重试） ============
+		self.logger.info("步骤3.2: 逐个补完函数...")
+		for idx, todo_item in enumerate(todo_list, 1):
+			function_name = todo_item['function_name']
+			self.logger.info(f"\n处理任务 [{idx}/{len(todo_list)}]: {function_name}")
+			
+			# 对每个函数进行循环重试
+			success = False
+			for attempt in range(1, self.MAX_RETRY_ATTEMPTS + 1):
+				self.logger.info(f"  尝试 [{attempt}/{self.MAX_RETRY_ATTEMPTS}] 补完函数 {function_name}...")
+				
 				success = await self._complete_simulator_function(
 					simulator_file_path, 
 					todo_item, 
 					description_md
 				)
-				if not success:
-					self.logger.warning(f"⚠️ 任务 {idx} 未能完成")
+				
+				if success:
+					self.logger.info(f"✓ 成功补完函数: {function_name}")
+					break
+				else:
+					self.logger.warning(f"⚠️ 第 {attempt} 次补完失败")
+				if attempt == self.MAX_RETRY_ATTEMPTS:
+					# 超过5次，让大模型直接修复
+					self.logger.error(f"❌ 函数 {function_name} 补完失败次数过多，请求大模型修复...")
+					fixed = await self._diagnose_failure(
+						step_name=f"补完函数 {function_name}",
+						file_path=simulator_file_path,
+						error_info=f"无法成功补完函数: {todo_item}",
+						attempt_count=attempt
+					)
+					if fixed:
+						self.logger.info(f"✓ 大模型已修复函数 {function_name}")
+					else:
+						self.logger.error(f"❌ 大模型修复失败，跳过函数 {function_name}")
+					# 无论成功与否，继续处理下一个函数
 		
-		# 3.3 总体检查与修复（最多重试2次）
-		self.logger.info("步骤3.3: 总体检查与修复...")
-		max_fix_attempts = 2
-		for attempt in range(1, max_fix_attempts + 1):
-			self.logger.info(f"第 {attempt}/{max_fix_attempts} 次检查...")
+		# ============ 步骤3.3: 总体检查与修复（循环重试） ============
+		self.logger.info("\n步骤3.3: 总体检查与修复...")
+		for attempt in range(1, self.MAX_FIX_ATTEMPTS + 1):
+			self.logger.info(f"第 {attempt}/{self.MAX_FIX_ATTEMPTS} 次总体检查...")
 			
 			issues = await self._check_and_fix_code(simulator_file_path, description_md, modules, "simulator")
 			
@@ -239,10 +299,20 @@ class CodeArchitectAgent(BaseAgent):
 				self.logger.info("✓ Simulator代码完整无误")
 				return [simulator_file_path]
 			else:
-				if attempt < max_fix_attempts:
-					self.logger.warning(f"发现 {len(issues)} 个问题，尝试自动修复...")
+				self.logger.warning(f"发现 {len(issues)} 个问题: {issues[:3]}...")  # 只显示前3个
+				if attempt < self.MAX_FIX_ATTEMPTS:
+					self.logger.info("尝试自动修复...")
 				else:
-					self.logger.warning(f"仍有 {len(issues)} 个问题未解决，但文件已更新")
+					# 最后一次仍有问题，请求大模型直接修复
+					self.logger.error("❌ 总体检查仍有问题，请求大模型修复...")
+					fixed = await self._diagnose_failure(
+						step_name="总体检查与修复",
+						file_path=simulator_file_path,
+						error_info=f"剩余问题: {issues}",
+						attempt_count=attempt
+					)
+					if not fixed:
+						self.logger.error("❌ 大模型修复失败")
 		
 		return [simulator_file_path]
 
@@ -549,11 +619,11 @@ Simulator代码参考：
 
 	async def refine_main_functions(self, main_file_path, simulator_file_path, description_md, modules):
 		"""
-		步骤4: 检查并补完main文件的函数
-		分为三个子步骤：
-		4.1 创建工作列表 - 识别不完整的部分
-		4.2 逐个补完 - 针对每个部分单独实现
-		4.3 总体检查与修复 - 检查问题并自动修复
+		步骤4: 检查并补完main文件的函数（循环重试版本）
+		分为三个子步骤，每个步骤都有重试机制：
+		4.1 创建工作列表 - 识别不完整的部分（最多5次重试）
+		4.2 逐个补完 - 针对每个部分单独实现（每个任务最多5次重试）
+		4.3 总体检查与修复 - 检查问题并自动修复（最多2次重试）
 		"""
 		self.logger.info("=== 步骤4: 开始补完main函数 ===")
 		
@@ -562,47 +632,100 @@ Simulator代码参考：
 			self.logger.error(f"Main文件不存在: {main_file_path}")
 			return []
 		
-		with open(main_file_path, 'r', encoding='utf-8') as f:
-			main_content = f.read()
-		
 		# 读取simulator代码
 		simulator_content = ""
 		if os.path.exists(simulator_file_path):
 			with open(simulator_file_path, 'r', encoding='utf-8') as f:
 				simulator_content = f.read()
 		
-		# 4.1 创建工作列表
+		# ============ 步骤4.1: 创建工作列表（循环重试） ============
 		self.logger.info("步骤4.1: 创建工作列表...")
-		todo_list = await self._create_main_todo_list(main_content, simulator_content, description_md)
-		if not todo_list:
-			self.logger.info("✓ 未发现需要补完的任务")
-		else:
-			self.logger.info(f"\n{'='*60}")
-			self.logger.info(f"📋 工作列表（共 {len(todo_list)} 项）:")
-			for idx, item in enumerate(todo_list, 1):
-				self.logger.info(f"  {idx}. {item['task_name']}")
-				self.logger.info(f"     描述: {item['description']}")
-				self.logger.info(f"     模块: {', '.join(item.get('required_modules', []))}")
-			self.logger.info(f"{'='*60}\n")
+		todo_list = None
+		for attempt in range(1, self.MAX_RETRY_ATTEMPTS + 1):
+			with open(main_file_path, 'r', encoding='utf-8') as f:
+				main_content = f.read()
 			
-			# 4.2 逐个补完
-			self.logger.info("步骤4.2: 逐个补完任务...")
-			for idx, todo_item in enumerate(todo_list, 1):
-				self.logger.info(f"正在处理 [{idx}/{len(todo_list)}]: {todo_item['task_name']}")
+			self.logger.info(f"  尝试 [{attempt}/{self.MAX_RETRY_ATTEMPTS}] 创建工作列表...")
+			todo_list = await self._create_main_todo_list(main_content, simulator_content, description_md)
+			
+			# 验证工作列表质量
+			if todo_list is not None:
+				if len(todo_list) == 0:
+					self.logger.info("✓ 未发现需要补完的任务，代码已完整")
+					break
+				else:
+					self.logger.info(f"✓ 成功创建工作列表（共 {len(todo_list)} 项）")
+					break
+			else:
+				self.logger.warning(f"⚠️ 第 {attempt} 次创建工作列表失败")
+				if attempt == self.MAX_RETRY_ATTEMPTS:
+					# 超过5次，让大模型直接修复
+					self.logger.error("❌ 创建工作列表失败次数过多，请求大模型修复...")
+					fixed = await self._diagnose_failure(
+						step_name="创建Main工作列表",
+						file_path=main_file_path,
+						error_info="无法成功解析代码并生成工作列表",
+						attempt_count=attempt
+					)
+					if not fixed:
+						self.logger.error("❌ 大模型修复失败")
+						return []
+					# 修复成功，重新读取代码并继续
+		
+		if not todo_list:
+			return [main_file_path]  # 代码已完整
+		
+		# 显示工作列表
+		self.logger.info(f"\n{'='*60}")
+		self.logger.info(f"📋 工作列表（共 {len(todo_list)} 项）:")
+		for idx, item in enumerate(todo_list, 1):
+			self.logger.info(f"  {idx}. {item['task_name']}")
+			self.logger.info(f"     描述: {item['description']}")
+			self.logger.info(f"     模块: {', '.join(item.get('required_modules', []))}")
+		self.logger.info(f"{'='*60}\n")
+		
+		# ============ 步骤4.2: 逐个补完任务（每个任务循环重试） ============
+		self.logger.info("步骤4.2: 逐个补完任务...")
+		for idx, todo_item in enumerate(todo_list, 1):
+			task_name = todo_item['task_name']
+			self.logger.info(f"\n处理任务 [{idx}/{len(todo_list)}]: {task_name}")
+			
+			# 对每个任务进行循环重试
+			success = False
+			for attempt in range(1, self.MAX_RETRY_ATTEMPTS + 1):
+				self.logger.info(f"  尝试 [{attempt}/{self.MAX_RETRY_ATTEMPTS}] 补完任务 {task_name}...")
+				
 				success = await self._complete_main_task(
 					main_file_path,
 					todo_item,
 					simulator_content,
 					description_md
 				)
-				if not success:
-					self.logger.warning(f"⚠️ 任务 {idx} 未能完成")
+				
+				if success:
+					self.logger.info(f"✓ 成功补完任务: {task_name}")
+					break
+				else:
+					self.logger.warning(f"⚠️ 第 {attempt} 次补完失败")
+					if attempt == self.MAX_RETRY_ATTEMPTS:
+						# 超过5次，让大模型直接修复
+						self.logger.error(f"❌ 任务 {task_name} 补完失败次数过多，请求大模型修复...")
+						fixed = await self._diagnose_failure(
+							step_name=f"补完Main任务 {task_name}",
+							file_path=main_file_path,
+							error_info=f"无法成功补完任务: {todo_item}",
+							attempt_count=attempt
+						)
+						if fixed:
+							self.logger.info(f"✓ 大模型已修复任务 {task_name}")
+						else:
+							self.logger.error(f"❌ 大模型修复失败，跳过任务 {task_name}")
+						# 无论成功与否，继续处理下一个任务
 		
-		# 4.3 总体检查与修复（最多重试2次）
-		self.logger.info("步骤4.3: 总体检查与修复...")
-		max_fix_attempts = 2
-		for attempt in range(1, max_fix_attempts + 1):
-			self.logger.info(f"第 {attempt}/{max_fix_attempts} 次检查...")
+		# ============ 步骤4.3: 总体检查与修复（循环重试） ============
+		self.logger.info("\n步骤4.3: 总体检查与修复...")
+		for attempt in range(1, self.MAX_FIX_ATTEMPTS + 1):
+			self.logger.info(f"第 {attempt}/{self.MAX_FIX_ATTEMPTS} 次总体检查...")
 			
 			issues = await self._check_and_fix_code(main_file_path, description_md, modules, "main", simulator_content)
 			
@@ -610,10 +733,20 @@ Simulator代码参考：
 				self.logger.info("✓ Main代码完整无误")
 				return [main_file_path]
 			else:
-				if attempt < max_fix_attempts:
-					self.logger.warning(f"发现 {len(issues)} 个问题，尝试自动修复...")
+				self.logger.warning(f"发现 {len(issues)} 个问题: {issues[:3]}...")  # 只显示前3个
+				if attempt < self.MAX_FIX_ATTEMPTS:
+					self.logger.info("尝试自动修复...")
 				else:
-					self.logger.warning(f"仍有 {len(issues)} 个问题未解决，但文件已更新")
+					# 最后一次仍有问题，请求大模型直接修复
+					self.logger.error("❌ 总体检查仍有问题，请求大模型修复...")
+					fixed = await self._diagnose_failure(
+						step_name="Main总体检查与修复",
+						file_path=main_file_path,
+						error_info=f"剩余问题: {issues}",
+						attempt_count=attempt
+					)
+					if not fixed:
+						self.logger.error("❌ 大模型修复失败")
 		
 		return [main_file_path]
 
@@ -1041,3 +1174,83 @@ API文档参考：
 		
 		return api_docs_str
 
+	async def _diagnose_failure(self, step_name, file_path, error_info, attempt_count):
+		"""
+		当某个步骤失败超过5次后，请求大模型诊断并直接修复问题
+		
+		Args:
+			step_name: 失败的步骤名称
+			file_path: 相关文件路径
+			error_info: 错误信息
+			attempt_count: 尝试次数
+		
+		Returns:
+			bool: 是否成功修复
+		"""
+		self.logger.info(f"🔍 正在请求大模型诊断并修复步骤 '{step_name}' 的问题...")
+		
+		# 读取当前文件内容
+		file_content = ""
+		if os.path.exists(file_path):
+			with open(file_path, 'r', encoding='utf-8') as f:
+				file_content = f.read()
+		
+		prompt = f"""你是Python代码修复专家，现在有一个自动化代码生成任务反复失败，需要你直接修复代码。
+
+【失败步骤】
+{step_name}
+
+【失败次数】
+已尝试 {attempt_count} 次，全部失败
+
+【错误信息】
+{error_info}
+
+【当前文件完整内容】
+{file_content}
+
+任务：
+1. 分析失败的根本原因
+2. 定位具体问题所在
+3. **直接生成修复后的完整代码**
+
+要求：
+- 不要只给建议或诊断报告
+- 必须返回完整的、可直接运行的修复后代码
+- 保持代码结构和风格一致
+- 确保修复后的代码逻辑正确、完整
+
+请生成修复后的完整代码，使用以下格式返回：
+
+```python
+# 修复后的完整代码
+```
+
+确保代码包含在 ```python 和 ``` 标记之间。"""
+		
+		response = await self.generate_llm_response(prompt)
+		
+		if not response:
+			self.logger.error("❌ 大模型未返回有效响应")
+			return False
+		
+		# 提取修复后的代码
+		import re
+		code_blocks = re.findall(r'```python\s*([^`]+)```', response, re.DOTALL)
+		if not code_blocks:
+			code_blocks = re.findall(r'```\s*([^`]+)```', response, re.DOTALL)
+		
+		if code_blocks:
+			fixed_code = code_blocks[0].strip()
+			
+			# 保存修复后的代码
+			with open(file_path, 'w', encoding='utf-8') as f:
+				f.write(fixed_code)
+			
+			self.logger.info(f"✓ 大模型已修复代码并保存到: {file_path}")
+			self.logger.info(f"修复的代码长度: {len(fixed_code)} 字符")
+			return True
+		else:
+			self.logger.error("❌ 未能从大模型响应中提取代码块")
+			self.logger.debug(f"大模型响应预览: {response[:500]}")
+			return False

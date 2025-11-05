@@ -3,7 +3,6 @@ import json
 import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from openai import OpenAI
 from pathlib import Path
 import yaml
 from dotenv import load_dotenv
