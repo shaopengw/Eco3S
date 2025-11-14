@@ -2,6 +2,8 @@
 
 from shared_imports import *
 
+SimulationContext.set_simulation_type("{模拟名称}")
+
 def parse_args(default_config_path):
     """解析命令行参数"""
     parser = argparse.ArgumentParser(description="实验参数配置")
@@ -28,7 +30,7 @@ async def run_simulation(config):
         height=config["simulation"]["map_height"],
         data_file=config["data"].get("towns_data_path", "")
     )
-    map.initialize_map()
+    map.initialize_map() # 不可改动
 
     # 时间对象
     time = Time(
@@ -65,6 +67,7 @@ async def run_simulation(config):
         initial_population=config["simulation"].get("initial_population", 1000),
         job_market_config_path=config["data"].get("jobs_config_path", "")
     )
+    # 重要：初始化居民组，不可删除
     towns.initialize_resident_groups(residents)
 
     # 社交网络对象
@@ -129,22 +132,23 @@ async def run_simulation(config):
     
     try:
         print("开始运行模拟...")
-        # await simulator.run()
+        await simulator.run()
         print("模拟完成。")
         
-        # TODO: 可视化和保存
-        # plot_all_results(simulator.results)
-        # simulator.save_results()
+        # 可视化和保存
+        plot_all_results(simulator.results)
+        simulator.save_results()
         
     except Exception as e:
         logging.error(f"模拟运行错误: {e}")
         raise
 
+# ===== 以下代码块不可删除或修改 =====
 if __name__ == "__main__":
     load_dotenv()
     
     # 解析参数和加载配置
-    args = parse_args(default_config_path="config/simulation_config.yaml")
+    args = parse_args(default_config_path="config/[模拟名称]/simulation_config.yaml")
     
     if not os.path.exists(args.config_path):
         raise FileNotFoundError(f"配置文件未找到: {args.config_path}")

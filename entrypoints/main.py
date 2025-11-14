@@ -11,7 +11,7 @@ parser.add_argument(
     type=str,
     help="Path to the YAML config file.",
     required=False,
-    default="config/simulation_config.yaml",
+    default="config/default/simulation_config.yaml",
 )
 parser.add_argument(
     "--resume_from_cache",

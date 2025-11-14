@@ -42,17 +42,17 @@ npm run dev
 
 ### 模拟1：基础多智能体交互
 ```bash
-python entrypoints/main.py --config_path config/simulation_config.yaml
+python entrypoints/main.py --config_path config/default/simulation_config.yaml
 ```
 
 ### 模拟2：TEOG 场景
 ```bash
-python entrypoints/main_TEOG.py --config_path config_TEOG/simulation_config.yaml
+python entrypoints/main_TEOG.py --config_path config/TEOG/simulation_config.yaml
 ```
 
 ### 模拟3：信息传播
 ```bash
-python entrypoints/main_info_propagation.py --config_path config_info_propagation/simulation_config.yaml
+python entrypoints/main_info_propagation.py --config_path config/info_propagation/simulation_config.yaml
 ```
 
 ## 数据分析
@@ -77,9 +77,11 @@ python src/analyzer/simulation_analyzer.py --type default --p 5 --y 2
 ## 项目结构
 
 ```
-├── config/           # 模拟1配置文件
-├── config_TEOG/      # 模拟2配置文件  
-├── config_info_propagation/  # 模拟3配置文件
+├── config/           # 所有配置文件
+│   ├── default/      # 模拟1配置文件
+│   ├── TEOG/         # 模拟2配置文件  
+│   ├── info_propagation/  # 模拟3配置文件
+│   └── template/     # 配置模板
 ├── frontend/         # 前端代码
 ├── src/              # 核心源代码
 │   ├── agents/       # 智能体模块

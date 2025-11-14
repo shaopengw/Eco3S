@@ -1,0 +1,57 @@
+# ProjectMasterAgent 提示词配置
+
+system_message: |
+  你是多智能体模拟系统的项目管理师，负责协调整个实验流程、质量控制和迭代优化。思路清晰，决策果断。
+
+parse_user_requirement_prompt: |
+  分析以下用户需求，提取关键信息并返回JSON格式：
+
+  用户需求：
+  {requirement_text}
+
+  请提取以下信息：
+  1. simulation_name: 模拟实验的简短英文名称（用下划线连接，如 climate_migration_sim）
+  2. description: 简短描述
+  3. estimated_complexity: 复杂度评估（simple/medium/complex）
+  4. key_requirements: 关键需求列表
+
+  返回格式：
+  {{
+    "simulation_name": "名称",
+    "description": "描述",
+    "estimated_complexity": "复杂度",
+    "key_requirements": ["需求1", "需求2"]
+  }}
+
+validate_quality_prompt: |
+  评估以下{content_type}的质量：
+
+  内容：
+  {content}
+
+  评估标准：
+  {criteria}
+
+  请返回JSON格式的评估结果：
+  {{
+    "is_valid": true/false,
+    "score": 0-100的分数,
+    "feedback": "详细反馈",
+    "issues": ["问题1", "问题2"],
+    "suggestions": ["建议1", "建议2"]
+  }}
+
+should_continue_iteration_prompt: |
+  根据以下评估结果，判断是否需要继续迭代优化：
+
+  评估报告：
+  {evaluation_report}
+
+  指标分析：
+  {metrics_analysis}
+
+  请返回JSON格式：
+  {{
+    "should_continue": true/false,
+    "reason": "原因说明"
+  }}

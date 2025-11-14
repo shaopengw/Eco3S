@@ -1,0 +1,152 @@
+# 模拟系统模块配置文件
+# 说明: required=true表示使用该模块, false表示不使用
+# 编码时会根据required=true的模块自动加载对应的API文档
+
+# 模块配置
+selected_modules:
+  # 必选模块
+  - module_name: "time"
+    display_name: "时间系统"
+    api_doc: "time.md"
+    required: true
+      
+  - module_name: "map"
+    display_name: "地图系统"
+    api_doc: "map.md"
+    required: true
+      
+  - module_name: "population"
+    display_name: "人口系统"
+    api_doc: "population.md"
+    required: true
+      
+  - module_name: "resident"
+    display_name: "居民系统"
+    api_doc: "resident.md"
+    config_files: "resident_actions.yaml, residents_prompts.yaml"
+    required: true
+      
+  - module_name: "towns"
+    display_name: "城镇系统"
+    api_doc: "towns.md"
+    onfig_files: "towns_data.json"
+    required: true
+  
+  # 可选模块
+  - module_name: "job_market"
+    display_name: "就业市场"
+    api_doc: "job_market.md"
+    config_files: "jobs_config.yaml"
+    required: true
+      
+  - module_name: "transport_economy"
+    display_name: "运输经济系统"
+    api_doc: "transport_economy.md"
+    required: false
+  
+  - module_name: "social_network"
+    display_name: "社交网络"
+    api_doc: "social_network.md"
+    required: true
+      
+  - module_name: "government"
+    display_name: "政府系统"
+    api_doc: "government.md"
+    config_files: "government_prompts.yaml"
+    required: false
+      
+  - module_name: "rebels"
+    display_name: "叛军系统"
+    api_doc: "rebels.md"
+    config_files: "rebels_prompts.yaml"
+    required: false
+  
+  - module_name: "climate"
+    display_name: "气候系统"
+    api_doc: "climate.md"
+    required: false
+
+# 实验基础配置
+simulation:
+  name: "template_experiment"
+  description: "模板实验配置，用于快速创建新实验"
+  total_years: 10
+  initial_population: 1000
+  random_seed: 42
+
+# 模块参数配置
+module_parameters:
+  # 居民系统参数
+  resident:
+    basic_living_cost: 1000
+    initial_satisfaction: 0.7
+    health_index_range: [0.3, 1.0]
+    lifespan_range: [60, 90]
+    
+  # 就业市场参数
+  job_market:
+    job_types: ["农民", "工人", "商人"]
+    base_salary:
+      农民: 2000
+      工人: 3000
+      商人: 4000
+    unemployment_rate: 0.05
+    
+  # 社交网络参数
+  social_network:
+    network_density: 0.3
+    information_spread_rate: 0.5
+    max_connections: 10
+    
+  # 城镇系统参数
+  towns:
+    count: 5
+    types: ["沿河", "非沿河"]
+    initial_resources: 100000
+    
+  # 以下为未启用模块的参数(需要时取消注释并设置required=true)
+  
+  # 交通经济参数
+  # transport_economy:
+  #   base_cost: 100
+  #   distance_factor: 1.5
+  
+  # 政府系统参数
+  # government:
+  #   initial_budget: 1000000
+  #   initial_military_strength: 100
+  #   tax_rate_range: [0.1, 0.3]
+  
+  # 叛军系统参数
+  # rebels:
+  #   initial_strength: 50
+  #   initial_resources: 10000
+  #   recruitment_rate: 0.01
+  
+  # 气候系统参数
+  # climate:
+  #   change_rate: 0.1
+  #   disaster_probability: 0.05
+
+# 数据收集配置
+data_collection:
+  enabled: true
+  metrics:
+    - population
+    - average_satisfaction
+    - employment_rate
+  frequency: "yearly"
+  output_format: "csv"
+  save_path: "experiment_dataset/"
+
+# 分析与可视化配置
+analysis:
+  enabled: false
+  methods:
+    - "time_series"
+    - "statistical_summary"
+  visualization:
+    - type: "line_plot"
+      metrics: ["population", "average_satisfaction"]
+    - type: "bar_chart"
+      metrics: ["employment_rate"]

@@ -82,6 +82,9 @@ class Map:
         """
         将经度转换为地图x坐标
         """
+        # 防止除零错误
+        if self.max_longitude == self.min_longitude:
+            return self.width // 2  # 返回中心点
         return int((longitude - self.min_longitude) / (self.max_longitude - self.min_longitude) * self.width)
 
     def latitude_to_y(self, latitude):
@@ -89,6 +92,9 @@ class Map:
         将纬度转换为地图y坐标
         """
         # 纬度越高，y坐标越小（北在上）
+        # 防止除零错误
+        if self.max_latitude == self.min_latitude:
+            return self.height // 2  # 返回中心点
         return int((self.max_latitude - latitude) / (self.max_latitude - self.min_latitude) * self.height)
 
     def initialize_river(self):
@@ -112,6 +118,11 @@ class Map:
                 x1, y1, _ = river_points[i]
                 x2, y2, _ = river_points[i + 1]
                 steps = max(abs(x2 - x1), abs(y2 - y1)) * 2
+                
+                # 如果两个点相同，跳过
+                if steps == 0:
+                    continue
+                    
                 for step in range(steps + 1):
                     t = step / steps
                     x = int(x1 + t * (x2 - x1))
@@ -264,9 +275,6 @@ class Map:
         :param climate_impact_factor: 气候影响因子，范围[0,1]，表示气候对运河的负面影响。
         :return: 当前运河通航能力。
         """
-        # 验证气候影响因子
-        # if not (0 <= climate_impact_factor <= 1):
-        #     return "气候影响因子必须在0到1之间"
             
         # 自然衰减和气候影响
         natural_decay_rate = 0.1
@@ -286,15 +294,6 @@ class Map:
         :return: 通航能力值（0-1之间的浮点数）
         """
         return self.navigability
-
-    def is_river_nearby(self, location):
-        """
-        判断某个位置是否靠近运河
-        :param location: 位置的坐标 (x, y)
-        :return: 是否靠近运河（布尔值）
-        """
-        x, y = location
-        return self.river_grid[y, x] > 0.5
 
     def get_terrain_ruggedness(self, location):
         """
@@ -376,7 +375,7 @@ class Map:
 
 if __name__ == "__main__":
     # 初始化地图
-    map = Map(width=100, height=150,data_file='config_TEOG/towns_data.json')
+    map = Map(width=100, height=150,data_file='config/TEOG/towns_data.json')
     map.initialize_map()
 
     # 打印地图信息

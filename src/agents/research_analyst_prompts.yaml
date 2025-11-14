@@ -1,0 +1,183 @@
+# 实验评估师Agent的提示词配置文件
+
+system_message: "你是数据分析专家，擅长评估模拟结果、分析关键指标、提出优化建议。分析深入，建议实用。"
+
+# 评估模拟结果（增强版）
+evaluate_simulation_prompt: |
+  评估以下模拟结果，判断是否符合预期趋势：
+
+  模拟结果文件路径：
+  {results_file_path}
+
+  模拟结果数据（前100行）：
+  {results_data}
+
+  设计文档（了解预期目标）：
+  {design_doc}
+
+  请从以下几个方面进行评估：
+  1. **数据完整性**：数据是否完整、有无异常值
+  2. **趋势分析**：关键指标的变化趋势（上升/下降/波动）
+  3. **预期符合度**：实际趋势是否符合设计文档中的预期
+  4. **问题识别**：如果不符合预期，具体是哪些方面不符合
+  5. **总体评价**：SUCCESS（符合预期）或 NEED_ADJUSTMENT（需要调整）
+
+  请以结构化的方式给出评估报告，格式如下：
+  
+  ## 评估结果
+  状态：SUCCESS 或 NEED_ADJUSTMENT
+  
+  ## 数据完整性
+  [分析内容]
+  
+  ## 趋势分析
+  [关键指标的实际趋势]
+  
+  ## 预期符合度
+  [与预期的对比分析]
+  
+  ## 问题识别
+  [如果有问题，详细说明]
+  
+  ## 总体评价
+  [综合评价]
+
+# 诊断配置问题
+diagnose_config_issues_prompt: |
+  根据模拟结果的问题，诊断需要修改哪些配置文件或提示词：
+
+  评估报告：
+  {evaluation_report}
+
+  当前配置目录：
+  {config_dir}
+
+  可用的配置文件：
+  {available_files}
+
+  设计文档：
+  {design_doc}
+
+  请分析：
+  1. **问题根源**：问题是由参数配置不当还是提示词设计不当引起
+  2. **需要修改的文件**：列出所有需要修改的文件名
+  3. **修改原因**：每个文件为什么需要修改
+  4. **修改优先级**：high/medium/low
+
+  请以JSON格式输出诊断结果：
+  ```json
+  {{
+    "diagnosis": {{
+      "root_cause": "问题根源分析",
+      "files_to_modify": [
+        {{
+          "file_name": "文件名（如 simulation_config.yaml）",
+          "file_type": "config 或 prompt",
+          "reason": "需要修改的原因",
+          "priority": "high/medium/low"
+        }}
+      ]
+    }}
+  }}
+  ```
+
+# 生成配置修改方案
+generate_config_modifications_prompt: |
+  根据诊断结果，生成具体的配置修改方案：
+
+  诊断结果：
+  {diagnosis_result}
+
+  当前配置文件内容：
+  {current_config}
+
+  设计文档：
+  {design_doc}
+
+  请生成具体的修改方案：
+  1. 对于数值配置：给出参数名、当前值、建议值、修改理由
+  2. 对于提示词：给出需要修改的部分、当前内容、建议内容、修改理由
+
+  请以JSON格式输出修改方案：
+  ```json
+  {{
+    "modifications": [
+      {{
+        "parameter": "参数名或提示词位置",
+        "current_value": "当前值",
+        "suggested_value": "建议值",
+        "reason": "修改理由",
+        "expected_impact": "预期效果"
+      }}
+    ]
+  }}
+  ```
+
+# 分析关键指标
+analyze_metrics_prompt: |
+  分析以下模拟结果的关键指标：
+
+  模拟结果：
+  {results_data}
+
+  {metrics_info}
+
+  请进行以下分析：
+  1. 识别关键性能指标（KPI）
+  2. 计算统计特征（均值、方差、趋势等）
+  3. 发现异常值和模式
+  4. 指标之间的相关性分析
+  5. 与预期目标的对比
+
+  请以JSON格式输出分析结果，包含各指标的数值和解释。
+
+# 提出参数调整建议
+propose_adjustments_prompt: |
+  根据评估报告和指标分析，提出具体的参数调整建议：
+
+  评估报告：
+  {evaluation_report}
+
+  指标分析：
+  {metrics_analysis}
+
+  当前配置：
+  {config_data}
+
+  请提出：
+  1. 需要调整的参数及原因
+  2. 具体的调整方案（参数名、当前值、建议值）
+  3. 预期的改进效果
+  4. 调整的优先级和风险评估
+
+  请以JSON格式输出调整建议，格式如下：
+  {{
+    "adjustments": [
+      {{
+        "parameter": "参数名",
+        "current_value": "当前值",
+        "suggested_value": "建议值",
+        "reason": "调整原因",
+        "priority": "high/medium/low",
+        "expected_impact": "预期效果"
+      }}
+    ],
+    "overall_strategy": "整体优化策略"
+  }}
+
+# 生成优化总结报告
+generate_optimization_summary_prompt: |
+  请总结以下多轮迭代优化的过程和结果：
+
+  迭代结果：
+  {iteration_results}
+
+  请生成包含以下内容的总结报告：
+  1. 优化历程回顾（每轮的主要变化）
+  2. 关键指标的演化趋势
+  3. 成功的优化策略
+  4. 遇到的挑战和解决方案
+  5. 最终成果评价
+  6. 进一步改进建议
+
+  请以结构化的markdown格式输出报告。

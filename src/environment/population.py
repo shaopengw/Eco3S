@@ -48,15 +48,6 @@ class Population:
         """
         return self.population
 
-    def simulate_year(self):
-        """
-        模拟一年的出生和死亡过程
-        :return: 出生人数和死亡人数
-        """
-        births = self.birth()
-        deaths = self.death()
-        return births, deaths
-
     def print_population_status(self):
         """
         打印人口状态（用于调试）

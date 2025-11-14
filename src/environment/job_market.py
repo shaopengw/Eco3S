@@ -255,6 +255,10 @@ class JobMarket:
         if self.town_type != "沿河":
             return
 
+        # 检查职业是否存在
+        if "运河维护工" not in self.jobs_info:
+            return
+
         # 只处理负变化率的情况
         if change_rate >= 0:
             return

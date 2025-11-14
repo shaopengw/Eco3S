@@ -41,6 +41,13 @@ class LogManager:
         logger = logging.getLogger(logger_name)
         logger.setLevel(logging.DEBUG)
         
+        # 防止日志传播到父logger（避免重复输出）
+        logger.propagate = False
+        
+        # 清除已有的handlers（防止重复添加）
+        if logger.hasHandlers():
+            logger.handlers.clear()
+        
         # 设置日志格式
         formatter = logging.Formatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

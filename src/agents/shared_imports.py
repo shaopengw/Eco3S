@@ -22,6 +22,7 @@ from .model_manager import ModelManager
 from .memory_manager import MemoryManager
 from .base_agent import BaseAgent
 from ..utils.logger import LogManager
+from ..utils.simulation_context import SimulationContext
 
 import yaml
 import os
@@ -29,9 +30,11 @@ import os
 # 全局配置对象
 global_config = {}
 
-def load_global_config(config_path="config/simulation_config.yaml"):
+def load_global_config(config_path=None):
     """加载全局配置"""
     global global_config
+    if config_path is None:
+        config_path = f"config/{SimulationContext.get_simulation_type()}/simulation_config.yaml"
     if os.path.exists(config_path):
         with open(config_path, "r", encoding="utf-8") as f:
             global_config = yaml.safe_load(f)

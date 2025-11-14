@@ -154,6 +154,7 @@ class InformationOfficer(BaseAgent):
         super().__init__(agent_id, group_type='rebellion', window_size=0)
         self.shared_pool = shared_pool
         self.role = "信息整理官"
+        self.rebellion = rebellion
         self.rebellion_log = rebellion.rebellion_log
 
     async def summarize_discussions(self) -> str:
