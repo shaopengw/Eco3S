@@ -4,6 +4,10 @@ import os
 from datetime import datetime
 from src.utils.simulation_context import SimulationContext
 
+# 配置中文字体支持
+plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']  # 优先使用中文字体
+plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+
 
 def plot_rebellions_over_time(years, rebellions):
     """

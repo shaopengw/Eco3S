@@ -1,14 +1,14 @@
 data:
   climate_info_path: experiment_dataset/climate_data/climate.csv
   government_info_path: experiment_dataset/government_data/official_data.json
-  government_prompt_path: config/government_prompts.yaml
-  jobs_config_path: config/jobs_config.yaml
+  government_prompt_path: config/default/government_prompts.yaml
+  jobs_config_path: config/default/jobs_config.yaml
   rebellion_info_path: experiment_dataset/rebellion_data/rebels_data.json
-  rebels_prompt_path: config/rebels_prompts.yaml
+  rebels_prompt_path: config/default/rebels_prompts.yaml
   resident_info_path: experiment_dataset/resident_data/resident_data.json
-  resident_prompt_path: config/residents_prompts.yaml
-  resident_actions_path: config/resident_actions.yaml
-  towns_data_path: config/towns_data.json
+  resident_prompt_path: config/default/residents_prompts.yaml
+  resident_actions_path: config/default/resident_actions.yaml
+  towns_data_path: config/default/towns_data.json
 simulation:
   birth_rate: 0.05
   group_decision:
@@ -27,4 +27,4 @@ simulation:
   retry_delay: 1
   simulation_name: ""
   start_year: 1650
-  total_years: 5
+  total_years: 1

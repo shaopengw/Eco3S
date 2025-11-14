@@ -26,36 +26,6 @@
 - 参数：
   - data_file: str - JSON配置文件路径
 - 返回：无
-- 数据格式：
-  ```json
-  {
-    "map_boundaries": {
-      "min_longitude": float,
-      "max_longitude": float,
-      "min_latitude": float,
-      "max_latitude": float
-    },
-    "canals": [
-      {
-        "name": str,
-        "towns": [
-          {
-            "name": str,
-            "longitude": float,
-            "latitude": float
-          }
-        ]
-      }
-    ],
-    "other_towns": [
-      {
-        "name": str,
-        "longitude": float,
-        "latitude": float
-      }
-    ]
-  }
-  ```
 
 ### 坐标系统
 
@@ -71,7 +41,6 @@
 - 功能：初始化运河路线网络
 - 参数：无
 - 返回：无
-- 特点：自动添加运河宽度效果
 
 #### update_river_condition
 - 功能：更新运河状态
@@ -96,7 +65,6 @@
 - 参数：
   - max_distance: int - 最大连接距离（默认20）
 - 返回：无
-- 特点：基于欧几里得距离建立城市连接
 
 #### get_connected_towns
 - 功能：获取与指定城市相连的城市
@@ -112,13 +80,6 @@
   - town_name: str - 城市名称
   - sigma: float - 正态分布标准差（默认2.0）
 - 返回：tuple(int, int) - (x, y)坐标
-- 特点：使用正态分布确保位置集中在城市周围
-
-#### is_river_nearby
-- 功能：检测位置是否靠近运河
-- 参数：
-  - location: tuple(int, int) - 位置坐标
-- 返回：bool - 是否靠近运河
 
 ### 地形系统
 
@@ -146,7 +107,7 @@
 ### 完整地图初始化
 ```python
 map = Map(width, height, data_file)
-map.initialize_map()  # 调用initialize_river和initialize_town_graph
+map.initialize_map()
 ```
 
 ### 运河状态更新周期
@@ -164,14 +125,6 @@ river_towns = map.get_river_towns()
 # 获取其他城市
 other_towns = map.get_non_river_towns()
 ```
-
-## 依赖项
-- numpy：数组处理
-- matplotlib：地图可视化
-- json：配置文件处理
-- math：距离计算
-- random：随机位置生成
-- colorama：控制台颜色输出
 
 ## 配置文件依赖
 - towns_data.json：城市和运河系统配置文件

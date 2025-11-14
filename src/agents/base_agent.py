@@ -1,11 +1,27 @@
 from .shared_imports import *
+from ..utils.simulation_context import SimulationContext
 
 class BaseAgent:
     """基础Agent类，封装共同的大模型调用逻辑"""
-    def __init__(self, agent_id, group_type, window_size=3):
+    def __init__(self, agent_id, group_type, window_size=3, model_api_name=None, model_type_name=None):
+        """
+        初始化BaseAgent
+        
+        Args:
+            agent_id: Agent ID
+            group_type: 组类型
+            window_size: 记忆窗口大小
+            model_api_name: 指定的API名称（如 "CLAUDE", "OPENAI"），None表示随机选择
+            model_type_name: 指定的模型类型（如 "claude-sonnet-4-5-20250929"），None表示使用API的默认模型
+        """
         self.agent_id = agent_id
         self.model_manager = ModelManager()
-        model_config = self.model_manager.get_random_model_config()
+        
+        # 根据参数选择模型配置
+        if model_api_name:
+            model_config = self.model_manager.get_specific_model_config(model_api_name, model_type_name)
+        else:
+            model_config = self.model_manager.get_random_model_config()
         
         # 对于 OPENAI_COMPATIBLE_MODEL，直接使用字符串作为 model_type
         if model_config["model_platform"] == ModelPlatformType.OPENAI_COMPATIBLE_MODEL:
@@ -51,7 +67,7 @@ class BaseAgent:
         # 从配置文件读取参数
         try:
             import yaml
-            with open('config/simulation_config.yaml', 'r', encoding='utf-8') as f:
+            with open(f'config/{SimulationContext.get_simulation_type()}/simulation_config.yaml', 'r', encoding='utf-8') as f:
                 config = yaml.safe_load(f)
                 self.max_retry_attempts = config['simulation'].get('max_retry_attempts', 3)
                 self.retry_delay = config['simulation'].get('retry_delay', 1.0)

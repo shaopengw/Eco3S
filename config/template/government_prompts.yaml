@@ -1,0 +1,91 @@
+# 政府提示词模板文件
+# 本文件用于指导大模型生成新模拟场景的政府提示词
+# 请保留所有{变量名}占位符，并根据具体模拟场景填充内容
+
+# 普通政府官员系统消息
+# 描述：定义普通官员的角色、身份和目标
+# 必须包含的变量：{function}、{personality}
+# 可选变量：{faction}（如需区分派系）
+# 输出要求：明确角色定位和政府目标
+ordinary_government_agent_system_message: |
+  你为[朝代/政府]政府{function}官员，{faction}，你{personality}，朝廷正议政务。
+  政府的目标是[具体目标描述，如：维持地方统治稳定、完成某项任务、吸引新居民等]。
+
+# 高级决策者系统消息
+# 描述：定义最高决策者的角色和职责
+# 必须包含的变量：{personality}
+# 输出要求：强调决策权和最终责任
+high_ranking_government_agent_system_message: |
+  你为[朝代/政府]政府最高决策者，你{personality}，朝廷正议政务，你负责根据下属讨论和当前状态做出最终决策。
+  你的目标是[具体目标描述，与ordinary_government_agent_system_message保持一致]。
+
+# 生成初始意见提示
+# 描述：引导官员发表初步建议
+# 必须包含的变量：{current_situation_prompt}
+# 输出要求：一句简短建议，必要时附具体数值，无需计算过程
+# 说明：需要明确列举所有可用决策类型，避免大模型幻觉
+generate_opinion_prompt: |
+  请结合当前形势，立足本职，发言一句尽可能简短的中肯建议，必要时附具体数值佐证，无需给出计算过程。
+  只含[列举所有可用决策类型，如：公共预算、河运比例（0-1）、维护支出、军事拨款、税率调整等]。
+  {current_situation_prompt}
+
+# 讨论互动提示
+# 描述：引导官员回应其他人的意见
+# 必须包含的变量：{all_discussion}、{current_situation_prompt}
+# 输出要求：一句简短回应，可支持、反对或另提方案，考虑财政可行性
+generate_and_share_opinion_prompt: |
+  众臣各抒己见，所言如下：
+  {all_discussion}
+  请结合自身立场与现实条件，发言一句尽可能简短的回应，可支持、反对或另提方案，务必考虑财政可行性，无需给出计算过程。
+  {current_situation_prompt}
+
+# 最终决策提示
+# 描述：引导决策者做出具体决策
+# 必须包含的变量：{current_budget}、{summary}
+# 其他变量：根据模拟具体需求添加（如{tax_rate}、{military_strength}、{transport_task}等）
+# 输出要求：严格JSON格式，无需说明理由，确保总支出不超预算
+# 说明：必须详细列出所有可用决策字段及其约束条件
+make_decision_prompt: |
+  国库现状：资金{current_budget:.2f}[货币单位] | [其他关键状态变量，如：兵力{military_strength:.2f} | 税率{tax_rate:.1f}%]
+  [详细列出所有可用决策及其说明]
+  [示例：
+  运输任务：总量{transport_task}吨，河运{river_price:.2f}两/吨（岗位多），海运{sea_price:.2f}两/吨（成本低），运河维护费{maintenance_cost_base}两（高低影响运河通航能力，进而影响河运价格）
+  就业要求：最低维持资金{maintain_employment_cost:.2f}两（公共预算高低影响就业增减）
+  军事拨款：必须为20的整数倍，每20两增加1兵力（兵力强可以压制叛乱）
+  ]
+  支出计算：[详细说明支出计算公式]，不得超过{current_budget:.2f}[货币单位]
+  决策要点：[列举决策优先级和平衡点]
+
+  下属讨论：
+  {summary}
+
+  请做出合理决策，确保总支出不超预算。输出JSON，无需说明理由：
+  {{"决策字段1": 说明（数据类型、取值范围）, "决策字段2": 说明（数据类型、取值范围）}}
+  [示例：
+  {{"public_budget": 公共预算（整数）, "transport_ratio": 河运比例（0-1）, "maintenance_investment": 维护资金（整数）, "military_support": 军事拨款（整数，可选）, "tax_adjustment": 税率调整（-0.1到0.1）}}
+  ]
+
+# 讨论总结提示
+# 描述：引导整理官员总结讨论内容
+# 必须包含的变量：{num_discussions}、{discussions}
+# 输出要求：一句话简要总结，保留具体数值
+summarize_discussions_prompt: |
+  你为朝廷信息整理官员，请根据下列{num_discussions}条朝堂讨论，用一句话尽可能简要地总结归纳核心观点，保留具体数值。
+  讨论内容：
+  {discussions}
+
+# 当前形势描述提示
+# 描述：提供给官员的背景信息
+# 必须包含的变量：{budget}
+# 其他变量：根据模拟具体需求添加（如{tax_rate}、{military_strength}、{transport_task}等）
+# 输出要求：清晰展示当前状态和可用决策
+get_current_situation_prompt: |
+  国库现状：资金{budget:.2f}[货币单位] | [其他关键状态变量]
+  [详细列出所有可用决策及其说明]
+  [示例：
+  运输任务：总量{transport_task}吨，河运{river_price:.2f}两/吨（岗位多），海运{sea_price:.2f}两/吨（成本低），运河维护费{maintenance_cost_base}两
+  就业要求：最低维持资金{maintain_employment_cost:.2f}两
+  军事拨款：必须为20的整数倍，每20两增加1兵力
+  ]
+  支出计算：[详细说明支出计算公式]，不得超过{budget:.2f}[货币单位]
+  决策要点：[列举决策优先级和平衡点]

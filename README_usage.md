@@ -214,7 +214,7 @@ python run_ai_system.py
 ✓ 选择的模块:
   ["climate", "population", "map", "residents"]
 
-✓ 设计文档: config_climate_migration_sim/description.md
+✓ 设计文档: config/climate_migration_sim/description.md
 
 设计文档摘要:
 --------------------------------------------------------------------------------
@@ -248,7 +248,7 @@ python run_ai_system.py
 ✅ 工作流执行完成！
 
 📁 项目实验目录: experiment_dataset/climate_migration_sim
-📂 配置文件目录: config_climate_migration_sim/
+📂 配置文件目录: config/climate_migration_sim/
    - description.md
    - simulation_config.yaml
    - jobs_config.yaml
@@ -265,7 +265,7 @@ python run_ai_system.py
 ✅ 交互式工作流执行完成！
 
 📁 项目目录: experiment_dataset/climate_migration_sim
-📂 配置目录: config_climate_migration_sim
+📂 配置目录: config/climate_migration_sim
 
 📊 设计阶段版本数: 2
 📊 编码阶段版本数: 1

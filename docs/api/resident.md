@@ -144,7 +144,7 @@
 
 ### 生命周期事件
 - 出生：通过初始化触发
-- 死亡：通过update_lifespan和handle_death处理
+- 寿命更新：通过update_lifespan处理（已包含死亡判定和处理）
 - 迁移：通过migrate_to_new_town处理
 
 ### 社交互动

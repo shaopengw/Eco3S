@@ -137,7 +137,7 @@ class Simulator:
                 'ordinary_type': OrdinaryRebel,
                 'leader_type': RebelLeader,
             }
-            # rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
+            rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
             
             # 统一执行决策
             if government_decision:
@@ -265,7 +265,7 @@ class Simulator:
 
         # 获取群体决策配置
         try:
-            with open('config/simulation_config.yaml', 'r', encoding='utf-8') as f:
+            with open(f'config/{SimulationContext.get_simulation_type()}/simulation_config.yaml', 'r', encoding='utf-8') as f:
                 sim_config = yaml.safe_load(f)
                 group_decision_config = sim_config['simulation'].get('group_decision', {})
                 # 根据群体类型获取对应的配置

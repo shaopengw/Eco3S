@@ -19,15 +19,15 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__)
 
 CONFIG_PATHS = {
-    'default': 'config/simulation_config.yaml',
-    'TEOG': 'config_TEOG/simulation_config.yaml',
-    'info_propagation': 'config_info_propagation/simulation_config.yaml'
+    'default': 'config/default/simulation_config.yaml',
+    'TEOG': 'config/TEOG/simulation_config.yaml',
+    'info_propagation': 'config/info_propagation/simulation_config.yaml'
 }
 
 COMMANDS = {
-    'default': 'python entrypoints/main.py --config_path config/simulation_config.yaml',
-    'TEOG': 'python entrypoints/main_TEOG.py --config_path config_TEOG/simulation_config.yaml',
-    'info_propagation': 'python entrypoints/main_info_propagation.py --config_path config_info_propagation/simulation_config.yaml'
+    'default': 'python entrypoints/main.py --config_path config/default/simulation_config.yaml',
+    'TEOG': 'python entrypoints/main_TEOG.py --config_path config/TEOG/simulation_config.yaml',
+    'info_propagation': 'python entrypoints/main_info_propagation.py --config_path config/info_propagation/simulation_config.yaml'
 }
 
 # 存储运行中的模拟进程信息

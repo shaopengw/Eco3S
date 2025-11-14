@@ -104,13 +104,20 @@ class MemoryManager:
         """
         初始化代理记忆管理器
         :param agent_id: 代理ID
-        :param model_type: 模型类型
+        :param model_type: 模型类型（ModelType枚举或字符串）
         :param group_type: 群体类型，'government' 或 'rebellion'
         :param window_size: 最近对话窗口大小
         :param summary_interval: 多少条记录后进行一次总结
         """
         self.agent_id = agent_id
-        self.token_counter = OpenAITokenCounter(model_type)
+        
+        # 如果是字符串类型的自定义模型，使用默认的token counter
+        if isinstance(model_type, str):
+            from camel.types import ModelType
+            self.token_counter = OpenAITokenCounter(ModelType.GPT_4O_MINI)
+        else:
+            self.token_counter = OpenAITokenCounter(model_type)
+            
         self.context_creator = ScoreBasedContextCreator(
             token_counter=self.token_counter,
             token_limit=4096

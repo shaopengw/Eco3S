@@ -167,7 +167,7 @@ class TEOGSimulator:
 
         # 获取群体决策配置
         try:
-            with open('config_TEOG/simulation_config.yaml', 'r', encoding='utf-8') as f:
+            with open('config/TEOG/simulation_config.yaml', 'r', encoding='utf-8') as f:
                 sim_config = yaml.safe_load(f)
                 group_decision_config = sim_config['simulation'].get('group_decision', {})
                 group_decision_enabled = group_decision_config.get('enabled', True)

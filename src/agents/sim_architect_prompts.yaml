@@ -1,0 +1,132 @@
+# SimArchitectAgent 提示词配置
+
+system_message: |
+  你是多智能体模拟系统的设计师，擅长分析需求、选择模块、生成设计文档和实验配置。输出格式严格遵守JSON或YAML规范。
+
+parse_requirement_prompt: |
+  根据以下用户需求，提取关键信息并返回JSON格式。
+
+  用户需求：
+  {requirement_text}
+
+  请返回以下JSON格式（严格遵守格式）：
+  {{
+    "simulation_name": "模拟名称（使用下划线连接的英文，如climate_migration）",
+    "objectives": ["目标1", "目标2"],
+    "key_elements": ["关键要素1", "关键要素2", "关键要素3"]
+  }}
+
+  注意：
+  - simulation_name 必须是简短的英文标识符
+  - objectives 是实验的主要目标列表
+  - key_elements 是实验涉及的关键要素（如气候、人口、经济等）
+
+select_modules_prompt: |
+  系统能力如下：
+  {system_capabilities}
+
+  根据以下需求信息，列出最相关的系统模块。
+
+  需求目标：
+  {objectives}
+
+  关键要素：
+  {key_elements}
+
+select_modules_with_feedback_prompt: |
+  系统能力如下：
+  {system_capabilities}
+
+  根据以下需求信息，列出最相关的系统模块。
+
+  需求目标：
+  {objectives}
+
+  关键要素：
+  {key_elements}
+
+  上一版本选择的模块：
+  {previous_modules}
+
+  用户反馈意见：
+  {user_feedback}
+
+  请根据用户反馈调整模块选择。
+
+select_modules_output_format: |
+  请只返回模块英文名列表的JSON格式，例如：
+  ["climate", "population", "map", "government"]
+
+  注意：只返回JSON数组，不要有其他文字。
+
+generate_description_prompt: |
+  请根据以下需求信息，生成一份简明的实验设计文档（markdown格式）。
+
+  需求：
+  {requirement_dict}
+
+  参考模板格式：
+  {template_content}
+
+generate_description_with_feedback_prompt: |
+  请根据以下需求信息，生成一份简明的实验设计文档（markdown格式）。
+
+  需求：
+  {requirement_dict}
+
+  参考模板格式：
+  {template_content}
+
+  === 上一版本的设计文档 ===
+  {previous_description}
+
+  === 用户反馈意见 ===
+  {user_feedback}
+
+  请根据用户反馈，改进并重新生成设计文档。
+
+generate_description_requirements: |
+  请按照模板格式生成新的实验设计文档，包含：
+  1. 实验名称和目标
+  2. 需要涉及的系统功能和模块
+  3. 系统架构设计
+  4. 预期结果
+  5. 关键参数说明
+
+generate_config_prompt: |
+  根据实验设计文档和参考模板，生成 modules_config.yaml 配置文件。
+
+  # 实验设计文档：
+  {description_md}
+
+  # 参考模板：
+  {experiment_template}
+
+generate_config_with_feedback_prompt: |
+  根据实验设计文档和参考模板，生成 modules_config.yaml 配置文件。
+
+  # 实验设计文档：
+  {description_md}
+
+  # 参考模板：
+  {experiment_template}
+
+  === 上一版本的配置文件 ===
+  {previous_config}
+
+  === 用户反馈意见 ===
+  {user_feedback}
+
+  请根据用户反馈，改进并重新生成配置文件。
+
+generate_config_requirements: |
+  要求：
+  1. 根据设计文档调整模块配置和参数
+  2. 在selected_modules中选择实验需要的模块
+  3. 删除不相关的配置项
+  4. 参数值要合理且一致
+
+  用代码块输出：
+  ```yaml:modules_config.yaml
+  内容
+  ```

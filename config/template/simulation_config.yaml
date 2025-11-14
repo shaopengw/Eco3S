@@ -4,16 +4,16 @@
 data:
   climate_info_path: "experiment_dataset/climate_data/climate.csv"
   government_info_path: "experiment_dataset/government_data/official_data.json"
-  government_prompt_path: "config_template/government_prompts.yaml"
-  jobs_config_path: "config_template/jobs_config.yaml"
-  message_config_path: "config_template/message_config.yaml"  # 广播信息模块
-  questionnaire_path: "config_template/questionnaire.yaml"  # 问卷模块
+  government_prompt_path: "config/{模拟名称}/government_prompts.yaml"
+  jobs_config_path: "config/{模拟名称}/jobs_config.yaml"
+  message_config_path: "config/{模拟名称}/message_config.yaml"  # 广播信息模块
+  questionnaire_path: "config/{模拟名称}/questionnaire.yaml"  # 问卷模块
   rebellion_info_path: "experiment_dataset/rebellion_data/rebels_data.json"
-  rebels_prompt_path: "config_template/rebels_prompts.yaml"
+  rebels_prompt_path: "config/{模拟名称}/rebels_prompts.yaml"
   resident_info_path: "experiment_dataset/resident_data/resident_data.json"
-  resident_prompt_path: "config_template/residents_prompts.yaml"
-  resident_actions_path: "config_template/resident_actions.yaml"
-  towns_data_path: "config_template/towns_data.json"
+  resident_prompt_path: "config/{模拟名称}/residents_prompts.yaml"
+  resident_actions_path: "config/{模拟名称}/resident_actions.yaml"
+  towns_data_path: "config/{模拟名称}/towns_data.json"
 
 # 模拟参数
 simulation:
