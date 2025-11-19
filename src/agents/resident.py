@@ -134,7 +134,7 @@ class Resident(BaseAgent):
         """
         更新系统提示词，包含居民当前的状态信息
         """
-        health_condition = self.prompts_resident['health_conditions'][self.health_index] if 1 <= self.health_index <= 5 else "未知"
+        health_condition = self.prompts_resident['health_conditions'][self.health_index] if 0 <= self.health_index < len(self.prompts_resident['health_conditions']) else "未知"
         work_condition = self.job if self.employed else "无业游民"
         satisfaction_description = self.prompts_resident['satisfaction_levels'][min(self.satisfaction // 20, 4)]
         

@@ -20,29 +20,31 @@ class Towns:
 
     def initialize_towns(self, map, initial_population, job_market_config_path=None):
         """初始化所有城镇信息"""
-        # 首先计算城镇总数
-        total_towns = len(map.town_dict)
+        # 首先计算有效城镇总数
+        valid_towns = []
+        for town_name, town_info in map.town_dict.items():
+            x, y = town_info['location']
+            # 检查坐标是否在有效范围内
+            if not (0 <= x < map.width and 0 <= y < map.height):
+                print(f"警告: 城市 {town_name} 的坐标 ({x}, {y}) 超出地图范围，跳过初始化")
+                continue
+            # 检查位置信息是否完整
+            if None in town_info['location']:
+                print(f"警告: 城市 {town_name} 的位置信息不完整，跳过初始化")
+                continue
+            valid_towns.append((town_name, town_info))
+        
+        total_towns = len(valid_towns)
         if total_towns == 0:
-            print("警告: 地图中没有城镇")
+            print("警告: 地图中没有有效的城镇")
             return
         
-        for i, (town_name, town_info) in enumerate(map.town_dict.items()):
-            x, y = town_info['location']
-            # 确保坐标在有效范围内
-            if not (0 <= x < map.width and 0 <= y < map.height):
-                print(f"警告: 城市 {town_name} 的坐标 ({x}, {y}) 超出地图范围")
-                continue
-                
+        for i, (town_name, town_info) in enumerate(valid_towns):
             town_info = {
                 'name': town_name,
                 'location': town_info['location'],
                 'type': town_info['type']
             }
-            
-            # 检查位置信息是否完整
-            if None in town_info['location']:
-                print(f"警告: 城市 {town_name} 的位置信息不完整")
-                continue
                 
             self.towns[town_name]['info'] = town_info
             self.towns[town_name]['resident_group'] = ResidentGroup(town_name)
@@ -71,6 +73,11 @@ class Towns:
                 town_name = resident.town
                 
                 if town_name:
+                    # 检查城镇是否存在且已正确初始化
+                    if town_name not in self.towns or 'info' not in self.towns[town_name] or not self.towns[town_name]['info']:
+                        print(f"警告: 城镇 {town_name} 未初始化或不存在，跳过居民 {resident_id}")
+                        continue
+                    
                     # 添加居民到城镇
                     self.add_resident(resident, town_name)
 

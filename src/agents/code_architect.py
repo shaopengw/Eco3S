@@ -452,8 +452,9 @@ class CodeArchitectAgent(BaseAgent):
 				json_match = re.search(r'\{[\s\S]*"methods"[\s\S]*\}', llm_response, re.DOTALL)
 		
 		if json_match:
+			json_str = json_match.group(1) if json_match.lastindex else json_match.group(0)
 			try:
-				changes = json.loads(json_match.group(1) if json_match.lastindex else json_match.group(0))
+				changes = json.loads(json_str)
 				
 				# 应用JSON格式的增量修改
 				if self._apply_incremental_changes(file_path, changes, file_type):
@@ -462,7 +463,15 @@ class CodeArchitectAgent(BaseAgent):
 				else:
 					self.logger.warning("JSON增量修改失败，尝试完整替换")
 			except json.JSONDecodeError as e:
-				self.logger.error(f"JSON解析失败: {e}，尝试完整替换")
+				self.logger.warning(f"JSON解析失败: {e}，尝试提取部分完整的函数/方法...")
+				# 尝试提取部分完整的JSON内容
+				partial_changes = self._extract_partial_json(json_str, file_type)
+				if partial_changes:
+					self.logger.info(f"成功提取 {len(partial_changes.get('methods' if file_type == 'simulator' else 'functions', []))} 个完整的{'方法' if file_type == 'simulator' else '函数'}")
+					if self._apply_incremental_changes(file_path, partial_changes, file_type):
+						self.logger.info(f"✓ 已基于部分JSON增量修改并保存: {file_path}")
+						return True
+				self.logger.warning("部分提取也失败，尝试完整替换")
 		
 		# 策略2: 尝试提取完整代码块并替换
 		code_blocks = re.findall(r'```python\s*([^`]+)```', llm_response, re.DOTALL)
@@ -523,13 +532,59 @@ class CodeArchitectAgent(BaseAgent):
 		self.logger.error("未找到可用的代码修改内容，保留原文件")
 		return False
 	
+	def _extract_partial_json(self, json_str, file_type="simulator"):
+		"""
+		从不完整的JSON字符串中提取完整的函数/方法定义
+		
+		Args:
+			json_str: 不完整的JSON字符串
+			file_type: 文件类型（"simulator" 或 "main"）
+		
+		Returns:
+			dict: 包含完整函数/方法的字典，格式为 {"methods": [...]} 或 {"functions": [...]}
+				  如果无法提取任何完整内容，返回None
+		"""
+		import re
+		import json
+		
+		item_key = 'methods' if file_type == 'simulator' else 'functions'
+		name_key = 'method_name' if file_type == 'simulator' else 'function_name'
+		code_key = 'method_code' if file_type == 'simulator' else 'function_code'
+		
+		self.logger.info(f"尝试从不完整的JSON中提取完整的{item_key}...")
+		
+		# 尝试找到完整的函数/方法对象
+		# 匹配模式：{"method_name": "...", "method_code": "...", "description": "..."}
+		pattern = rf'\{{\s*"{name_key}":\s*"([^"]+)"\s*,\s*"{code_key}":\s*"([^"]+(?:\\.[^"]*)*?)"\s*,\s*"description":\s*"([^"]+)"\s*\}}'
+		
+		complete_items = []
+		for match in re.finditer(pattern, json_str, re.DOTALL):
+			try:
+				# 尝试解析单个对象
+				item_json = match.group(0)
+				item = json.loads(item_json)
+				
+				# 验证是否包含必要字段
+				if name_key in item and code_key in item:
+					complete_items.append(item)
+					self.logger.info(f"✓ 提取到完整的{item_key[:-1]}: {item[name_key]}")
+			except json.JSONDecodeError:
+				continue
+		
+		if complete_items:
+			self.logger.info(f"共提取到 {len(complete_items)} 个完整的{item_key}")
+			return {item_key: complete_items}
+		else:
+			self.logger.warning(f"未能从JSON中提取任何完整的{item_key}")
+			return None
+
 	def _apply_incremental_changes(self, file_path, changes, file_type="simulator"):
 		"""
 		应用增量修改（内部方法，处理JSON格式的修改）
 		
 		Args:
 			file_path: 文件路径
-			changes: JSON格式的修改内容（dict，包含methods/functions）
+			changes: JSON格式的修改内容（dict，包含methods/functions和delete_methods/delete_functions）
 			file_type: 文件类型（"simulator" 或 "main"）
 		
 		Returns:
@@ -542,12 +597,46 @@ class CodeArchitectAgent(BaseAgent):
 			
 			# main文件使用functions，simulator文件使用methods
 			code_items = changes.get('functions' if file_type == "main" else 'methods', [])
+			delete_items = changes.get('delete_functions' if file_type == "main" else 'delete_methods', [])
 			
-			if not code_items:
+			if not code_items and not delete_items:
 				self.logger.info(f"无需修改")
 				return True
 			
 			modified_content = current_content
+			
+			# ===== 步骤1: 删除不需要的函数/方法 =====
+			if delete_items:
+				self.logger.info(f"准备删除 {len(delete_items)} 个{'方法' if file_type == 'simulator' else '函数'}")
+				for item_name in delete_items:
+					# 提取纯函数名
+					pure_name = item_name
+					if 'def ' in item_name:
+						name_match = re.search(r'def\s+(\w+)', item_name)
+						if name_match:
+							pure_name = name_match.group(1)
+					
+					# 匹配函数/方法定义并删除
+					# 对于main文件，需要在入口标记前停止匹配
+					if file_type == "main":
+						pattern = rf"(\s*)(?:async\s+)?def\s+{re.escape(pure_name)}\s*\([^)]*\):.*?(?=\n\s*(?:async\s+)?def\s|\n\s*@|\nclass\s|\n#\s*=====\s*以下代码块不可删除或修改\s*=====|\Z)"
+					else:
+						pattern = rf"(\s*)(?:async\s+)?def\s+{re.escape(pure_name)}\s*\([^)]*\):.*?(?=\n\s*(?:async\s+)?def\s|\n\s*@|\nclass\s|\Z)"
+					match = re.search(pattern, modified_content, re.DOTALL)
+					
+					if match:
+						# 删除匹配的函数/方法（包括前导空白行）
+						start_pos = match.start()
+						end_pos = match.end()
+						
+						# 检查前面是否有多余的空行，一并删除
+						while start_pos > 0 and modified_content[start_pos-1] == '\n':
+							start_pos -= 1
+						
+						modified_content = modified_content[:start_pos] + modified_content[end_pos:]
+						self.logger.info(f"✓ 已删除{'方法' if file_type == 'simulator' else '函数'}: {pure_name}")
+					else:
+						self.logger.warning(f"⚠️ 未找到要删除的{'方法' if file_type == 'simulator' else '函数'}: {pure_name}")
 			
 			# 用于收集需要添加的新方法
 			methods_to_add = []
@@ -577,7 +666,11 @@ class CodeArchitectAgent(BaseAgent):
 				
 				# 查找并替换方法/函数
 				# 匹配函数定义，支持 def 和 async def
-				pattern = rf"(\s*)(?:async\s+)?def\s+{re.escape(pure_name)}\s*\([^)]*\):.*?(?=\n\s*(?:async\s+)?def\s|\n\s*@|\nclass\s|\Z)"
+				# 对于main文件，需要在入口标记前停止匹配
+				if file_type == "main":
+					pattern = rf"(\s*)(?:async\s+)?def\s+{re.escape(pure_name)}\s*\([^)]*\):.*?(?=\n\s*(?:async\s+)?def\s|\n\s*@|\nclass\s|\n#\s*=====\s*以下代码块不可删除或修改\s*=====|\Z)"
+				else:
+					pattern = rf"(\s*)(?:async\s+)?def\s+{re.escape(pure_name)}\s*\([^)]*\):.*?(?=\n\s*(?:async\s+)?def\s|\n\s*@|\nclass\s|\Z)"
 				match = re.search(pattern, modified_content, re.DOTALL)
 				
 				if match:
@@ -656,19 +749,26 @@ class CodeArchitectAgent(BaseAgent):
 					entry_match = re.search(r'(# ===== 以下代码块不可删除或修改 =====)', modified_content)
 					if entry_match:
 						insert_pos = entry_match.start()
+						# 确保在入口标记前保留适当的空行
+						new_functions_code = ""
+						for func_info in methods_to_add:
+							new_functions_code += "\n\n" + func_info['code']
+							self.logger.info(f"✓ 已添加新函数: {func_info['name']} - {func_info['description']}")
+						# 在新函数和入口标记之间添加空行
+						new_functions_code += "\n\n"
+						modified_content = modified_content[:insert_pos] + new_functions_code + modified_content[insert_pos:]
 					else:
 						# 如果没有入口标记，添加到文件末尾
 						insert_pos = len(modified_content)
-					
-					new_functions_code = ""
-					for func_info in methods_to_add:
-						new_functions_code += "\n\n" + func_info['code'] + "\n"
-						self.logger.info(f"✓ 已添加新函数: {func_info['name']} - {func_info['description']}")
-					
-					modified_content = modified_content[:insert_pos] + new_functions_code + modified_content[insert_pos:]
+						new_functions_code = ""
+						for func_info in methods_to_add:
+							new_functions_code += "\n\n" + func_info['code'] + "\n"
+							self.logger.info(f"✓ 已添加新函数: {func_info['name']} - {func_info['description']}")
+						
+						modified_content = modified_content[:insert_pos] + new_functions_code + modified_content[insert_pos:]
 			
-			# 清理多余的连续空白行（保留最多1个空行）
-			modified_content = re.sub(r'\n\n+', '\n', modified_content)
+			# 清理多余的连续空白行（保留最多2个空行，即最多1个空行）
+			modified_content = re.sub(r'\n{4,}', '\n\n\n', modified_content)
 			
 			# 保存修改后的代码
 			with open(file_path, 'w', encoding='utf-8') as f:
@@ -677,12 +777,15 @@ class CodeArchitectAgent(BaseAgent):
 			# 统计信息
 			replaced_count = len(code_items) - len(methods_to_add)
 			added_count = len(methods_to_add)
+			deleted_count = len(delete_items) if delete_items else 0
 			
 			self.logger.info(f"✓ 已应用增量修改")
 			if replaced_count > 0:
 				self.logger.info(f"  - 替换{'方法' if file_type == 'simulator' else '函数'}: {replaced_count} 个")
 			if added_count > 0:
 				self.logger.info(f"  - 新增{'方法' if file_type == 'simulator' else '函数'}: {added_count} 个")
+			if deleted_count > 0:
+				self.logger.info(f"  - 删除{'方法' if file_type == 'simulator' else '函数'}: {deleted_count} 个")
 			
 			return True
 			
@@ -695,9 +798,12 @@ class CodeArchitectAgent(BaseAgent):
 		硬性修正代码缩进和空白行问题
 		
 		主要处理：
-		1. 统一所有类方法的缩进为4个空格
+		1. 将tab统一替换为4个空格
 		2. 清理多余的连续空白行
-		3. 修正tab和空格混用问题
+		3. 确保类方法的缩进一致
+		
+		注意：不再强制修改缩进，只做基本的清理工作
+		因为LLM返回的完整代码通常已经有正确的缩进结构
 		
 		Args:
 			code_content: 原始代码内容
@@ -705,58 +811,13 @@ class CodeArchitectAgent(BaseAgent):
 		Returns:
 			str: 修正后的代码内容
 		"""
-		lines = code_content.split('\n')
-		fixed_lines = []
-		in_class = False
-		class_indent = 0
+		# 将tab替换为4个空格
+		code = code_content.replace('\t', '    ')
 		
-		for i, line in enumerate(lines):
-			# 将tab替换为4个空格
-			line = line.replace('\t', '    ')
-			
-			# 检测class定义
-			if re.match(r'^class\s+\w+', line):
-				in_class = True
-				class_indent = len(line) - len(line.lstrip())
-				fixed_lines.append(line)
-				continue
-			
-			# 检测顶层定义（退出class）
-			if in_class and line and not line[0].isspace():
-				in_class = False
-			
-			# 如果在类内部，修正方法定义的缩进
-			if in_class and line.strip():
-				# 检测方法定义（def 或 async def）
-				if re.match(r'\s*(?:async\s+)?def\s+\w+', line):
-					# 提取方法定义内容（去除原有缩进）
-					method_content = line.lstrip()
-					# 强制使用4个空格缩进（相对于class）
-					correct_indent = ' ' * (class_indent + 4)
-					fixed_lines.append(correct_indent + method_content)
-					continue
-				
-				# 方法内的代码：检查缩进是否合理
-				current_indent = len(line) - len(line.lstrip())
-				# 方法内代码的缩进应该至少是 class_indent + 8（类缩进 + 4空格方法 + 4空格代码）
-				# 但我们不强制修正方法内代码，因为可能有多层嵌套
-				# 只修正明显错误的情况：缩进小于等于class缩进的
-				if current_indent <= class_indent:
-					# 这是错误的缩进，修正为 class_indent + 8
-					content = line.lstrip()
-					fixed_lines.append(' ' * (class_indent + 8) + content)
-					continue
-			
-			# 其他情况，保持原样
-			fixed_lines.append(line)
+		# 清理多余的连续空白行（4个及以上 → 2个，即最多保留1个空行）
+		code = re.sub(r'\n\n\n\n+', '\n\n\n', code)
 		
-		# 连接所有行
-		code = '\n'.join(fixed_lines)
-		
-		# 清理多余的连续空白行（3个及以上 → 2个）
-		code = re.sub(r'\n\n\n+', '\n\n', code)
-		
-		# 清理class和第一个方法之间的多余空行
+		# 清理class和第一个方法之间的多余空行（最多1个空行）
 		code = re.sub(r'(class\s+\w+[^:]*:)\n\n+(\s+(?:async\s+)?def\s)', r'\1\n\2', code)
 		
 		# 清理方法之间的多余空行（最多保留2个空行，即1个空白行）
@@ -967,13 +1028,6 @@ class CodeArchitectAgent(BaseAgent):
 		# 读取API文档（根据配置类型选择相关文档）
 		api_docs = self._read_relevant_api_docs(config_filename)
 		
-		# 构建已生成配置的说明
-		previous_configs_str = ""
-		if previous_configs:
-			previous_configs_str = "已生成的配置文件：\n"
-			for fname, content in previous_configs.items():
-				previous_configs_str += f"\n{fname}:\n{content}\n"
-		
 		file_format = 'YAML' if config_filename.endswith('.yaml') else 'JSON'
 		prompt = self.prompts['generate_config_file_prompt'].format(
 			config_filename=config_filename,
@@ -981,7 +1035,6 @@ class CodeArchitectAgent(BaseAgent):
 			modules=modules_config_yaml,
 			template_content=template_content,
 			api_docs=api_docs,
-			previous_configs_str=previous_configs_str,
 			file_format=file_format
 		)
 		
@@ -1031,22 +1084,20 @@ class CodeArchitectAgent(BaseAgent):
 			self.logger.debug(f"LLM响应预览: {response[:500]}")
 			return None
 
-	async def generate_prompt_file(self, prompt_filename, description_md, modules_config_yaml, config_files):
+	async def generate_prompt_file(self, prompt_filename, description_md, config_files):
 		"""
 		步骤6: 生成单个提示词文件
-		输入：提示词文件名 + 设计文档 + 模块配置YAML + 已生成的配置文件
+		输入：提示词文件名 + 设计文档 + 模块配置YAML + 对应代码
 		输出：生成的提示词文件路径
 		
 		支持的提示词文件：
-		- government_prompts.yaml
-		- rebels_prompts.yaml
-		- residents_prompts.yaml
+		- government_prompts.yaml -> 参考 src/agents/government.py
+		- rebels_prompts.yaml -> 参考 src/agents/rebels.py
+		- residents_prompts.yaml -> 参考 src/agents/resident.py
 		
 		Args:
 			prompt_filename: 提示词文件名
 			description_md: 设计文档
-			modules_config_yaml: 模块配置YAML内容
-			config_files: 已生成的配置文件列表
 		"""
 		self.logger.info(f"开始生成提示词文件: {prompt_filename}")
 		
@@ -1069,25 +1120,38 @@ class CodeArchitectAgent(BaseAgent):
 		else:
 			self.logger.warning(f"模板文件不存在: {template_path}")
 		
-		# 读取相关配置文件
-		configs_str = ""
-		if config_files:
-			configs_str = "相关配置文件：\n"
-			for fpath in config_files:
-				if os.path.exists(fpath):
-					fname = os.path.basename(fpath)
-					with open(fpath, 'r', encoding='utf-8') as f:
-						configs_str += f"\n{fname}:\n{f.read()}\n"
-		
-		# 确定角色类型
+		# 确定角色类型和对应代码文件
 		role_type = prompt_filename.replace('_prompts.yaml', '')  # government, rebels, residents
+		
+		# 映射提示词文件到对应代码文件
+		agent_file_mapping = {
+			'government': 'government.py',
+			'rebels': 'rebels.py',
+			'residents': 'resident.py'
+		}
+		
+		# 读取对应的代码文件
+		agent_code_str = ""
+		agent_filename = agent_file_mapping.get(role_type)
+		if agent_filename:
+			project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+			agent_file_path = os.path.join(project_root, 'src', 'agents', agent_filename)
+			if os.path.exists(agent_file_path):
+				with open(agent_file_path, 'r', encoding='utf-8') as f:
+					agent_code_content = f.read()
+					agent_code_str = f"参考代码 ({agent_filename}):\n```python\n{agent_code_content}\n```\n"
+				self.logger.info(f"已读取代码: {agent_file_path}")
+			else:
+				self.logger.warning(f"代码文件不存在: {agent_file_path}")
+				agent_code_str = f"（未找到对应的代码: {agent_filename}）"
+		else:
+			agent_code_str = f"（未知的角色类型: {role_type}）"
 		
 		prompt = self.prompts['generate_prompt_file_prompt'].format(
 			role_type=role_type,
 			description_md=description_md,
-			modules=modules_config_yaml,
 			template_content=template_content,
-			configs_str=configs_str
+			configs_str=agent_code_str
 		)
 		
 		response = await self.generate_llm_response(prompt)

@@ -33,9 +33,6 @@
 - 参数：
   - resident: Resident - 要添加的居民对象
 - 返回：无
-- 依赖：
-  - MemoryManager
-  - BaseAgent
 
 ##### set_social_network
 - 功能：设置群组的社交网络
@@ -79,7 +76,6 @@
   - job: str - 工作名称
   - salary: float (可选) - 工资金额
 - 返回：无
-- 依赖：JobMarket
 
 ##### unemploy
 - 功能：将居民置为失业状态
@@ -91,9 +87,6 @@
 - 参数：
   - message_content: str - 信息内容
 - 返回：tuple (str, str) - (回应内容, 关系类型)
-- 依赖：
-  - LLM模型
-  - Memory系统
 
 ##### decide_action_by_llm
 - 功能：通过LLM决定居民行动
@@ -103,10 +96,6 @@
   - climate_impact: float - 气候影响因子（0-1）
 - 返回：
   - dict 或 tuple - 决策结果（包含行动选择、原因等）
-- 依赖：
-  - LLM模型
-  - SocialNetwork
-  - JobMarket
 
 ##### execute_decision
 - 功能：执行居民决策
@@ -121,7 +110,6 @@
   - message: dict - 消息内容
   - year: int - 当前年份
 - 返回：tuple (str, str) - (发言内容, 关系类型)
-- 依赖：Memory系统
 
 ##### update_resident_status
 - 功能：更新居民状态
@@ -135,10 +123,6 @@
   - map: Map - 地图对象
   - update_job: bool - 是否更新工作状态
 - 返回：bool - 迁移是否成功
-- 依赖：
-  - Map
-  - TownsManager
-  - JobMarket
 
 ## 事件和回调
 
@@ -154,12 +138,3 @@
 ## 配置依赖
 - resident_prompts.yaml：居民对话提示词配置
 - resident_actions.yaml：居民行为动作配置
-
-## 外部依赖
-- BaseAgent：基础智能体类
-- MemoryManager：记忆管理系统
-- JobMarket：就业市场系统
-- Map：地图系统
-- SocialNetwork：社交网络系统
-- TownsManager：城镇管理系统
-- LLM：大语言模型接口
