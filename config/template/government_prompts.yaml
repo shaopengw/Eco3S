@@ -78,7 +78,6 @@ summarize_discussions_prompt: |
 # 描述：提供给官员的背景信息
 # 必须包含的变量：{budget}
 # 其他变量：根据模拟具体需求添加（如{tax_rate}、{military_strength}、{transport_task}等）
-# 输出要求：清晰展示当前状态和可用决策
 get_current_situation_prompt: |
   国库现状：资金{budget:.2f}[货币单位] | [其他关键状态变量]
   [详细列出所有可用决策及其说明]

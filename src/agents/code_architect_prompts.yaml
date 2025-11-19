@@ -43,12 +43,11 @@ generate_simulator_code_prompt: |
   {template_content}
 
   【修改要求】
-  1. 类名修改：从 YourSimulator 改为 {simulator_class_name}
-  2. 删除不需要的模块相关代码（例如如果不需要叛军，删除rebels相关代码）
-  3. 保留模板中有用的方法，必要时修改
-  4. 可以新增模板中没有但需要的方法
-  5. 不要添加注释和测试代码
-  6. 以尽可能少的代码修改实现功能
+  1. 删除不需要的模块相关代码（例如如果不需要叛军，删除rebels相关代码）
+  2. 保留模板中有用的方法，必要时修改
+  3. 可以新增模板中没有但需要的方法
+  4. 不要添加注释和测试代码
+  5. 以尽可能少的代码修改实现功能
   
   【严格禁止】
   - 禁止添加任何import语句，模板已经通过 from .simulator_imports import * 导入所有必需模块
@@ -57,19 +56,16 @@ generate_simulator_code_prompt: |
   - 如果模板代码没有错误，就不要修改
 
   【输出格式】
-  返回JSON格式的增量修改：
+  返回JSON格式，包含需要修改的内容：
 
   ```json
   {{
-    "methods": [
-      {{
-        "method_name": "纯方法名（如：__init__、run、update_state）",
-        "method_code": "完整的方法代码（从def/async def开始，包含所有缩进）",
-        "description": "修改说明"
-      }}
-    ]
+    "methods": [{{"method_name": "方法名", "method_code": "完整代码(从def/async def开始)", "description": "修改说明"}}],
+    "delete_methods": ["不需要的方法名1", "不需要的方法名2"]
   }}
   ```
+
+  注意：delete_methods 是可选字段，用于删除不需要的方法
 
 # 生成main入口文件（完整文件版）
 generate_main_file_prompt: |
@@ -171,8 +167,13 @@ refine_simulator_with_module_prompt: |
   返回JSON格式，包含需要修改的内容：
 
   ```json
-  {{"methods": [{{"method_name": "方法名", "method_code": "完整代码(从def/async def开始)", "description": "修改说明"}}]}}
+  {{
+    "methods": [{{"method_name": "方法名", "method_code": "完整代码(从def/async def开始)", "description": "修改说明"}}],
+    "delete_methods": ["不需要的方法名1", "不需要的方法名2"]
+  }}
   ```
+
+  注意：delete_methods 是可选字段，用于删除不需要的方法
 
 # 步骤3.3: 检查并修复simulator代码（增量修改版）
 check_and_fix_simulator_prompt: |
@@ -192,9 +193,9 @@ check_and_fix_simulator_prompt: |
   5. 方法完整性：__init__, init_results, prepare_experiment, update_state, execute_actions, collect_results, save_results
 
   【严格禁止】
-  - 禁止添加任何import语句（除了已有的 from .simulator_imports import *）
+  - 禁止添加任何import语句
   - 禁止删除重要初始化语句
-  - 禁止修改已经正确的代码
+  - 禁止添加注释和测试代码
   - 如果没有真正的错误，就返回OK，不要做不必要的修改
 
   要求：
@@ -212,7 +213,8 @@ check_and_fix_simulator_prompt: |
         "method_code": "完整的方法代码（从def/async def开始）",
         "description": "修改说明"
       }}
-    ]
+    ],
+    "delete_methods": ["不需要的方法名1", "不需要的方法名2"]
   }}
   ```
 
@@ -220,6 +222,7 @@ check_and_fix_simulator_prompt: |
   - method_name 必须是纯方法名（如：run），不要包含 def、async、括号等
   - method_code 是完整的方法代码，确保缩进正确（4个空格）
   - 只返回需要修复的方法，不要返回没有问题的方法
+  - delete_methods 是可选字段，用于删除不需要的方法
   - 确保JSON格式正确
 
   如果没有问题，只返回：OK
@@ -260,7 +263,8 @@ check_and_fix_main_prompt: |
         "function_code": "完整的函数代码（从def开始）",
         "description": "修改说明"
       }}
-    ]
+    ],
+    "delete_functions": ["不需要的函数名1", "不需要的函数名2"]
   }}
   ```
 
@@ -268,26 +272,10 @@ check_and_fix_main_prompt: |
   - main文件使用"functions"而不是"methods"，因为是模块级函数
   - function_name 必须是纯函数名（如：main），不要包含 def、括号等
   - function_code 是完整的函数代码
+  - delete_functions 是可选字段，用于删除不需要的函数
   - 确保JSON格式正确
   
   如果没有问题，只返回：OK
-
-# 步骤3.3: 修复已发现的问题
-fix_issues_prompt: |
-  请修复以下代码中的所有问题。
-
-  当前代码：
-  {code_content}
-
-  发现的问题：
-  {issues}
-
-  要求：
-  1. 修复所有问题
-  2. 保持代码逻辑完整
-  3. 返回完整的修复后代码
-
-  请返回修复后的完整代码。
 
 # 步骤4.1: 创建main文件的工作列表
 create_main_todo_list_prompt: |
@@ -319,33 +307,6 @@ create_main_todo_list_prompt: |
   ]
 
   只返回JSON数组，不要其他解释。
-
-# 步骤4.2: 补完main文件的单个任务
-complete_main_task_prompt: |
-  补完main文件中的以下任务。
-
-  当前Main代码：
-  {current_code}
-
-  Simulator代码参考（了解需要什么参数）：
-  {simulator_content}
-
-  待补完任务：{task_name}
-  任务描述：{description}
-
-  设计文档：
-  {description_md}
-
-  相关API文档：
-  {api_docs}
-
-  要求：
-  1. 只修改与该任务相关的代码部分
-  2. 保持代码风格一致
-  3. 确保逻辑完整、可运行
-  4. 返回完整的Python代码文件内容
-
-  请返回完整的main文件代码。
 
 # 步骤4.4: 总体检查main代码
 final_check_main_prompt: |
@@ -402,15 +363,11 @@ generate_config_file_prompt: |
   API文档参考：
   {api_docs}
 
-  {previous_configs_str}
-
   要求：
   1. 参考模板的结构和字段
   2. 根据设计文档调整具体数值和内容
   3. 确保配置的完整性和一致性
   4. 如果有已生成的配置，保持参数之间的关联性
-
-  请生成完整的配置文件内容（{file_format}格式）。
 
 # 步骤6: 生成提示词文件
 generate_prompt_file_prompt: |
@@ -418,9 +375,6 @@ generate_prompt_file_prompt: |
 
   设计文档：
   {description_md}
-
-  模块配置信息：
-  {modules}
 
   提示词模板参考：
   {template_content}
@@ -495,6 +449,7 @@ fix_runtime_errors_prompt: |
   1. 分析错误堆栈，定位问题所在的文件和函数/方法
   2. 参考API文档，确保使用正确的方法名和参数
   3. 只修改有问题的函数/方法，以最小改动修复问题
+  4. 只有当API中没有可用的方法，且该功能必须实现，尝试自己编写函数/方法
 
   【输出格式】
   Main文件用 # === MAIN FILE === 和 "functions"，Simulator文件用 # === SIMULATOR FILE === 和 "methods"：
@@ -508,7 +463,8 @@ fix_runtime_errors_prompt: |
         "function_code": "完整的函数代码（从def开始）",
         "description": "修改说明"
       }}
-    ]
+    ],
+    "delete_functions": ["不需要的函数名1", "不需要的函数名2"]
   }}
   ```
   
@@ -521,8 +477,12 @@ fix_runtime_errors_prompt: |
         "method_code": "完整的方法代码（从def/async def开始）",
         "description": "修改说明"
       }}
-    ]
+    ],
+    "delete_methods": ["不需要的方法名1", "不需要的方法名2"]
   }}
   ```
 
-  注意：只返回需要修改的文件的JSON，name必须是纯函数/方法名（不含def、async、括号），确保JSON格式正确
+  注意：
+  - 只返回需要修改的文件的JSON，name必须是纯函数/方法名（不含def、async、括号）
+  - delete_methods/delete_functions 是可选字段，用于删除不需要的方法/函数
+  - 确保JSON格式正确

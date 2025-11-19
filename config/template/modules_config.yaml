@@ -104,12 +104,24 @@ module_parameters:
     types: ["沿河", "非沿河"]
     initial_resources: 100000
     
+  # 地图系统参数
+  map:
+    width: 100
+    height: 100
+    max_connection_distance: 20  # 城市网络最大连接距离
+    location_sigma: 2.0  # 随机位置生成的标准差
+    navigability: 0.8 #运河通航能力
+    
   # 以下为未启用模块的参数(需要时取消注释并设置required=true)
   
-  # 交通经济参数
+  # 运输经济系统参数
   # transport_economy:
-  #   base_cost: 100
-  #   distance_factor: 1.5
+  #   transport_cost: 100  # 基础运输成本
+  #   transport_task: 500  # 年度运输任务量（吨）
+  #   maintenance_cost_base: 100  # 基础维护成本
+  #   maintenance_exponent: 3  # 维护成本计算指数
+  #   initial_navigability: 1.0  # 初始通航能力 (0-1)
+  #   natural_decay_rate: 0.05  # 自然衰减率
   
   # 政府系统参数
   # government:
@@ -150,3 +162,19 @@ analysis:
       metrics: ["population", "average_satisfaction"]
     - type: "bar_chart"
       metrics: ["employment_rate"]
+
+# 配置文件详情 - 供研究助手Agent参考
+config_files_description:
+  "modules_config.yaml": "定义实验中使用的所有模块及其参数设置，控制实验的整体结构和模块选择"
+  "simulation_config.yaml": "设置模拟运行的基本参数，如时间步长、人口数量等基础运行参数"
+  "towns_data.json": "定义模拟世界中的城镇信息，包括位置、人口、经济状况等地理和经济基础"
+  "jobs_config.yaml": "定义就业市场的结构，包括职业类型、薪资水平、需求量等就业相关配置"
+  "message_config.yaml": "定义消息传播系统的配置，包括传播范围、速度、衰减率等信息传播参数"
+  "questionnaire.yaml": "定义调查问卷的结构和问题，用于收集模拟过程中的数据和反馈"
+
+# 提示词文件详情 - 供研究助手Agent参考
+prompt_files_description:
+  "residents_prompts.yaml": "定义居民Agent的日常行为、迁移决策、工作选择等行为逻辑和决策提示词"
+  "government_prompts.yaml": "定义政府Agent的政策制定和执行提示词，控制政府的政策响应和治理行为"
+  "rebels_prompts.yaml": "定义叛军Agent的活动逻辑和策略提示词，控制反叛活动的发生和发展"
+  "resident_actions.yaml": "定义居民可执行的具体行动类型和参数，限定居民的行为范围和行动选项"

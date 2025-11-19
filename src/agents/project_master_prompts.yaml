@@ -1,7 +1,7 @@
 # ProjectMasterAgent 提示词配置
 
 system_message: |
-  你是多智能体模拟系统的项目管理师，负责协调整个实验流程、质量控制和迭代优化。思路清晰，决策果断。
+  你是多智能体模拟系统的项目管理师，负责协调整个实验流程和质量控制。思路清晰，决策果断。
 
 parse_user_requirement_prompt: |
   分析以下用户需求，提取关键信息并返回JSON格式：

@@ -61,8 +61,11 @@ class ProjectMasterAgent(BaseAgent):
             print(f"✓ 跳过步骤: {step_name}")
             return False
 
-    def _read_modules_config(self):
+    def _read_modules_config(self, full_config=False):
         """读取模块配置文件内容
+        
+        Args:
+            full_config: 是否读取完整配置，默认只读取selected_modules
         
         Returns:
             str: 模块配置的YAML内容，如果文件不存在返回空字符串
@@ -70,7 +73,14 @@ class ProjectMasterAgent(BaseAgent):
         modules_config_path = os.path.join(self.current_config_dir, 'modules_config.yaml')
         if os.path.exists(modules_config_path):
             with open(modules_config_path, 'r', encoding='utf-8') as f:
-                return f.read()
+                if full_config:
+                    return f.read()
+                else:
+                    # 只读取selected_modules部分
+                    config = yaml.safe_load(f)
+                    if config and 'selected_modules' in config:
+                        return yaml.dump({'selected_modules': config['selected_modules']}, allow_unicode=True)
+                    return ""
         return ""
 
     async def parse_user_requirement(self, requirement_text):
@@ -267,11 +277,7 @@ class ProjectMasterAgent(BaseAgent):
         else:
             config_files = [modules_config_path] if os.path.exists(modules_config_path) else []
         
-        # 读取 modules_config.yaml 的内容，供编码阶段使用
-        modules_config_yaml = ""
-        if os.path.exists(modules_config_path):
-            with open(modules_config_path, 'r', encoding='utf-8') as f:
-                modules_config_yaml = f.read()
+        modules_config_yaml = self._read_modules_config(full_config=False)
         
         return {
             'parsed_requirement': parsed_req,
@@ -569,7 +575,6 @@ class ProjectMasterAgent(BaseAgent):
             prev_prompt_context += f"=== 用户反馈 ===\n{user_feedback}\n"
         
         # 生成提示词文件
-        modules_config_yaml = self._read_modules_config()
         for module_name, prompt_filename in prompt_file_mapping.items():
             self.logger.info(f"  生成提示词文件: {prompt_filename} (来自模块: {module_name})")
             description_with_prompt_context = description_content + prev_prompt_context
@@ -577,7 +582,6 @@ class ProjectMasterAgent(BaseAgent):
             prompt_path = await coder.generate_prompt_file(
                 prompt_filename,
                 description_with_prompt_context,
-                modules_config_yaml,
                 config_files
             )
             
@@ -763,13 +767,13 @@ class ProjectMasterAgent(BaseAgent):
         
         return None
 
-    async def run_evaluation_phase(self, simulation_results_path):
+    async def run_evaluation_and_optimization_phase(self, simulation_results_path):
         """
-        运行评估阶段，调用 ResearchAnalystAgent。
-        增强版：根据结果评估是否符合预期，如果不符合则自动修改配置。
+        运行评估并优化阶段，调用 ResearchAnalystAgent。
+        根据结果评估是否符合预期，如果不符合则自动修改配置。
         """
         self.logger.info("=" * 50)
-        self.logger.info("开始评估阶段")
+        self.logger.info("开始评估结果并优化阶段")
         self.logger.info("=" * 50)
         
         results_dir = os.path.join(self.current_project_dir, 'results')
@@ -810,94 +814,56 @@ class ProjectMasterAgent(BaseAgent):
             )
             self.logger.info("诊断结果已生成")
             
-            # === 步骤 3: 生成修改方案 ===
-            self.logger.info("步骤 3: 生成具体的配置修改方案")
-            modification_proposals = await analyst.generate_config_modifications(
-                diagnosis_result,
-                self.current_config_dir,
-                design_doc=design_doc
-            )
+            # === 步骤 3: 依次修改文件 ===
+            self.logger.info("步骤 3: 根据诊断结果依次修改配置文件")
             
-            if modification_proposals:
-                self.logger.info(f"已生成 {len(modification_proposals)} 个文件的修改方案")
+            # 询问用户是否继续修改
+            print(f"\n{'='*60}")
+            print(f"检测到配置需要调整，准备根据诊断结果依次修改文件")
+            print(f"{'='*60}")
+            user_input = input("是否开始修改？(y/yes=继续, 其他=跳过): ").strip().lower()
+            
+            if user_input in ['y', 'yes']:
+                # 依次修改文件
+                modification_results = await analyst.modify_file_sequentially(
+                    diagnosis_result,
+                    self.current_config_dir,
+                    design_doc=design_doc
+                )
                 
-                # 询问用户是否应用修改
-                print(f"\n{'='*60}")
-                print(f"检测到配置需要调整，生成了以下修改方案：")
-                for prop in modification_proposals:
-                    print(f"  - {prop['file_name']}: {len(prop['modifications'])} 个修改项")
-                print(f"{'='*60}")
-                user_input = input("是否应用这些修改？(y/yes=应用, 其他=跳过): ").strip().lower()
-                
-                if user_input in ['y', 'yes']:
-                    # === 步骤 4: 应用修改 ===
-                    self.logger.info("步骤 4: 应用配置修改")
-                    application_result = await analyst.apply_modifications(
-                        modification_proposals,
-                        self.current_config_dir
-                    )
-                    self.logger.info("✓ 配置修改已应用")
-                    
+                if modification_results:
+                    self.logger.info(f"✓ 已完成 {len(modification_results)} 个文件的修改")
                     return {
                         'evaluation_report': evaluation_report,
                         'needs_adjustment': True,
                         'diagnosis_result': diagnosis_result,
-                        'modification_proposals': modification_proposals,
-                        'application_result': application_result
+                        'modification_results': modification_results
                     }
                 else:
-                    self.logger.info("用户跳过应用修改")
+                    self.logger.warning("未成功修改任何文件")
                     return {
                         'evaluation_report': evaluation_report,
                         'needs_adjustment': True,
                         'diagnosis_result': diagnosis_result,
-                        'modification_proposals': modification_proposals,
-                        'application_result': None
+                        'modification_results': []
                     }
             else:
-                self.logger.warning("未能生成有效的修改方案")
+                self.logger.info("用户跳过修改")
                 return {
                     'evaluation_report': evaluation_report,
                     'needs_adjustment': True,
                     'diagnosis_result': diagnosis_result,
-                    'modification_proposals': [],
-                    'application_result': None
+                    'modification_results': None
                 }
         else:
             self.logger.info("✓ 结果符合预期，无需调整")
             return {
                 'evaluation_report': evaluation_report,
-                'needs_adjustment': False
+                'needs_adjustment': False,
+                'optimization_completed': True
             }
 
-    async def run_iteration(self, evaluation_results):
-        """
-        运行一次迭代优化。
-        """
-        self.logger.info("=" * 50)
-        self.logger.info("开始迭代优化")
-        self.logger.info("=" * 50)
-        
-        results_dir = os.path.join(self.current_project_dir, 'results')
-        analyst = ResearchAnalystAgent(
-            agent_id='research_analyst_001',
-            output_dir=results_dir,
-            docs_dir=self.docs_dir
-        )
-        
-        # 应用调整建议
-        config_file = os.path.join(self.current_config_dir, 'simulation_config.yaml')
-        if os.path.exists(config_file):
-            self.logger.info("应用调整建议到配置文件")
-            apply_result = await analyst.apply_adjustments(
-                evaluation_results['adjustment_proposals'],
-                config_file
-            )
-            self.logger.info(f"调整已应用: {apply_result}")
-            return True
-        else:
-            self.logger.warning("未找到配置文件，跳过调整应用")
-            return False
+
 
     async def run_full_workflow(self, requirement_text, max_iterations=3):
         """
@@ -928,67 +894,42 @@ class ProjectMasterAgent(BaseAgent):
         self.logger.info("\n阶段 3: 代码生成")
         coding_results = await self.run_coding_phase(design_results)
         
-        # 4. 运行模拟（带自动纠错）
-        self.logger.info("\n阶段 4: 运行模拟")
-        simulation_results_path = await self.run_simulation(coding_results, max_fix_attempts=10)
-        
-        if simulation_results_path is None:
-            self.logger.error("❌ 模拟运行失败，工作流程终止")
-            self.logger.info("=" * 80)
-            self.logger.info("工作流程因运行失败而终止")
-            self.logger.info(f"项目目录: {project_dir}")
-            self.logger.info("请检查日志文件获取详细错误信息")
-            self.logger.info("=" * 80)
+        # 4-5. 运行模拟和评估优化循环
+        optimization_history = []
+        for iteration in range(1, max_iterations + 1):
+            # 阶段 4: 运行模拟
+            self.logger.info(f"\n阶段 4: 运行模拟 (第 {iteration} 轮)")
+            simulation_results_path = await self.run_simulation(coding_results, max_fix_attempts=10)
             
-            return {
-                'status': 'failed',
-                'reason': 'simulation_execution_failed',
-                'project_dir': project_dir,
-                'design_results': design_results,
-                'coding_results': coding_results,
-                'simulation_results': None,
-            }
-        
-        self.logger.info("✅ 模拟运行成功")
-        
-        # 5. 评估阶段
-        self.logger.info("\n阶段 5: 结果评估")
-        evaluation_results = await self.run_evaluation_phase(simulation_results_path)
-        
-        # 6. 迭代优化（可选）
-        iteration_history = []
-        for i in range(max_iterations):
-            self.logger.info(f"\n阶段 6.{i+1}: 迭代优化 (第 {i+1}/{max_iterations} 轮)")
-            
-            # 判断是否需要继续迭代
-            should_iterate = await self.should_continue_iteration(evaluation_results)
-            if not should_iterate:
-                self.logger.info("评估结果已达标，无需继续迭代")
+            if simulation_results_path is None:
+                self.logger.error("❌ 模拟运行失败，工作流程终止")
                 break
             
-            # 应用调整并重新运行
-            iteration_success = await self.run_iteration(evaluation_results)
-            if iteration_success:
-                simulation_results_path = await self.run_simulation(coding_results)
-                evaluation_results = await self.run_evaluation_phase(simulation_results_path)
-                iteration_history.append({
-                    'iteration': i + 1,
-                    'results': evaluation_results
-                })
-            else:
+            self.logger.info("✅ 模拟运行成功")
+            
+            # 阶段 5: 评估结果并优化
+            self.logger.info(f"\n阶段 5: 评估结果并优化 (第 {iteration} 轮)")
+            evaluation_results = await self.run_evaluation_and_optimization_phase(simulation_results_path)
+            
+            optimization_history.append({
+                'iteration': iteration,
+                'simulation_results': simulation_results_path,
+                'evaluation_results': evaluation_results
+            })
+            
+            # 如果评估结果符合预期，退出循环
+            if evaluation_results.get('optimization_completed', False):
+                self.logger.info("✅ 评估结果符合预期，优化完成")
                 break
-        
-        # 7. 生成最终报告
-        self.logger.info("\n阶段 7: 生成最终报告")
-        if iteration_history:
-            results_dir = os.path.join(self.current_project_dir, 'results')
-            analyst = ResearchAnalystAgent(
-                agent_id='research_analyst_001',
-                output_dir=results_dir,
-                docs_dir=self.docs_dir
-            )
-            final_summary = await analyst.generate_optimization_summary(iteration_history)
-            self.logger.info("最终优化报告已生成")
+            
+            # 如果不需要调整，也退出循环
+            if not evaluation_results.get('needs_adjustment', False):
+                self.logger.info("✅ 无需进一步调整，优化完成")
+                break
+            
+            if iteration >= max_iterations:
+                self.logger.info(f"已达到最大迭代次数 ({max_iterations})，停止优化")
+                break
         
         self.logger.info("=" * 80)
         self.logger.info("工作流程完成")
@@ -1000,9 +941,7 @@ class ProjectMasterAgent(BaseAgent):
             'project_dir': project_dir,
             'design_results': design_results,
             'coding_results': coding_results,
-            'simulation_results': simulation_results_path,
-            # 'evaluation_results': evaluation_results,
-            # 'iteration_history': iteration_history
+            'optimization_history': optimization_history
         }
 
     async def run_interactive_workflow(self, requirement_text):
@@ -1211,176 +1150,101 @@ class ProjectMasterAgent(BaseAgent):
                 self.logger.info(f"用户反馈: {user_input}")
                 self.logger.info("重新执行编码阶段")
         
-        # ============ 阶段 4: 运行模拟 ============
+        # ============ 阶段 4-5: 运行模拟和评估优化循环 ============
         print("\n" + "=" * 80)
-        print("阶段 4: 运行模拟")
+        print("阶段 4-5: 运行模拟和评估优化循环")
         print("=" * 80)
-        self.logger.info("\n阶段 4: 运行模拟")
+        self.logger.info("\n阶段 4-5: 运行模拟和评估优化循环")
         
-        print("\n是否运行模拟程序？")
-        print("  - 输入 'ok' 或 'yes' 运行模拟")
-        print("  - 输入 'skip' 跳过运行模拟")
-        print("  - 输入 'quit' 退出")
+        optimization_history = []
+        max_iterations = 3
         
-        user_input = input("\n您的选择: ").strip()
-        
-        simulation_results_path = None
-        if user_input.lower() in ['ok', 'yes', '']:
-            print("\n开始运行模拟...")
-            simulation_results_path = await self.run_simulation(coding_results, max_fix_attempts=10)
+        for iteration in range(1, max_iterations + 1):
+            print(f"\n{'='*60}")
+            print(f"第 {iteration} 轮优化")
+            print(f"{'='*60}")
             
-            if simulation_results_path is None:
-                print("\n❌ 模拟运行失败")
-                self.logger.error("模拟运行失败")
-                print("\n是否继续工作流程？")
-                print("  - 输入 'yes' 继续（跳过评估阶段）")
-                print("  - 其他输入退出")
-                
-                user_input = input("\n您的选择: ").strip()
-                if user_input.lower() != 'yes':
-                    return {
-                        'status': 'terminated',
-                        'phase': 'simulation',
-                        'project_dir': project_dir,
-                        'config_dir': self.current_config_dir,
-                        'design_results': design_results,
-                        'coding_results': coding_results,
-                        'history': phase_history
-                    }
-            else:
-                print(f"\n✅ 模拟运行成功！")
-                print(f"结果文件: {simulation_results_path}")
-        elif user_input.lower() == 'quit':
-            print("\n用户终止流程")
-            self.logger.info("用户终止流程")
-            return {
-                'status': 'terminated',
-                'phase': 'simulation',
-                'history': phase_history
-            }
-        else:
-            print("\n跳过运行模拟")
-            self.logger.info("用户选择跳过运行模拟")
-        
-        # ============ 阶段 5: 评估结果（可选） ============
-        evaluation_results = None
-        if simulation_results_path:
-            print("\n" + "=" * 80)
-            print("阶段 5: 评估结果")
-            print("=" * 80)
-            self.logger.info("\n阶段 5: 评估结果")
-            
-            print("\n是否评估模拟结果？")
-            print("  - 输入 'ok' 或 'yes' 进行评估")
-            print("  - 输入 'skip' 跳过评估")
+            # 阶段 4: 运行模拟
+            print(f"\n阶段 4: 运行模拟 (第 {iteration} 轮)")
+            print("\n是否运行模拟程序？")
+            print("  - 输入 'ok' 或 'yes' 运行模拟")
+            print("  - 输入 'skip' 跳过模拟运行")
             print("  - 输入 'quit' 退出")
             
             user_input = input("\n您的选择: ").strip()
             
-            if user_input.lower() in ['ok', 'yes', '']:
-                print("\n开始评估...")
+            if user_input.lower() == 'quit':
+                print("\n用户退出流程")
+                break
+            elif user_input.lower() == 'skip':
+                print("\n跳过模拟运行")
+                # 使用之前的结果或测试数据
+                simulation_results_path = "E:\\cyf\\多智能体\\AgentWorld\\history\\default\\extreme_climate_canal_abandonment\\running_data_20251117_195903.csv"
+            else:  # 'ok', 'yes' 或默认
+                print("\n开始运行模拟...")
+                self.logger.info(f"开始第 {iteration} 轮模拟运行")
+                
+                simulation_results_path = await self.run_simulation(coding_results, max_fix_attempts=10)
+                
+                if simulation_results_path:
+                    print("\n✅ 模拟运行成功！")
+                    self.logger.info(f"第 {iteration} 轮模拟运行成功")
+                else:
+                    print("\n❌ 模拟运行失败")
+                    self.logger.error(f"第 {iteration} 轮模拟运行失败")
+                    break
+            
+            # 阶段 5: 评估结果并优化
+            print(f"\n阶段 5: 评估结果并优化 (第 {iteration} 轮)")
+            
+            if simulation_results_path:
+                print("\n开始评估模拟结果...")
+                self.logger.info(f"开始第 {iteration} 轮评估")
+                
                 try:
-                    evaluation_results = await self.run_evaluation_phase(simulation_results_path)
-                    
+                    evaluation_results = await self.run_evaluation_and_optimization_phase(simulation_results_path)
                     print("\n✅ 评估完成！")
-                    if evaluation_results.get('evaluation_report'):
-                        print("\n评估报告摘要:")
-                        print("-" * 80)
-                        report = evaluation_results['evaluation_report']
-                        print(report[:500] if isinstance(report, str) else str(report)[:500])
-                        print("...(更多内容请查看文件)")
-                        print("-" * 80)
+                    
+                    optimization_history.append({
+                        'iteration': iteration,
+                        'simulation_results': simulation_results_path,
+                        'evaluation_results': evaluation_results
+                    })
+                    
+                    # 判断是否需要继续循环
+                    if evaluation_results.get('optimization_completed', False):
+                        print("\n✅ 评估结果符合预期，优化完成！")
+                        self.logger.info("优化完成")
+                        break
+                    elif not evaluation_results.get('needs_adjustment', False):
+                        print("\n✅ 无需进一步调整，优化完成！")
+                        self.logger.info("无需进一步调整")
+                        break
+                    else:
+                        print("\n⚠️  结果需要调整，准备下一轮优化...")
+                        if iteration >= max_iterations:
+                            print(f"\n已达到最大迭代次数 ({max_iterations})，停止优化")
+                            self.logger.info("达到最大迭代次数")
+                            break
+                        
+                        # 询问用户是否继续
+                        print(f"\n是否继续第 {iteration + 1} 轮优化？")
+                        print("  - 输入 'ok' 或 'yes' 继续")
+                        print("  - 输入 'no' 或 'quit' 停止")
+                        
+                        continue_input = input("\n您的选择: ").strip()
+                        if continue_input.lower() not in ['ok', 'yes', '']:
+                            print("\n用户选择停止优化")
+                            self.logger.info("用户选择停止优化")
+                            break
+                        
                 except Exception as e:
                     print(f"\n❌ 评估失败: {e}")
-                    self.logger.error(f"评估失败: {e}")
-            elif user_input.lower() == 'quit':
-                print("\n用户终止流程")
-                self.logger.info("用户终止流程")
-                return {
-                    'status': 'terminated',
-                    'phase': 'evaluation',
-                    'history': phase_history
-                }
+                    self.logger.error(f"第 {iteration} 轮评估失败: {e}")
+                    break
             else:
-                print("\n跳过评估")
-                self.logger.info("用户选择跳过评估")
-        
-        # ============ 阶段 6: 迭代优化（可选） ============
-        iteration_history = []
-        if evaluation_results:
-            print("\n" + "=" * 80)
-            print("阶段 6: 迭代优化")
-            print("=" * 80)
-            self.logger.info("\n阶段 6: 迭代优化")
-            
-            max_iterations = 3
-            for i in range(max_iterations):
-                print(f"\n是否进行第 {i+1} 轮迭代优化？")
-                print("  - 输入 'ok' 或 'yes' 进行优化")
-                print("  - 输入 'no' 或 'skip' 跳过优化")
-                print("  - 输入 'quit' 退出")
-                
-                user_input = input("\n您的选择: ").strip()
-                
-                if user_input.lower() in ['ok', 'yes']:
-                    print(f"\n开始第 {i+1}/{max_iterations} 轮迭代优化...")
-                    
-                    # 判断是否需要继续迭代
-                    should_iterate = await self.should_continue_iteration(evaluation_results)
-                    if not should_iterate:
-                        print("\n评估结果已达标，无需继续迭代")
-                        self.logger.info("评估结果已达标，无需继续迭代")
-                        break
-                    
-                    # 应用调整并重新运行
-                    iteration_success = await self.run_iteration(evaluation_results)
-                    if iteration_success:
-                        print("\n✓ 配置已调整，重新运行模拟...")
-                        simulation_results_path = await self.run_simulation(coding_results)
-                        
-                        if simulation_results_path:
-                            print("\n✓ 模拟运行成功，重新评估...")
-                            evaluation_results = await self.run_evaluation_phase(simulation_results_path)
-                            iteration_history.append({
-                                'iteration': i + 1,
-                                'results': evaluation_results
-                            })
-                            print(f"\n✅ 第 {i+1} 轮迭代完成")
-                        else:
-                            print(f"\n❌ 第 {i+1} 轮模拟运行失败")
-                            break
-                    else:
-                        print(f"\n❌ 第 {i+1} 轮配置调整失败")
-                        break
-                elif user_input.lower() == 'quit':
-                    print("\n用户终止流程")
-                    self.logger.info("用户终止流程")
-                    break
-                else:
-                    print("\n跳过迭代优化")
-                    self.logger.info("用户选择跳过迭代优化")
-                    break
-            
-            # 生成最终报告
-            if iteration_history:
-                print("\n" + "=" * 80)
-                print("阶段 7: 生成最终报告")
-                print("=" * 80)
-                self.logger.info("\n阶段 7: 生成最终报告")
-                
-                try:
-                    results_dir = os.path.join(self.current_project_dir, 'results')
-                    analyst = ResearchAnalystAgent(
-                        agent_id='research_analyst_001',
-                        output_dir=results_dir,
-                        docs_dir=self.docs_dir
-                    )
-                    final_summary = await analyst.generate_optimization_summary(iteration_history)
-                    print("\n✅ 最终优化报告已生成")
-                    self.logger.info("最终优化报告已生成")
-                except Exception as e:
-                    print(f"\n❌ 报告生成失败: {e}")
-                    self.logger.error(f"报告生成失败: {e}")
+                print("\n无模拟结果，无法进行评估")
+                break
         
         # ============ 完成 ============
         print("\n" + "=" * 80)
@@ -1390,8 +1254,8 @@ class ProjectMasterAgent(BaseAgent):
         print(f"配置目录: {self.current_config_dir}")
         print(f"\n设计版本数: {len(phase_history['design'])}")
         print(f"编码版本数: {len(phase_history['coding'])}")
-        if iteration_history:
-            print(f"迭代优化轮数: {len(iteration_history)}")
+        if len(optimization_history) > 0:
+            print(f"优化迭代轮数: {len(optimization_history)}")
         
         self.logger.info("=" * 80)
         self.logger.info("交互式工作流程完成")
@@ -1404,24 +1268,8 @@ class ProjectMasterAgent(BaseAgent):
             'config_dir': self.current_config_dir,
             'design_results': design_results,
             'coding_results': coding_results,
-            'simulation_results': simulation_results_path,
-            'evaluation_results': evaluation_results,
-            'iteration_history': iteration_history,
+            'optimization_history': optimization_history,
             'history': phase_history
         }
 
-    async def should_continue_iteration(self, evaluation_results):
-        """
-        判断是否应该继续迭代优化。
-        """
-        prompt = self.prompts['should_continue_iteration_prompt'].format(
-            evaluation_report=evaluation_results.get('evaluation_report', ''),
-            metrics_analysis=evaluation_results.get('metrics_analysis', '')
-        )
-        
-        response = await self.generate_llm_response(prompt)
-        try:
-            result = json.loads(response)
-            return result.get('should_continue', False)
-        except Exception:
-            return False
+

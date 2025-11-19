@@ -210,7 +210,7 @@ class YourSimulator:
             resident = self.residents[resident_name]
             tax_rate = self.government.get_tax_rate() if self.government else 0
             
-            #以下两种情况二选一使用
+            # TODO: 以下两种情况二选一使用，不使用的直接删除
             # 1.基于LLM的决策(需要叛军情况，叛军发布激进言论)
             if resident.job == "叛军":
                 tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
@@ -439,35 +439,35 @@ class YourSimulator:
         """执行叛军决策"""
         return self.execute_decision(decision, 'rebellion')
     
+    def extract_json_from_text(self, text):
+        """从文本中提取JSON内容"""
+        json_pattern = r'\{[^{}]*\}'
+        matches = re.findall(json_pattern, text)
+        for match in matches:
+            try:
+                return json.loads(match)
+            except json.JSONDecodeError:
+                continue
+        return None
+    
+    def parse_decision(self, decision_text, max_retries=3):
+        """解析决策内容，支持重试"""
+        decision_text = decision_text.strip().removeprefix('```json').removesuffix('```')
+        for attempt in range(max_retries):
+            try:
+                return json.loads(decision_text)
+            except json.JSONDecodeError:
+                extracted = self.extract_json_from_text(decision_text)
+                if extracted:
+                    return extracted
+        return None
+    
     def execute_decision(self, decision, group_type):
         """通用决策执行函数"""
         _, salary = self.calculate_total_salaries()
         
-        def extract_json_from_text(text):
-            """从文本中提取JSON内容"""
-            json_pattern = r'\{[^{}]*\}'
-            matches = re.findall(json_pattern, text)
-            for match in matches:
-                try:
-                    return json.loads(match)
-                except json.JSONDecodeError:
-                    continue
-            return None
-        
-        def parse_decision(decision_text, max_retries=3):
-            """解析决策内容，支持重试"""
-            decision_text = decision_text.strip().removeprefix('```json').removesuffix('```')
-            for attempt in range(max_retries):
-                try:
-                    return json.loads(decision_text)
-                except json.JSONDecodeError:
-                    extracted = extract_json_from_text(decision_text)
-                    if extracted:
-                        return extracted
-            return None
-        
         try:
-            decision_data = parse_decision(decision)
+            decision_data = self.parse_decision(decision)
             if not decision_data:
                 return False
             
@@ -479,43 +479,47 @@ class YourSimulator:
                 random.shuffle(decision_keys)
                 
                 for key in decision_keys:
-                    if key == "tax_rate" and decision_data[key] is not None:
-                        new_tax_rate = float(decision_data[key])
-                        self.government.set_tax_rate(new_tax_rate)
-                        print(f"政府调整税率为: {new_tax_rate}")
+                    # 示例：税率调整
+                    if key == "tax_adjustment" and decision_data[key] is not None:
+                        # 根据实际 government 对象的方法来调整
+                        # 例如: self.government.adjust_tax_rate(decision_data[key])
+                        pass
                     
-                    elif key == "river_maintenance_budget" and decision_data[key] is not None:
-                        budget = float(decision_data[key])
-                        if self.government.budget >= budget:
-                            improvement = self.transport_economy.maintain_river(budget)
-                            self.map.improve_navigability(improvement)
-                            self.government.budget -= budget
-                            print(f"政府投入 {budget} 维护运河，通航能力提升 {improvement}")
+                    # 示例：运河维护投资
+                    elif key == "maintenance_investment" and decision_data[key] is not None:
+                        # 根据实际 government 对象的方法来处理
+                        # 例如: self.government.maintain_canal(maintenance_investment=decision_data[key])
+                        pass
                     
-                    elif key == "military_budget" and decision_data[key] is not None:
-                        budget = float(decision_data[key])
-                        if self.government.budget >= budget:
-                            new_soldiers = int(budget / 10)
-                            self.towns.adjust_job_quota("官员及士兵", new_soldiers)
-                            self.government.budget -= budget
-                            print(f"政府投入 {budget} 招募 {new_soldiers} 名士兵")
+                    # 示例：军事支持
+                    elif key == "military_support" and decision_data[key] is not None:
+                        # 根据实际 government 对象的方法来处理
+                        # 例如: self.government.support_military(budget_allocation=decision_data[key])
+                        pass
+                    
+                    # 添加其他决策类型...
             
             # 叛军决策处理
             elif group_type == "rebellion":
                 if decision_data.get("propaganda_budget", 0) > 0:
-                    self.propaganda_speech = decision_data.get("propaganda_speech", "")
-                    self.calculate_propaganda_prob(decision_data.get("propaganda_budget", 0))
+                    speech_count = decision_data["propaganda_budget"] / 10  # 每10两多一名叛军发言
+                    self.propaganda_speech = decision_data.get("provocative_speech", "")
+                    self.calculate_propaganda_prob(speech_count)
                 
+                # 处理多个目标城镇
                 if "target_towns" in decision_data:
-                    for target_town in decision_data["target_towns"]:
-                        strength = decision_data.get("strength_investment", 0)
-                        if strength > 0:
-                            self.handle_rebellion(strength, target_town)
+                    for town in decision_data["target_towns"]:
+                        strength = town.get("stage_rebellion", 0)
+                        target = town.get('town_name', None)
+                        if target and strength > 0:
+                            self.handle_rebellion(strength_investment=strength, target_town=target)
                 else:
-                    target_town = decision_data.get("target_town")
-                    strength = decision_data.get("strength_investment", 0)
-                    if target_town and strength > 0:
-                        self.handle_rebellion(strength, target_town)
+                    # 如果没有多个目标城镇，处理单个目标城镇
+                    if decision_data.get("stage_rebellion", 0) > 0:
+                        strength = decision_data["stage_rebellion"]
+                        target = decision_data.get('target_town', None)
+                        if target:
+                            self.handle_rebellion(strength_investment=strength, target_town=target)
             
             return success
         
@@ -636,8 +640,6 @@ class YourSimulator:
                     resident = self.residents[army_id]
                     resident.deregister()
                     self.population.death()
-    
-    # ==================== 计算统计方法 ====================
     
     # ==================== 计算统计方法 ====================
     
@@ -770,7 +772,7 @@ class YourSimulator:
         print("新居民已加入各自城镇")
         
         if new_residents:
-            self.social_network.add_new_residents(list(new_residents.values()))
+            self.social_network.add_new_residents(new_residents.values())
             print(f"{len(new_residents)} 名新居民已加入社交网络")
     
     def summarize_time_step_results(self):

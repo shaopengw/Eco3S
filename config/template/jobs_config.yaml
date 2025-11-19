@@ -9,12 +9,17 @@
 # 定义了模拟中存在的各种职业及其基础薪资。
 # 注意：不同模拟场景可能包含不同的职业类型和薪资设定。
 jobs_info:
-  # 示例职业：农民
+  # 示例，最好延续以下名称:
   农民:
-    base_salary: 10 # 农民的基础薪资
-  # 示例职业：商人
+    base_salary: 10 
   商人:
-    base_salary: 30 # 商人的基础薪资
+    base_salary: 30 
+  叛军:
+    base_salary: 12
+  官员及士兵:
+    base_salary: 20
+  运河维护工:
+    base_salary: 15
   #。。。
 
 

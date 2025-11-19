@@ -180,7 +180,7 @@ class InformationOfficer(BaseAgent):
             self.rebellion_log.error(f"叛军信息整理官 {self.agent_id} 在生成总结报告时出错：{e}")
             return "无法生成总结报告"
 
-# TODO： 所有决策的后果需要存储到记忆中，叛军可以从中学习。
+# 所有决策的后果需要存储到记忆中，叛军可以从中学习。
 class Rebellion:
     def __init__(self, initial_strength, initial_resources, towns, rebels_prompt_path):
         """

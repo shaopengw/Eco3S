@@ -110,7 +110,7 @@ class HighRankingGovernmentAgent(BaseAgent):
             return None
         # 政府状态删去运河维护政策支持，改为运河状态（通航比率），增加当前失业率
         #       决策为多个动作的组合。如果支出之和大于财政预算，则优先满足重要的（决策按照重要性排序）。
-        # TODO: (考虑)政府和叛军的决策，只计算比例， 然后系统根据现有资源自动计算绝对值。这样避免LLM输出结果超过预算。
+        # 政府和叛军的决策，只计算比例， 然后系统根据现有资源自动计算绝对值。这样避免LLM输出结果超过预算。
         current_budget = self.government.get_budget()
 
         # 获取运输经济相关参数
