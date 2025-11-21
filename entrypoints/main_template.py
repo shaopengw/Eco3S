@@ -34,8 +34,8 @@ async def run_simulation(config):
 
     # 时间对象
     time = Time(
-        start_year=config["simulation"].get("start_year", 2020),
-        total_years=config["simulation"].get("total_years", 10)
+        start_time=config["simulation"].get("start_year", 2020),
+        total_steps=config["simulation"].get("total_years", 10)
     )
 
     # 人口对象

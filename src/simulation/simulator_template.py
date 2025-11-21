@@ -117,14 +117,14 @@ class YourSimulator:
     def prepare_experiment(self):
         """实验准备工作（可选）"""
         print(f"实验名称：{self.config.get('simulation_name', 'Unknown')}")
-        print(f"模拟时长：{self.time.get_start_time()} - {self.time.end_year}")
+        print(f"模拟时长：{self.time.start_time} - {self.time.end_time}")
 
     def print_time_step(self):
         """打印当前时间步信息"""
-        print(Back.GREEN + f"年份:{self.time.get_current_time()}" + Back.RESET)
+        print(Back.GREEN + f"年份:{self.time.current_time}" + Back.RESET)
         if self.climate:
-            current_year = self.time.get_current_year()
-            start_year = self.time.get_start_time()
+            current_year = self.time.current_time
+            start_year = self.time.start_time
             print(f"气候影响因子：{self.climate.get_current_impact(current_year, start_year)}")
 
     async def update_state(self):
@@ -157,7 +157,7 @@ class YourSimulator:
         if self.transport_economy:
             self.transport_economy.calculate_river_price(self.map.get_navigability())
         if self.climate:
-            climate_impact_factor = self.climate.get_current_impact(self.time.get_current_year(), self.time.get_start_time())
+            climate_impact_factor = self.climate.get_current_impact(self.time.current_time, self.time.start_time)
             self.map.decay_river_condition_naturally(climate_impact_factor)
 
     async def execute_actions(self):
@@ -258,7 +258,7 @@ class YourSimulator:
             hiring_results = self.towns.process_town_job_requests(town_job_requests)
         
         # 6. 每3-5年更新社交网络
-        current_year = self.time.get_current_year()
+        current_year = self.time.current_time
         if current_year % random.randint(3, 5) == 0:
             self.social_network.update_network_edges()
 
@@ -271,7 +271,7 @@ class YourSimulator:
         if self.government:
             self.government.military_strength = self.calculate_total_government_military()
         
-        self.results["years"].append(self.time.get_current_time())
+        self.results["years"].append(self.time.current_time)
         self.results["rebellions"].append(self.rebellion_records)
         self.results["unemployment_rate"].append(total_unemployment_rate)
         self.results["population"].append(self.population.get_population())
@@ -283,7 +283,7 @@ class YourSimulator:
         self.results["river_navigability"].append(self.map.get_navigability())
         self.results["gdp"].append(self.gdp)
         
-        print(f"年份: {self.time.get_current_time()}, "
+        print(f"年份: {self.time.current_time}, "
               f"叛乱次数: {self.rebellion_records}, "
               f"人口数量: {self.population.get_population()}, "
               f"失业率: {self.results['unemployment_rate'][-1]:.2f}%, "
@@ -560,16 +560,16 @@ class YourSimulator:
             self.rebellion.resources += gov_loss_budget
             
             self.rebellion_records += 1
-            print(f"\n=== 第 {self.rebellion_records} 次叛乱 ===")
+            print(f"=== 第 {self.rebellion_records} 次叛乱 ===")
             print(f"叛乱成功")
             print(f"战场：{target_town}")
             print(f"兵力对比：政府军 {town_defense} vs 叛军 {rebel_strength}")
             print(f"叛军获得资源{gov_loss_budget}")
-            print(f"\n===========================")
+            print("===========================")
             
             rebellion_info = {
                 "id": self.rebellion_records,
-                "time": self.time.get_current_time(),
+                "time": self.time.current_time,
                 "target_town": target_town,
                 "success": True,
                 "rebel_strength": rebel_strength,
@@ -610,7 +610,7 @@ class YourSimulator:
                 self.rebellion.resources -= rebel_loss_resources
             
             self.rebellion_records += 1
-            print(f"\n=== 第 {self.rebellion_records} 次叛乱 ===")
+            print(f"=== 第 {self.rebellion_records} 次叛乱 ===")
             print(f"叛乱成功" if success else f"叛乱失败")
             print(f"战场：{target_town}")
             print(f"兵力对比：政府军 {town_defense} vs 叛军 {rebel_strength}")
@@ -620,7 +620,7 @@ class YourSimulator:
                 print(f"叛军获得资源{gov_loss_budget}")
             else:
                 print(f"叛军失去资源{rebel_loss_resources}")
-            print(f"\n===========================")
+            print("===========================")
         
         return True
     
@@ -805,14 +805,14 @@ class YourSimulator:
         """存储决策记忆到智能体"""
         if group_type == 'government':
             memory_content = (
-                f"时间: {self.time.get_current_year()}\n"
-                f"决策内容: {decision}\n"
-                f"执行结果:\n"
-                f"- GDP变化率: {'+' if changes_summary.get('GDP变化率', 0) > 0 else ''}{changes_summary.get('GDP变化率', 0):.2%}\n"
-                f"- 政府预算变化率: {'+' if changes_summary.get('政府预算变化率', 0) > 0 else ''}{changes_summary.get('政府预算变化率', 0):.2%}\n"
-                f"- 叛军力量变化率: {'+' if changes_summary.get('叛军力量变化率', 0) > 0 else ''}{changes_summary.get('叛军力量变化率', 0):.2%}\n"
-                f"- 平均满意度变化: {'+' if changes_summary.get('平均满意度变化', 0) > 0 else ''}{changes_summary.get('平均满意度变化', 0):.2%}\n"
-                f"- 失业率变化: {'+' if changes_summary.get('失业率变化', 0) > 0 else ''}{changes_summary.get('失业率变化', 0):.2%}\n"
+                f"时间: {self.time.current_time}"
+                f"决策内容: {decision}"
+                f"执行结果:"
+                f"- GDP变化率: {'+' if changes_summary.get('GDP变化率', 0) > 0 else ''}{changes_summary.get('GDP变化率', 0):.2%}"
+                f"- 政府预算变化率: {'+' if changes_summary.get('政府预算变化率', 0) > 0 else ''}{changes_summary.get('政府预算变化率', 0):.2%}"
+                f"- 叛军力量变化率: {'+' if changes_summary.get('叛军力量变化率', 0) > 0 else ''}{changes_summary.get('叛军力量变化率', 0):.2%}"
+                f"- 平均满意度变化: {'+' if changes_summary.get('平均满意度变化', 0) > 0 else ''}{changes_summary.get('平均满意度变化', 0):.2%}"
+                f"- 失业率变化: {'+' if changes_summary.get('失业率变化', 0) > 0 else ''}{changes_summary.get('失业率变化', 0):.2%}"
                 f"- 叛乱次数: {changes_summary.get('叛乱次数', 0)}"
             )
             for official in self.government_officials.values():
@@ -820,11 +820,11 @@ class YourSimulator:
         
         elif group_type == 'rebellion':
             memory_content = (
-                f"时间: {self.time.get_current_year()}\n"
-                f"决策内容: {decision}\n"
-                f"执行结果:\n"
-                f"- 叛军力量变化率: {'+' if changes_summary.get('叛军力量变化率', 0) > 0 else ''}{changes_summary.get('叛军力量变化率', 0):.2%}\n"
-                f"- 叛军资源变化: {'+' if changes_summary.get('叛军资源变化', 0) > 0 else ''}{changes_summary.get('叛军资源变化', 0):.2%}\n"
+                f"时间: {self.time.current_time}"
+                f"决策内容: {decision}"
+                f"执行结果:"
+                f"- 叛军力量变化率: {'+' if changes_summary.get('叛军力量变化率', 0) > 0 else ''}{changes_summary.get('叛军力量变化率', 0):.2%}"
+                f"- 叛军资源变化: {'+' if changes_summary.get('叛军资源变化', 0) > 0 else ''}{changes_summary.get('叛军资源变化', 0):.2%}"
             )
             for rebel in self.rebels_agents.values():
                 await rebel.store_memory(memory_content)

@@ -285,7 +285,7 @@ class SimulationCache:
             simulator.map = state.get('map') if 'map' in state else None
             simulator.time = state.get('time') if 'time' in state else None
             if simulator.time:
-                simulator.time.update_total_years(simulator_years)
+                simulator.time.update_total_steps(simulator_years)
             simulator.population = state.get('population') if 'population' in state else None
             simulator.transport_economy = state.get('transport_economy') if 'transport_economy' in state else None
             

@@ -242,7 +242,8 @@ def plot_all_results(data_dict):
     绘制所有结果的图表并保存数据表格
     """
     plot_paths = []
-    years = data_dict.get('years', [])
+    # 灵活获取时间轴数据：优先使用years，其次time_step，最后step
+    years = data_dict.get('years') or data_dict.get('time_step') or data_dict.get('step', [])
 
     # 绘制各个指标的图表
     if 'rebellions' in data_dict:

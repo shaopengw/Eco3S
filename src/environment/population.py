@@ -39,7 +39,10 @@ class Population:
         """
         人口死亡
         """
-        self.population -= 1
+        if self.population > 0:
+            self.population -= 1
+        else:
+            print("警告：人口已为0，无法继续减少")
 
     def get_population(self):
         """

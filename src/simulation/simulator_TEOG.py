@@ -70,10 +70,10 @@ class TEOGSimulator:
         """运行模拟"""
         while not self.time.is_end():
             # 打印当前时间步信息
-            print(Back.GREEN + f"年份:{self.time.get_current_time()}" + Back.RESET)
+            print(Back.GREEN + f"年份:{self.time.current_time}" + Back.RESET)
             # 更新属性变量
             # 更新运河状态和居民收入
-            climate_impact_factor = self.climate.get_current_impact(self.time.get_current_year(),self.time.get_start_time())
+            climate_impact_factor = self.climate.get_current_impact(self.time.current_time, self.time.start_time)
             print(f"天气影响因子：{climate_impact_factor}")
 
             self.map.decay_river_condition_naturally(climate_impact_factor)
@@ -322,7 +322,7 @@ class TEOGSimulator:
             
             # 收集居民行为决策
             tax_rate = self.government.get_tax_rate()
-            climate_impact_factor = self.climate.get_current_impact(self.time.get_current_year(), self.time.get_start_time())
+            climate_impact_factor = self.climate.get_current_impact(self.time.current_time, self.time.start_time)
             task = resident.decide_action_by_llm(tax_rate, self.basic_living_cost, climate_impact_factor)
             tasks.append(task)
             resident_decisions.append(resident)  # 保存对应的居民对象
@@ -361,11 +361,11 @@ class TEOGSimulator:
     def update_annual_results(self):
         """更新年度结果"""
         # 每3-5年更新一次社交网络
-        current_year = self.time.get_current_year()
+        current_year = self.time.current_time
         if current_year % random.randint(3, 5) == 0:
             self.social_network.update_network_edges()  # 更新社交网络边
 
-        self.results["years"].append(self.time.get_current_time())
+        self.results["years"].append(self.time.current_time)
         self.results["population"].append(self.population.get_population())
         self.results["government_budget"].append(self.government.get_budget())
         self.results["average_satisfaction"].append(self.average_satisfaction)
@@ -525,7 +525,7 @@ class TEOGSimulator:
         # 将决策内容和结果格式化为字符串
         if group_type == 'government':
             memory_content = (
-                f"时间: {self.time.get_current_year()}\n"
+                f"时间: {self.time.current_time}\n"
                 f"决策内容: {decision}\n"
                 f"执行结果:\n"
                 f"- GDP变化率: {'+' if changes_summary.get('GDP变化率', 0) > 0 else ''}{changes_summary.get('GDP变化率', 0):.2%}\n"
@@ -541,7 +541,7 @@ class TEOGSimulator:
                         role_name=official.__class__.__name__,
                         content=memory_content,
                         is_user=False,
-                        round_num=self.time.get_current_time(),
+                        round_num=self.time.current_time,
                         store_in_shared=True
                     )
 

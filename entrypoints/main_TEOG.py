@@ -93,8 +93,8 @@ async def run_simulation(config):
         
         # 初始化时间系统
         time = Time(
-            start_year=config["simulation"]["start_year"],
-            total_years=config["simulation"]["total_years"]
+            start_time=config["simulation"]["start_year"],
+            total_steps=config["simulation"]["total_years"]
         )
         
         # 初始化人口系统

@@ -1,11 +1,11 @@
 # simulation_config.yaml - 模拟核心配置
 
-# 数据路径
+# 数据路径 - 禁止删除
 data:
   climate_info_path: "experiment_dataset/climate_data/climate.csv"
   government_info_path: "experiment_dataset/government_data/official_data.json"
   government_prompt_path: "config/{模拟名称}/government_prompts.yaml"
-  jobs_config_path: "config/{模拟名称}/jobs_config.yaml"
+  jobs_config_path: "config/{模拟名称}/jobs_config.yaml" #禁止删除
   message_config_path: "config/{模拟名称}/message_config.yaml"  # 广播信息模块
   questionnaire_path: "config/{模拟名称}/questionnaire.yaml"  # 问卷模块
   rebellion_info_path: "experiment_dataset/rebellion_data/rebels_data.json"

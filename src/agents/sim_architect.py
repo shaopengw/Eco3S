@@ -20,32 +20,6 @@ class SimArchitectAgent(BaseAgent):
 		
 		self.system_message = self.prompts['system_message']
 
-	async def parse_requirement(self, requirement_text):
-		"""
-		调用大模型解析用户需求，返回结构化需求字典。
-		"""
-		prompt = self.prompts['parse_requirement_prompt'].format(
-			requirement_text=requirement_text
-		)
-		response = await self.generate_llm_response(prompt)
-		import json
-		try:
-			if not response:
-				raise ValueError("LLM 返回空响应")
-			result = json.loads(response)
-			# 确保必需的键存在
-			if 'simulation_name' not in result:
-				result['simulation_name'] = 'default_sim'
-			if 'objectives' not in result:
-				result['objectives'] = []
-			if 'key_elements' not in result:
-				result['key_elements'] = []
-		except Exception as e:
-			# fallback: 尝试简单修正
-			self.logger.warning(f"解析需求失败: {e}，使用默认值")
-			result = {'simulation_name': 'default_sim', 'objectives': [], 'key_elements': []}
-		return result
-
 	async def select_modules(self, requirement_dict, previous_modules=None, user_feedback=None):
 		"""
 		调用大模型，根据需求和 system_capabilities.md，选择所需模块。

@@ -132,40 +132,32 @@ create_simulator_todo_list_prompt: |
 
 # 基于模块API完善simulator代码（增量修改版）
 refine_simulator_with_module_prompt: |
-  根据以下模块的API说明文档，生成需要修改的代码片段。
-
-  【当前Simulator代码】
-  {simulator_content}
-
-  【模块信息】
-  模块名称: {module_name}
-  模块说明: {module_display_name}
-
-  【API说明文档】
-  {api_docs}
+  根据设计文档和API文档完善代码。
 
   【设计文档】
   {description_md}
 
-  【任务】
-  1. 仔细阅读API文档，理解该模块提供的所有功能和接口
-  2. 找出simulator代码中与该模块相关的所有方法和部分
-  3. 对于每个需要修改的方法/函数，生成修改后的完整方法代码（从def开始到方法结束）
-  4. 确保正确使用API中定义的类、方法和参数
+  【当前代码】
+  {simulator_content}
 
-  【重要说明】
-  - 以尽可能少的代码修改实现功能
-  - 只返回需要修改的方法
-  - 只能调用API文档中明确存在的方法，不要假设任何未列出的方法存在
-  - 保持原有的缩进层级（方法级别，不包含class缩进）
-  - 禁止添加任何import语句
-  - 禁止删除代码中已有的重要初始化语句
-  - 禁止修改已经正确的代码，只修改必须改动的部分
-  - 如果代码没有错误，就不要修改
+  【模块API】
+  {api_docs}
+
+  【要求】
+  1. 根据设计文档理解业务需求
+  2. 只修改与模块相关且确实有错误的代码，不修改缩进问题
+  3. 只能调用API中存在的方法
+  4. 如果代码已正确，返回OK
+
+  【严格禁止】
+  - 修改已正确的代码
+  - 添加import语句
+  - 删除重要初始化语句
 
   【输出格式】
-  返回JSON格式，包含需要修改的内容：
-
+  无问题返回：OK
+  
+  有问题返回：
   ```json
   {{
     "methods": [{{"method_name": "方法名", "method_code": "完整代码(从def/async def开始)", "description": "修改说明"}}],
@@ -177,7 +169,7 @@ refine_simulator_with_module_prompt: |
 
 # 步骤3.3: 检查并修复simulator代码（增量修改版）
 check_and_fix_simulator_prompt: |
-  严格检查以下simulator代码并修复所有问题。
+  严格检查并修复以下simulator代码，只做最小必要修改。
 
   当前代码：
   {code_content}
@@ -185,22 +177,21 @@ check_and_fix_simulator_prompt: |
   设计文档：
   {description_md}
 
-  严格检查以下问题：
-  1. 语法错误：async async def、缩进错误、括号不匹配等
-  2. 缺失导入：必须包含 from .simulator_imports import *
-  3. 未完成实现：pass、TODO等
-  4. 代码质量：逻辑缺陷、异常处理、变量未定义等
-  5. 方法完整性：__init__, init_results, prepare_experiment, update_state, execute_actions, collect_results, save_results
+  检查：
+  1. 未完成实现（pass、TODO等）
+  2. 代码质量（逻辑缺陷、异常处理、变量未定义等）
+  3. 方法完整性（__init__, init_results, prepare_experiment, update_state, execute_actions, collect_results, save_results）
 
   【严格禁止】
-  - 禁止添加任何import语句
+  - 禁止添加import语句
   - 禁止删除重要初始化语句
   - 禁止添加注释和测试代码
-  - 如果没有真正的错误，就返回OK，不要做不必要的修改
+  - 不修改缩进问题
+  - 只做最小必要修改，无错误就返回OK
 
   要求：
-  1. 如果有逻辑或语法问题，直接修复并返回修复后代码
-  2. 如果没有问题，返回：OK
+  - 以尽可能少的代码修改修复问题
+  - 有问题直接修复并返回修复后代码，无问题只返回OK
 
   【输出格式】
   如果有问题，返回JSON格式：
@@ -217,14 +208,6 @@ check_and_fix_simulator_prompt: |
     "delete_methods": ["不需要的方法名1", "不需要的方法名2"]
   }}
   ```
-
-  注意：
-  - method_name 必须是纯方法名（如：run），不要包含 def、async、括号等
-  - method_code 是完整的方法代码，确保缩进正确（4个空格）
-  - 只返回需要修复的方法，不要返回没有问题的方法
-  - delete_methods 是可选字段，用于删除不需要的方法
-  - 确保JSON格式正确
-
   如果没有问题，只返回：OK
 
 # 步骤3.3: 检查并修复main代码（增量修改版）
@@ -386,7 +369,8 @@ generate_prompt_file_prompt: |
   2. 提示词要详细、具体、符合{role_type}角色特征
   3. 根据设计文档中的实验背景和目标定制提示词
   4. 确保提示词能引导Agent做出合理的决策
-  5. 与配置文件中的参数保持一致
+  5. 确保包含代码所需的提示词模块
+  6. 删除所有注释
 
   请生成完整的YAML格式提示词文件。
 

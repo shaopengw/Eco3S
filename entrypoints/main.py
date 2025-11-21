@@ -98,8 +98,8 @@ async def run_simulation(config: dict[str, Any]) -> None:
         map.initialize_map()
         
         # 初始化时间
-        time = Time(start_year=config["simulation"]["start_year"], 
-                   total_years=config["simulation"]["total_years"])
+        time = Time(start_time=config["simulation"]["start_year"], 
+                   total_steps=config["simulation"]["total_years"])
 
         # 初始化人口
         population = Population(
