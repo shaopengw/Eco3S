@@ -85,7 +85,7 @@ class ProjectMasterAgent(BaseAgent):
 
     async def parse_user_requirement(self, requirement_text):
         """
-        解析用户需求，确定模拟名称和基本信息。
+        解析用户需求，确定模拟名称、基本信息和模拟类型。
         """
         prompt = self.prompts['parse_user_requirement_prompt'].format(
             requirement_text=requirement_text
@@ -93,14 +93,24 @@ class ProjectMasterAgent(BaseAgent):
         
         response = await self.generate_llm_response(prompt)
         try:
+            # 尝试提取JSON（处理Markdown代码块）
+            response = response.strip()
+            if response.startswith('```'):
+                # 移除代码块标记
+                lines = response.split('\n')
+                response = '\n'.join(lines[1:-1]) if len(lines) > 2 else response
+            
             parsed = json.loads(response)
+            # 如果LLM没有返回simulation_type，默认为decision
+            if 'simulation_type' not in parsed:
+                parsed['simulation_type'] = 'decision'
         except Exception as e:
-            self.logger.error(f"解析需求失败: {e}")
+            self.logger.error(f"解析需求失败: {e}, 响应内容: {response[:200]}")
             parsed = {
                 'simulation_name': f'sim_{datetime.now().strftime("%Y%m%d_%H%M%S")}',
                 'description': requirement_text[:100],
-                'estimated_complexity': 'medium',
-                'key_requirements': []
+                'key_requirements': [],
+                'simulation_type': 'decision'
             }
         
         return parsed
@@ -134,33 +144,6 @@ class ProjectMasterAgent(BaseAgent):
         
         return experiment_dir
 
-    async def validate_quality(self, content, content_type, criteria):
-        """
-        调用大模型验证生成内容的质量。
-        
-        Args:
-            content: 要验证的内容
-            content_type: 内容类型（如 "design_doc", "code", "config"）
-            criteria: 验证标准
-        
-        Returns:
-            (is_valid: bool, feedback: str, score: float)
-        """
-        prompt = self.prompts['validate_quality_prompt'].format(
-            content_type=content_type,
-            content=content,
-            criteria=criteria
-        )
-        
-        response = await self.generate_llm_response(prompt)
-        try:
-            result = json.loads(response)
-            is_valid = result.get('is_valid', False) and result.get('score', 0) >= 70
-            return is_valid, result.get('feedback', ''), result.get('score', 0)
-        except Exception as e:
-            self.logger.error(f"质量验证失败: {e}")
-            return False, "验证过程出错", 0
-
     async def run_design_phase(self, requirement_dict, previous_version=None, user_feedback=None):
         """
         运行设计阶段，调用 SimArchitectAgent。
@@ -184,20 +167,16 @@ class ProjectMasterAgent(BaseAgent):
             config_dir=self.config_template_dir
         )
         
-        # 解析需求
-        self.logger.info("步骤 1: 解析需求")
-        requirement_text = json.dumps(requirement_dict, ensure_ascii=False)
+        # 直接使用传入的已解析需求
+        parsed_req = requirement_dict
+        self.logger.info(f"使用已解析的需求: {parsed_req}")
         
-        # 如果有上一版本和反馈，添加到需求文本中
-        if previous_version and user_feedback:
-            requirement_text += f"\n\n上一版本结果:\n{json.dumps(previous_version.get('parsed_requirement', {}), ensure_ascii=False)}"
-            requirement_text += f"\n\n用户反馈意见:\n{user_feedback}"
-        
-        parsed_req = await designer.parse_requirement(requirement_text)
-        self.logger.info(f"需求解析结果: {parsed_req}")
+        # 从解析结果中获取模拟类型
+        simulation_type = parsed_req.get('simulation_type', 'decision')
+        self.logger.info(f"模拟类型: {simulation_type}")
         
         # 生成设计文档
-        self.logger.info("步骤 2: 生成设计文档")
+        self.logger.info("步骤 1: 生成设计文档")
         
         # 检查是否已存在设计文档
         desc_path = os.path.join(self.current_config_dir, 'description.md')
@@ -239,7 +218,7 @@ class ProjectMasterAgent(BaseAgent):
                 self.logger.info(f"设计文档已保存: {desc_path}")
         
         # 生成配置文件（modules_config.yaml）
-        self.logger.info("步骤 3: 生成模块配置文件 (modules_config.yaml)")
+        self.logger.info("步骤 2: 生成模块配置文件 (modules_config.yaml)")
         
         # 检查是否已存在模块配置文件
         modules_config_path = os.path.join(self.current_config_dir, 'modules_config.yaml')
@@ -283,7 +262,8 @@ class ProjectMasterAgent(BaseAgent):
             'parsed_requirement': parsed_req,
             'description_md': description_md,
             'config_files': config_files,
-            'modules_config_yaml': modules_config_yaml
+            'modules_config_yaml': modules_config_yaml,
+            'simulation_type': simulation_type
         }
 
     async def run_coding_phase(self, design_results, previous_version=None, user_feedback=None):
@@ -313,6 +293,10 @@ class ProjectMasterAgent(BaseAgent):
         entrypoints_dir = os.path.join(project_root, 'entrypoints')
         os.makedirs(entrypoints_dir, exist_ok=True)
         
+        # 获取模拟类型
+        simulation_type = design_results.get('simulation_type', 'decision')  # 默认为决策型
+        self.logger.info(f"编码阶段使用模拟类型: {simulation_type}")
+        
         # 创建或复用 CodeArchitectAgent 实例
         if not self.code_architect:
             self.code_architect = CodeArchitectAgent(
@@ -322,7 +306,8 @@ class ProjectMasterAgent(BaseAgent):
                 docs_dir=self.docs_dir,
                 config_dir=self.current_config_dir,
                 config_template_dir=self.config_template_dir,
-                simulation_name=self.current_simulation_name
+                simulation_name=self.current_simulation_name,
+                simulation_type=simulation_type  # 传递模拟类型
             )
         
         coder = self.code_architect

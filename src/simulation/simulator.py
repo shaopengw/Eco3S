@@ -84,9 +84,9 @@ class Simulator:
         
         while not self.time.is_end():
             # 打印当前时间步信息
-            print(Back.GREEN + f"年份:{self.time.get_current_time()}" + Back.RESET)
-            current_year = self.time.get_current_year()
-            start_year = self.time.get_start_time()
+            print(Back.GREEN + f"年份:{self.time.current_time}" + Back.RESET)
+            current_year = self.time.current_time
+            start_year = self.time.start_time
             print(f"天气影响因子：{self.climate.get_current_impact(current_year,start_year)}")
             
             # 更新属性变量
@@ -632,7 +632,7 @@ class Simulator:
             # 记录叛乱信息
             rebellion_info = {
                 "id": self.rebellion_records,
-                "time": self.time.get_current_time(),
+                "time": self.time.current_time,
                 "target_town": target_town,
                 "success": True,
                 "rebel_strength": rebel_strength,
@@ -795,7 +795,7 @@ class Simulator:
         # 将决策内容和结果格式化为字符串
         if group_type == 'government':
             memory_content = (
-                f"时间: {self.time.get_current_year()}\n"
+                f"时间: {self.time.current_time}\n"
                 f"决策内容: {decision}\n"
                 f"执行结果:\n"
                 f"- GDP变化率: {'+' if changes_summary.get('GDP变化率', 0) > 0 else ''}{changes_summary.get('GDP变化率', 0):.2%}\n"
@@ -813,13 +813,13 @@ class Simulator:
                         role_name=official.__class__.__name__,
                         content=memory_content,
                         is_user=False,
-                        round_num=self.time.get_current_time(),
+                        round_num=self.time.current_time,
                         store_in_shared=True
                     )
         
         elif group_type == 'rebellion':
             memory_content = (
-                f"时间: {self.time.get_current_year()}\n"
+                f"时间: {self.time.current_time}\n"
                 f"决策内容: {decision}\n"
                 f"执行结果:\n"
                 f"- 叛军力量变化率: {'+' if changes_summary.get('叛军力量变化率', 0) > 0 else ''}{changes_summary.get('叛军力量变化率', 0):.2%}\n"
@@ -833,7 +833,7 @@ class Simulator:
                         role_name=rebel.__class__.__name__,
                         content=memory_content,
                         is_user=False,
-                        round_num=self.time.get_current_time(),
+                        round_num=self.time.current_time,
                         store_in_shared=True
                     )
 
@@ -891,7 +891,7 @@ class Simulator:
         """更新结果数据"""
         # 更新运河价格与状态
         self.transport_economy.calculate_river_price(self.map.get_navigability())
-        climate_impact_factor = self.climate.get_current_impact(self.time.get_current_year(),self.time.get_start_time())
+        climate_impact_factor = self.climate.get_current_impact(self.time.current_time, self.time.start_time)
         self.map.decay_river_condition_naturally(climate_impact_factor)
 
         # 更新就业市场
@@ -901,7 +901,7 @@ class Simulator:
         self.towns.adjust_job_market(change_rate, self.residents)
 
         # 每3-5年更新一次社交网络
-        current_year = self.time.get_current_year()
+        current_year = self.time.current_time
         if current_year % random.randint(3, 5) == 0:
             self.social_network.update_network_edges()  # 更新社交网络边
         
@@ -914,7 +914,7 @@ class Simulator:
         self.government.military_strength = self.calculate_total_government_military()
 
         # 记录数据
-        self.results["years"].append(self.time.get_current_time())
+        self.results["years"].append(self.time.current_time)
         self.results["rebellions"].append(self.rebellion_records)
         self.results["unemployment_rate"].append(total_unemployment_rate)
         self.results["population"].append(self.population.get_population())
@@ -927,7 +927,7 @@ class Simulator:
         self.results["gdp"].append(self.gdp)
 
         # 打印当前状态
-        print(f"年份: {self.time.get_current_time()}, "
+        print(f"年份: {self.time.current_time}, "
               f"叛乱次数: {self.rebellion_records}, "
               f"人口数量: {self.population.get_population()}, "
               f"失业率: {self.results['unemployment_rate'][-1]:.2f}%, "

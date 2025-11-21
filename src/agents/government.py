@@ -76,7 +76,8 @@ class OrdinaryGovernmentAgent(BaseAgent):
             except Exception as e:
                 self.government_log.error(f"普通官员 {self.agent_id} 在生成回应时出错：{e}")
         else:
-            print("没有讨论内容")
+            # 如果共享信息池为空，调用generate_opinion函数
+            await self.generate_opinion(salary)
 
 class HighRankingGovernmentAgent(BaseAgent):
     def __init__(self, agent_id, government, shared_pool):

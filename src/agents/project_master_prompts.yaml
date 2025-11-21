@@ -1,57 +1,22 @@
 # ProjectMasterAgent 提示词配置
 
 system_message: |
-  你是多智能体模拟系统的项目管理师，负责协调整个实验流程和质量控制。思路清晰，决策果断。
+  你是多智能体模拟系统的项目管理师，擅长分析需求、设计模拟实验。思路清晰，决策果断。
 
 parse_user_requirement_prompt: |
-  分析以下用户需求，提取关键信息并返回JSON格式：
+  分析以下用户需求，总结提取关键信息，并选择模拟类型（decision 或 survey）：
+    - decision: 居民需要进行经济决策、就业选择、迁移等复杂行为（特征：经济活动、就业、政府政策、税收、GDP等）
+    - survey: 居民主要进行信息交流、传播和问卷调查（特征：信息传播、舆论调查、知识扩散、问卷调查、社交网络影响等）
 
   用户需求：
   {requirement_text}
 
-  请提取以下信息：
-  1. simulation_name: 模拟实验的简短英文名称（用下划线连接，如 climate_migration_sim）
-  2. description: 简短描述
-  3. estimated_complexity: 复杂度评估（simple/medium/complex）
-  4. key_requirements: 关键需求列表
-
-  返回格式：
+  **重要：只返回JSON，不要有任何其他文字说明或解释。**
+  
+  返回以下JSON格式（严格遵守格式）：
   {{
-    "simulation_name": "名称",
-    "description": "描述",
-    "estimated_complexity": "复杂度",
-    "key_requirements": ["需求1", "需求2"]
-  }}
-
-validate_quality_prompt: |
-  评估以下{content_type}的质量：
-
-  内容：
-  {content}
-
-  评估标准：
-  {criteria}
-
-  请返回JSON格式的评估结果：
-  {{
-    "is_valid": true/false,
-    "score": 0-100的分数,
-    "feedback": "详细反馈",
-    "issues": ["问题1", "问题2"],
-    "suggestions": ["建议1", "建议2"]
-  }}
-
-should_continue_iteration_prompt: |
-  根据以下评估结果，判断是否需要继续迭代优化：
-
-  评估报告：
-  {evaluation_report}
-
-  指标分析：
-  {metrics_analysis}
-
-  请返回JSON格式：
-  {{
-    "should_continue": true/false,
-    "reason": "原因说明"
+    "simulation_name": "模拟实验的简短英文名称（用下划线连接，如 climate_migration_sim）",
+    "description": "简短描述",
+    "key_requirements": ["关键需求1", "关键需求2"],
+    "simulation_type": "decision 或 survey"
   }}

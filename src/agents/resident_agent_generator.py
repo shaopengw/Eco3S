@@ -130,7 +130,9 @@ async def generate_new_residents(count, map, residents, social_network, resident
     )
 
     # 分配新ID
-    used_ids = set(residents.keys()) | set(social_network.hetero_graph.graph.nodes())
+    used_ids = set(residents.keys())
+    if social_network is not None:
+        used_ids |= set(social_network.hetero_graph.graph.nodes())
     new_id = max(used_ids) + 1 if used_ids else 1
     
     new_residents_with_new_ids = {}

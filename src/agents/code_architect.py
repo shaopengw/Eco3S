@@ -8,7 +8,7 @@ class CodeArchitectAgent(BaseAgent):
 	编码师Agent，继承BaseAgent，负责根据设计文档和配置，自动生成模拟器代码、详细配置和提示词。
 	工作流程：每次只生成一个文件，逐步完成所有任务。
 	"""
-	def __init__(self, agent_id, simulator_output_dir, main_output_dir, docs_dir, config_dir, config_template_dir, simulation_name):
+	def __init__(self, agent_id, simulator_output_dir, main_output_dir, docs_dir, config_dir, config_template_dir, simulation_name, simulation_type='decision'):
 		# 指定使用 CLAUDE 的 claude-sonnet-4-5-20250929 模型
 		super().__init__(agent_id, group_type='code_architect', window_size=3, 
 		                 model_api_name='CLAUDE', model_type_name='claude-sonnet-4-5-20250929')
@@ -25,6 +25,7 @@ class CodeArchitectAgent(BaseAgent):
 		self.config_dir = config_dir  # config_[模拟名称]/
 		self.config_template_dir = config_template_dir  # config_template/
 		self.simulation_name = simulation_name
+		self.simulation_type = simulation_type  # 'decision' 或 'survey'
 		self.logger = LogManager.get_logger('code_architect')
 
 	def _wait_for_user_confirmation(self, step_name): #测试用
@@ -70,14 +71,16 @@ class CodeArchitectAgent(BaseAgent):
 		步骤1：生成simulator模拟器主代码（simulator_[模拟名称].py）
 		策略：先复制模板文件到目标位置，然后让LLM基于模板进行修改
 		输入：设计文档 + 实验模板配置
-		参考：src/simulation/simulator_template.py
+		参考：根据simulation_type选择模板
+		  - decision: src/simulation/simulator_template.py
+		  - survey: src/simulation/simulator_survey_template.py
 		
 		Returns:
 			tuple: (file_paths, skipped)
 				- file_paths: 生成的文件路径列表
 				- skipped: 是否跳过了生成（True表示使用现有文件）
 		"""
-		self.logger.info("开始生成simulator代码...")
+		self.logger.info(f"开始生成simulator代码（类型: {self.simulation_type}）...")
 		
 		# 目标文件路径
 		fname = f'simulator_{self.simulation_name}.py'
@@ -87,9 +90,14 @@ class CodeArchitectAgent(BaseAgent):
 		if not self._check_file_exists_and_ask(fpath, f"Simulator代码 ({fname})"):
 			return ([fpath], True)  # 跳过生成，返回现有文件路径和跳过标记
 		
-		# 读取模板文件
+		# 根据模拟类型选择模板文件
 		project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-		template_path = os.path.join(project_root, 'src', 'simulation', 'simulator_template.py')
+		if self.simulation_type == 'survey':
+			template_filename = 'simulator_survey_template.py'
+		else:
+			template_filename = 'simulator_template.py'
+		
+		template_path = os.path.join(project_root, 'src', 'simulation', template_filename)
 		
 		if not os.path.exists(template_path):
 			self.logger.error(f"模板文件不存在: {template_path}")
@@ -98,20 +106,27 @@ class CodeArchitectAgent(BaseAgent):
 		# 步骤1：复制模板到目标位置
 		import shutil
 		shutil.copy2(template_path, fpath)
-		self.logger.info(f"✓ 已复制模板文件到: {fpath}")
+		self.logger.info(f"✓ 已复制模板文件 ({template_filename}) 到: {fpath}")
 		
 		# 读取模板内容
 		with open(template_path, 'r', encoding='utf-8') as f:
 			template_content = f.read()
 
-		# 直接替换类名（从 YourSimulator 改为实际类名）
+		# 直接替换类名
 		simulator_class_name = self.simulation_name.replace('_', ' ').title().replace(' ', '') + 'Simulator'
-		modified_content = template_content.replace('class YourSimulator:', f'class {simulator_class_name}:')
+		if self.simulation_type == 'survey':
+			# 交流调查型模板类名是 SurveySimulator
+			original_class_name = 'SurveySimulator'
+			modified_content = template_content.replace('class SurveySimulator:', f'class {simulator_class_name}:')
+		else:
+			# 决策型模板类名是 YourSimulator
+			original_class_name = 'YourSimulator'
+			modified_content = template_content.replace('class YourSimulator:', f'class {simulator_class_name}:')
 		
 		# 保存修改后的模板
 		with open(fpath, 'w', encoding='utf-8') as f:
 			f.write(modified_content)
-		self.logger.info(f"✓ 已替换类名: YourSimulator -> {simulator_class_name}")
+		self.logger.info(f"✓ 已替换类名: {original_class_name} -> {simulator_class_name}")
 		
 		# 步骤2：让LLM生成修改方案（JSON格式）
 		prompt = self.prompts['generate_simulator_code_prompt'].format(
@@ -141,14 +156,16 @@ class CodeArchitectAgent(BaseAgent):
 		步骤3：生成main入口文件（main_[模拟名称].py）
 		策略：直接生成完整文件，不使用增量修改
 		输入：设计文档 + 已生成的simulator文件路径
-		参考：entrypoints/main_template.py
+		参考：根据simulation_type选择模板
+		  - decision: entrypoints/main_template.py
+		  - survey: entrypoints/main_survey_template.py
 		
 		Returns:
 			tuple: (file_paths, skipped)
 				- file_paths: 生成的文件路径列表
 				- skipped: 是否跳过了生成（True表示使用现有文件）
 		"""
-		self.logger.info("开始生成main入口文件...")
+		self.logger.info(f"开始生成main入口文件（类型: {self.simulation_type}）...")
 		
 		# 目标文件路径
 		fname = f'main_{self.simulation_name}.py'
@@ -158,13 +175,18 @@ class CodeArchitectAgent(BaseAgent):
 		if not self._check_file_exists_and_ask(fpath, f"Main入口文件 ({fname})"):
 			return ([fpath], True)  # 跳过生成，返回现有文件路径和跳过标记
 		
-		# 读取模板文件
+		# 根据模拟类型选择模板文件
 		project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-		template_path = os.path.join(project_root, 'entrypoints', 'main_template.py')
+		if self.simulation_type == 'survey':
+			template_filename = 'main_survey_template.py'
+		else:
+			template_filename = 'main_template.py'
+		
+		template_path = os.path.join(project_root, 'entrypoints', template_filename)
 		
 		if not os.path.exists(template_path):
 			self.logger.error(f"模板文件不存在: {template_path}")
-			return []
+			return ([], False)
 		
 		# 读取模板内容
 		with open(template_path, 'r', encoding='utf-8') as f:
@@ -408,8 +430,6 @@ class CodeArchitectAgent(BaseAgent):
 		
 		prompt = self.prompts['refine_simulator_with_module_prompt'].format(
 			simulator_content=simulator_content,
-			module_name=module_name,
-			module_display_name=module_display_name,
 			api_docs=api_docs,
 			description_md=description_md
 		)
@@ -799,11 +819,9 @@ class CodeArchitectAgent(BaseAgent):
 		
 		主要处理：
 		1. 将tab统一替换为4个空格
-		2. 清理多余的连续空白行
-		3. 确保类方法的缩进一致
-		
-		注意：不再强制修改缩进，只做基本的清理工作
-		因为LLM返回的完整代码通常已经有正确的缩进结构
+		2. 所有 def 或 async def 函数定义增加4个空格缩进
+		3. 清理多余的连续空白行
+		4. 确保类方法的缩进一致
 		
 		Args:
 			code_content: 原始代码内容
@@ -813,6 +831,17 @@ class CodeArchitectAgent(BaseAgent):
 		"""
 		# 将tab替换为4个空格
 		code = code_content.replace('\t', '    ')
+		
+		# 所有 def 或 async def 行缩进严格为4个空格（多则减少，少则增加）
+		lines = code.split('\n')
+		fixed_lines = []
+		for line in lines:
+			match = re.match(r'^(\s*)(async\s+)?def\s+', line)
+			if match:
+				# 只保留4个空格缩进
+				line = '    ' + line.lstrip()
+			fixed_lines.append(line)
+		code = '\n'.join(fixed_lines)
 		
 		# 清理多余的连续空白行（4个及以上 → 2个，即最多保留1个空行）
 		code = re.sub(r'\n\n\n\n+', '\n\n\n', code)
