@@ -1,3 +1,4 @@
+from src.utils.custom_logger import CustomLogger
 from .shared_imports import *
 
 class CodeArchitectAgent(BaseAgent):
@@ -26,7 +27,7 @@ class CodeArchitectAgent(BaseAgent):
 		self.config_template_dir = config_template_dir  # config_template/
 		self.simulation_name = simulation_name
 		self.simulation_type = simulation_type  # 'decision' 或 'survey'
-		self.logger = LogManager.get_logger('code_architect')
+		self.logger = CustomLogger('code_architect').logger
 
 	def _wait_for_user_confirmation(self, step_name): #测试用
 		"""等待用户确认是否继续"""
@@ -104,7 +105,6 @@ class CodeArchitectAgent(BaseAgent):
 			return ([], False)
 		
 		# 步骤1：复制模板到目标位置
-		import shutil
 		shutil.copy2(template_path, fpath)
 		self.logger.info(f"✓ 已复制模板文件 ({template_filename}) 到: {fpath}")
 		
@@ -211,7 +211,6 @@ class CodeArchitectAgent(BaseAgent):
 			return ([], False)
 		
 		# 提取代码块并保存
-		import re
 		code_blocks = re.findall(r'```python\s*([^`]+)```', response, re.DOTALL)
 		if not code_blocks:
 			code_blocks = re.findall(r'```\s*([^`]+)```', response, re.DOTALL)
@@ -437,7 +436,9 @@ class CodeArchitectAgent(BaseAgent):
 		response = await self.generate_llm_response(prompt)
 		if not response:
 			return False
-		
+		elif response == "OK":
+			self.logger.info(f"模块 {module_name} 已完整，无需修改")
+			return True
 		self.logger.info(f"LLM返回的响应长度: {len(response)}")
 		
 		# 应用修改
@@ -460,8 +461,6 @@ class CodeArchitectAgent(BaseAgent):
 		Returns:
 			bool: 是否成功应用修改
 		"""
-		import re
-		import json
 		
 		# 策略1: 尝试提取JSON格式的增量修改
 		json_match = re.search(r'```json\s*(\{[\s\S]*?\})\s*```', llm_response, re.DOTALL)
@@ -510,10 +509,9 @@ class CodeArchitectAgent(BaseAgent):
 		if code_blocks:
 			code = code_blocks[0].strip()
 			
-			# 对simulator代码进行硬性缩进和空白行修正
-			if file_type == "simulator":
-				code = self._fix_indentation_and_whitespace(code)
-			else:
+			# 特殊处理：main 文件需要保留入口部分
+			if file_type == "main":
+				# ... main文件的特殊处理逻辑保持不变 ...
 				# main文件只做基本清理
 				# 1. 将3个及以上连续空行替换为2个空行
 				code = re.sub(r'\n\n\n+', '\n\n', code)
@@ -524,34 +522,58 @@ class CodeArchitectAgent(BaseAgent):
 				# 3. 确保文件末尾只有一个换行符
 				code = code.rstrip() + '\n'
 			
-			# 特殊处理：main 文件需要保留入口部分
-			if file_type == "main":
-				# 读取原文件，提取入口部分
-				if os.path.exists(file_path):
-					with open(file_path, 'r', encoding='utf-8') as f:
-						original_content = f.read()
-					
-					# 提取原文件中的入口部分（从 "# ===== 以下代码块不可删除或修改 =====" 到文件末尾）
-					entry_match = re.search(r'(# ===== 以下代码块不可删除或修改 =====[\s\S]*)', original_content)
-					
-					# 检查新代码是否已包含入口部分
-					has_entry = 'if __name__ == "__main__"' in code
-					
-					if entry_match and not has_entry:
-						# 原文件有入口部分，新代码没有，需要补上
-						entry_code = entry_match.group(1)
-						code = code + '\n\n' + entry_code
-						self.logger.info("✓ 已自动保留 main 文件的入口部分")
+			# 对simulator代码进行硬性缩进和空白行修正
+			# 注意：这个修正应该在所有处理完成后进行
+			if file_type == "simulator":
+				code = self._fix_indentation_and_whitespace(code)
+			else:
+				# main文件只做基本清理
+				code = re.sub(r'\n\n\n+', '\n\n', code)
+				code = re.sub(r'(class\s+\w+[^:]*:)\n\n+(\s+def\s)', r'\1\n\2', code)
+				code = code.rstrip() + '\n'
 			
+			# 写入文件前再次检查缩进（确保最终输出正确）
 			with open(file_path, 'w', encoding='utf-8') as f:
 				f.write(code)
+			
+			# 可选：读取文件验证缩进是否正确
+			self._verify_and_fix_final_indentation(file_path, file_type)
+			
 			self.logger.info(f"✓ 已完整替换并保存: {file_path}")
 			return True
 		
 		# 策略3: 都失败了，保留原文件
 		self.logger.error("未找到可用的代码修改内容，保留原文件")
 		return False
-	
+	def _verify_and_fix_final_indentation(self, file_path, file_type):
+		"""
+		验证并修正最终文件的缩进
+		"""
+		if file_type != "simulator":
+			return
+			
+		with open(file_path, 'r', encoding='utf-8') as f:
+			content = f.read()
+		
+		# 检查是否有缩进问题
+		lines = content.split('\n')
+		has_issue = False
+		
+		for i, line in enumerate(lines):
+			stripped = line.strip()
+			if stripped.startswith(('def ', 'async def ')):
+				# 检查函数缩进
+				indent = len(line) - len(line.lstrip())
+				if indent not in [4, 8]:  # 应该是4或8空格
+					has_issue = True
+					break
+		
+		if has_issue:
+			self.logger.warning("检测到缩进问题，重新修正...")
+			fixed_content = self._fix_indentation_and_whitespace(content)
+			with open(file_path, 'w', encoding='utf-8') as f:
+				f.write(fixed_content)
+
 	def _extract_partial_json(self, json_str, file_type="simulator"):
 		"""
 		从不完整的JSON字符串中提取完整的函数/方法定义
@@ -564,9 +586,6 @@ class CodeArchitectAgent(BaseAgent):
 			dict: 包含完整函数/方法的字典，格式为 {"methods": [...]} 或 {"functions": [...]}
 				  如果无法提取任何完整内容，返回None
 		"""
-		import re
-		import json
-		
 		item_key = 'methods' if file_type == 'simulator' else 'functions'
 		name_key = 'method_name' if file_type == 'simulator' else 'function_name'
 		code_key = 'method_code' if file_type == 'simulator' else 'function_code'
@@ -819,7 +838,7 @@ class CodeArchitectAgent(BaseAgent):
 		
 		主要处理：
 		1. 将tab统一替换为4个空格
-		2. 所有 def 或 async def 函数定义增加4个空格缩进
+		2. 所有 def 或 async def 函数定义严格4个空格缩进
 		3. 清理多余的连续空白行
 		4. 确保类方法的缩进一致
 		
@@ -956,6 +975,58 @@ class CodeArchitectAgent(BaseAgent):
 		
 		return api_docs_str if api_docs_str else "（未找到相关API文档）"
 
+	async def refine_visualization_code(self, visualization_dir, simulator_file_path, main_file_path, description_md):
+		"""
+		完善数据可视化相关代码
+		输入：plot_results.py内容 + simulator文件内容 + main文件内容
+		输出：完善后的plot_results.py文件路径
+		"""
+		self.logger.info("=== 步骤3.1: 完善数据可视化代码 ===")
+
+		# 读取plot_results.py内容
+		if not os.path.exists(visualization_dir):
+			self.logger.error(f"plot_results.py文件不存在: {visualization_dir}")
+			return None
+		with open(visualization_dir, 'r', encoding='utf-8') as f:
+			plot_results_content = f.read()
+
+		# 读取simulator文件内容
+		simulator_content = ""
+		if os.path.exists(simulator_file_path):
+			with open(simulator_file_path, 'r', encoding='utf-8') as f:
+				simulator_content = f.read()
+		else:
+			self.logger.warning(f"Simulator文件不存在: {simulator_file_path}")
+
+		# 读取main文件内容
+		main_content = ""
+		if os.path.exists(main_file_path):
+			with open(main_file_path, 'r', encoding='utf-8') as f:
+				main_content = f.read()
+		else:
+			self.logger.warning(f"Main文件不存在: {main_file_path}")
+
+		prompt = self.prompts['refine_visualization_code_prompt'].format(
+			plot_results_content=plot_results_content,
+			simulator_content=simulator_content,
+			main_content=main_content,
+			description_md=description_md
+		)
+
+		response = await self.generate_llm_response(prompt)
+		if not response:
+			self.logger.error("LLM返回空响应，无法完善可视化代码")
+			return None
+
+		# 应用修改
+		if self._apply_code_changes(main_file_path, response, "main"):
+			self.logger.info(f"✓ 已保存完善后的Main文件: {main_file_path}")
+			self._wait_for_user_confirmation("完善数据可视化代码")
+			return main_file_path
+		else:
+			self.logger.error("应用可视化代码修改失败")
+			return None
+		
 	async def refine_main_functions(self, main_file_path, simulator_file_path, description_md, modules_config_yaml, main_skipped=False):
 		"""
 		步骤4: 检查并修复main文件代码
@@ -1023,7 +1094,6 @@ class CodeArchitectAgent(BaseAgent):
 		支持的配置文件：
 		- simulation_config.yaml
 		- jobs_config.yaml
-		- resident_actions.yaml
 		- towns_data.json
 		
 		Args:
@@ -1071,8 +1141,7 @@ class CodeArchitectAgent(BaseAgent):
 		if not response:
 			self.logger.error("LLM返回空响应")
 			return None
-		
-		import re
+
 		# 策略1: 提取指定格式的代码块
 		file_format = 'yaml' if config_filename.endswith('.yaml') else 'json'
 		code_blocks = re.findall(rf'```{file_format}\s*([^`]+)```', response, re.DOTALL)
@@ -1175,57 +1244,97 @@ class CodeArchitectAgent(BaseAgent):
 				agent_code_str = f"（未找到对应的代码: {agent_filename}）"
 		else:
 			agent_code_str = f"（未知的角色类型: {role_type}）"
+		if role_type == 'residents':
+			template_action = os.path.join(project_root, 'config', 'template', 'resident_actions.yaml')
+			with open(template_action, 'r', encoding='utf-8') as f:
+					template_content_action_str = f.read()
+					template_content_action = f"居民行动参考代码（resident_actions.yaml）:\n```python\n{template_content_action_str}\n```\n"
+
+		else:
+			template_content_action = ""
 		
 		prompt = self.prompts['generate_prompt_file_prompt'].format(
 			role_type=role_type,
 			description_md=description_md,
 			template_content=template_content,
-			configs_str=agent_code_str
+			configs_str=agent_code_str,
+			template_content_action=template_content_action,
 		)
 		
 		response = await self.generate_llm_response(prompt)
 		if not response:
 			self.logger.error("LLM返回空响应")
-			return None
+			return [] # 返回空列表表示没有生成文件
 		
-		import re
-		# 策略1: 尝试提取带yaml标记的代码块
-		code_blocks = re.findall(r'```yaml\s*([^`]+)```', response, re.DOTALL)
-		
-		# 策略2: 尝试提取任意代码块
-		if not code_blocks:
-			code_blocks = re.findall(r'```\s*([^`]+)```', response, re.DOTALL)
-		
-		# 策略3: 如果没有代码块标记，但响应包含YAML特征，直接使用
-		if not code_blocks:
-			# 检查是否包含YAML特征（如缩进、冒号、键值对等）
-			if ':' in response and '\n' in response:
-				# 尝试清理响应中的解释性文字，只保留YAML内容
-				# 通常YAML内容会以某个键开始（如 system_prompt:）
-				lines = response.split('\n')
-				yaml_start = -1
-				for i, line in enumerate(lines):
-					# 寻找第一个看起来像YAML键的行（顶层键，无缩进）
-					if line and not line.startswith(' ') and ':' in line and not line.startswith('#'):
-						yaml_start = i
-						break
+		generated_files = []
+
+		if prompt_filename == 'residents_prompts.yaml':
+			# 尝试提取 residents_prompts.yaml 和 resident_actions.yaml
+			residents_prompts_match = re.search(r'```yaml\s*# residents_prompts.yaml\s*([^`]+)```', response, re.DOTALL)
+			resident_actions_match = re.search(r'```yaml\s*# resident_actions.yaml\s*([^`]+)```', response, re.DOTALL)
+
+			if residents_prompts_match and resident_actions_match:
+				residents_prompts_content = residents_prompts_match.group(1).strip()
+				resident_actions_content = resident_actions_match.group(1).strip()
+
+				# 写入 residents_prompts.yaml
+				residents_prompts_fpath = os.path.join(self.config_dir, 'residents_prompts.yaml')
+				with open(residents_prompts_fpath, 'w', encoding='utf-8') as f:
+					f.write(residents_prompts_content)
+				self.logger.info(f"生成提示词文件: {residents_prompts_fpath}")
+				generated_files.append(residents_prompts_fpath)
+
+				# 写入 resident_actions.yaml
+				resident_actions_fpath = os.path.join(self.config_dir, 'resident_actions.yaml')
+				with open(resident_actions_fpath, 'w', encoding='utf-8') as f:
+					f.write(resident_actions_content)
+				self.logger.info(f"生成配置文件: {resident_actions_fpath}")
+				generated_files.append(resident_actions_fpath)
 				
+				return generated_files
+			else:
+				self.logger.warning(f"未能在LLM响应中找到residents_prompts.yaml和resident_actions.yaml的代码块。")
+				self.logger.debug(f"LLM响应预览: {response[:500]}")
+				return []
+		else:
+			# 策略1: 尝试提取带yaml标记的代码块
+			code_blocks = re.findall(r'```yaml\s*([^`]+)```', response, re.DOTALL)
+			
+			# 策略2: 尝试提取任意代码块
+			if not code_blocks:
+				code_blocks = re.findall(r'```\s*([^`]+)```', response, re.DOTALL)
+			
+			# 策略3: 如果没有代码块标记，但响应包含YAML特征，直接使用
+			if not code_blocks:
+				# 检查是否包含YAML特征（如缩进、冒号、键值对等）
+				if ':' in response and '\n' in response:
+					# 尝试清理响应中的解释性文字，只保留YAML内容
+					# 通常YAML内容会以某个键开始（如 system_prompt:）
+					lines = response.split('\n')
+					yaml_start = -1
+					for i, line in enumerate(lines):
+						# 寻找第一个看起来像YAML键的行（顶层键，无缩进）
+						if line and not line.startswith(' ') and ':' in line and not line.startswith('#'):
+							yaml_start = i
+							break
+					
 				if yaml_start >= 0:
 					# 从该行开始提取到末尾
 					yaml_content = '\n'.join(lines[yaml_start:]).strip()
 					self.logger.info(f"使用直接提取的YAML内容（无代码块标记）")
 					code_blocks = [yaml_content]
-		
-		if code_blocks:
-			fpath = os.path.join(self.config_dir, prompt_filename)
-			with open(fpath, 'w', encoding='utf-8') as f:
-				f.write(code_blocks[0].strip())
-			self.logger.info(f"生成提示词文件: {fpath}")
-			return fpath
-		else:
-			self.logger.warning(f"未找到代码块，无法生成 {prompt_filename}")
-			self.logger.debug(f"LLM响应预览: {response[:500]}")
-			return None
+			
+			if code_blocks:
+				fpath = os.path.join(self.config_dir, prompt_filename)
+				with open(fpath, 'w', encoding='utf-8') as f:
+					f.write(code_blocks[0].strip())
+				self.logger.info(f"生成提示词文件: {fpath}")
+				generated_files.append(fpath)
+				return generated_files
+			else:
+				self.logger.warning(f"未找到代码块，无法生成 {prompt_filename}")
+				self.logger.debug(f"LLM响应预览: {response[:500]}")
+				return []
 
 	def _read_api_docs_by_modules(self, modules):
 		"""
@@ -1361,7 +1470,6 @@ class CodeArchitectAgent(BaseAgent):
 			return False
 		
 		# 提取修复后的代码
-		import re
 		code_blocks = re.findall(r'```python\s*([^`]+)```', response, re.DOTALL)
 		if not code_blocks:
 			code_blocks = re.findall(r'```\s*([^`]+)```', response, re.DOTALL)
@@ -1442,8 +1550,6 @@ class CodeArchitectAgent(BaseAgent):
 		
 		if response:
 			# 尝试从LLM响应中提取JSON对象
-			import re
-			import json
 			json_match = re.search(r'\{[\s\S]*?\}', response)
 			if json_match:
 				try:
@@ -1459,7 +1565,6 @@ class CodeArchitectAgent(BaseAgent):
 		
 		# 兜底方案：如果LLM分析失败，使用正则匹配
 		if not relevant_api_files:
-			import re
 			module_pattern = r"'(\w+)'\s+object\s+has\s+no\s+attribute"
 			matches = re.findall(module_pattern, error_traceback)
 			relevant_api_files = [module_to_file.get(m) for m in matches if module_to_file.get(m)]
@@ -1499,7 +1604,43 @@ class CodeArchitectAgent(BaseAgent):
 		
 		return api_docs_str, config_files_dict
 
-	async def fix_runtime_errors(self, error_message, error_traceback, main_file_path, simulator_file_path, max_attempts=3):
+	async def _handle_file_not_found_error(self, error_traceback, config_path):
+		"""
+		处理 FileNotFoundError
+		"""
+		self.logger.info("处理 FileNotFoundError...")
+		# 从错误堆栈中解析文件路径
+		match = re.search(r"FileNotFoundError: \[Errno 2\] No such file or directory: '(.+?)'", error_traceback)
+		if not match:
+			return False
+
+		file_path = match.group(1)
+		self.logger.info(f"检测到缺失文件: {file_path}")
+
+		# 检查文件是否真的不存在
+		if os.path.exists(file_path):
+			self.logger.info(f"文件 {file_path} 实际存在，跳过处理。")
+			return False
+		#TODO: 这里可以加上用户判断
+		# 判断文件类型并调用相应函数
+		description_md = ""
+		modules_config_yaml = ""
+		if config_path:
+			description_md_path = os.path.join(os.path.dirname(config_path), 'description.md')
+			modules_config_yaml_path = os.path.join(os.path.dirname(config_path), 'modules_config.yaml')
+			with open(description_md_path, 'r', encoding='utf-8') as f:
+				description_md = f.read()
+			with open(modules_config_yaml_path, 'r', encoding='utf-8') as f:
+				modules_config_yaml = f.read()
+		filename = os.path.basename(file_path)
+		if 'prompt' in filename:
+			await self.generate_prompt_file(filename, description_md)
+		else:
+			await self.generate_config_file(filename, description_md, modules_config_yaml)
+		
+		return True
+
+	async def fix_runtime_errors(self, error_message, error_traceback, main_file_path, simulator_file_path, config_path, max_attempts=3):
 		"""
 		运行时错误修复函数 - 使用增量修改方式
 		支持同时修复 main 和 simulator 文件
@@ -1515,6 +1656,13 @@ class CodeArchitectAgent(BaseAgent):
 			bool: 是否修复成功
 		"""
 		self.logger.info("🔧 开始修复运行时错误...")
+
+		# 首先检查是否是 FileNotFoundError
+		if "FileNotFoundError" in error_message:
+			if await self._handle_file_not_found_error(error_traceback, config_path):
+				self.logger.info("✓ 已成功处理 FileNotFoundError 并生成了缺失文件。")
+				return True # 假设文件生成后问题就解决了，直接返回成功
+
 		
 		# 读取当前代码
 		with open(main_file_path, 'r', encoding='utf-8') as f:
@@ -1524,8 +1672,8 @@ class CodeArchitectAgent(BaseAgent):
 		
 		# 从错误堆栈中提取相关模块的API文档和配置文件（使用LLM智能分析）
 		module_api_docs, config_files_dict = await self._extract_module_api_docs_from_error(error_traceback)
-		
-		# 格式化配置文件内容
+
+		# config_files_str为所有相关配置文件的具体内容
 		config_files_str = ""
 		if config_files_dict:
 			config_files_str = "\n相关配置文件：\n"
@@ -1537,13 +1685,6 @@ class CodeArchitectAgent(BaseAgent):
 		for attempt in range(1, max_attempts + 1):
 			self.logger.info(f"第 {attempt}/{max_attempts} 次修复尝试...")
 			
-			# 将API文档和配置文件合并到一起
-			reference_docs = module_api_docs if module_api_docs else ""
-			if config_files_str:
-				reference_docs += config_files_str
-			if not reference_docs:
-				reference_docs = "（无相关参考文档）"
-			
 			# 提示词
 			prompt = self.prompts['fix_runtime_errors_prompt'].format(
 				error_traceback=error_traceback,
@@ -1551,14 +1692,15 @@ class CodeArchitectAgent(BaseAgent):
 				main_content=main_content,
 				simulator_file_path=simulator_file_path,
 				simulator_content=simulator_content,
-				module_api_docs=reference_docs
+				module_api_docs=module_api_docs,
+				config_files_str=config_files_str
 			)
 			
 			response = await self.generate_llm_response(prompt)
 			if not response:
 				self.logger.error("LLM未返回响应")
 				continue
-			
+			print(f"大模型回复：：{response}")
 			# 尝试应用修复
 			if self._apply_runtime_fix(response, main_file_path, simulator_file_path):
 				self.logger.info(f"✓ 修复完成")
@@ -1584,12 +1726,9 @@ class CodeArchitectAgent(BaseAgent):
 		Returns:
 			bool: 是否成功应用修复
 		"""
-		import re
-		
 		# 只支持策略：JSON增量修改
 		# 查找带有文件标记的JSON块
-		
-		# 提取 MAIN FILE 的JSON修改
+
 		main_json_pattern = r'```json\s*#\s*===\s*MAIN\s*FILE\s*===\s*(\{[\s\S]*?\})\s*```'
 		main_json_match = re.search(main_json_pattern, response, re.DOTALL | re.IGNORECASE)
 		
@@ -1597,8 +1736,34 @@ class CodeArchitectAgent(BaseAgent):
 		simulator_json_pattern = r'```json\s*#\s*===\s*SIMULATOR\s*FILE\s*===\s*(\{[\s\S]*?\})\s*```'
 		simulator_json_match = re.search(simulator_json_pattern, response, re.DOTALL | re.IGNORECASE)
 		
+		# 提取 CONFIG FILES 的JSON修改
+		config_json_pattern = r'```json\s*#\s*===\s*CONFIG\s*FILES\s*===\s*(\{[\s\S]*?\})\s*```'
+		config_json_match = re.search(config_json_pattern, response, re.DOTALL | re.IGNORECASE)
+
+
+		# 如果没有找到带注释的JSON块，尝试通用匹配并根据内容判断类型
+		if not (main_json_match or simulator_json_match or config_json_match):
+			generic_json_pattern = r'```json\s*(\{[\s\S]*?\})\s*```'
+			generic_json_matches = re.findall(generic_json_pattern, response, re.DOTALL)
+			
+			for json_str in generic_json_matches:
+				try:
+					parsed_json = json.loads(json_str)
+					if "functions" in parsed_json and not main_json_match:
+						main_json_match = re.search(re.escape(json_str), response, re.DOTALL) # Re-search to get match object
+						self.logger.info("通过内容识别到 MAIN FILE JSON")
+					elif "methods" in parsed_json and not simulator_json_match:
+						simulator_json_match = re.search(re.escape(json_str), response, re.DOTALL) # Re-search to get match object
+						self.logger.info("通过内容识别到 SIMULATOR FILE JSON")
+					elif "config_files" in parsed_json and not config_json_match:
+						config_json_match = re.search(re.escape(json_str), response, re.DOTALL) # Re-search to get match object
+						self.logger.info("通过内容识别到 CONFIG FILES JSON")
+				except json.JSONDecodeError:
+					continue
+
 		main_fixed = False
 		simulator_fixed = False
+		config_fixed = False
 		
 		# 应用main文件的增量修改
 		if main_json_match:
@@ -1628,46 +1793,169 @@ class CodeArchitectAgent(BaseAgent):
 			except Exception as e:
 				self.logger.error(f"❌ 应用simulator文件修复失败: {e}")
 		
+		if config_json_match:
+			self.logger.info(f"尝试解析配置文件JSON内容：{config_json_match.group(1)}")
+			try:
+				config_json = json.loads(config_json_match.group(1))
+				files_to_modify = config_json.get('config_files', [])
+				for file_info in files_to_modify:
+					file_name = file_info.get('file_name')
+					modifications = file_info.get('modifications', [])
+					file_path = os.path.join(self.config_dir, file_name)
+					if not os.path.exists(file_path):
+						self.logger.error(f"配置/提示词文件不存在: {file_path}")
+						config_fixed = False
+						continue
+					result = self._apply_modifications(file_path, modifications)
+					if not result or not result.get('changes'):
+						config_fixed = False
+				config_fixed = True
+			except Exception as e:
+				self.logger.error(f"❌ 应用配置文件修复失败: {e}")
+				config_fixed = False
+
 		# 如果成功应用了增量修改，返回成功
-		if main_fixed or simulator_fixed:
-			return True
-		
-		# 兼容：尝试查找单个JSON块（不带文件标记）
-		# 这种情况下根据内容判断是main还是simulator
-		single_json_match = re.search(r'```json\s*(\{[\s\S]*?\})\s*```', response, re.DOTALL)
-		if single_json_match:
-			json_content = single_json_match.group(1)
-			json_block = f"```json\n{json_content}\n```"
-			
-			# 判断是functions还是methods
-			if '"functions"' in json_content:
-				# main文件
-				if self._apply_code_changes(main_file_path, json_block, "main"):
-					self.logger.info("✓ 已修复 main 文件（增量修改）")
-					return True
-				else:
-					self.logger.error("❌ 应用main文件增量修改失败")
-			elif '"methods"' in json_content:
-				# simulator文件
-				if self._apply_code_changes(simulator_file_path, json_block, "simulator"):
-					self.logger.info("✓ 已修复 simulator 文件（增量修改）")
-					return True
-				else:
-					self.logger.error("❌ 应用simulator文件增量修改失败")
-			else:
-				self.logger.error("❌ JSON内容既不包含'functions'也不包含'methods'，无法判断文件类型")
+		if main_fixed or simulator_fixed or config_fixed:
+			return True 
 		
 		# 所有策略都失败，直接报错
 		self.logger.error("❌ 未能从响应中提取有效的JSON增量修改内容")
-		self.logger.error("期望格式：")
-		self.logger.error("```json")
-		self.logger.error("# === MAIN FILE ===")
-		self.logger.error('{"functions": [{"function_name": "...", "function_code": "...", "description": "..."}]}')
-		self.logger.error("```")
-		self.logger.error("或：")
-		self.logger.error("```json")
-		self.logger.error("# === SIMULATOR FILE ===")
-		self.logger.error('{"methods": [{"method_name": "...", "method_code": "...", "description": "..."}]}')
-		self.logger.error("```")
 		self.logger.debug(f"LLM响应预览: {response[:500]}")
 		return False
+
+	async def modify_file_sequentially(self, diagnosis_path, config_dir, design_doc=""):
+		"""
+		根据 diagnosis_path 路径依次修改配置文件或代码文件。
+		diagnosis_path: 包含诊断结果的 JSON 文件路径
+		"""
+		diagnosis = None
+		if not diagnosis_path or not os.path.exists(diagnosis_path):
+			self.logger.error(f"诊断文件不存在: {diagnosis_path}")
+			return []
+		try:
+			with open(diagnosis_path, 'r', encoding='utf-8') as f:
+				diagnosis_content = f.read()
+			diagnosis = json.loads(diagnosis_content)
+		except Exception as e:
+			self.logger.error(f"诊断文件解析失败: {e}")
+			return []
+
+		files_to_modify = diagnosis.get('files_to_modify', [])
+		if not files_to_modify:
+			self.logger.info("无需修改任何文件")
+			return []
+
+		results = []
+		for file_info in files_to_modify:
+			file_name = file_info.get('file_name')
+			file_type = file_info.get('file_type')
+			reason = file_info.get('modification', '') # Changed from 'reason'
+
+			self.logger.info(f"正在处理文件 : {file_name} (类型: {file_type})")
+			self.logger.info(f"修改原因: {reason}")
+
+			if file_type == 'simulator':
+				simulator_file_name = f'simulator_{self.simulation_name}.py'
+				file_path = os.path.join(self.simulator_output_dir, simulator_file_name)
+			else:
+				file_path = os.path.join(config_dir, file_name)
+					
+			if not os.path.exists(file_path):
+				self.logger.warning(f"文件不存在: {file_path}")
+				continue
+
+			# 读取
+			with open(file_path, 'r', encoding='utf-8') as f:
+				current_content = f.read()
+
+			if file_type == 'simulator':
+				# 使用专门为修改代码设计的prompt
+				prompt = self.prompts['generate_simulator_modifications_prompt'].format(
+					diagnosis_result=json.dumps(file_info, ensure_ascii=False),
+					current_code=current_content[:8000], # 代码可以给多一点
+					design_doc=design_doc
+				)
+				response = await self.generate_llm_response(prompt)
+				# 调用 apply_code_changes
+				if response:
+					result = self._apply_code_changes(file_path, response, "simulator")
+					results.append({'file_name': simulator_file_name, 'result': 'success' if result else 'failed'})
+					if result:
+						self.logger.info(f"✓ {simulator_file_name} 已修改")
+					else:
+						self.logger.error(f"✗ {simulator_file_name} 修改失败")
+
+			else: # config or prompt files
+				# 生成修改方案
+				prompt = self.prompts['generate_config_modifications_prompt'].format(
+					diagnosis_result=json.dumps(file_info, ensure_ascii=False),
+					current_config=current_content[:5000],
+					design_doc=design_doc
+				)
+
+				response = await self.generate_llm_response(prompt)
+
+				# 解析并应用修改
+				json_match = re.search(r'```json\s*(\{[\s\S]*?\})\s*```', response, re.DOTALL)
+				if json_match:
+					try:
+						modifications = json.loads(json_match.group(1))
+						modification_list = modifications.get('modifications', [])
+
+						if modification_list:
+							result = self._apply_modifications(file_path, modification_list)
+							results.append({'file_name': file_name, 'result': result})
+							self.logger.info(f"✓ {file_name} 已修改")
+
+					except json.JSONDecodeError as e:
+						self.logger.error(f"解析失败 {file_name}: {e}")
+
+		return results
+
+	def _apply_modifications(self, file_path, modifications):
+		"""
+		精确修改文件中的指定参数，保持文件结构不变。
+		支持 yaml/json/文本三种类型的参数替换。
+		"""
+		changes = []
+		# 备份原文件
+		backup_path = file_path + f'.backup_{int(time.time())}'
+		shutil.copy(file_path, backup_path)
+		with open(file_path, 'r', encoding='utf-8') as f:
+			original_content = f.read()
+		# YAML 文件
+		if file_path.endswith(('.yaml', '.yml')):
+			data = yaml.safe_load(original_content)
+			for mod in modifications:
+				param = mod.get('parameter')
+				new_value = mod.get('value')
+				if param in data:
+					old_value = data[param]
+					data[param] = new_value
+					changes.append(f"{param}: {old_value} -> {new_value}")
+			with open(file_path, 'w', encoding='utf-8') as f:
+				yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+		# JSON 文件
+		elif file_path.endswith('.json'):
+			data = json.loads(original_content)
+			for mod in modifications:
+				param = mod.get('parameter')
+				new_value = mod.get('value')
+				if param in data:
+					old_value = data[param]
+					data[param] = new_value
+					changes.append(f"{param}: {old_value} -> {new_value}")
+			with open(file_path, 'w', encoding='utf-8') as f:
+				json.dump(data, f, indent=2, ensure_ascii=False)
+		# 纯文本文件（如提示词）
+		else:
+			content = original_content
+			for mod in modifications:
+				old_text = mod.get('parameter')
+				new_text = mod.get('value')
+				if old_text in content:
+					content = content.replace(old_text, new_text)
+					changes.append(f"已替换文本片段")
+			with open(file_path, 'w', encoding='utf-8') as f:
+				f.write(content)
+		return {'backup': backup_path, 'changes': changes}

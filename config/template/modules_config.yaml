@@ -162,19 +162,3 @@ analysis:
       metrics: ["population", "average_satisfaction"]
     - type: "bar_chart"
       metrics: ["employment_rate"]
-
-# 配置文件详情 - 供研究助手Agent参考
-config_files_description:
-  "modules_config.yaml": "定义实验中使用的所有模块及其参数设置，控制实验的整体结构和模块选择"
-  "simulation_config.yaml": "设置模拟运行的基本参数，如时间步长、人口数量等基础运行参数"
-  "towns_data.json": "定义模拟世界中的城镇信息，包括位置、人口、经济状况等地理和经济基础"
-  "jobs_config.yaml": "定义就业市场的结构，包括职业类型、薪资水平、需求量等就业相关配置"
-  "message_config.yaml": "定义消息传播系统的配置，包括传播范围、速度、衰减率等信息传播参数"
-  "questionnaire.yaml": "定义调查问卷的结构和问题，用于收集模拟过程中的数据和反馈"
-
-# 提示词文件详情 - 供研究助手Agent参考
-prompt_files_description:
-  "residents_prompts.yaml": "定义居民Agent的日常行为、迁移决策、工作选择等行为逻辑和决策提示词"
-  "government_prompts.yaml": "定义政府Agent的政策制定和执行提示词，控制政府的政策响应和治理行为"
-  "rebels_prompts.yaml": "定义叛军Agent的活动逻辑和策略提示词，控制反叛活动的发生和发展"
-  "resident_actions.yaml": "定义居民可执行的具体行动类型和参数，限定居民的行为范围和行动选项"

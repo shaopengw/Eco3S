@@ -1,3 +1,12 @@
-# 信息模板 (message_config.yaml)
-#
-# 本文件可以存放实验中需要的信息
+propaganda_message_short: |
+  1. [信息1]
+  2. [信息2]
+  ...
+
+propaganda_message_long: |
+  1. [信息1]
+  2. [信息2]
+  3. [信息3]
+  4. [信息4]
+  5. [信息5]
+  ...

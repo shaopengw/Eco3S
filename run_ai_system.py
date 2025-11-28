@@ -52,7 +52,7 @@ async def main():
     
     # 3. 初始化项目管理师
     print("初始化项目管理师...")
-    workspace_dir = os.path.join(os.path.dirname(__file__), 'experiment_dataset')
+    workspace_dir = os.path.join(os.path.dirname(__file__), 'history')
     docs_dir = os.path.join(os.path.dirname(__file__), 'docs')
     config_template_dir = os.path.join(os.path.dirname(__file__), 'config', 'template')
     

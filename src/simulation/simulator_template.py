@@ -12,7 +12,7 @@ class YourSimulator:
         self.towns = kwargs.get('towns')
         self.config = kwargs.get('config')
         
-        # === 可选对象（根据实验需求） ===
+        # === 可选对象（根据实验需求选择，不需要的可以删除） ===
         self.government = kwargs.get('government')
         self.government_officials = kwargs.get('government_officials')
         self.rebellion = kwargs.get('rebellion')
@@ -29,7 +29,7 @@ class YourSimulator:
         # === 社会指标 ===
         self.average_satisfaction = None  # 平均满意度
         
-        # === 叛军相关 ===
+        # === 叛军相关（不需要可删除） ===
         self.propaganda_prob = 0.1  # 宣传概率
         self.propaganda_speech = ""  # 宣传内容
         self.rebellion_records = 0  # 叛乱次数
@@ -85,7 +85,6 @@ class YourSimulator:
     async def run(self):
         """主运行流程：初始化→主循环→结束"""
         self.start_time = datetime.now()
-        self.prepare_experiment()
         
         # 主循环
         while not self.time.is_end():
@@ -113,11 +112,6 @@ class YourSimulator:
         # 可选：绘制网络分析图
         # self.social_network.plot_degree_distribution()
         # self.social_network.visualize()
-
-    def prepare_experiment(self):
-        """实验准备工作（可选）"""
-        print(f"实验名称：{self.config.get('simulation_name', 'Unknown')}")
-        print(f"模拟时长：{self.time.start_time} - {self.time.end_time}")
 
     def print_time_step(self):
         """打印当前时间步信息"""
@@ -772,7 +766,7 @@ class YourSimulator:
         print("新居民已加入各自城镇")
         
         if new_residents:
-            self.social_network.add_new_residents(new_residents.values())
+            self.social_network.add_new_residents(new_residents)
             print(f"{len(new_residents)} 名新居民已加入社交网络")
     
     def summarize_time_step_results(self):

@@ -216,7 +216,6 @@ class Resident(BaseAgent):
                     f"- {job}: {count}个空缺, 基础收入：{self.job_market.jobs_info[job]['base_salary']}"
                     for job, count in vacant_jobs.items()
                 )
-        rebel_salary = self.job_market.get_job_salary("叛军")
     
         # 构建税率和天气状况信息
         tax_rate_message = ""

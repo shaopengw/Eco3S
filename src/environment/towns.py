@@ -62,7 +62,7 @@ class Towns:
             current_town_population = residents_per_town + (1 if i < remaining_residents else 0)
             self.towns[town_name]['job_market'] = JobMarket(town_type=town_type, initial_jobs_count=current_town_population, config_path=job_market_config_path)
 
-    def initialize_resident_groups(self, residents: Dict[int, 'Resident']):
+    def initialize_resident_groups(self, residents):
         """
         根据居民的town属性初始化居民群组并分配工作
         :param residents: 居民字典，key为居民ID，value为居民对象
@@ -75,8 +75,19 @@ class Towns:
                 if town_name:
                     # 检查城镇是否存在且已正确初始化
                     if town_name not in self.towns or 'info' not in self.towns[town_name] or not self.towns[town_name]['info']:
-                        print(f"警告: 城镇 {town_name} 未初始化或不存在，跳过居民 {resident_id}")
-                        continue
+                        # 为居民分配最近的有效城镇
+                        if hasattr(resident, 'location') and resident.location:
+                            new_town_name = self.get_nearest_town(resident.location)
+                        else:
+                            # 如果没有location属性，则随机分配一个城镇
+                            new_town_name = random.choice(list(self.towns.keys())) if self.towns else None
+                        if new_town_name:
+                            print(f"警告: 城镇 {town_name} 未初始化或不存在，居民 {resident_id} 重新分配到城镇 {new_town_name}")
+                            resident.set_town(new_town_name, self)
+                            town_name = new_town_name
+                        else:
+                            print(f"警告: 无法为居民 {resident_id} 分配有效城镇，跳过")
+                            continue
                     
                     # 添加居民到城镇
                     self.add_resident(resident, town_name)

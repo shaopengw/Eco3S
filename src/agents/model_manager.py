@@ -42,7 +42,7 @@ class ModelManager:
         # 统一模型配置
         self.model_config = {
             "temperature": 1,
-            "top_p": 0.9,
+            # "top_p": 0.9,
         }
 
     def get_random_model_config(self):

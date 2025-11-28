@@ -20,7 +20,7 @@ receive_information_prompt: |
 # 有工作居民行动决策提示
 # 描述：引导有工作的居民在特定情况下做出行动选择
 # 必须包含的变量：{tax_rate_message}、{job_market_info}、{weather_condition}
-# 输出要求：提供3个行动选项供选择
+# 输出要求：提供行动选项供选择，选项应与resident_actions.yaml中行动编号和行为对齐
 decide_action_prompt_employed: |
   {tax_rate_message}
   {job_market_info}
@@ -34,7 +34,7 @@ decide_action_prompt_employed: |
 # 无工作居民行动决策提示
 # 描述：引导无工作的居民在特定情况下做出行动选择
 # 必须包含的变量：{tax_rate_message}、{job_market_info}、{weather_condition}
-# 输出要求：提供3个行动选项供选择
+# 输出要求：提供行动选项供选择，选项应与resident_actions.yaml中行动编号和行为对齐
 decide_action_prompt_unemployed: |
   {tax_rate_message}
   {job_market_info}
@@ -48,7 +48,7 @@ decide_action_prompt_unemployed: |
 # 城市居民行动决策提示
 # 描述：引导城市居民在特定情况下做出行动选择
 # 必须包含的变量：{tax_rate_message}、{job_market_info}、{weather_condition}
-# 输出要求：提供3个行动选项供选择
+# 输出要求：提供行动选项供选择，选项应与resident_actions.yaml中行动编号和行为对齐
 decide_action_prompt_city_resident: |
   {tax_rate_message}
   {job_market_info}
@@ -63,6 +63,7 @@ decide_action_prompt_city_resident: |
 # 描述：引导居民以JSON格式返回决策结果
 # 必须包含的变量：{desired_job_and_min_salary}、{speech}
 # 输出要求：严格JSON格式，包含满意度变化、原因和选择
+# 注意：所有JSON花括号必须用双括号（{{ 和 }}），只有变量占位符保留单括号。
 decide_action_json: |
   综合考虑[关键决策因素]等因素，选择最适合自己的行动。首先表达你对[评价对象]的评价，并说明满意度的变化，然后说明原因，最后做出选择。
   返回单行的JSON字符串，格式如下，必须严格按照格式填写：
@@ -72,6 +73,7 @@ decide_action_json: |
 # 描述：引导居民对政府公告或消息做出回应决策
 # 必须包含的变量：{public_notice}、{message_content}
 # 输出要求：JSON格式，包含是否发言的决策
+# 注意：所有JSON花括号必须用双括号（{{ 和 }}），只有变量占位符保留单括号。
 receive_and_decide_response_prompt: |
   政府发布公告：{public_notice}
   消息内容：{message_content}
@@ -114,10 +116,9 @@ receive_information_prompt_extended: |
 
 # 记忆更新提示（简短版）
 # 描述：模拟人类记忆的自然特性，简要整理知识和行为记忆
-# 必须包含的变量：{topic}
 # 输出要求：分别输出知识记忆和行为记忆，口语化
 memory_update_prompt_short: |
-  请模拟人类记忆的自然特性，分别整理以上对话中你关于{topic}的知识记忆和行为记忆，要求：
+  请模拟人类记忆的自然特性，分别整理以上对话中你关于[topic]的知识记忆和行为记忆，要求：
   1. 知识记忆：总结你记忆中的知识，包括你收到的信息以及从其他居民的对话中收到的信息，只保留被多次提及、详细讨论过的内容；如某些内容近期未被讨论，则应逐渐模糊或遗漏；如始终未提及，则应遗忘。如果记忆中没有任何知识，直接说“我不太清楚”。
   2. 行为记忆：说明是否收到了信息，是所有人还是部分人收到了，其他人是否知道。说明自己有没有主动发起讨论或参与讨论。口语化描述，不要用列表。
   注意：禁止只写“我记得详细内容”，必须把“记得的内容”写出来。禁止编造任何对话中未出现的知识或行为。保持简洁自然，就像人回忆事情一样，有重点也带点模糊。
@@ -126,10 +127,9 @@ memory_update_prompt_short: |
 
 # 记忆更新提示（详细版）
 # 描述：模拟人类记忆的自然特性，详细整理知识和行为记忆
-# 必须包含的变量：{topic}
 # 输出要求：详尽展开知识细节，行为记忆口语化
 memory_update_prompt_long: |
-  请模拟人类记忆的自然特性，分别整理以上对话中你关于{topic}的知识记忆和行为记忆，要求：
+  请模拟人类记忆的自然特性，分别整理以上对话中你关于[topic]的知识记忆和行为记忆，要求：
   1. 知识记忆：只保留被讨论过的具体内容，必须详尽展开要保留的知识细节，包括具体的年份、数字、政策内容、人物和事件。禁止总结，必须逐条还原对话中出现的原始信息细节。如果记忆中没有任何知识，直接说“我不太清楚”。
   2. 行为记忆：说明是否收到了信息，是所有人还是部分人收到了，其他人是否知道。说明自己有没有主动发起讨论或参与讨论。口语化描述，不要用列表。
   输出格式：
@@ -137,10 +137,9 @@ memory_update_prompt_long: |
 
 # 问卷调查提示
 # 描述：引导居民参与问卷调查，答案严格依据个人记忆
-# 必须包含的变量：{topic}
 # 输出要求：答案必须反映个人记忆水平，格式严格
 questionnaire_prompt: |
-  你正在参与一项关于{topic}的问卷调查。请严格依据你历史记忆中的“知识记忆”进行作答：
+  你正在参与一项关于[topic]的问卷调查。请严格依据你历史记忆中的“知识记忆”进行作答：
   1. 你的答案必须完全反映你历史记忆中的“知识记忆”水平。
      - 如果“知识记忆”中明确知道答案，则选择正确答案。
      - 如果“知识记忆”中不知道答案或不清楚，必须随机选择。

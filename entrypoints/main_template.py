@@ -2,6 +2,7 @@
 
 from shared_imports import *
 
+# 注意函数名为set_simulation_type，而不是set_simulation_name
 SimulationContext.set_simulation_type("{模拟名称}")
 
 def parse_args(default_config_path):

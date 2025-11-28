@@ -1,3 +1,21 @@
-# 信息收集问卷模板 (questionnaire.yaml)
-#
-# 问卷具体内容
+questionnaire_short: |
+  知识问答（判断题，说法正确选Y，说法有误选N）:
+  1. [问题1]
+  2. [问题2]
+  3. [问题3]
+
+answer_short: |
+  YYY
+
+questionnaire_long: |
+  知识问答（判断题，说法正确选Y，说法有误选N）:
+  1. [问题1]
+  2. [问题2]
+  3. [问题3]
+  4. [问题4]
+  5. [问题5]
+  ...
+
+
+answer_long: |
+  YYYYY...

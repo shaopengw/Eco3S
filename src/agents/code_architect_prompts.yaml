@@ -43,7 +43,7 @@ generate_simulator_code_prompt: |
   {template_content}
 
   【修改要求】
-  1. 删除不需要的模块相关代码（例如如果不需要叛军，删除rebels相关代码）
+  1. 删除不需要的模块相关代码（例如如果不需要叛军，删除rebels相关代码；如果不需要政府，删除government相关代码）
   2. 保留模板中有用的方法，必要时修改
   3. 可以新增模板中没有但需要的方法
   4. 不要添加注释和测试代码
@@ -180,7 +180,7 @@ check_and_fix_simulator_prompt: |
   检查：
   1. 未完成实现（pass、TODO等）
   2. 代码质量（逻辑缺陷、异常处理、变量未定义等）
-  3. 方法完整性（__init__, init_results, prepare_experiment, update_state, execute_actions, collect_results, save_results）
+  3. 方法完整性（__init__, init_results, update_state, execute_actions, collect_results, save_results）
 
   【严格禁止】
   - 禁止添加import语句
@@ -210,7 +210,58 @@ check_and_fix_simulator_prompt: |
   ```
   如果没有问题，只返回：OK
 
-# 步骤3.3: 检查并修复main代码（增量修改版）
+# 完善数据可视化代码
+refine_visualization_code_prompt: |
+  根据说明文档，simulator代码和main代码，完善数据收集和可视化代码。
+
+  【设计文档】
+  {description_md}
+
+  【Simulator代码】
+  {simulator_content}
+
+  【Main代码】
+  {main_content}
+
+  【可用的可视化模块代码】
+  {plot_results_content}
+
+  【任务】
+  1. 根据实验设计和main文件，完善main文件的数据处理和可视化部分。
+  2. 检查目前的可视化模块代码是否能正确读取和处理simulator生成的数据，如果有问题，修复。
+  3. 如果目前的可视化模块代码缺乏处理数据的函数，在main文件中新建可视化函数，并完善。
+  4. 只处理与实验设计相关的数据和可视化函数。
+  5. 保持代码风格一致，不要添加注释。
+  6. 只返回最小必要修改，无问题返回OK。
+
+  【严格禁止】
+  - 禁止添加import语句，模板已经通过 from shared_imports import * 导入所有必需模块
+  - 禁止修改与可视化无关的代码
+  - 禁止添加注释和测试代码
+
+  【输出格式】
+  无问题返回：OK
+  
+  有问题返回：
+  ```json
+  {{
+    "functions": [
+      {{
+        "function_name": "函数名",
+        "function_code": "完整的函数代码（从def开始）",
+        "description": "修改说明"
+      }}
+    ],
+    "delete_functions": ["不需要的函数名1", "不需要的方法名2"]
+  }}
+  ```
+
+  注意：
+  - function_name 必须是纯函数名（如：plot_rebellions_over_time），不要包含 def、括号等
+  - function_code 是完整的函数代码
+  - delete_functions 是可选字段，用于删除不需要的函数
+
+# 检查并修复main代码（增量修改版）
 check_and_fix_main_prompt: |
   严格检查以下main入口文件代码并修复所有问题。
 
@@ -361,6 +412,8 @@ generate_prompt_file_prompt: |
 
   提示词模板参考：
   {template_content}
+  
+  {template_content_action}
 
   {configs_str}
 
@@ -373,6 +426,22 @@ generate_prompt_file_prompt: |
   6. 删除所有注释
 
   请生成完整的YAML格式提示词文件。
+  
+  特别地，在生成'residents'的提示词文件时，请同时生成'resident_actions.yaml'的内容。
+  两个文件内容需要相互对应，特别是编号和行动内容。
+  请使用以下格式分隔两个文件的内容：
+  
+  ```yaml
+  # residents_prompts.yaml
+  ...
+  ```
+  
+  ```yaml
+  # resident_actions.yaml
+  ...
+  ```
+  
+  如果不是'residents'，则只生成提示词文件。
 
 # 诊断并修复失败步骤
 diagnose_failure_prompt: |
@@ -426,18 +495,21 @@ fix_runtime_errors_prompt: |
   {simulator_content}
   ```
 
+  相关配置文件内容：
+  {config_files_str}
+
   相关模块API文档：
   {module_api_docs}
 
   【任务】
   1. 分析错误堆栈，定位问题所在的文件和函数/方法
-  2. 参考API文档，确保使用正确的方法名和参数
-  3. 只修改有问题的函数/方法，以最小改动修复问题
-  4. 只有当API中没有可用的方法，且该功能必须实现，尝试自己编写函数/方法
+  2. 参考API文档和配置文件，确保使用正确的方法名、参数和配置
+  3. 尽可能以最小改动修复问题，可以修改代码、配置文件或提示词
+  4. 只有当API中没有可用的方法，且该功能必须实现，才尝试自己编写函数/方法
 
   【输出格式】
-  Main文件用 # === MAIN FILE === 和 "functions"，Simulator文件用 # === SIMULATOR FILE === 和 "methods"：
-  
+  根据需要修改的文件类型，返回对应的JSON块。Main文件用 # === MAIN FILE ===，Simulator文件用 # === SIMULATOR FILE ===，配置文件和提示词文件用 # === CONFIG FILES ===。
+
   ```json
   # === MAIN FILE ===
   {{
@@ -466,7 +538,87 @@ fix_runtime_errors_prompt: |
   }}
   ```
 
+  ```json
+  # === CONFIG FILES ===
+  {{
+    "config_files": [
+      {{
+        "file_name": "需要修改的配置文件名（例如：simulation_config.yaml）",
+        "modifications": [
+          {{
+            "parameter": "参数名",
+            "value": "新值"
+          }}
+        ]
+      }}
+    ]
+  }}
+  ```
+
   注意：
-  - 只返回需要修改的文件的JSON，name必须是纯函数/方法名（不含def、async、括号）
-  - delete_methods/delete_functions 是可选字段，用于删除不需要的方法/函数
-  - 确保JSON格式正确
+  - delete_methods/delete_functions 是可选字段。
+  - 只返回需要修改的文件的严格的JSON块，不要分析和说明。
+
+# 生成配置修改方案
+generate_config_modifications_prompt: |
+  根据诊断结果，生成具体的配置修改方案：
+
+  诊断结果：
+  {diagnosis_result}
+
+  当前文件内容：
+  {current_config}
+
+  设计文档：
+  {design_doc}
+
+  请只返回需要修改的参数和新值，格式如下：
+  ```json
+  {{
+    "modifications": [
+      {{
+        "parameter": "参数名",
+        "value": "新值"
+      }}
+    ]
+  }}
+  ```
+
+  注意：
+  1. 只返回确实需要修改的参数
+  2. parameter必须是文件中存在的确切参数名
+
+# 生成模拟器代码修改方案
+generate_simulator_modifications_prompt: |
+  根据诊断结果，为 simulator.py 文件生成增量代码修改方案。
+
+  【诊断结果】
+  {diagnosis_result}
+
+  【当前代码】
+  {current_code}
+
+  【设计文档】
+  {design_doc}
+
+  【修改要求】
+  1.  根据诊断结果中的 'modification' 描述，理解需要进行的修改。
+  2.  分析当前代码，定位需要修改的具体方法或函数。
+  3.  生成增量修改，只包含需要变动的部分。
+  4.  如果需要添加新方法，请提供完整的方法代码。
+  5.  保持代码风格和缩进与现有代码一致。
+
+  【输出格式】
+  返回JSON格式，包含需要修改的内容：
+
+  ```json
+  {{
+    "methods": [
+      {{
+        "method_name": "要修改或新增的方法名(不包含def/async def或括号)",
+        "method_code": "完整的方法代码(从def/async def开始)",
+        "description": "修改说明"
+      }}
+    ]
+  }}
+  ```
