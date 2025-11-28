@@ -1,5 +1,7 @@
 
 
+from src.utils.custom_logger import CustomLogger
+
 from .shared_imports import *
 
 class SimArchitectAgent(BaseAgent):
@@ -11,7 +13,7 @@ class SimArchitectAgent(BaseAgent):
 		self.output_dir = output_dir
 		self.docs_dir = docs_dir
 		self.config_dir = config_dir
-		self.logger = LogManager.get_logger('sim_architect')
+		self.logger = CustomLogger('sim_architect').logger
 		
 		# 加载提示词配置
 		prompts_path = os.path.join(os.path.dirname(__file__), 'sim_architect_prompts.yaml')

@@ -40,8 +40,7 @@ from src.agents.rebels_agent_generator import generate_rebels_agents
 from src.agents.resident import ResidentGroup
 
 # 可视化模块
-from src.visualization.plot_results import plot_all_results
-
+from src.visualization.plot_results import plot_all_results, plot_rebellions_over_time, plot_unemployment_rate_over_time, plot_population_over_time, plot_government_budget_over_time, plot_rebellion_strength_over_time, plot_satisfaction_over_time, plot_tax_rate_over_time, plot_river_navigability_over_time, plot_gdp_over_time, plot_urban_scale_over_time
 # 生成器模块
 from src.generator.resident_generate import generate_resident_data, save_resident_data
 
