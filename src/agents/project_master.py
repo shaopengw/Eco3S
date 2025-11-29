@@ -172,13 +172,15 @@ class ProjectMasterAgent(BaseAgent):
         if user_feedback:
             self.logger.info(f"用户反馈: {user_feedback}")
         self.logger.info("=" * 50)
-        
+        simulation_type = requirement_dict.get('simulation_type', 'decision')  # 默认为决策型
+
         # 使用项目根目录下的config_[模拟名称]文件夹
         designer = SimArchitectAgent(
             agent_id='sim_architect_001',
             output_dir=self.current_config_dir,
             docs_dir=self.docs_dir,
-            config_dir=self.config_template_dir
+            config_dir=self.config_template_dir,
+            simulation_type=simulation_type,
         )
         
         # 直接使用传入的已解析需求
@@ -437,22 +439,6 @@ class ProjectMasterAgent(BaseAgent):
         else:
             self.logger.info(f"Main文件已生成: {main_file_path}")
         
-        # === 步骤3.1: 完善数据可视化及保存代码 ===
-        self.logger.info("步骤 3.1: 完善数据可视化及保存代码")
-        visualization_dir = "src\\visualization\\plot_results.py"
-
-        refined_visualization = await coder.refine_visualization_code(
-            visualization_dir,
-            simulator_file_path,
-            main_file_path,
-            description_with_context
-        )
-
-        if refined_visualization:
-            self.logger.info("数据可视化及保存代码已完善")
-        else:
-            self.logger.warning("数据可视化及保存代码完善失败，保持原文件")
-        
         # === 步骤4: 检查并补完main函数 ===
         self.logger.info("步骤 4: 检查并补完main函数实现")
         modules_config_yaml = self._read_modules_config()
@@ -468,6 +454,22 @@ class ProjectMasterAgent(BaseAgent):
             self.logger.info("Main函数已补完")
         else:
             self.logger.warning("Main函数补完失败，保持原文件")
+        
+        # === 步骤4.1: 完善数据可视化及保存代码 ===
+        self.logger.info("步骤 4.1: 完善数据可视化及保存代码")
+        visualization_dir = "src\\visualization\\plot_results.py"
+
+        refined_visualization = await coder.refine_visualization_code(
+            visualization_dir,
+            simulator_file_path,
+            main_file_path,
+            description_with_context
+        )
+
+        if refined_visualization:
+            self.logger.info("数据可视化及保存代码已完善")
+        else:
+            self.logger.warning("数据可视化及保存代码完善失败，保持原文件")
         
         # === 步骤5: 生成配置文件（按顺序，每次一个） ===
         self.logger.info("步骤 5: 生成配置文件")
@@ -725,6 +727,67 @@ class ProjectMasterAgent(BaseAgent):
                     
                     self.logger.info("✅ 程序运行成功！")
                     self.logger.info(f"输出:\n{result.stdout}")
+
+                    # 检查是否是小规模测试（人口=5，步数=1）
+                    is_small_scale = False
+                    try:
+                        if os.path.exists(config_path):
+                            with open(config_path, 'r', encoding='utf-8') as f:
+                                config_data = yaml.safe_load(f)
+                                # Check population
+                                pop = config_data.get('simulation', {}).get('initial_population')
+                                # Check steps
+                                steps = config_data.get('simulation', {}).get('time', {}).get('total_steps')
+                                if steps is None:
+                                    steps = config_data.get('simulation', {}).get('total_years')
+                                print(f"实验结束：pop={pop}, steps={steps}")
+                                if pop == 5 and steps == 1:
+                                    is_small_scale = True
+                    except Exception as e:
+                        self.logger.warning(f"检查配置文件是否为小规模测试时出错: {e}")
+                    
+                    if is_small_scale:
+                        print(f"\n{'='*60}")
+                        print("原型测试（小规模）已完成！")
+                        print(f"{'='*60}")
+                        user_input = input("是否进行大规模测试？(y/yes=进行, 其他=结束): ").strip().lower()
+                        
+                        if user_input in ['y', 'yes']:
+                            print("请输入大规模测试参数:")
+                            try:
+                                new_pop = int(input("人口数量 (默认300): ") or "300")
+                                new_steps = int(input("模拟时间步 (默认50): ") or "50")
+                                
+                                # Update config
+                                with open(config_path, 'r', encoding='utf-8') as f:
+                                    config_data = yaml.safe_load(f)
+                                
+                                # Update population
+                                if 'simulation' not in config_data: config_data['simulation'] = {}
+                                config_data['simulation']['initial_population'] = new_pop
+                                
+                                # Also update agents count if it exists
+                                if 'agents' in config_data and 'resident_agents' in config_data['agents']:
+                                     config_data['agents']['resident_agents']['count'] = new_pop
+
+                                # Update steps
+                                if 'simulation' not in config_data: config_data['simulation'] = {}
+                                if 'time' not in config_data['simulation']: config_data['simulation']['time'] = {}
+                                config_data['simulation']['time']['total_steps'] = new_steps
+                                config_data['simulation']['time']['total_years'] = new_steps
+                                
+                                with open(config_path, 'w', encoding='utf-8') as f:
+                                    yaml.dump(config_data, f, allow_unicode=True)
+                                
+                                self.logger.info(f"配置文件已更新: 人口={new_pop}, 时间步={new_steps}")
+                                self.logger.info("开始大规模测试...")
+                                
+                                # Recursive call
+                                return await self.run_simulation(coding_results, max_fix_attempts)
+                                
+                            except ValueError:
+                                self.logger.error("输入的参数无效，取消大规模测试")
+
                     return True
                 else:
                     # 程序运行出错
@@ -1023,7 +1086,8 @@ class ProjectMasterAgent(BaseAgent):
             design_results = await self.run_design_phase(
                 requirement_dict,
                 previous_version=previous_design,
-                user_feedback=user_feedback
+                user_feedback=user_feedback,
+                
             )
             
             # 显示结果
