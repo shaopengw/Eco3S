@@ -212,7 +212,7 @@ check_and_fix_simulator_prompt: |
 
 # 完善数据可视化代码
 refine_visualization_code_prompt: |
-  根据说明文档，simulator代码和main代码，完善数据收集和可视化代码。
+  根据设计文档、simulator代码和main代码，检查并完善数据保存和可视化相关代码。
 
   【设计文档】
   {description_md}
@@ -227,10 +227,10 @@ refine_visualization_code_prompt: |
   {plot_results_content}
 
   【任务】
-  1. 根据实验设计和main文件，完善main文件的数据处理和可视化部分。
-  2. 检查目前的可视化模块代码是否能正确读取和处理simulator生成的数据，如果有问题，修复。
-  3. 如果目前的可视化模块代码缺乏处理数据的函数，在main文件中新建可视化函数，并完善。
-  4. 只处理与实验设计相关的数据和可视化函数。
+  1. 检查并确保simulator和main文件中的数据处理和可视化部分符合实验设计，能够从保存的数据中得出设计文档所需的结论。
+  2. 检查simulator代码中数据收集部分（如update_results方法）是否完整、格式正确，是否每个时间步都能正确收集，并确保数据获取和计算方式无误。
+  3. 检查目前的可视化模块代码是否能正确读取和处理simulator生成的数据，如有问题，修复。
+  4. 如果目前的可视化模块代码缺乏处理数据的函数，在main文件中新建可视化函数，并完善。
   5. 保持代码风格一致，不要添加注释。
   6. 只返回最小必要修改，无问题返回OK。
 
@@ -242,8 +242,10 @@ refine_visualization_code_prompt: |
   【输出格式】
   无问题返回：OK
   
-  有问题返回：
+  有问题返回（请根据需要修改的文件返回对应的JSON块）：
+
   ```json
+  # === MAIN FILE ===
   {{
     "functions": [
       {{
@@ -252,14 +254,29 @@ refine_visualization_code_prompt: |
         "description": "修改说明"
       }}
     ],
-    "delete_functions": ["不需要的函数名1", "不需要的方法名2"]
+    "delete_functions": ["不需要的函数名1", "不需要的函数名2"]
+  }}
+  ```
+
+  ```json
+  # === SIMULATOR FILE ===
+  {{
+    "methods": [
+      {{
+        "method_name": "方法名",
+        "method_code": "完整的方法代码（从def/async def开始）",
+        "description": "修改说明"
+      }}
+    ],
+    "delete_methods": ["不需要的方法名1", "不需要的方法名2"]
   }}
   ```
 
   注意：
-  - function_name 必须是纯函数名（如：plot_rebellions_over_time），不要包含 def、括号等
-  - function_code 是完整的函数代码
-  - delete_functions 是可选字段，用于删除不需要的函数
+  - function_name/method_name 必须是纯名称，不要包含 def、括号等
+  - function_code/method_code 是完整的代码
+  - delete_functions/delete_methods 是可选字段
+  - 只返回需要修改的文件的JSON块
 
 # 检查并修复main代码（增量修改版）
 check_and_fix_main_prompt: |

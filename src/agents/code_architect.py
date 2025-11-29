@@ -977,11 +977,11 @@ class CodeArchitectAgent(BaseAgent):
 
 	async def refine_visualization_code(self, visualization_dir, simulator_file_path, main_file_path, description_md):
 		"""
-		完善数据可视化相关代码
-		输入：plot_results.py内容 + simulator文件内容 + main文件内容
-		输出：完善后的plot_results.py文件路径
+		完善数据保存和可视化相关代码
+		输入：simulator文件内容 + main文件内容
+		输出：是否修改成功
 		"""
-		self.logger.info("=== 步骤3.1: 完善数据可视化代码 ===")
+		self.logger.info("=== 步骤5: 完善数据可视化代码 ===")
 
 		# 读取plot_results.py内容
 		if not os.path.exists(visualization_dir):
@@ -1016,16 +1016,13 @@ class CodeArchitectAgent(BaseAgent):
 		response = await self.generate_llm_response(prompt)
 		if not response:
 			self.logger.error("LLM返回空响应，无法完善可视化代码")
-			return None
-
-		# 应用修改
-		if self._apply_code_changes(main_file_path, response, "main"):
-			self.logger.info(f"✓ 已保存完善后的Main文件: {main_file_path}")
-			self._wait_for_user_confirmation("完善数据可视化代码")
-			return main_file_path
-		else:
-			self.logger.error("应用可视化代码修改失败")
-			return None
+		if response.lower() == 'ok':
+			self.logger.info("✓ 可视化代码已完善，无需修改")
+			return True
+		if self._apply_runtime_fix(response, main_file_path, simulator_file_path):
+			self.logger.info(f"✓ 数据保存与可视化代码修复完成")
+			return True
+		return False
 		
 	async def refine_main_functions(self, main_file_path, simulator_file_path, description_md, modules_config_yaml, main_skipped=False):
 		"""
@@ -1136,6 +1133,10 @@ class CodeArchitectAgent(BaseAgent):
 			api_docs=api_docs,
 			file_format=file_format
 		)
+		
+		# 特殊处理 simulation_config.yaml，强制设置小规模测试参数
+		if config_filename == 'simulation_config.yaml':
+			prompt += "\n\n重要提示：对于此初始配置，您必须将初始人口设置为 5，将模拟总时间（或时间步）设置为 1。这是为了进行小规模原型测试。"
 		
 		response = await self.generate_llm_response(prompt)
 		if not response:
@@ -1919,7 +1920,7 @@ class CodeArchitectAgent(BaseAgent):
 		"""
 		changes = []
 		# 备份原文件
-		backup_path = file_path + f'.backup_{int(time.time())}'
+		backup_path = file_path + f'.backup'
 		shutil.copy(file_path, backup_path)
 		with open(file_path, 'r', encoding='utf-8') as f:
 			original_content = f.read()

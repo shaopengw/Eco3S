@@ -8,12 +8,13 @@ class SimArchitectAgent(BaseAgent):
 	"""
 	模拟设计师Agent，继承BaseAgent，负责通过大模型分析需求、选择模块、生成设计文档和配置。
 	"""
-	def __init__(self, agent_id, output_dir, docs_dir, config_dir):
+	def __init__(self, agent_id, output_dir, docs_dir, config_dir, simulation_type):
 		super().__init__(agent_id, group_type='sim_architect', window_size=3)
 		self.output_dir = output_dir
 		self.docs_dir = docs_dir
 		self.config_dir = config_dir
 		self.logger = CustomLogger('sim_architect').logger
+		self.simulation_type = simulation_type
 		
 		# 加载提示词配置
 		prompts_path = os.path.join(os.path.dirname(__file__), 'sim_architect_prompts.yaml')
@@ -83,7 +84,10 @@ class SimArchitectAgent(BaseAgent):
 			user_feedback: 用户反馈意见（可选）
 		"""
 		# 读取模板文件
-		template_path = os.path.join(self.config_dir, 'description.md')
+		if self.simulation_type == 'decision':
+			template_path = os.path.join(self.config_dir, 'description.md')
+		else:
+			template_path = os.path.join(self.config_dir, 'description_optimization.md')
 		template_content = ""
 		if os.path.exists(template_path):
 			with open(template_path, 'r', encoding='utf-8') as f:
