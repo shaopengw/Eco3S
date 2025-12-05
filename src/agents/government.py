@@ -23,21 +23,31 @@ class OrdinaryGovernmentAgent(BaseAgent):
             function=self.function, faction=self.faction, personality=self.personality)
 
     def get_current_situation_prompt(self, maintain_employment_cost):
-        river_price = self.government.transport_economy.river_price
-        sea_price = self.government.transport_economy.sea_price
-        transport_task = self.government.transport_economy.transport_task
-        maintenance_cost_base = self.government.transport_economy.maintenance_cost_base
-        return self.government.prompts['get_current_situation_prompt'].format(
-            budget=self.government.get_budget(), military_strength=self.government.get_military_strength(), tax_rate=self.government.get_tax_rate()*100,
-            transport_task=transport_task, river_price=river_price, sea_price=sea_price, maintenance_cost_base=maintenance_cost_base,
-            maintain_employment_cost=maintain_employment_cost)
+        # 检查是否有运输经济模块
+        if self.government.transport_economy:
+            river_price = self.government.transport_economy.river_price
+            sea_price = self.government.transport_economy.sea_price
+            transport_task = self.government.transport_economy.transport_task
+            maintenance_cost_base = self.government.transport_economy.maintenance_cost_base
+            return self.government.prompts['get_current_situation_prompt'].format(
+                budget=self.government.get_budget(), military_strength=self.government.get_military_strength(), tax_rate=self.government.get_tax_rate()*100,
+                transport_task=transport_task, river_price=river_price, sea_price=sea_price, maintenance_cost_base=maintenance_cost_base,
+                maintain_employment_cost=maintain_employment_cost)
+        else:
+            # 没有运输经济模块时，使用简化版本
+            return self.government.prompts.get('get_current_situation_prompt_simple', 
+                "当前政府预算：{budget}，军事力量：{military_strength}，税率：{tax_rate}%，维持就业成本：{maintain_employment_cost}").format(
+                budget=self.government.get_budget(), 
+                military_strength=self.government.get_military_strength(), 
+                tax_rate=self.government.get_tax_rate()*100,
+                maintain_employment_cost=maintain_employment_cost)
 
     async def generate_opinion(self, salary):
         """
         生成一句关于政治决策的意见
         :return: 生成的意见内容
         """
-        maintain_employment_cost = salary * 0.07
+        maintain_employment_cost = salary * 0.05
         # 构建提示信息
         prompt = self.government.prompts['generate_opinion_prompt'].format(
             current_situation_prompt=self.get_current_situation_prompt(maintain_employment_cost))
@@ -60,7 +70,7 @@ class OrdinaryGovernmentAgent(BaseAgent):
         """
         从共享信息池中获取信息并发表看法，将看法放入共享信息池
         """
-        maintain_employment_cost = salary * 0.07
+        maintain_employment_cost = salary * 0.05
         # 获取最新讨论内容
         all_discussion = await self.shared_pool.get_all_discussions()
         if all_discussion:
@@ -114,24 +124,35 @@ class HighRankingGovernmentAgent(BaseAgent):
         # 政府和叛军的决策，只计算比例， 然后系统根据现有资源自动计算绝对值。这样避免LLM输出结果超过预算。
         current_budget = self.government.get_budget()
 
-        # 获取运输经济相关参数
-        river_price = self.government.transport_economy.river_price
-        sea_price = self.government.transport_economy.sea_price
-        transport_task = self.government.transport_economy.transport_task
-        maintenance_cost_base = self.government.transport_economy.maintenance_cost_base
-        
-        # 计算各项支出的成本基准
-        transport_cost_river = river_price * transport_task  # 全部河运成本
-        transport_cost_sea = sea_price * transport_task      # 全部海运成本
-        
         # 获取维持当前就业所需的资金
-        maintain_employment_cost = salary * 0.07
+        maintain_employment_cost = salary * 0.05
 
-        prompt = self.government.prompts['make_decision_prompt'].format(
-            current_budget=current_budget, military_strength=self.government.get_military_strength(),
-            tax_rate=self.government.get_tax_rate()*100, transport_task=transport_task, river_price=river_price,
-            sea_price=sea_price, maintenance_cost_base=maintenance_cost_base, maintain_employment_cost=maintain_employment_cost,
-            transport_cost_river=transport_cost_river, transport_cost_sea=transport_cost_sea, summary=summary)
+        # 检查是否有运输经济模块
+        if self.government.transport_economy:
+            # 获取运输经济相关参数
+            river_price = self.government.transport_economy.river_price
+            sea_price = self.government.transport_economy.sea_price
+            transport_task = self.government.transport_economy.transport_task
+            maintenance_cost_base = self.government.transport_economy.maintenance_cost_base
+            
+            # 计算各项支出的成本基准
+            transport_cost_river = river_price * transport_task  # 全部河运成本
+            transport_cost_sea = sea_price * transport_task      # 全部海运成本
+
+            prompt = self.government.prompts['make_decision_prompt'].format(
+                current_budget=current_budget, military_strength=self.government.get_military_strength(),
+                tax_rate=self.government.get_tax_rate()*100, transport_task=transport_task, river_price=river_price,
+                sea_price=sea_price, maintenance_cost_base=maintenance_cost_base, maintain_employment_cost=maintain_employment_cost,
+                transport_cost_river=transport_cost_river, transport_cost_sea=transport_cost_sea, summary=summary)
+        else:
+            # 没有运输经济模块时，使用简化版本
+            prompt = self.government.prompts.get('make_decision_prompt_simple',
+                "当前预算：{current_budget}，军事力量：{military_strength}，税率：{tax_rate}%，维持就业成本：{maintain_employment_cost}。\n讨论总结：{summary}\n请做出决策。").format(
+                current_budget=current_budget, 
+                military_strength=self.government.get_military_strength(),
+                tax_rate=self.government.get_tax_rate()*100, 
+                maintain_employment_cost=maintain_employment_cost, 
+                summary=summary)
         try:
             self.update_system_message()
             decision = await self.generate_llm_response(prompt)
@@ -174,7 +195,7 @@ class Government:
     def handle_public_budget(self, budget_allocation, salary, job_total_count,residents):
         """处理公共预算决策"""
         # 获取维持当前就业所需的资金
-        maintain_employment_cost = salary * 0.07
+        maintain_employment_cost = salary * 0.05
         if budget_allocation == 0:
             self.government_log.info(f"政府执行决策 - 公共预算决策：不分配公共预算。")
             return
@@ -253,11 +274,11 @@ class Government:
         :param budget_allocation: 分配给军事力量的预算
         """
         if self.budget >= budget_allocation and budget_allocation >= 20:
-            job_increase_amount = budget_allocation // 20
+            job_increase_amount = int(budget_allocation // 20)
             self.towns.add_jobs_across_towns(job_increase_amount,"官员及士兵")
             self.military_strength += job_increase_amount
             self.budget = max(0, self.budget - budget_allocation)
-            self.government_log.info(f"政府执行决策 - 政府军事拨款{budget_allocation}两，军事力量增加了 {job_increase_amount}。")
+            self.government_log.info(f"政府执行决策 - 政府军事拨款{budget_allocation:.2f}两，军事力量增加了 {job_increase_amount}。")
         else:
             self.government_log.info(f"政府执行决策 - 政府因预算限制未支持军事力量。")
 

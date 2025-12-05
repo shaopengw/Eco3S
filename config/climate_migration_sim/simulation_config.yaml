@@ -1,0 +1,351 @@
+# simulation_config.yaml - 多智能体模拟核心配置
+# 实验名称: climate_migration_sim
+# 实验目标: 研究气候变化对居民迁移行为的影响
+
+# ============================================================================
+# 数据路径配置
+# ============================================================================
+data:
+  climate_info_path: "experiment_dataset/climate_data/climate.csv"
+  government_info_path: "experiment_dataset/government_data/official_data.json"
+  government_prompt_path: "config/climate_migration_sim/government_prompts.yaml"
+  jobs_config_path: "config/climate_migration_sim/jobs_config.yaml"
+  message_config_path: "config/climate_migration_sim/message_config.yaml"
+  questionnaire_path: "config/climate_migration_sim/questionnaire.yaml"
+  rebellion_info_path: "experiment_dataset/rebellion_data/rebels_data.json"
+  rebels_prompt_path: "config/climate_migration_sim/rebels_prompts.yaml"
+  resident_info_path: "experiment_dataset/resident_data/resident_data.json"
+  resident_prompt_path: "config/climate_migration_sim/residents_prompts.yaml"
+  resident_actions_path: "config/climate_migration_sim/resident_actions.yaml"
+  towns_data_path: "config/climate_migration_sim/towns_data.json"
+
+# ============================================================================
+# 核心模拟参数
+# ============================================================================
+simulation:
+  # 基础配置
+  name: "climate_migration_sim"
+  description: "研究气候变化对居民迁移行为的影响"
+  
+  # 时间配置（原型测试）
+  start_year: 2024  # 模拟开始年份
+  total_years: 1  # 原型测试：1年
+  
+  # 人口配置（原型测试）
+  initial_population: 5  # 原型测试：5人
+  birth_rate: 0.05  # 出生率 5%
+  
+  # 地图设置
+  map_width: 100  # 地图宽度
+  map_height: 100  # 地图高度
+  
+  # 城镇配置
+  town_count: 5  # 城镇数量
+  town_distribution: "沿河分布"  # 空间特征
+  average_town_distance: 100  # 城镇间平均距离(km)
+  
+  # 群体决策配置
+  group_decision:
+    government:
+      enabled: 1  # 启用政府系统
+      max_rounds: 2  # 最大讨论轮数
+    rebellion:
+      enabled: 1  # 启用叛军系统
+      max_rounds: 2
+  
+  # 行为参数
+  response_probability: 0.5  # 响应概率
+  max_retry_attempts: 3  # 最大重试次数
+  retry_delay: 1  # 重试延迟（秒）
+  
+  # 可选参数
+  resume_from_cache: 0  # 不从缓存恢复
+  simulation_name: "climate_migration_sim"
+  message_type: "S"  # 信息传播类型
+  seed_count: 1  # 种子数量
+  random_seed: 42  # 随机种子
+
+# ============================================================================
+# 模块参数配置
+# ============================================================================
+module_parameters:
+  
+  # --------------------------------------------------------------------------
+  # 居民系统参数
+  # --------------------------------------------------------------------------
+  resident:
+    # 基础生活参数
+    basic_living_cost: 8  # 基础生活成本（单位/月）
+    initial_satisfaction: 70  # 初始满意度（0-100）
+    
+    # 健康与寿命
+    health_index_range: [0.3, 1.0]  # 健康指数范围
+    lifespan_range: [60, 90]  # 寿命范围（年）
+    
+    # 核心行为
+    core_behaviors:
+      - "就业"
+      - "迁移"
+      - "决策"
+    
+    # 关键属性
+    key_attributes:
+      - "健康指数"
+      - "满意度"
+      - "收入"
+    
+    # 迁移决策参数
+    migration_threshold: 50  # 迁移决策阈值（满意度<50时考虑迁移）
+    climate_impact_weight: 0.4  # 气候影响权重
+    economic_impact_weight: 0.35  # 经济影响权重
+    social_impact_weight: 0.25  # 社会影响权重
+  
+  # --------------------------------------------------------------------------
+  # 就业市场参数
+  # --------------------------------------------------------------------------
+  job_market:
+    # 职业类型配置
+    job_types: ["农业型", "工业型", "商业型"]
+    
+    # 基础薪资（单位/月）
+    base_salary:
+      农业型: 2000
+      工业型: 3000
+      商业型: 4000
+    
+    # 职业分布（各类型占比）
+    job_distribution:
+      农业型: 0.3
+      工业型: 0.4
+      商业型: 0.3
+    
+    # 就业市场状态
+    unemployment_rate: 0.05  # 失业率 5%
+    job_creation_rate: 0.02  # 职位创建率
+  
+  # --------------------------------------------------------------------------
+  # 社交网络参数
+  # --------------------------------------------------------------------------
+  social_network:
+    network_density: 0.3  # 网络密度
+    information_spread_rate: 0.6  # 信息传播概率
+    max_connections: 10  # 最大连接数
+    group_interaction_threshold: 0.5  # 群体互动阈值
+    
+    # 网络类型
+    network_type: "small_world"  # 小世界网络
+    
+    # 社交互动
+    interaction_frequency: 0.8  # 互动频率
+  
+  # --------------------------------------------------------------------------
+  # 城镇系统参数
+  # --------------------------------------------------------------------------
+  towns:
+    count: 5  # 城镇数量
+    types: ["农业型", "工业型", "商业型"]  # 城镇类型
+    spatial_distribution: "沿河分布"  # 空间分布特征
+    
+    # 资源配置
+    initial_resources: 1000  # 每个城镇初始资源（单位）
+    resource_distribution: "均匀分布"  # 资源分布模式
+    
+    # 城镇特征
+    town_characteristics:
+      农业型:
+        resource_type: "农业资源"
+        base_productivity: 1.0
+        climate_sensitivity: 0.8  # 气候敏感度高
+      工业型:
+        resource_type: "工业资源"
+        base_productivity: 1.5
+        climate_sensitivity: 0.3
+      商业型:
+        resource_type: "商业资源"
+        base_productivity: 1.2
+        climate_sensitivity: 0.4
+  
+  # --------------------------------------------------------------------------
+  # 地图系统参数
+  # --------------------------------------------------------------------------
+  map:
+    width: 100  # 地图宽度
+    height: 100  # 地图高度
+    max_connection_distance: 100  # 最大连接距离（km）
+    location_sigma: 2.0  # 位置生成标准差
+    navigability: 0.8  # 通航能力
+    
+    # 地形参数
+    terrain_ruggedness: 0.3  # 地形崎岖度
+    
+    # 运河系统
+    river_system:
+      enabled: true  # 启用运河系统
+      initial_navigability: 0.8
+      maintenance_decay_rate: 0.02  # 年衰减率
+  
+  # --------------------------------------------------------------------------
+  # 气候系统参数
+  # --------------------------------------------------------------------------
+  climate:
+    # 变化模式
+    change_pattern: "逐步变暖"  # 气候变化模式
+    warming_rate: 0.01  # 年升温幅度（度）
+    
+    # 极端事件
+    extreme_events:
+      enabled: true
+      event_types:
+        - "洪水"
+        - "干旱"
+        - "极端高温"
+      
+      # 事件概率（年）
+      flood_probability: 0.1  # 洪水概率 10%
+      drought_probability: 0.15  # 干旱概率 15%
+      heatwave_probability: 0.12  # 极端高温概率 12%
+    
+    # 气候影响
+    climate_impact:
+      on_agriculture: 0.7  # 对农业影响系数
+      on_industry: 0.2  # 对工业影响系数
+      on_health: 0.5  # 对健康影响系数
+      on_migration: 0.6  # 对迁移决策影响系数
+  
+  # --------------------------------------------------------------------------
+  # 经济系统参数
+  # --------------------------------------------------------------------------
+  economy:
+    # GDP配置
+    initial_gdp: 10000  # 初始GDP（单位）
+    gdp_growth_rate: 0.03  # 基础GDP增长率 3%
+    
+    # 税收系统
+    tax_rate_range: [0.05, 0.20]  # 税率范围 5%-20%
+    default_tax_rate: 0.10  # 默认税率 10%
+    
+    # 成本参数
+    transport_cost_coefficient: 0.1  # 交通成本系数
+    living_cost_adjustment: 1.0  # 生活成本调整系数
+    
+    # 经济周期
+    economic_cycle:
+      enabled: false  # 不启用经济周期（简化模型）
+  
+  # --------------------------------------------------------------------------
+  # 政府系统参数
+  # --------------------------------------------------------------------------
+  government:
+    # 政策工具
+    policy_tools:
+      - "税收政策"
+      - "基础设施投资"
+      - "社会福利"
+      - "气候适应政策"
+    
+    # 预算配置
+    initial_budget: 1000  # 初始预算
+    budget_allocation:
+      infrastructure: 0.4  # 基础设施 40%
+      welfare: 0.3  # 社会福利 30%
+      climate_adaptation: 0.2  # 气候适应 20%
+      reserve: 0.1  # 储备 10%
+    
+    # 决策参数
+    decision_frequency: "yearly"  # 决策频率：每年
+    response_threshold: 0.6  # 响应阈值
+  
+  # --------------------------------------------------------------------------
+  # 人口系统参数
+  # --------------------------------------------------------------------------
+  population:
+    initial_population: 5  # 初始人口（原型测试）
+    target_population: 1000  # 目标人口（完整模拟）
+    
+    # 人口动态
+    birth_rate: 0.05  # 出生率 5%
+    death_rate: 0.01  # 死亡率 1%
+    
+    # 满意度影响
+    satisfaction_impact:
+      high_threshold: 80  # 高满意度阈值
+      low_threshold: 50  # 低满意度阈值
+      birth_rate_adjustment: [0.002, -0.001]  # [高/低]满意度调整
+
+# ============================================================================
+# 数据收集配置
+# ============================================================================
+data_collection:
+  enabled: true  # 启用数据收集
+  
+  # 关键指标
+  metrics:
+    - name: "population"
+      display_name: "人口总量"
+      description: "总人口数量"
+    
+    - name: "average_satisfaction"
+      display_name: "平均满意度"
+      description: "居民平均满意度（0-100）"
+    
+    - name: "gdp"
+      display_name: "GDP"
+      description: "国内生产总值"
+    
+    - name: "unemployment_rate"
+      display_name: "失业率"
+      description: "失业人口占比"
+    
+    - name: "resident_migration_rate"
+      display_name: "居民迁移率"
+      description: "发生迁移的居民占比"
+    
+    - name: "social_stability_index"
+      display_name: "社会稳定性指数"
+      description: "综合社会稳定性评估（0-100）"
+    
+    - name: "climate_temperature"
+      display_name: "气候温度"
+      description: "当前平均温度"
+    
+    - name: "extreme_event_count"
+      display_name: "极端事件次数"
+      description: "当年发生的极端气候事件数量"
+  
+  # 收集配置
+  frequency: "yearly"  # 收集频率：每年
+  output_format: "csv"  # 输出格式
+  output_directory: "output/climate_migration_sim"  # 输出目录
+  
+  # 详细记录
+  detailed_logging:
+    enabled: true
+    log_level: "INFO"
+    log_migration_events: true  # 记录迁移事件
+    log_climate_events: true  # 记录气候事件
+    log_policy_decisions: true  # 记录政策决策
+
+# ============================================================================
+# 实验假设与预期
+# ============================================================================
+experiment:
+  hypothesis: "气候变化将导致居民迁移率增加"
+  
+  expected_findings:
+    - "随着气候变暖，居民迁出率将增加"
+    - "人口分布将发生显著变化"
+    - "气候敏感型城镇（农业型）人口流失更严重"
+  
+  limitations:
+    - "本模拟忽略了其他社会因素对居民迁移行为的影响"
+    - "简化了经济系统的复杂性"
+
+# ============================================================================
+# 配置元信息
+# ============================================================================
+meta:
+  version: "1.0.0"
+  created_date: "2024"
+  last_modified: "2024"
+  author: "Climate Migration Simulation Team"
+  notes: "初始配置用于原型测试，人口=5，时间步=1"

@@ -118,6 +118,7 @@ class Simulator:
             )
             await self.integrate_new_residents(new_residents)
             self.population.birth(new_count)
+            print(f"新加入{new_count}名居民")
 
             # 收集政府和叛军的决策（每年）
             government_decision = None
@@ -129,7 +130,7 @@ class Simulator:
                 'ordinary_type': OrdinaryGovernmentAgent,
                 'leader_type': HighRankingGovernmentAgent,
             }
-            # government_decision = await self.collect_group_decision('government', government_config)
+            government_decision = await self.collect_group_decision('government', government_config)
             
             # 收集叛军决策
             rebellion_config = {
@@ -137,7 +138,7 @@ class Simulator:
                 'ordinary_type': OrdinaryRebel,
                 'leader_type': RebelLeader,
             }
-            # rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
+            rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
             
             # 统一执行决策
             if government_decision:
@@ -155,10 +156,10 @@ class Simulator:
                 resident = self.residents[resident_name]
                 tax_rate = self.government.get_tax_rate()
                 # 基于LLM的决策--测试时建议暂时注释
-                # if resident.job == "叛军":
-                #     tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
-                # else:
-                #     tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost))
+                if resident.job == "叛军":
+                    tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
+                else:
+                    tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost))
 
                 # 更新居民寿命（每年）
                 if resident.update_resident_status(self.basic_living_cost):
@@ -172,6 +173,7 @@ class Simulator:
                 
                 # 处理返回的结果
                 residents_list = list(self.residents.values())  # 获取当前的居民列表
+                job_request_count = 0
                 for i, result in enumerate(results):
                     if i >= len(residents_list):  # 安全检查
                         break
@@ -179,6 +181,7 @@ class Simulator:
                     if isinstance(result, dict) and "town" in result:
                         # 处理求职请求
                         town_job_requests[result["town"]].append(result)
+                        job_request_count += 1
                     elif isinstance(result, tuple) and len(result) == 4:
                         # 处理带有发言的决策结果
                         select, reason, speech, relation_type = result
@@ -194,15 +197,19 @@ class Simulator:
                         # 执行决策
                         await resident.execute_decision(select)
                 
+                if job_request_count > 0:
+                    print(f"\n收集到 {job_request_count} 个求职请求")
+                
                 # 并发执行所有发言传播任务
                 if speech_tasks:
                     await asyncio.gather(*speech_tasks)
             
             # 处理所有城镇的求职信息
             if town_job_requests:
+                print(f"\n开始处理 {len(town_job_requests)} 个城镇的求职请求")
                 hiring_results = self.towns.process_town_job_requests(town_job_requests)
-                # for town_name, hired_residents in hiring_results.items():
-                #     print(f"城镇 {town_name} 目前录用了 {len(hired_residents)} 名居民")
+            else:
+                print("\n本轮无求职请求")
             
             # # 打印每个城镇的求职信息统计--测试用
             # for town, requests in town_job_requests.items():
@@ -406,9 +413,58 @@ class Simulator:
             
             # 政府决策处理
             if group_type == "government":
-                # 获取决策键并随机打乱顺序
-                decision_keys = list(decision_data.keys())
-                random.shuffle(decision_keys)
+                # 获取当前预算
+                current_budget = self.government.get_budget()
+
+                # 从决策数据中提取各项支出
+                public_budget = decision_data.get("public_budget", 0)
+                maintenance_investment = decision_data.get("maintenance_investment", 0)
+                military_support = decision_data.get("military_support", 0)
+                transport_ratio = decision_data.get("transport_ratio", 0)
+
+                # 计算运输成本
+                transport_task = self.transport_economy.transport_task
+                river_price = self.transport_economy.river_price
+                sea_price = self.transport_economy.sea_price
+                transport_cost = transport_task * (river_price * transport_ratio + sea_price * (1 - transport_ratio))
+                print(f"运输成本: {transport_cost:.2f} = {transport_task:.2f} * ({river_price:.2f} * {transport_ratio:.2f} + {sea_price:.2f} * (1 - {transport_ratio:.2f}))")
+                # 计算计划总支出
+                total_planned_expenditure = public_budget + maintenance_investment + military_support + transport_cost
+                print(f"计划总支出: {total_planned_expenditure:.2f} = {public_budget:.2f} + {maintenance_investment:.2f} + {military_support:.2f} + {transport_cost:.2f}")
+                # 如果计划总支出超过预算，则按比例缩减
+                if total_planned_expenditure > current_budget:
+                    # 计算可用于非运输支出的预算
+                    available_budget_for_others = current_budget - transport_cost
+                    
+                    # 计算非运输部分的总计划支出
+                    total_other_expenditure = public_budget + maintenance_investment + military_support
+                    
+                    if total_other_expenditure > 0 and available_budget_for_others > 0:
+                        scaling_factor = available_budget_for_others / total_other_expenditure
+                        
+                        # 按比例缩减各项支出
+                        decision_data["public_budget"] = public_budget * scaling_factor
+                        decision_data["maintenance_investment"] = maintenance_investment * scaling_factor
+                        decision_data["military_support"] = military_support * scaling_factor
+                        print(f"按比例缩减后，公共预算: {decision_data['public_budget']:.2f}")
+                        print(f"按比例缩减后，维护投资: {decision_data['maintenance_investment']:.2f}")
+                        print(f"按比例缩减后，军事支持: {decision_data['military_support']:.2f}")
+                        print(f"预算不足，按比例缩减开支。缩放比例: {scaling_factor:.2f}")
+                else:
+                    print(f"预算充足，无需缩减。当前预算: {current_budget:.2f}，计划支出: {total_planned_expenditure:.2f}")
+
+                # 获取决策键并固定执行顺序（transport_ratio最后执行，因为它有内部预算自适应）
+                decision_keys = []
+                # 优先执行非transport的支出
+                for key in ["public_budget", "maintenance_investment", "military_support"]:
+                    if key in decision_data:
+                        decision_keys.append(key)
+                # transport_ratio放到最后（有自适应能力）
+                if "transport_ratio" in decision_data:
+                    decision_keys.append("transport_ratio")
+                # tax_adjustment不消耗预算，可以随时执行
+                if "tax_adjustment" in decision_data:
+                    decision_keys.append("tax_adjustment")
 
                 # 按随机顺序处理政府决策
                 for key in decision_keys:
@@ -456,9 +512,10 @@ class Simulator:
 
     def save_results(self, filename=None, append=False):
         """
-        保存模拟结果到CSV文件
-        :param filename: 文件名
-        :param append: 是否追加模式，用于增量更新
+        保存模拟结果到CSV文件。
+        为了确保数据完整性，此函数将始终写入完整的模拟结果，覆盖现有文件。
+        :param filename: 文件名。如果为None，将自动生成带时间戳的文件名。
+        :param append: 此参数当前被忽略，始终执行覆盖写入。
         """
         
         # 使用 SimulationContext 获取数据目录
@@ -472,22 +529,13 @@ class Simulator:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = os.path.join(data_dir, f"running_data_{timestamp}.csv")
         
-        if append:
-            # 创建一个字典，包含每个指标的最新数据点
-            last_row_data = {key: [value[-1]] for key, value in self.results.items() if value}
-            df = pd.DataFrame(last_row_data)
-        else:
-            df = pd.DataFrame(self.results)
+        # 始终从完整的 self.results 创建 DataFrame
+        df = pd.DataFrame(self.results)
         
-        if append and os.path.exists(filename):
-            # 追加模式，不写入表头
-            df.to_csv(filename, mode='a', header=False, index=False)
-        else:
-            # 新文件或覆盖模式
-            df.to_csv(filename, index=False)
+        # 始终使用覆盖模式写入，以保证数据的完整性
+        df.to_csv(filename, index=False)
         
-        if not append:
-            print(f"模拟结果已保存至 {filename}")
+        print(f"模拟结果已完整保存至 {filename}")
 
     async def integrate_new_residents(self, new_residents):
         """将新居民整合到系统中"""

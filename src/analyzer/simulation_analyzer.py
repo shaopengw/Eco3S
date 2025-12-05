@@ -90,10 +90,10 @@ class SimulationAnalyzer:
             current_y = int(y_match.group(1)) if y_match else None
             
             if self.p_value is not None and current_p != self.p_value:
-                print(f"跳过文件夹 {dir_name}: p值不匹配 (期望: {self.p_value}, 实际: {current_p})")
+                # print(f"跳过文件夹 {dir_name}: p值不匹配 (期望: {self.p_value}, 实际: {current_p})")
                 continue
             if self.y_value is not None and current_y != self.y_value:
-                print(f"跳过文件夹 {dir_name}: y值不匹配 (期望: {self.y_value}, 实际: {current_y})")
+                # print(f"跳过文件夹 {dir_name}: y值不匹配 (期望: {self.y_value}, 实际: {current_y})")
                 continue
                 
             # 查找运行数据文件 (支持json和csv)

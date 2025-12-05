@@ -10,15 +10,15 @@ decide_action_prompt_employed: |
   {job_market_info}
   你可以选择以下行动之一：
   1. 加入叛军（可以勉强维生但有风险）
-  2. 迁徙至他地（有生存风险，会失去当前工作，需重新谋生，不能连续选择）
-  3. 继续目前的工作
+  2. 迁徙至他地（有生存风险，会失去当前工作，且税率不变，谨慎选择）
+  3. 继续目前的生活工作
 
 decide_action_prompt_unemployed: |
   {tax_rate_message}
   {job_market_info}
   你可以选择以下行动之一：
   1. 加入叛军（可以勉强维生但有风险）
-  2. 迁徙至他地（有生存风险，不能连续选择）
+  2. 迁徙至他地（有生存风险，且税率不变，谨慎选择）
   3. 寻找工作
 
 decide_action_json: |

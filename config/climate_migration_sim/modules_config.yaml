@@ -1,0 +1,116 @@
+# 模块配置
+selected_modules:
+  # 必选模块
+  - module_name: "time"
+    display_name: "时间系统"
+    api_doc: "time.md"
+    required: true
+      
+  - module_name: "map"
+    display_name: "地图系统"
+    api_doc: "map.md"
+    required: true
+      
+  - module_name: "population"
+    display_name: "人口系统"
+    api_doc: "population.md"
+    required: true
+      
+  - module_name: "resident"
+    display_name: "居民系统"
+    api_doc: "resident.md"
+    config_files: "resident_actions.yaml, residents_prompts.yaml"
+    required: true
+      
+  - module_name: "towns"
+    display_name: "城镇系统"
+    api_doc: "towns.md"
+    config_files: "towns_data.json"
+    required: true
+    
+  - module_name: "job_market"
+    display_name: "就业市场"
+    api_doc: "job_market.md"
+    config_files: "jobs_config.yaml"
+    required: true
+      
+  - module_name: "social_network"
+    display_name: "社交网络"
+    api_doc: "social_network.md"
+    required: true
+      
+  - module_name: "government"
+    display_name: "政府系统"
+    api_doc: "government.md"
+    config_files: "government_prompts.yaml"
+    required: true
+      
+  - module_name: "rebels"
+    display_name: "叛军系统"
+    api_doc: "rebels.md"
+    config_files: "rebels_prompts.yaml"
+    required: true
+  
+  - module_name: "climate"
+    display_name: "气候系统"
+    api_doc: "climate.md"
+    required: true
+
+# 实验基础配置
+simulation:
+  name: "climate_migration_sim"
+  description: "研究气候变化对居民迁移行为的影响"
+  total_years: 100
+  initial_population: 1000
+  random_seed: 42
+
+# 模块参数配置
+module_parameters:
+  # 居民系统参数
+  resident:
+    basic_living_cost: 8
+    initial_satisfaction: 70
+    health_index_range: [0.3, 1.0]
+    lifespan_range: [60, 90]
+    
+  # 就业市场参数
+  job_market:
+    job_types: ["农业型", "工业型", "商业型"]
+    base_salary:
+      农业型: 2000
+      工业型: 3000
+      商业型: 4000
+    unemployment_rate: 0.05
+    
+  # 社交网络参数
+  social_network:
+    network_density: 0.3
+    information_spread_rate: 0.6
+    max_connections: 10
+    
+  # 城镇系统参数
+  towns:
+    count: 5
+    types: ["沿河"]
+    initial_resources: 1000
+    
+  # 地图系统参数
+  map:
+    width: 100
+    height: 100
+    max_connection_distance: 100
+    location_sigma: 2.0
+    navigability: 0.8
+    
+# 数据收集配置
+data_collection:
+  enabled: true
+  metrics:
+    - population
+    - average_satisfaction
+    - GDP
+    - unemployment_rate
+    - resident_migration_rate
+    - social_stability_index
+  frequency: "yearly"
+  output_format: "csv"

@@ -53,18 +53,18 @@ selected_modules:
     display_name: "政府系统"
     api_doc: "government.md"
     config_files: "government_prompts.yaml"
-    required: false
+    required: true
       
   - module_name: "rebels"
     display_name: "叛军系统"
     api_doc: "rebels.md"
     config_files: "rebels_prompts.yaml"
-    required: false
+    required: true
   
   - module_name: "climate"
     display_name: "气候系统"
     api_doc: "climate.md"
-    required: false
+    required: true
 
 # 实验基础配置
 simulation:
@@ -149,7 +149,6 @@ data_collection:
     - employment_rate
   frequency: "yearly"
   output_format: "csv"
-  save_path: "experiment_dataset/"
 
 # 分析与可视化配置
 analysis:

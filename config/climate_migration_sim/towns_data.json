@@ -1,0 +1,88 @@
+{
+  "map_boundaries": {
+    "min_longitude": 113.0,
+    "max_longitude": 118.0,
+    "min_latitude": 28.0,
+    "max_latitude": 32.0
+  },
+  "canals": [
+    {
+      "name": "主运河",
+      "towns": [
+        {
+          "name": "河源镇",
+          "longitude": 113.5,
+          "latitude": 31.5,
+          "type": "农业型",
+          "initial_resources": 1000,
+          "initial_gdp": 2000
+        },
+        {
+          "name": "河心镇",
+          "longitude": 115.0,
+          "latitude": 30.5,
+          "type": "工业型",
+          "initial_resources": 1000,
+          "initial_gdp": 3000
+        },
+        {
+          "name": "河湾镇",
+          "longitude": 116.5,
+          "latitude": 29.5,
+          "type": "商业型",
+          "initial_resources": 1000,
+          "initial_gdp": 2500
+        },
+        {
+          "name": "河口镇",
+          "longitude": 117.5,
+          "latitude": 28.5,
+          "type": "农业型",
+          "initial_resources": 1000,
+          "initial_gdp": 1800
+        },
+        {
+          "name": "河畔镇",
+          "longitude": 114.0,
+          "latitude": 31.0,
+          "type": "工业型",
+          "initial_resources": 1000,
+          "initial_gdp": 2700
+        }
+      ]
+    }
+  ],
+  "other_towns": [],
+  "town_metadata": {
+    "total_count": 5,
+    "distribution_pattern": "沿河分布",
+    "average_distance_km": 100,
+    "climate_exposure": "高",
+    "economic_connectivity": "运河网络"
+  },
+  "initial_conditions": {
+    "total_gdp": 10000,
+    "total_resources": 5000,
+    "total_population": 1000,
+    "base_living_cost": 8,
+    "tax_rate_range": [0.05, 0.20],
+    "transport_cost_coefficient": 0.1
+  },
+  "climate_settings": {
+    "change_pattern": "逐步变暖",
+    "annual_temperature_increase": 0.01,
+    "extreme_events": ["洪水", "干旱", "极端高温"],
+    "initial_navigability": 0.8
+  },
+  "simulation_parameters": {
+    "social_network_density": 0.3,
+    "info_propagation_probability": 0.6,
+    "group_interaction_threshold": 0.5,
+    "migration_decision_factors": [
+      "climate_impact",
+      "satisfaction_level",
+      "employment_status",
+      "social_connections"
+    ]
+  }
+}

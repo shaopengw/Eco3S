@@ -52,16 +52,11 @@ async def main():
     
     # 3. 初始化项目管理师
     print("初始化项目管理师...")
-    workspace_dir = os.path.join(os.path.dirname(__file__), 'history')
     docs_dir = os.path.join(os.path.dirname(__file__), 'docs')
     config_template_dir = os.path.join(os.path.dirname(__file__), 'config', 'template')
     
-    # 确保目录存在
-    os.makedirs(workspace_dir, exist_ok=True)
-    
     project_master = ProjectMasterAgent(
         agent_id='project_master_001',
-        workspace_dir=workspace_dir,
         docs_dir=docs_dir,
         config_template_dir=config_template_dir
     )
@@ -179,7 +174,7 @@ async def main():
                 print(f"1. 配置文件: config/{simulation_name}/")
                 print(f"2. 入口文件: entrypoints/main_{simulation_name}.py")
                 print(f"3. 模拟器: src/simulation/simulator_{simulation_name}.py")
-                print(f"4. 实验数据: experiment_dataset/{simulation_name}/")
+                print(f"4. 实验数据: history/{simulation_name}/")
                 print("=" * 80)
                 print()
         

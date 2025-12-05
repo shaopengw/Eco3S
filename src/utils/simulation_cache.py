@@ -298,14 +298,22 @@ class SimulationCache:
                     if isinstance(residents_data, tuple) and len(residents_data) > 0:
                         residents_data = residents_data[0]
                     if isinstance(residents_data, list):
+                        # 预加载配置文件
+                        import yaml
+                        with open(config["data"]["resident_prompt_path"], 'r', encoding='utf-8') as file:
+                            prompts_resident = yaml.safe_load(file)
+                        with open(config["data"]["resident_actions_path"], 'r', encoding='utf-8') as file:
+                            actions_config = yaml.safe_load(file)
+                        
                         for res_state in residents_data:
                             resident = Resident(
                                 resident_id=res_state.get('resident_id'),
                                 job_market=None,  # 临时设为None，后续更新
                                 shared_pool=ResidentSharedInformationPool(),
                                 map=simulator.map,
-                                resident_prompt_path=simulator.config["data"]["resident_prompt_path"],
-                                resident_actions_path=simulator.config["data"]["resident_actions_path"],
+                                prompts_resident=prompts_resident,
+                                actions_config=actions_config,
+                                lightweight=True  # 使用轻量级初始化
                             )
                             # 初始化model_manager和model_backend
                             resident.model_manager = ModelManager()
@@ -361,7 +369,7 @@ class SimulationCache:
 
             # 重建城镇
             if 'towns' in state:
-                simulator.towns = Towns(simulator.map, simulator.population.get_population(), simulator.config["data"]["jobs_config_path"])
+                simulator.towns = Towns(simulator.map, simulator.population.get_population(), config["data"]["jobs_config_path"])
                 towns_state = state.get('towns')
                 if towns_state:
                     # 处理元组包裹的情况
@@ -378,7 +386,10 @@ class SimulationCache:
 
                             # 恢复就业市场
                             if town_data.get('job_market'):
-                                job_market = JobMarket(town_data['job_market'].get('town_type'))
+                                job_market = JobMarket(
+                                    town_type=town_data['job_market'].get('town_type'),
+                                    config_path=config["data"]["jobs_config_path"]
+                                )
                                 for job_type, info in town_data['job_market'].get('jobs_info', {}).items():
                                     job_market.jobs_info[job_type] = {
                                         'total': info.get('total'),
@@ -387,7 +398,10 @@ class SimulationCache:
                                     }
                                 simulator.towns.towns[town_name]['job_market'] = job_market
                             else:
-                                simulator.towns.towns[town_name]['job_market'] = JobMarket(town_data.get('info', {}).get('type', '非沿河'))
+                                simulator.towns.towns[town_name]['job_market'] = JobMarket(
+                                    town_type=town_data.get('info', {}).get('type', '非沿河'),
+                                    config_path=config["data"]["jobs_config_path"]
+                                )
                             
                             # 恢复居民关联
                             for resident_id, resident_data in town_data.get('residents', {}).items():
@@ -403,7 +417,7 @@ class SimulationCache:
                                         simulator.residents[resident_id].employed = True
                                         simulator.residents[resident_id].job = town_data['job_market']['jobs_info']['employed'][resident_id]
             else:
-                simulator.towns = Towns(simulator.map, simulator.population.get_population(), simulator.config["data"]["jobs_config_path"]) # Initialize towns even if not in cache
+                simulator.towns = Towns(simulator.map, simulator.population.get_population(), config["data"]["jobs_config_path"]) # Initialize towns even if not in cache
 
             # 恢复社交网络
             if 'social_network' in state:
@@ -437,7 +451,7 @@ class SimulationCache:
                         initial_budget=government_data.get('budget'),
                         time=simulator.time,
                         transport_economy=simulator.transport_economy,
-                        government_prompt_path=simulator.config["data"]["government_prompt_path"],
+                        government_prompt_path=config["data"]["government_prompt_path"],
                     )
                     simulator.government.tax_rate = government_data.get('tax_rate')
             else:
@@ -513,7 +527,7 @@ class SimulationCache:
                     initial_strength=rebellion_state.get('strength'),
                     initial_resources=rebellion_state.get('resources'),
                     towns=simulator.towns,
-                    rebels_prompt_path=simulator.config["data"]["rebels_prompt_path"],
+                    rebels_prompt_path=config["data"]["rebels_prompt_path"],
                 )
             else:
                 simulator.rebellion = None

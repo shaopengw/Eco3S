@@ -405,5 +405,472 @@ def analyze_data():
             'error': f'分析过程出错: {str(e)}'
         }), 500
 
+# ============ AI设计编码系统API ============
+
+# 存储AI系统运行状态
+ai_system_sessions = {}
+
+# 添加用户确认接口
+@app.route('/api/ai_system/confirm/<session_id>', methods=['POST'])
+def confirm_action(session_id):
+    """处理用户确认"""
+    if session_id not in ai_system_sessions:
+        return jsonify({'error': '会话不存在'}), 404
+    
+    data = request.json
+    session = ai_system_sessions[session_id]
+    
+    # 设置用户的确认响应
+    session['user_confirmation'] = data.get('confirmed', False)
+    session['user_input'] = data.get('input', '')
+    session['waiting_confirmation'] = False
+    
+    return jsonify({'message': '确认已接收'})
+
+@app.route('/ai_system/parse_requirement', methods=['POST'])
+def parse_requirement():
+    """解析用户需求"""
+    try:
+        data = request.json
+        requirement_text = data.get('requirement_text', '')
+        
+        if not requirement_text:
+            return jsonify({'error': '需求文本不能为空'}), 400
+        
+        # 创建会话ID
+        session_id = str(uuid.uuid4())
+        
+        # 初始化会话状态
+        ai_system_sessions[session_id] = {
+            'status': 'parsing',
+            'requirement_text': requirement_text,
+            'phase': 'parse',
+            'output_queue': queue.Queue(),
+            'start_time': datetime.now(),
+            'project_master': None,
+            'results': {},
+            'waiting_confirmation': False,
+            'confirmation_message': '',
+            'confirmation_type': '',  # 'yes_no', 'input', 'choice'
+            'confirmation_options': [],
+            'user_confirmation': None,
+            'user_input': ''
+        }
+        
+        # 在后台线程中运行解析
+        thread = threading.Thread(target=run_ai_system_parse, args=(session_id,))
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'session_id': session_id,
+            'status': 'parsing',
+            'message': '开始解析需求...'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'解析需求失败: {str(e)}'}), 500
+
+@app.route('/ai_system/run_design', methods=['POST'])
+def run_design_phase():
+    """运行设计阶段"""
+    try:
+        data = request.json
+        session_id = data.get('session_id')
+        user_feedback = data.get('user_feedback')
+        
+        if not session_id or session_id not in ai_system_sessions:
+            return jsonify({'error': '无效的会话ID'}), 400
+        
+        session = ai_system_sessions[session_id]
+        session['status'] = 'designing'
+        session['phase'] = 'design'
+        session['user_feedback'] = user_feedback
+        
+        # 在后台线程中运行设计阶段
+        thread = threading.Thread(target=run_ai_system_design, args=(session_id,))
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'session_id': session_id,
+            'status': 'designing',
+            'message': '开始设计阶段...'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'运行设计阶段失败: {str(e)}'}), 500
+
+@app.route('/ai_system/run_coding', methods=['POST'])
+def run_coding_phase():
+    """运行编码阶段"""
+    try:
+        data = request.json
+        session_id = data.get('session_id')
+        user_feedback = data.get('user_feedback')
+        
+        if not session_id or session_id not in ai_system_sessions:
+            return jsonify({'error': '无效的会话ID'}), 400
+        
+        session = ai_system_sessions[session_id]
+        session['status'] = 'coding'
+        session['phase'] = 'coding'
+        session['user_feedback'] = user_feedback
+        
+        # 在后台线程中运行编码阶段
+        thread = threading.Thread(target=run_ai_system_coding, args=(session_id,))
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'session_id': session_id,
+            'status': 'coding',
+            'message': '开始编码阶段...'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'运行编码阶段失败: {str(e)}'}), 500
+
+@app.route('/ai_system/run_simulation', methods=['POST'])
+def run_ai_system_simulation():
+    """运行模拟并评估"""
+    try:
+        data = request.json
+        session_id = data.get('session_id')
+        
+        if not session_id or session_id not in ai_system_sessions:
+            return jsonify({'error': '无效的会话ID'}), 400
+        
+        session = ai_system_sessions[session_id]
+        session['status'] = 'running_simulation'
+        session['phase'] = 'simulation'
+        
+        # 在后台线程中运行模拟
+        thread = threading.Thread(target=run_ai_system_full_simulation, args=(session_id,))
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'session_id': session_id,
+            'status': 'running_simulation',
+            'message': '开始运行模拟...'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'运行模拟失败: {str(e)}'}), 500
+
+@app.route('/ai_system/status/<session_id>')
+def get_ai_system_status(session_id):
+    """获取AI系统状态"""
+    if session_id not in ai_system_sessions:
+        return jsonify({'status': 'error', 'error': '会话不存在'}), 404
+    
+    session = ai_system_sessions[session_id]
+    output = []
+    
+    # 获取所有可用的输出
+    while not session['output_queue'].empty():
+        try:
+            line = session['output_queue'].get_nowait()
+            output.append(line)
+        except queue.Empty:
+            break
+    
+    response = {
+        'status': session['status'],
+        'phase': session['phase'],
+        'output': '\n'.join(output),
+        'results': session.get('results', {}),
+        'waiting_confirmation': session.get('waiting_confirmation', False),
+        'confirmation_message': session.get('confirmation_message', ''),
+        'confirmation_type': session.get('confirmation_type', ''),
+        'confirmation_options': session.get('confirmation_options', [])
+    }
+    
+    # 如果是完成状态，添加额外信息
+    if session['status'] in ['completed', 'error']:
+        if 'project_dir' in session.get('results', {}):
+            response['project_dir'] = session['results']['project_dir']
+        if 'config_dir' in session.get('results', {}):
+            response['config_dir'] = session['results']['config_dir']
+        if 'simulation_name' in session.get('results', {}):
+            response['simulation_name'] = session['results']['simulation_name']
+    
+    return jsonify(response)
+
+@app.route('/ai_system/list_projects')
+def list_projects():
+    """列出所有AI生成的项目"""
+    try:
+        project_root = os.path.join(BASE_DIR, '..')
+        config_base_dir = os.path.join(project_root, 'config')
+        
+        projects = []
+        if os.path.exists(config_base_dir):
+            for item in os.listdir(config_base_dir):
+                item_path = os.path.join(config_base_dir, item)
+                if os.path.isdir(item_path) and item != 'template':
+                    # 读取description.md获取项目信息
+                    desc_path = os.path.join(item_path, 'description.md')
+                    description = ''
+                    if os.path.exists(desc_path):
+                        with open(desc_path, 'r', encoding='utf-8') as f:
+                            description = f.read()[:200] + '...'
+                    
+                    projects.append({
+                        'name': item,
+                        'description': description,
+                        'config_path': f'config/{item}',
+                        'created_time': datetime.fromtimestamp(os.path.getctime(item_path)).strftime('%Y-%m-%d %H:%M:%S')
+                    })
+        
+        return jsonify({'projects': projects})
+        
+    except Exception as e:
+        return jsonify({'error': f'获取项目列表失败: {str(e)}'}), 500
+
+# AI系统后台运行函数
+
+class OutputCapture:
+    """捕获print输出到队列"""
+    def __init__(self, output_queue):
+        self.output_queue = output_queue
+        self.original_stdout = sys.stdout
+        
+    def write(self, text):
+        if text and text.strip():
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            self.output_queue.put(f'[{timestamp}] {text.rstrip()}')
+        # 同时输出到原始stdout
+        self.original_stdout.write(text)
+        
+    def flush(self):
+        self.original_stdout.flush()
+
+def run_ai_system_parse(session_id):
+    """后台运行需求解析"""
+    import asyncio
+    from src.agents.project_master import ProjectMasterAgent
+    
+    session = ai_system_sessions[session_id]
+    output_queue = session['output_queue']
+    
+    # 捕获stdout
+    output_capture = OutputCapture(output_queue)
+    old_stdout = sys.stdout
+    sys.stdout = output_capture
+    
+    try:
+        # 初始化ProjectMaster
+        project_root = os.path.join(BASE_DIR, '..')
+        docs_dir = os.path.join(project_root, 'docs')
+        config_template_dir = os.path.join(project_root, 'config', 'template')
+        
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 初始化项目管理器...')
+        
+        project_master = ProjectMasterAgent(
+            agent_id='project_master_web',
+            docs_dir=docs_dir,
+            config_template_dir=config_template_dir,
+            web_mode=True  # 启用Web模式
+        )
+        
+        session['project_master'] = project_master
+        
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 开始解析需求...')
+        
+        # 运行异步解析
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        requirement_dict = loop.run_until_complete(
+            project_master.parse_user_requirement(session['requirement_text'])
+        )
+        
+        if not requirement_dict:
+            raise Exception("需求解析失败")
+        
+        # 初始化项目
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 创建项目目录...')
+        simulation_name = requirement_dict.get('simulation_name', 'unnamed_simulation')
+        project_dir = loop.run_until_complete(
+            project_master.initialize_project(simulation_name)
+        )
+        
+        session['status'] = 'parsed'
+        session['results']['requirement_dict'] = requirement_dict
+        session['results']['simulation_name'] = simulation_name
+        session['results']['project_dir'] = project_dir
+        session['results']['config_dir'] = project_master.current_config_dir
+        
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✓ 需求解析完成')
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 模拟名称: {simulation_name}')
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 项目目录: {project_dir}')
+        
+    except Exception as e:
+        session['status'] = 'error'
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ❌ 错误: {str(e)}')
+    finally:
+        sys.stdout = old_stdout
+
+def run_ai_system_design(session_id):
+    """后台运行设计阶段"""
+    import asyncio
+    import traceback
+    
+    session = ai_system_sessions[session_id]
+    output_queue = session['output_queue']
+    project_master = session['project_master']
+    
+    # 捕获stdout
+    output_capture = OutputCapture(output_queue)
+    old_stdout = sys.stdout
+    sys.stdout = output_capture
+    
+    try:
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 开始设计阶段...')
+        
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 需求字典: {session["results"]["requirement_dict"]}')
+        
+        design_results = loop.run_until_complete(
+            project_master.run_design_phase(
+                session['results']['requirement_dict'],
+                user_feedback=session.get('user_feedback')
+            )
+        )
+        
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 设计阶段执行完成，处理结果...')
+        
+        session['status'] = 'design_completed'
+        session['results']['design_results'] = design_results
+        
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✓ 设计阶段完成')
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 已生成设计文档和模块配置')
+        
+    except Exception as e:
+        session['status'] = 'error'
+        error_msg = f'设计阶段错误: {str(e)}'
+        stack_trace = traceback.format_exc()
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ❌ {error_msg}')
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 错误堆栈:\n{stack_trace}')
+        print(f'设计阶段异常: {error_msg}\n{stack_trace}')  # 同时输出到控制台
+    finally:
+        sys.stdout = old_stdout
+
+def run_ai_system_coding(session_id):
+    """后台运行编码阶段"""
+    import asyncio
+    import traceback
+    
+    session = ai_system_sessions[session_id]
+    output_queue = session['output_queue']
+    project_master = session['project_master']
+    
+    # 捕获stdout
+    output_capture = OutputCapture(output_queue)
+    old_stdout = sys.stdout
+    sys.stdout = output_capture
+    
+    try:
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 开始编码阶段...')
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 正在初始化异步事件循环...')
+        
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 正在调用编码阶段...')
+        
+        coding_results = loop.run_until_complete(
+            project_master.run_coding_phase(
+                session['results']['design_results'],
+                user_feedback=session.get('user_feedback')
+            )
+        )
+        
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 编码阶段执行完成，处理结果...')
+        
+        session['status'] = 'coding_completed'
+        session['results']['coding_results'] = coding_results
+        
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✓ 编码阶段完成')
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 已生成所有代码和配置文件')
+        
+    except Exception as e:
+        session['status'] = 'error'
+        error_msg = f'编码阶段错误: {str(e)}'
+        stack_trace = traceback.format_exc()
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ❌ {error_msg}')
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 错误堆栈:\n{stack_trace}')
+        print(f'编码阶段异常: {error_msg}\n{stack_trace}')  # 同时输出到控制台
+    finally:
+        sys.stdout = old_stdout
+
+def run_ai_system_full_simulation(session_id):
+    """后台运行完整模拟和评估"""
+    import asyncio
+    import traceback
+    
+    session = ai_system_sessions[session_id]
+    output_queue = session['output_queue']
+    project_master = session['project_master']
+    
+    # 捕获stdout
+    output_capture = OutputCapture(output_queue)
+    old_stdout = sys.stdout
+    sys.stdout = output_capture
+    
+    try:
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 开始运行模拟...')
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 正在初始化异步事件循环...')
+        
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 正在执行模拟...')
+        
+        # 运行模拟
+        simulation_results = loop.run_until_complete(
+            project_master.run_simulation(
+                session['results']['coding_results'],
+                max_fix_attempts=3
+            )
+        )
+        
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 模拟执行完成，检查结果...')
+        
+        session['results']['simulation_results'] = simulation_results
+        
+        if simulation_results:
+            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✓ 模拟运行完成')
+            
+            # 运行评估
+            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 开始评估结果...')
+            
+            evaluation_results = loop.run_until_complete(
+                project_master.run_evaluation_and_optimization_phase(True)
+            )
+            
+            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 评估完成，更新状态...')
+            
+            session['results']['evaluation_results'] = evaluation_results
+            session['status'] = 'completed'
+            
+            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✓ 全流程完成')
+        else:
+            session['status'] = 'simulation_failed'
+            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ❌ 模拟运行失败')
+        
+    except Exception as e:
+        session['status'] = 'error'
+        error_msg = f'模拟运行错误: {str(e)}'
+        stack_trace = traceback.format_exc()
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ❌ {error_msg}')
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 错误堆栈:\n{stack_trace}')
+        print(f'模拟运行异常: {error_msg}\n{stack_trace}')  # 同时输出到控制台
+    finally:
+        sys.stdout = old_stdout
+
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

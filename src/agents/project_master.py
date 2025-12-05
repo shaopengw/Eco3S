@@ -4,14 +4,14 @@ from .shared_imports import *
 from .sim_architect import SimArchitectAgent
 from .code_architect import CodeArchitectAgent
 from .research_analyst import ResearchAnalystAgent
+from .mechanism_interpreter import MechanismInterpreterAgent
 
 class ProjectMasterAgent(BaseAgent):
     """
     项目管理师Agent，继承BaseAgent，负责协调整个实验流程，调用其他agent并进行质量控制。
     """
-    def __init__(self, agent_id, workspace_dir, docs_dir, config_template_dir):
+    def __init__(self, agent_id, docs_dir, config_template_dir, web_mode=False, session_callback=None):
         super().__init__(agent_id, group_type='project_master', window_size=5)
-        self.workspace_dir = workspace_dir
         self.docs_dir = docs_dir
         self.config_template_dir = config_template_dir
         self.current_project_dir = None
@@ -22,6 +22,7 @@ class ProjectMasterAgent(BaseAgent):
         
         # 子Agent实例（延迟初始化）
         self.code_architect = None
+        self.mechanism_interpreter = None
         
         # 加载提示词配置
         prompts_path = os.path.join(os.path.dirname(__file__), 'project_master_prompts.yaml')
@@ -141,22 +142,22 @@ class ProjectMasterAgent(BaseAgent):
         config_dir = os.path.join(project_root, 'config', simulation_name)
         os.makedirs(config_dir, exist_ok=True)
         
-        # 创建实验数据文件夹（在experiment_dataset下）
-        experiment_dir = os.path.join(self.workspace_dir, simulation_name)
-        os.makedirs(experiment_dir, exist_ok=True)
+        # 创建实验数据文件夹
+        history_dir = os.path.join(project_root, 'history', simulation_name)
+        os.makedirs(history_dir, exist_ok=True)
         
-        # 在experiment_dataset下创建子文件夹
+        # 在实验数据文件夹下创建子文件夹
         subdirs = ['results', 'logs']
         for subdir in subdirs:
-            os.makedirs(os.path.join(experiment_dir, subdir), exist_ok=True)
+            os.makedirs(os.path.join(history_dir, subdir), exist_ok=True)
         
-        self.current_project_dir = experiment_dir
+        self.current_project_dir = history_dir
         self.current_config_dir = config_dir
         self.current_simulation_name = simulation_name
         self.logger.info(f"配置文件夹已创建: {config_dir}")
-        self.logger.info(f"实验文件夹已创建: {experiment_dir}")
+        self.logger.info(f"实验文件夹已创建: {history_dir}")
         
-        return experiment_dir
+        return history_dir
 
     async def run_design_phase(self, requirement_dict, previous_version=None, user_feedback=None):
         """
@@ -750,45 +751,12 @@ class ProjectMasterAgent(BaseAgent):
                         print(f"\n{'='*60}")
                         print("原型测试（小规模）已完成！")
                         print(f"{'='*60}")
-                        user_input = input("是否进行大规模测试？(y/yes=进行, 其他=结束): ").strip().lower()
-                        
-                        if user_input in ['y', 'yes']:
-                            print("请输入大规模测试参数:")
-                            try:
-                                new_pop = int(input("人口数量 (默认300): ") or "300")
-                                new_steps = int(input("模拟时间步 (默认50): ") or "50")
-                                
-                                # Update config
-                                with open(config_path, 'r', encoding='utf-8') as f:
-                                    config_data = yaml.safe_load(f)
-                                
-                                # Update population
-                                if 'simulation' not in config_data: config_data['simulation'] = {}
-                                config_data['simulation']['initial_population'] = new_pop
-                                
-                                # Also update agents count if it exists
-                                if 'agents' in config_data and 'resident_agents' in config_data['agents']:
-                                     config_data['agents']['resident_agents']['count'] = new_pop
-
-                                # Update steps
-                                if 'simulation' not in config_data: config_data['simulation'] = {}
-                                if 'time' not in config_data['simulation']: config_data['simulation']['time'] = {}
-                                config_data['simulation']['time']['total_steps'] = new_steps
-                                config_data['simulation']['time']['total_years'] = new_steps
-                                
-                                with open(config_path, 'w', encoding='utf-8') as f:
-                                    yaml.dump(config_data, f, allow_unicode=True)
-                                
-                                self.logger.info(f"配置文件已更新: 人口={new_pop}, 时间步={new_steps}")
-                                self.logger.info("开始大规模测试...")
-                                
-                                # Recursive call
-                                return await self.run_simulation(coding_results, max_fix_attempts)
-                                
-                            except ValueError:
-                                self.logger.error("输入的参数无效，取消大规模测试")
-
+                        # 返回特殊标记，表示原型测试完成
+                        return 'small_scale_completed'
+                    
                     return True
+                                
+
                 else:
                     # 程序运行出错
                     error_message = result.stderr if result.stderr else result.stdout
@@ -1028,6 +996,99 @@ class ProjectMasterAgent(BaseAgent):
             'optimization_history': optimization_history
         }
 
+    async def run_mechanism_interpretation_session(self, coding_results=None):
+        """
+        运行机制解释与调整会话，收集用户的调整需求
+        
+        Args:
+            coding_results: 编码阶段的结果（可选）
+        
+        Returns:
+            str: 格式化的需求字符串 或 None
+        """
+        self.logger.info("="*50)
+        self.logger.info("开始机制解释与调整会话")
+        self.logger.info("="*50)
+        
+        # 获取simulator和main文件路径
+        simulator_path = None
+        main_path = None
+        
+        if coding_results:
+            if coding_results.get('simulator_files'):
+                simulator_path = coding_results['simulator_files'][0]
+            if coding_results.get('main_files'):
+                main_path = coding_results['main_files'][0]
+        
+        # 创建或复用 MechanismInterpreterAgent 实例
+        if not self.mechanism_interpreter:
+            self.mechanism_interpreter = MechanismInterpreterAgent(
+                agent_id='mechanism_interpreter_001',
+                config_dir=self.current_config_dir,
+                simulator_path=simulator_path,
+                main_path=main_path
+            )
+        
+        # 运行交互式调整会话（收集调整需求，不直接应用）
+        try:
+            requirements_text = await self.mechanism_interpreter.interactive_adjustment_session()
+            
+            # 直接返回格式化的需求字符串
+            if requirements_text:
+                return requirements_text
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"机制解释与调整会话失败: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            raise
+    
+    async def apply_mechanism_adjustments(self, requirements_text):
+        """
+        应用机制调整，调用CodeArchitectAgent进行具体的代码修改
+        
+        Args:
+            requirements_text: 格式化的需求字符串
+        
+        Returns:
+            bool: 是否成功应用
+        """
+        self.logger.info("开始应用机制调整")
+        self.logger.info(f"需求内容:\n{requirements_text}")
+        
+        try:
+            # 确保CodeArchitectAgent已初始化
+            if not self.code_architect:
+                self.logger.error("CodeArchitectAgent未初始化")
+                return False
+            
+            # 直接将需求文本传给CodeArchitectAgent处理
+            print(f"\n{'='*80}")
+            print("将需求发送给编码师Agent进行实现...")
+            print(f"{'='*80}")
+            
+            # 调用CodeArchitectAgent的apply_user_adjustment方法
+            success = await self.code_architect.apply_user_adjustment(
+                requirements_text=requirements_text
+            )
+            
+            if success:
+                print(f"\n✓ 需求实现完成")
+                self.logger.info("需求实现成功")
+            else:
+                print(f"\n✗ 需求实现失败")
+                self.logger.warning("需求实现失败")
+            
+            return success
+            
+        except Exception as e:
+            self.logger.error(f"应用机制调整失败: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return False
+    
     async def run_interactive_workflow(self, requirement_text):
         """
         运行交互式工作流程，每个阶段完成后等待用户反馈。
@@ -1121,6 +1182,7 @@ class ProjectMasterAgent(BaseAgent):
             
             # 等待用户反馈
             print("\n请审查设计结果，提供反馈：")
+            print("\n您可直接修改实验设计文档，所有后续代码将严格依此生成，请确保其准确反映您的需求。")
             print("  - 输入 'ok' 或 'yes' 继续下一阶段")
             print("  - 输入反馈意见重新生成设计")
             print("  - 输入 'quit' 退出")
@@ -1197,7 +1259,7 @@ class ProjectMasterAgent(BaseAgent):
             
             # 等待用户反馈
             print("\n请审查代码和配置文件，提供反馈：")
-            print("  - 输入 'ok' 或 'yes' 完成流程")
+            print("  - 输入 'ok' 或 'yes' 进入运行模拟阶段")
             print("  - 输入反馈意见重新生成代码")
             print("  - 输入 'back' 返回设计阶段")
             print("  - 输入 'quit' 退出")
@@ -1270,12 +1332,161 @@ class ProjectMasterAgent(BaseAgent):
                 print("\n开始运行模拟...")
                 self.logger.info(f"开始第 {iteration} 轮模拟运行")
                 
-                simulation_successful = await self.run_simulation(coding_results, max_fix_attempts=10)
+                sim_result = await self.run_simulation(coding_results, max_fix_attempts=10)
                 
-                if simulation_successful:
+                # 检查是否是原型测试完成
+                if sim_result == 'small_scale_completed':
+                    print("\n✅ 原型测试运行成功！")
+                    self.logger.info(f"第 {iteration} 轮原型测试运行成功")
+                    
+                    # 提供机制解释与调整选项
+                    while True:
+                        print("\n请选择下一步操作：")
+                        print("  - 输入 'adjust' 进入机制解释与调整会话")
+                        print("  - 输入 'continue' 继续进行大规模测试")
+                        print("  - 输入 'quit' 退出")
+                        
+                        next_action = input("\n您的选择: ").strip().lower()
+                        
+                        if next_action == 'adjust':
+                            # 进入机制解释与调整会话
+                            print("\n进入机制解释与调整会话...")
+                            self.logger.info("用户选择进入机制解释与调整会话")
+                            
+                            try:
+                                requirements_text = await self.run_mechanism_interpretation_session(coding_results)
+                                
+                                if requirements_text:
+                                    # 显示需求内容
+                                    print("\n" + "="*80)
+                                    print("收集到的需求:")
+                                    print("="*80)
+                                    print(requirements_text)
+                                    print("="*80)
+                                    
+                                    # 询问是否应用调整
+                                    print("\n是否应用这些调整？")
+                                    print("  - 输入 'yes' 或 'y' 应用调整")
+                                    print("  - 输入其他内容取消")
+                                    
+                                    apply_input = input("\n您的选择: ").strip().lower()
+                                    
+                                    if apply_input in ['yes', 'y']:
+                                        print("\n开始应用调整...")
+                                        self.logger.info("开始应用机制调整")
+                                        
+                                        apply_success = await self.apply_mechanism_adjustments(requirements_text)
+                                        
+                                        if apply_success:
+                                            print(f"\n✓ 调整应用完成")
+                                            self.logger.info("机制调整完成")
+                                            
+                                            # 询问是否重新运行小规模测试
+                                            print("\n调整已应用，是否重新运行小规模测试验证？")
+                                            print("  - 输入 'yes' 或 'y' 重新运行小规模测试")
+                                            print("  - 按Enter继续选择下一步操作")
+                                            
+                                            retest_input = input("\n您的选择: ").strip().lower()
+                                            if retest_input in ['yes', 'y']:
+                                                print("\n重新运行小规模测试...")
+                                                sim_result = await self.run_simulation(coding_results, max_fix_attempts=10)
+                                                if sim_result != 'small_scale_completed':
+                                                    if sim_result:
+                                                        print("\n⚠️ 调整后运行成功，但不是小规模测试")
+                                                    else:
+                                                        print("\n❌ 调整后运行失败")
+                                                        simulation_successful = False
+                                                        break
+                                                continue  # 继续显示选择菜单
+                                        else:
+                                            print("\n❌ 调整应用失败")
+                                            self.logger.error("调整应用失败")
+                                    else:
+                                        print("\n取消应用调整")
+                                else:
+                                    print("\n✓ 机制解释与调整会话结束，未收集到调整需求")
+                                    self.logger.info("机制解释与调整会话结束，未收集到调整需求")
+                                    
+                            except Exception as e:
+                                print(f"\n❌ 机制解释与调整失败: {e}")
+                                self.logger.error(f"机制解释与调整失败: {e}")
+                                import traceback
+                                self.logger.error(traceback.format_exc())
+                                
+                        elif next_action == 'continue':
+                            # 继续进行大规模测试
+                            print("\n准备进行大规模测试...")
+                            print("请输入大规模测试参数:")
+                            try:
+                                new_pop = int(input("人口数量 (默认300): ") or "300")
+                                new_steps = int(input("模拟时间步 (默认50): ") or "50")
+                                
+                                # 更新配置文件
+                                config_path = os.path.join(
+                                    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                                    'config',
+                                    self.current_simulation_name,
+                                    'simulation_config.yaml'
+                                )
+                                
+                                with open(config_path, 'r', encoding='utf-8') as f:
+                                    config_data = yaml.safe_load(f)
+                                
+                                # Update population
+                                if 'simulation' not in config_data: config_data['simulation'] = {}
+                                config_data['simulation']['initial_population'] = new_pop
+                                
+                                # Also update agents count if it exists
+                                if 'agents' in config_data and 'resident_agents' in config_data['agents']:
+                                    config_data['agents']['resident_agents']['count'] = new_pop
+
+                                # Update steps
+                                if 'simulation' not in config_data: config_data['simulation'] = {}
+                                if 'time' not in config_data['simulation']: config_data['simulation']['time'] = {}
+                                config_data['simulation']['time']['total_steps'] = new_steps
+                                config_data['simulation']['time']['total_years'] = new_steps
+                                
+                                with open(config_path, 'w', encoding='utf-8') as f:
+                                    yaml.dump(config_data, f, allow_unicode=True)
+                                
+                                self.logger.info(f"配置文件已更新: 人口={new_pop}, 时间步={new_steps}")
+                                print("\n开始大规模测试...")
+                                
+                                # 重新运行模拟
+                                sim_result = await self.run_simulation(coding_results, max_fix_attempts=10)
+                                if sim_result and sim_result != 'small_scale_completed':
+                                    simulation_successful = True
+                                    print("\n✅ 大规模测试运行成功！")
+                                    self.logger.info(f"第 {iteration} 轮大规模测试运行成功")
+                                    break
+                                else:
+                                    simulation_successful = False
+                                    print("\n❌ 大规模测试运行失败")
+                                    self.logger.error(f"第 {iteration} 轮大规模测试运行失败")
+                                    break
+                                    
+                            except ValueError:
+                                self.logger.error("输入的参数无效，取消大规模测试")
+                                simulation_successful = False
+                                break
+                                
+                        elif next_action == 'quit':
+                            print("\n用户退出流程")
+                            simulation_successful = False
+                            break
+                        else:
+                            print("\n无效的选择，请重新输入")
+                    
+                    if not simulation_successful and sim_result == 'small_scale_completed':
+                        # 用户选择quit或出错，跳出主循环
+                        break
+                        
+                elif sim_result:
+                    simulation_successful = True
                     print("\n✅ 模拟运行成功！")
                     self.logger.info(f"第 {iteration} 轮模拟运行成功")
                 else:
+                    simulation_successful = False
                     print("\n❌ 模拟运行失败")
                     self.logger.error(f"第 {iteration} 轮模拟运行失败")
                     break

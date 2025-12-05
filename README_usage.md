@@ -14,7 +14,7 @@
 - **处理**: `ProjectMasterAgent` 解析需求，提取关键信息，如模拟名称、核心目标等。
 - **输出**:
   - 创建独立的配置文件夹 (`config/<simulation_name>/`)。
-  - 创建独立的实验数据文件夹 (`experiment_dataset/<simulation_name>/`)。
+  - 创建独立的实验数据文件夹 (`history/<simulation_name>/`)。
 
 ### 阶段 2: 系统设计
 
@@ -43,7 +43,7 @@
 - **亮点**:
   - **自动纠错**: 如果程序在运行时出错（例如，语法错误、依赖缺失），系统会捕获错误信息，并自动调用 `CodeArchitectAgent` 进行修复。此过程会重试多次，直到成功运行或达到最大尝试次数。
 - **输出**:
-  - **模拟结果数据**: 通常是 `.csv` 或 `.json` 文件，保存在 `experiment_dataset/<simulation_name>/results/` 目录下。
+  - **模拟结果数据**: 通常是 `.csv` 或 `.json` 文件，保存在 `history/<simulation_name>/[具体模拟名称/模拟时间]` 目录下。
   - **运行日志**: 详细的运行过程日志。
 
 ### 阶段 5: 结果评估与自动优化
@@ -110,15 +110,20 @@ python run_ai_system.py
 - **配置文件**: `config/<simulation_name>/`
   - `description.md`: AI生成的设计文档。
   - `modules_config.yaml`: 启用的功能模块。
+  - `simulation_config.yaml`: 模拟核心配置。
+  - `jobs_config.yaml`: 任务配置。
+  - `resident_actions.yaml`: 居民行为配置。
+  - `towns_data.json`: 城镇数据。
+  - `government_prompts.yaml`: 政府Agent提示词。
+  - `rebels_prompts.yaml`: 叛军Agent提示词。
+  - `residents_prompts.yaml`: 居民Agent提示词。
   - `*.yaml`, `*.json`: 其他详细配置和提示词。
 
 - **源代码**:
   - `src/simulation/simulator_<simulation_name>.py`: 核心模拟器逻辑。
   - `entrypoints/main_<simulation_name>.py`: 运行模拟的入口脚本。
 
-- **实验数据与结果**: `experiment_dataset/<simulation_name>/`
-  - `results/`: 存放模拟结果数据文件和评估报告。
-  - `logs/`: 存放详细的运行过程日志。
+- **实验数据与结果**: `history/<simulation_name>/`
 
 ## 常见问题 (FAQ)
 

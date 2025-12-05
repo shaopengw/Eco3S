@@ -64,7 +64,11 @@ class BaseAgent:
         self.memory.set_agent(self)  # 设置agent引用
         self.system_message = None
         
-        # 从配置文件读取参数
+        # 初始化默认值
+        self.max_retry_attempts = 3
+        self.retry_delay = 1.0
+        
+        # 从配置文件读取参数（如果存在）
         try:
             import yaml
             with open(f'config/{SimulationContext.get_simulation_type()}/simulation_config.yaml', 'r', encoding='utf-8') as f:
