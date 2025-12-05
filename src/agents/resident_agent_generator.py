@@ -2,6 +2,7 @@ import json
 import asyncio
 import random
 from typing import Dict, Optional
+import yaml
 from src.agents.resident import Resident, ResidentSharedInformationPool
 from src.environment.map import Map
 from src.generator.resident_generate import generate_resident_data, save_resident_data
@@ -20,12 +21,22 @@ async def generate_canal_agents(
     """
     生成并返回运河居民的居民图。
     """
+    import time as time_module
+    start_time = time_module.time()
+    print(f"[居民生成] 开始生成居民...")
+    
     if resident_id_mapping is None:
         resident_id_mapping = {}  # 初始化居民 ID 与 Agent ID 的映射字典
     if agent_graph is None:
         agent_graph = {}  # 初始化居民图
     if shared_pool is None:
         shared_pool = ResidentSharedInformationPool()  # 初始化共享资源池
+
+    # 预加载配置文件
+    with open(resident_prompt_path, 'r', encoding='utf-8') as file:
+        prompts_resident = yaml.safe_load(file)
+    with open(resident_actions_path, 'r', encoding='utf-8') as file:
+        actions_config = yaml.safe_load(file)
 
     # 读取居民信息文件
     with open(resident_info_path, "r", encoding="utf-8", errors='ignore') as file:
@@ -35,24 +46,27 @@ async def generate_canal_agents(
         # 只取需要的数量
         resident_info = resident_info[:initial_population]
 
-    async def process_resident(i, resident_data):
-        # 居民的唯一标识符
+    # 使用并发批量创建居民对象
+    
+    # 定义创建单个居民的函数
+    def create_single_resident(i, resident_data):
         resident_id = i + 1
 
         # 获取位置和城镇ID
         location, town_name = assign_resident_location(resident_data, map)
         
-        # 创建居民对象
+        # 创建居民对象（轻量级模式，不创建重量级对象）
         resident = Resident(
             resident_id=resident_id,
             job_market=None,
             shared_pool=shared_pool,
             map=map,
-            resident_prompt_path=resident_prompt_path,
-            resident_actions_path=resident_actions_path,
-            window_size=window_size
+            prompts_resident=prompts_resident,
+            actions_config=actions_config,
+            window_size=window_size,
+            lightweight=True  # 关键：使用轻量级初始化
         )
-
+        
         # 设置居民的初始属性
         resident.income = resident_data["income"]  # 收入
         resident.satisfaction = resident_data["satisfaction"]
@@ -61,20 +75,42 @@ async def generate_canal_agents(
         resident.town = town_name
         resident.location = location
         resident.personality = resident_data["personality"]
+        
+        return resident_id, resident
+    
+    # 使用线程池并发创建（因为Resident.__init__不是异步的）
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import os
+    
+    if initial_population == 0:
+        return agent_graph
 
-        # 将居民添加到居民图
-        agent_graph[resident_id] = resident
+    # 根据CPU核心数确定线程数，但不超过居民数量
+    max_workers = min(os.cpu_count() * 2, initial_population, 32)  # 最多32个线程
+    completed = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # 提交所有任务
+        future_to_index = {
+            executor.submit(create_single_resident, i, resident_data): i 
+            for i, resident_data in enumerate(resident_info)
+        }
+        
+        # 收集结果
+        for future in as_completed(future_to_index):
+            try:
+                resident_id, resident = future.result()
+                agent_graph[resident_id] = resident
+                resident_id_mapping[resident_id] = resident_id
+                
+                completed += 1
 
-        # 将居民 ID 与 Agent ID 映射
-        resident_id_mapping[resident_id] = resident_id
+            except Exception as e:
+                print(f"[居民生成] 创建居民失败: {e}")
+                import traceback
+                traceback.print_exc()
 
-        # 记录居民生成日志
-        # resident.logger.info(f"居民 {resident_id} 在 {town}{location} 生成成功。姓名：{resident_data['realname']}, 性别：{resident_data['gender']}, 职业：{resident_data['profession']}, 收入：{resident.income} 两白银, 满意度：{resident.satisfaction}, 健康状况：{resident.health_index}")
-
-    # 创建并执行居民生成任务
-    tasks = [process_resident(i, resident_data) for i, resident_data in enumerate(resident_info)]
-    await asyncio.gather(*tasks)
-
+    total_time = time_module.time() - start_time
+    print(f"[居民生成] 全部居民创建完成，总耗时: {total_time:.2f}秒")
     return agent_graph  # 返回生成的居民图
 
 

@@ -134,8 +134,8 @@ def generate_resident_data(n):
         for i, future in enumerate(as_completed(futures)):
             profile = future.result()
             resident_data.append(profile)
-            elapsed_time = datetime.now() - start_time
-            print(f"已生成 {i+1}/{n} 个数据，用时：{elapsed_time}")
+        elapsed_time = datetime.now() - start_time
+    print(f"已生成{n} 个数据，用时：{elapsed_time}")
     return resident_data
 
 # 保存数据到文件

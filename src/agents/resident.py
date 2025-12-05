@@ -37,13 +37,18 @@ class ResidentGroup(BaseAgent):
         resident.model_backend = self.model_backend
         resident.token_counter = self.token_counter
         resident.context_creator = self.context_creator
-        resident.memory = MemoryManager(
-            agent_id=resident.resident_id,
-            model_type=self.model_type,
-            group_type='resident',
-            window_size=5
-        )
-        # resident.memory.set_agent(resident)
+        resident.model_type = self.model_type
+        
+        # 为每个居民创建独立的memory（但共享其他资源）
+        if resident.memory is None:
+            resident.memory = MemoryManager(
+                agent_id=resident.resident_id,
+                model_type=self.model_type,
+                group_type='resident',
+                window_size=5
+            )
+            resident.memory.set_agent(resident)
+        
         # 设置居民所属的群组
         resident.set_group(self)
 
@@ -59,9 +64,27 @@ class ResidentGroup(BaseAgent):
             del self.residents[resident_id]
 
 class Resident(BaseAgent):
-    def __init__(self, resident_id, job_market, shared_pool, map, resident_prompt_path, resident_actions_path, window_size=3):
-        """初始化居民"""
-        super().__init__(agent_id=resident_id, group_type='resident', window_size=window_size)
+    def __init__(self, resident_id, job_market, shared_pool, map, prompts_resident, actions_config, window_size=3, lightweight=False):
+        """初始化居民
+        
+        Args:
+            lightweight: 如果为True，跳过BaseAgent的重量级初始化，稍后由ResidentGroup设置共享资源
+        """
+        if not lightweight:
+            super().__init__(agent_id=resident_id, group_type='resident', window_size=window_size)
+        else:
+            # 轻量级初始化：只设置agent_id，跳过重量级对象创建
+            self.agent_id = resident_id
+            self.system_message = None
+            self.max_retry_attempts = 3
+            self.retry_delay = 1.0
+            # 这些将由ResidentGroup统一设置
+            self.model_backend = None
+            self.token_counter = None
+            self.context_creator = None
+            self.memory = None
+            self.model_type = None
+            
         self.resident_id = resident_id
         self.job_market = job_market
         self.shared_pool = shared_pool
@@ -77,17 +100,8 @@ class Resident(BaseAgent):
         self.towns_manager = None  # Towns实例的引用
         self.group = None  # 所属群组的引用
         self.personality = None
-        self.system_message = None  # 系统提示词
-        with open(os.path.join(resident_prompt_path), 'r', encoding='utf-8') as file:
-            self.prompts_resident = yaml.safe_load(file)
-        # 加载行为配置
-        with open(os.path.join(resident_actions_path), 'r', encoding='utf-8') as file:
-            self.actions_config = yaml.safe_load(file)
-
-        # 由 ResidentGroup 设置agent属性
-        self.model_backend = None
-        self.token_counter = None
-        self.context_creator = None
+        self.prompts_resident = prompts_resident
+        self.actions_config = actions_config
 
         self.resident_log = LogManager.get_logger("resident")
 
@@ -136,16 +150,16 @@ class Resident(BaseAgent):
         """
         health_condition = self.prompts_resident['health_conditions'][self.health_index] if 0 <= self.health_index < len(self.prompts_resident['health_conditions']) else "未知"
         work_condition = self.job if self.employed else "无业游民"
-        satisfaction_description = self.prompts_resident['satisfaction_levels'][min(self.satisfaction // 20, 4)]
+        satisfaction_description = self.prompts_resident['satisfaction_levels'][min(int(self.satisfaction // 20), 4)]
         
         economic_status_description = ""
         if self.income > 0 :
             income = self.income * (1 - tax_rate)
-            if basic_living_cost > income:
+            if basic_living_cost * 0.8 > income:
                 economic_status_description = "终日辛劳不得温饱"
-            elif basic_living_cost * 2 > income:
+            elif basic_living_cost * 1 > income:
                 economic_status_description = "勉强糊口"
-            elif basic_living_cost * 4 > income:
+            elif basic_living_cost * 1.6 > income:
                 economic_status_description = "生活尚算安稳"
             else:
                 economic_status_description = "生活富裕丰衣足食"
@@ -221,7 +235,7 @@ class Resident(BaseAgent):
         tax_rate_message = ""
         if tax_rate < 0.05:
             tax_rate_message = "当前税率极低，几乎无税负担。\n"
-        elif tax_rate < 0.15:
+        elif tax_rate < 0.2:
             tax_rate_message = "当前税率适中，负担一般。\n"
         elif tax_rate < 0.3:
             tax_rate_message = "当前税率较高，负担较重。\n"
@@ -267,6 +281,7 @@ class Resident(BaseAgent):
     
         # 将 desired_job_and_min_salary 和 speech 插入到 prompt 中
         prompt += desired_job_and_min_salary
+        response = None
         try:
             self.update_system_message(basic_living_cost)
             response = await self.generate_llm_response(prompt)
@@ -298,14 +313,28 @@ class Resident(BaseAgent):
             else:
                 self.resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}, 期望职业：{desired_job}, 最低收入：{min_salary}, 更新满意度：{self.satisfaction}")
     
+            # 检查是否是求职决策（从配置中查找绑定了handle_work函数的动作）
+            actions = self.actions_config.get('actions', {}) if self.actions_config else {}
+            action = actions.get(select) or actions.get(str(select)) or (
+                actions.get(int(select)) if str(select).isdigit() else None
+            )
+            
+            # 检查动作是否绑定了handle_work函数
+            is_work_action = False
+            if action:
+                func_path = action.get('function', '')
+                is_work_action = 'handle_work' in func_path
+            
             # 返回决策结果
-            if select == "3" and not self.employed and desired_job and min_salary:
+            if is_work_action and not self.employed and desired_job and min_salary:
+                print(f"[求职] 居民 {self.resident_id} 期望职业：{desired_job}, 最低收入：{min_salary}, 所在城镇：{self.town}")
                 # 返回求职信息
                 return {
                     "town": self.town, 
                     "desired_job": desired_job, 
                     "min_salary": min_salary,
-                    "resident_id": self.resident_id 
+                    "resident_id": self.resident_id,
+                    "resident": self  # 添加居民对象引用
                 }
             elif speech:
                 # 返回带有发言的决策结果

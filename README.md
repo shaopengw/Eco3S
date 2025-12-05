@@ -34,6 +34,12 @@ npm install chart.js vue-chartjs
 npm run dev
 ```
 
+# Windows用户
+```bash
+start_web.bat
+```
+
+
 访问 http://localhost:5173 查看 Web 界面。
 
 ---

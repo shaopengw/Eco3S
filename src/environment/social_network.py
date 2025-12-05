@@ -356,7 +356,7 @@ class SocialNetwork:
     def visualize(self):
         """
         可视化社交网络，同时显示异质图和超图的可视化图片，并添加边框和间距。
-        保存图片到指定目录。
+        保存图片到指定目录。针对大规模网络进行优化。
         """
         # 确保保存目录存在
         save_dir = "experiment_dataset/social_network_data"
@@ -375,49 +375,124 @@ class SocialNetwork:
             # 创建更大的画布
             fig, axes = plt.subplots(1, 2, figsize=(24, 12), gridspec_kw={'wspace': 0.3})
             
-            # 计算节点大小
+            # 计算节点数量
             num_nodes = len(self.hetero_graph.graph.nodes)
-            node_size = max(50, 1000 / (1 + np.log(num_nodes)))  # 使用对数缩放防止节点过小
+            print(f"[可视化] 社交网络包含 {num_nodes} 个节点")
             
             # 可视化异质图
             ax1 = axes[0]
-            plt.sca(ax1)  # 设置当前坐标轴
-            pos = nx.spring_layout(self.hetero_graph.graph, k=1.5)  # 增加节点间距
+            plt.sca(ax1)
             
-            # 绘制节点
-            node_colors = [self.hetero_graph.graph.nodes[node]["type"] == "person" and "lightblue" or "lightgreen" 
-                         for node in self.hetero_graph.graph.nodes]
-            nx.draw_networkx_nodes(self.hetero_graph.graph, pos, node_color=node_colors, 
-                                 node_size=node_size, alpha=0.7)
+            # 根据节点数量选择不同的可视化策略
+            if num_nodes > 1000:
+                # 大规模网络：使用采样和优化的布局
+                print(f"[可视化] 检测到大规模网络({num_nodes}个节点)，使用优化策略...")
+                
+                # 策略1：只显示核心节点（度数较高的节点）
+                degrees = dict(self.hetero_graph.graph.degree())
+                # 按度数排序，取前30%的节点
+                sorted_nodes = sorted(degrees.items(), key=lambda x: x[1], reverse=True)
+                sample_size = min(1000, max(500, int(num_nodes * 0.3)))  # 显示500-1000个核心节点
+                core_nodes = [node for node, _ in sorted_nodes[:sample_size]]
+                
+                # 创建子图
+                subgraph = self.hetero_graph.graph.subgraph(core_nodes)
+                print(f"[可视化] 显示核心节点子图：{len(core_nodes)} 个节点")
+                
+                # 使用更快的布局算法
+                pos = nx.kamada_kawai_layout(subgraph, scale=2)
+                
+                # 节点大小根据度数调整，但更小一些
+                node_sizes = [max(10, min(100, degrees[node] * 3)) for node in core_nodes]
+                
+                # 不显示标签（太多会很乱）
+                node_colors = ['lightblue' if subgraph.nodes[node]["type"] == "person" else "lightgreen" 
+                             for node in core_nodes]
+                nx.draw_networkx_nodes(subgraph, pos, node_color=node_colors, 
+                                     node_size=node_sizes, alpha=0.6)
+                
+                # 绘制边（降低透明度）
+                edge_colors = {
+                    "friend": (1, 0, 0, 0.4),      # 红色，40%透明度
+                    "colleague": (0, 0, 1, 0.4),   # 蓝色，40%透明度
+                }
+                
+                for edge_type, color in edge_colors.items():
+                    edge_list = [(u, v) for (u, v, d) in subgraph.edges(data=True) 
+                                if d["type"] == edge_type]
+                    if edge_list:
+                        nx.draw_networkx_edges(subgraph, pos, edgelist=edge_list, 
+                                             edge_color=color, width=0.5, alpha=0.4)
+                
+                ax1.set_title(f"异质图（核心节点子图：{len(core_nodes)}/{num_nodes}）", 
+                            pad=20, fontsize=16, fontweight='bold', fontfamily='SimHei')
             
-            # 根据节点数量调整标签字体大小
-            font_size = max(6, 16 / (1 + np.log(num_nodes)))
-            nx.draw_networkx_labels(self.hetero_graph.graph, pos, font_size=font_size)
+            else:
+                # 中小规模网络：正常显示
+                node_size = max(30, 800 / (1 + np.log(num_nodes)))
+                
+                # 使用spring_layout，增加迭代次数提高质量
+                pos = nx.spring_layout(self.hetero_graph.graph, k=2/np.sqrt(num_nodes), 
+                                      iterations=50, seed=42)
+                
+                # 绘制节点
+                node_colors = [self.hetero_graph.graph.nodes[node]["type"] == "person" and "lightblue" or "lightgreen" 
+                             for node in self.hetero_graph.graph.nodes]
+                nx.draw_networkx_nodes(self.hetero_graph.graph, pos, node_color=node_colors, 
+                                     node_size=node_size, alpha=0.7)
+                
+                # 根据节点数量决定是否显示标签
+                if num_nodes <= 500:
+                    font_size = max(6, 16 / (1 + np.log(num_nodes)))
+                    nx.draw_networkx_labels(self.hetero_graph.graph, pos, font_size=font_size)
+                
+                # 绘制不同类型的边
+                edge_colors = {
+                    "friend": "red",
+                    "colleague": "blue"
+                }
+                
+                for edge_type, color in edge_colors.items():
+                    edge_list = [(u, v) for (u, v, d) in self.hetero_graph.graph.edges(data=True) 
+                                if d["type"] == edge_type]
+                    if edge_list:
+                        nx.draw_networkx_edges(self.hetero_graph.graph, pos, edgelist=edge_list, 
+                                             edge_color=color, width=0.8, alpha=0.5)
+                
+                ax1.set_title("异质图", pad=20, fontsize=16, fontweight='bold', fontfamily='SimHei')
             
-            # 绘制不同类型的边
-            edge_colors = {
-                "friend": "red",
-                "colleague": "blue",
-                "family": "green",
-                "hometown": "purple"
-            }
+            # 添加图例
+            from matplotlib.lines import Line2D
+            legend_elements = [
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='red', 
+                      markersize=8, label='朋友关系', alpha=0.6),
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='blue', 
+                      markersize=8, label='同事关系', alpha=0.6)
+            ]
+            ax1.legend(handles=legend_elements, loc='upper right', fontsize=10)
             
-            for edge_type, color in edge_colors.items():
-                edge_list = [(u, v) for (u, v, d) in self.hetero_graph.graph.edges(data=True) 
-                            if d["type"] == edge_type]
-                if edge_list:
-                    nx.draw_networkx_edges(self.hetero_graph.graph, pos, edgelist=edge_list, 
-                                         edge_color=color, width=0.8, alpha=0.6)
-            
-            ax1.set_title("异质图", pad=20, fontsize=16, fontfamily='SimHei')
-            
-            # 可视化超图
+            # 可视化超图（采样显示部分城镇）
             ax2 = axes[1]
             plt.sca(ax2)
-            hnx.draw(self.hyper_graph.hypergraph, 
-                    with_node_labels=True,
-                    node_labels_kwargs={'fontsize': font_size})
-            ax2.set_title("超图", pad=20, fontsize=16, fontfamily='SimHei')
+            
+            if num_nodes > 1000:
+                # 大规模网络：只显示统计信息
+                ax2.text(0.5, 0.5, f'超图统计\n\n节点数: {len(self.hyper_graph.get_nodes())}\n'
+                        f'超边数: {len(self.hyper_graph.get_hyperedges())}\n\n'
+                        f'(节点过多，跳过详细可视化)',
+                        ha='center', va='center', fontsize=14, 
+                        bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+                ax2.set_xlim(0, 1)
+                ax2.set_ylim(0, 1)
+                ax2.axis('off')
+            else:
+                # 中小规模网络：正常显示超图
+                font_size = max(6, 16 / (1 + np.log(num_nodes)))
+                hnx.draw(self.hyper_graph.hypergraph, 
+                        with_node_labels=(num_nodes <= 500),
+                        node_labels_kwargs={'fontsize': font_size})
+            
+            ax2.set_title("超图", pad=20, fontsize=16, fontweight='bold', fontfamily='SimHei')
             
             # 保存高清图片
             current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -429,6 +504,8 @@ class SocialNetwork:
             
         except Exception as e:
             print(f"社交网络可视化失败：{e}")
+            import traceback
+            traceback.print_exc()
 
     def initialize_network(self, residents: dict, towns) -> None:
         """
@@ -632,20 +709,48 @@ class SocialNetwork:
             degree_count[d] = degree_count.get(d, 0) + 1
         x = sorted(degree_count.keys())
         y = [degree_count[k] for k in x]
-        plt.figure(figsize=(8, 5))
-        plt.bar(x, y, color='skyblue')
-        plt.xlabel('度数')
-        plt.ylabel('人数')
-        plt.title('社交网络节点度分布')
+        
+        plt.figure(figsize=(10, 6))
+        plt.bar(x, y, color='skyblue', edgecolor='navy', alpha=0.7)
+        plt.xlabel('度数', fontsize=12)
+        plt.ylabel('人数', fontsize=12)
+        plt.title('社交网络节点度分布', fontsize=14, fontweight='bold')
         plt.xticks(x)
-        plt.yticks(range(0, max(y) + 1))
+        
+        # 动态计算纵坐标刻度，确保有10-15个标识
+        max_count = max(y)
+        if max_count <= 15:
+            # 如果最大值小于等于15，每个整数一个刻度
+            yticks = list(range(0, max_count + 1))
+        else:
+            # 计算合适的间隔，使刻度数在10-15之间
+            target_ticks = 12  # 目标刻度数
+            interval = max(1, int(np.ceil(max_count / target_ticks)))
+            # 将间隔调整为5、10、20、50、100等整数
+            if interval <= 5:
+                interval = 5
+            elif interval <= 10:
+                interval = 10
+            elif interval <= 20:
+                interval = 20
+            elif interval <= 50:
+                interval = 50
+            else:
+                interval = int(np.ceil(interval / 100) * 100)
+            
+            yticks = list(range(0, max_count + interval, interval))
+        
+        plt.yticks(yticks)
+        plt.grid(axis='y', alpha=0.3, linestyle='--')
         plt.tight_layout()
+        
         # 保存高清图片
         save_dir = "experiment_dataset/social_network_data"
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
         save_path = os.path.join(save_dir, f"degree_distribution_{current_time}.png")
         plt.savefig(save_path, dpi=300, bbox_inches='tight', pad_inches=0.5)
         print(f"社交网络节点度分布表已保存至：{save_path}")
+        plt.close()
 
     def update_network_edges(self, update_ratio=0.2):
         """

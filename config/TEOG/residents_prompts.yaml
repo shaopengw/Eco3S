@@ -9,7 +9,7 @@ decide_action_prompt_employed: |
   今年{weather_condition}。你可以选择以下行动之一：
   1. 加入城邦（需纳税但收入稳定，{tax_rate_message}）
   2. 迁徙至他地（不能连续选择）
-  3. 保持现状（自给自足，不纳税但丰歉在天，）
+  3. 保持现状（自给自足，不纳税但丰歉在天）
 
 decide_action_prompt_city_resident: |
   今年{weather_condition}。{tax_rate_message}

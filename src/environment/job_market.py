@@ -325,30 +325,58 @@ class JobMarket:
         
         hired_residents = []
         total_salary_expense = 0  # 记录总支出
+        overflow_applicants = []  # 存储因岗位已满而未被录用的申请者
         
         # 处理每种职业的申请
         for job_type, applications in job_type_applications.items():
             vacant_positions = self.jobs_info[job_type]["total"] - len(self.jobs_info[job_type]["employed"])
+            base_salary = self.jobs_info[job_type]["base_salary"]
             
             if vacant_positions <= 0:
+                overflow_applicants.extend(applications)
                 continue
-            
-            # 获取该职业的基础收入
-            base_salary = self.jobs_info[job_type]["base_salary"]
             
             # 所有申请者按最低收入要求排序
             applications.sort(key=lambda x: x["min_salary"])
             
             # 根据空缺数量择优录取
-            for app in applications[:vacant_positions]:
-                if app["min_salary"] > base_salary:
+            hired_count = 0
+            for i, app in enumerate(applications):
+                if i < vacant_positions:
+                    resident = app["resident"]
+                    # 使用基础收入和要求收入中的较小值
+                    actual_salary = min(app["min_salary"], base_salary)
+                    if self.assign_specific_job(resident, job_type, actual_salary):
+                        hired_residents.append(resident.resident_id)
+                        total_salary_expense += actual_salary
+                        hired_count += 1
+                else:
+                    # 超出空缺数量的申请者
+                    overflow_applicants.append(app)
+        
+        # 处理溢出的申请者：随机分配到其他有空缺的岗位
+        if overflow_applicants:
+            
+            for app in overflow_applicants:
+                # 获取所有有空缺的职业
+                available_jobs = []
+                for job_type, info in self.jobs_info.items():
+                    vacant = info["total"] - len(info["employed"])
+                    if vacant > 0:
+                        available_jobs.append((job_type, info["base_salary"], vacant))
+                
+                if not available_jobs:
                     continue
+                
+                # 随机选择一个有空缺的职业
+                selected_job, selected_salary, _ = random.choice(available_jobs)
                 resident = app["resident"]
-                actual_salary = app["min_salary"]  # 使用居民要求的最低收入
-                if self.assign_specific_job(resident, job_type, actual_salary):  # 传入实际收入
+                # 使用基础收入和要求收入中的较小值
+                actual_salary = min(app["min_salary"], selected_salary)
+                
+                if self.assign_specific_job(resident, selected_job, actual_salary):
                     hired_residents.append(resident.resident_id)
                     total_salary_expense += actual_salary
-        
         return hired_residents, total_salary_expense
 
     def get_rebel_total_salary(self):

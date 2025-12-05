@@ -67,7 +67,8 @@ class Towns:
         根据居民的town属性初始化居民群组并分配工作
         :param residents: 居民字典，key为居民ID，value为居民对象
         """
-        # 根据居民的town属性进行分组并同时分配工作
+        # 第一步：按城镇分组居民
+        town_residents = {}
         for resident_id, resident in residents.items():
             if resident.town:
                 town_name = resident.town
@@ -89,18 +90,26 @@ class Towns:
                             print(f"警告: 无法为居民 {resident_id} 分配有效城镇，跳过")
                             continue
                     
-                    # 添加居民到城镇
-                    self.add_resident(resident, town_name)
-
-                    # 分配工作
-                    town_data = self.towns[town_name]
-                    if town_data['job_market']:
-                        town_data['job_market'].assign_job(resident)
-                        # print(f"居民 {resident_id} 尝试为城镇 {town_name} 分配工作")
-                    else:
-                        print(f"警告: 城镇 {town_data['info']['name']} 没有就业市场")
+                    # 将居民添加到对应城镇的列表
+                    if town_name not in town_residents:
+                        town_residents[town_name] = []
+                    town_residents[town_name].append(resident)
                 else:
                     print(f"警告: 无法找到居民 {resident_id} 所在的城镇 {resident.town}")
+        
+        # 第二步：批量处理每个城镇的居民
+        for town_name, town_resident_list in town_residents.items():
+            town_data = self.towns[town_name]
+            
+            # 批量添加居民到城镇和群组
+            self.batch_add_residents(town_resident_list, town_name)
+            
+            # 批量分配工作
+            if town_data['job_market']:
+                for resident in town_resident_list:
+                    town_data['job_market'].assign_job(resident)
+            else:
+                print(f"警告: 城镇 {town_data['info']['name']} 没有就业市场")
     
     def add_resident(self, resident, town_name):
         """添加居民到指定城镇"""
@@ -109,6 +118,20 @@ class Towns:
             self.towns[town_name]['resident_group'] = ResidentGroup(town_name)
         self.towns[town_name]['resident_group'].add_resident(resident)
         resident.set_town(town_name, self)
+    
+    def batch_add_residents(self, residents_list, town_name):
+        """批量添加居民到指定城镇"""
+        # 确保resident_group存在
+        if self.towns[town_name]['resident_group'] is None:
+            self.towns[town_name]['resident_group'] = ResidentGroup(town_name)
+        
+        resident_group = self.towns[town_name]['resident_group']
+        
+        # 批量添加居民
+        for resident in residents_list:
+            self.towns[town_name]['residents'][resident.resident_id] = resident
+            resident_group.add_resident(resident)
+            resident.set_town(town_name, self)
 
     def get_nearest_town(self, location):
         """获取最近的城镇名称"""

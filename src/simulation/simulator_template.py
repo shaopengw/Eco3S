@@ -48,15 +48,12 @@ class YourSimulator:
         # 如果保存为 JSON，使用: f"running_data_{timestamp}.json"
 
     def init_results(self):
-        """初始化结果数据结构（CSV格式：字典键为列名，值为列表）"""
-        # 初始化所有指标
-        self.gdp = self.calculate_gdp()
-        self.average_satisfaction = self.calculate_average_satisfaction()
-        
-        results = {
+        """初始化结果数据结构"""
+        return {
             "years": [],
             "rebellions": [],
             "unemployment_rate": [],
+            "migration_rate": [],
             "population": [],
             "government_budget": [],
             "rebellion_strength": [],
@@ -66,21 +63,6 @@ class YourSimulator:
             "river_navigability": [],
             "gdp": [],
         }
-        
-        # 保存初始数据
-        results["years"].append("初始")
-        results["rebellions"].append(0)
-        results["unemployment_rate"].append(0)
-        results["population"].append(self.population.get_population())
-        results["government_budget"].append(self.government.get_budget() if self.government else 0)
-        results["rebellion_strength"].append(self.rebellion.get_strength() if self.rebellion else 0)
-        results["rebellion_resources"].append(self.rebellion.get_resources() if self.rebellion else 0)
-        results["average_satisfaction"].append(self.average_satisfaction)
-        results["tax_rate"].append(self.government.get_tax_rate() if self.government else 0)
-        results["river_navigability"].append(self.map.get_navigability())
-        results["gdp"].append(self.gdp)
-        
-        return results
 
     async def run(self):
         """主运行流程：初始化→主循环→结束"""
@@ -139,7 +121,6 @@ class YourSimulator:
         # 更新人口和满意度
         self.average_satisfaction = self.calculate_average_satisfaction()
         self.population.update_birth_rate(self.average_satisfaction)
-        self.rebellion_records = 0
         
         # 打印状态信息
         if self.government:
@@ -156,6 +137,8 @@ class YourSimulator:
 
     async def execute_actions(self):
         """执行所有智能体的决策和行为"""
+        self.migration_count = 0
+        
         # 1. 居民出生
         new_count = int(self.population.birth_rate * self.population.get_population())
         new_residents = await generate_new_residents(
@@ -229,20 +212,21 @@ class YourSimulator:
                     break
                 resident = residents_list[i]
                 
-                if result and isinstance(result, dict):
-                    action = result.get("action")
-                    if action == "求职":
-                        job_request = {
-                            "resident": resident,
-                            "desired_job": result.get("desired_job"),
-                            "current_job": resident.job
-                        }
-                        town_job_requests[resident.town].append(job_request)
-                    
-                    speech_content = result.get("speech")
-                    if speech_content:
-                        speech_task = self.social_network.propagate_speech_async(resident.resident_id, speech_content)
-                        speech_tasks.append(speech_task)
+                if isinstance(result, dict) and "town" in result:
+                    town_job_requests[result["town"]].append(result)
+                elif isinstance(result, tuple) and len(result) == 4:
+                    select, reason, speech, relation_type = result
+                    await resident.execute_decision(select, map=self.map)
+                    if select == "2":
+                        self.migration_count += 1
+                    speech_tasks.append(asyncio.create_task(
+                        self.social_network.spread_speech_in_network(resident.resident_id, speech, relation_type)
+                    ))
+                elif isinstance(result, tuple) and len(result) == 2:
+                    select, reason = result
+                    await resident.execute_decision(select, map=self.map)
+                    if select == "2":
+                        self.migration_count += 1
             
             if speech_tasks:
                 await asyncio.gather(*speech_tasks)
@@ -259,6 +243,7 @@ class YourSimulator:
     def collect_results(self):
         """收集本轮结果数据"""
         total_unemployment_rate = self.calculate_total_unemployment_rate()
+        migration_rate = getattr(self, 'migration_count', 0) / self.population.get_population() * 100 if self.population.get_population() > 0 else 0
         
         if self.rebellion:
             self.rebellion.strength = self.calculate_total_rebels()
@@ -268,10 +253,11 @@ class YourSimulator:
         self.results["years"].append(self.time.current_time)
         self.results["rebellions"].append(self.rebellion_records)
         self.results["unemployment_rate"].append(total_unemployment_rate)
+        self.results["migration_rate"].append(migration_rate)
         self.results["population"].append(self.population.get_population())
         self.results["government_budget"].append(self.government.get_budget() if self.government else 0)
-        self.results["rebellion_strength"].append(self.rebellion.get_strength() if self.rebellion else 0)
-        self.results["rebellion_resources"].append(self.rebellion.get_resources() if self.rebellion else 0)
+        self.results["rebellion_strength"].append(self.rebellion.strength if self.rebellion else 0)
+        self.results["rebellion_resources"].append(self.rebellion.resources if self.rebellion else 0)
         self.results["average_satisfaction"].append(self.average_satisfaction)
         self.results["tax_rate"].append(self.government.get_tax_rate() if self.government else 0)
         self.results["river_navigability"].append(self.map.get_navigability())
@@ -281,12 +267,16 @@ class YourSimulator:
               f"叛乱次数: {self.rebellion_records}, "
               f"人口数量: {self.population.get_population()}, "
               f"失业率: {self.results['unemployment_rate'][-1]:.2f}%, "
+              f"迁移率: {self.results['migration_rate'][-1]:.2f}%, "
               f"平均满意度: {self.results['average_satisfaction'][-1]:.2f}, "
               f"税率: {self.results['tax_rate'][-1]:.2f}, "
               f"GDP: {self.results['gdp'][-1]:.2f}, "
               f"叛军强度: {self.results['rebellion_strength'][-1]}, "
               f"运河通航能力: {self.map.get_navigability():.2f}"
         )
+        
+        self.rebellion_records = 0
+        self.migration_count = 0
 
     def save_results(self, filename=None, append=False):
         """保存结果到CSV文件"""

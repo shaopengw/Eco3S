@@ -122,8 +122,8 @@ generate_config_with_feedback_prompt: |
 generate_config_requirements: |
   要求：
   1. 根据设计文档调整模块配置和参数
-  2. 在selected_modules中选择实验需要的模块
-  3. 删除不相关的配置项
+  2. 在selected_modules中保留所有在设计文档中提到的模块（包括必选和可选）。
+  3. 删除未在设计文档中提到的模块的配置项。
   4. 参数值要合理且一致
 
   用代码块输出：

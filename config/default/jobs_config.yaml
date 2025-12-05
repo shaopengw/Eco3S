@@ -4,7 +4,7 @@ jobs_info:
   商人:
     base_salary: 30
   叛军:
-    base_salary: 12
+    base_salary: 8
   官员及士兵:
     base_salary: 20
   运河维护工:
