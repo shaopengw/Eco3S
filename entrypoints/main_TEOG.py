@@ -102,13 +102,6 @@ async def run_simulation(config):
             initial_population=config["simulation"]["initial_population"],
             birth_rate=config["simulation"]["birth_rate"]
         )
-
-        # 初始化运输经济系统
-        transport_economy = TransportEconomy(
-            transport_cost=population.get_population() / 200,
-            transport_task=population.get_population() / 2,
-            maintenance_cost_base=population.get_population() * 0.4,
-        )
         
         # 初始化居民
         resident_info_path = config["data"]["resident_info_path"]  # 居民信息文件路径
@@ -123,6 +116,20 @@ async def run_simulation(config):
         # 初始化城镇
         towns = Towns(map=map,initial_population=config["simulation"]["initial_population"]*20,job_market_config_path=config["data"]["jobs_config_path"])
         towns.initialize_resident_groups(residents)
+        
+        # 计算城市居民数量
+        city_resident_count = 0
+        for town_name, town_data in towns.towns.items():
+            job_market = town_data.get('job_market')
+            if job_market and "城市居民" in job_market.jobs_info:
+                city_resident_count += len(job_market.jobs_info["城市居民"]["employed"])
+        
+        # 初始化运输经济系统（使用城市居民数量）
+        transport_economy = TransportEconomy(
+            transport_cost=1,
+            transport_task=city_resident_count / 4,
+            maintenance_cost_base=city_resident_count * 0.2,
+        )
             
         # 初始化社交网络
         social_network = SocialNetwork()
@@ -164,10 +171,8 @@ async def run_simulation(config):
 
         climate_info_path = config["data"]["climate_info_path"]  # 气候信息文件路径
         climate = ClimateSystem(climate_info_path)  # 气候系统
-        
 
-        
-        # 修改模拟器实例化
+        # 模拟器实例化
         simulator = TEOGSimulator(
             map=map,
             time=time,

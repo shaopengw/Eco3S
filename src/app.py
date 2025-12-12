@@ -371,29 +371,29 @@ def analyze_data():
         # 获取分析报告
         report = result.stdout
 
-        # 获取最新生成的图表
-        analysis_dir = os.path.join(working_dir, 'history', config_type, 'analysis_results')
+        # 获取最新生成的图表（从最新的时间戳子文件夹中）
+        analysis_base_dir = os.path.join(working_dir, 'history', config_type, 'analysis_results')
         plots = []
-        if os.path.exists(analysis_dir):
-            # 获取所有png文件及其修改时间
-            png_files = [(f, os.path.getmtime(os.path.join(analysis_dir, f))) 
-                        for f in os.listdir(analysis_dir) if f.endswith('.png')]
+        if os.path.exists(analysis_base_dir):
+            # 获取所有时间戳子文件夹
+            timestamp_dirs = [d for d in os.listdir(analysis_base_dir) 
+                            if os.path.isdir(os.path.join(analysis_base_dir, d))]
             
-            if png_files:
-                # 按修改时间排序，获取最新的文件
-                png_files.sort(key=lambda x: x[1], reverse=True)
-                latest_files = []
-                latest_time = png_files[0][1]
+            if timestamp_dirs:
+                # 按文件夹名称（时间戳）排序，获取最新的
+                timestamp_dirs.sort(reverse=True)
+                latest_dir = timestamp_dirs[0]
+                analysis_dir = os.path.join(analysis_base_dir, latest_dir)
                 
-                # 获取所有最新时间戳的文件（同一批次生成的文件）
-                for f, mtime in png_files:
-                    if abs(mtime - latest_time) < 5:  # 5秒内的文件视为同一批次
-                        plot_path = os.path.join('history', config_type, 'analysis_results', f).replace('\\', '/')
-                        latest_files.append({
+                # 获取该文件夹中的所有png文件
+                if os.path.exists(analysis_dir):
+                    png_files = [f for f in os.listdir(analysis_dir) if f.endswith('.png')]
+                    for f in png_files:
+                        plot_path = os.path.join('history', config_type, 'analysis_results', latest_dir, f).replace('\\', '/')
+                        plots.append({
                             'name': f,
                             'path': plot_path
                         })
-                plots = latest_files
 
         return jsonify({
             'report': report,

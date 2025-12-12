@@ -92,18 +92,21 @@ class ProjectMasterAgent(BaseAgent):
         subdirs = [os.path.join(self.current_project_dir, d) for d in os.listdir(self.current_project_dir) if os.path.isdir(os.path.join(self.current_project_dir, d))]
         if subdirs:
             latest_dir = max(subdirs, key=os.path.getmtime)
-            self.logger.info(f"------最新结果目录: {latest_dir}")
             result_files = [f for f in os.listdir(latest_dir) if f.endswith(('.json', '.csv'))]
             if result_files:
-                result_file = os.path.join(latest_dir, result_files[0])
+                result_file = os.path.join(latest_dir, max(result_files, key=lambda f: os.path.getmtime(os.path.join(latest_dir, f))))
                 self.logger.info(f"找到结果文件: {result_file}")
                 return result_file
         self.logger.warning("❌ 未找到任何结果文件")
         return None
 
-    async def parse_user_requirement(self, requirement_text):
+    async def parse_user_requirement(self, requirement_text, user_specified_type=None):
         """
         解析用户需求，确定模拟名称、基本信息和模拟类型。
+        
+        Args:
+            requirement_text: 用户需求文本
+            user_specified_type: 用户指定的模拟类型，如果为None则由AI判断
         """
         prompt = self.prompts['parse_user_requirement_prompt'].format(
             requirement_text=requirement_text
@@ -120,9 +123,18 @@ class ProjectMasterAgent(BaseAgent):
                     lines = response.split('\n')
                     response = '\n'.join(lines[1:-1]) if len(lines) > 2 else response
                 parsed = json.loads(response)
+                
+                # 如果用户指定了模拟类型，使用用户指定的类型
+                if user_specified_type:
+                    parsed['simulation_type'] = user_specified_type
+                    self.logger.info(f"使用用户指定的模拟类型: {user_specified_type}")
                 # 如果LLM没有返回simulation_type，默认为decision
-                if 'simulation_type' not in parsed:
+                elif 'simulation_type' not in parsed:
                     parsed['simulation_type'] = 'decision'
+                    self.logger.info("AI未判断出模拟类型，使用默认类型: decision")
+                else:
+                    self.logger.info(f"AI判断的模拟类型: {parsed['simulation_type']}")
+                
                 return parsed
             except Exception as e:
                 self.logger.error(f"解析需求失败（第{attempt}次）: {e}, 响应内容: {response[:200]}")
@@ -1119,11 +1131,34 @@ class ProjectMasterAgent(BaseAgent):
         print("=" * 80)
         self.logger.info("\n阶段 1: 需求分析和项目初始化")
         
-        requirement_dict = await self.parse_user_requirement(requirement_text)
+        # 询问用户是否指定模拟类型
+        print("\n请选择模拟类型（如不选择，AI将自动判断）：")
+        print("  1. decision - 决策型模拟")
+        print("     特征：居民需要进行经济决策、就业选择、迁移等复杂行为")
+        print("     适用场景：经济活动、就业、政府政策、税收、GDP等")
+        print("  2. survey - 调查型模拟")
+        print("     特征：居民主要进行信息交流、传播和问卷调查")
+        print("     适用场景：信息传播、舆论调查、知识扩散、问卷调查、社交网络影响等")
+        print("  3. 按Enter跳过，让AI自动判断")
+        
+        user_type_input = input("\n请输入选项（1/2/Enter）: ").strip()
+        
+        user_specified_type = None
+        if user_type_input == '1':
+            user_specified_type = 'decision'
+            print("✓ 已选择：decision（决策型模拟）")
+        elif user_type_input == '2':
+            user_specified_type = 'survey'
+            print("✓ 已选择：survey（调查型模拟）")
+        else:
+            print("✓ 将由AI自动判断模拟类型")
+        
+        requirement_dict = await self.parse_user_requirement(requirement_text, user_specified_type)
         project_dir = await self.initialize_project(requirement_dict['simulation_name'])
         
         print(f"\n✓ 项目已初始化")
         print(f"  - 模拟名称: {requirement_dict['simulation_name']}")
+        print(f"  - 模拟类型: {requirement_dict['simulation_type']}")
         print(f"  - 描述: {requirement_dict['description']}")
         print(f"  - 项目目录: {project_dir}")
         print(f"  - 配置目录: {self.current_config_dir}")
@@ -1147,8 +1182,7 @@ class ProjectMasterAgent(BaseAgent):
             design_results = await self.run_design_phase(
                 requirement_dict,
                 previous_version=previous_design,
-                user_feedback=user_feedback,
-                
+                user_feedback=user_feedback
             )
             
             # 显示结果
@@ -1156,8 +1190,6 @@ class ProjectMasterAgent(BaseAgent):
             print(f"\n✓ 需求解析结果:")
             print(f"  {json.dumps(design_results['parsed_requirement'], ensure_ascii=False, indent=2)}")
             print(f"\n✓ 设计文档: {self.current_config_dir}/description.md")
-            if design_results.get('config_files'):
-                print(f"✓ 配置文件: {design_results['config_files']}")
             
             # 显示模块配置（如果存在）
             modules_config_path = os.path.join(self.current_config_dir, 'modules_config.yaml')

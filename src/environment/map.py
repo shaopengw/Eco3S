@@ -6,7 +6,7 @@ import random
 from colorama import Back
 
 class Map:
-    def __init__(self, width, height, data_file='config/towns_data.json'):
+    def __init__(self, width, height, data_file='config/default/towns_data.json'):
         """
         初始化地图
         :param width: 地图宽度

@@ -205,14 +205,15 @@ class Resident(BaseAgent):
 
         return None
 
-    async def decide_action_by_llm(self, tax_rate, basic_living_cost, climate_impact=0):
+    async def decide_action_by_llm(self, tax_rate=0, basic_living_cost=0, climate_impact=0, **kwargs):
         """
         通过LLM决定居民的行动，并随机生成对政府的态度发言。同时更新满意度。
         
         Args:
-            tax_rate: 当前税率
-            basic_living_cost: 基本生活成本
+            tax_rate: 当前税率，默认为0
+            basic_living_cost: 基本生活成本，默认为0
             climate_impact: 天气影响因子，默认为0
+            **kwargs: 其他可选参数，会被添加到上下文信息中
         """
         # 发言概率基于节点在社交网络中的度值
         speech_prob = 0.0
@@ -255,6 +256,13 @@ class Resident(BaseAgent):
         else:
             weather_condition = "天气极端恶劣，农耕几乎无法进行。"
         
+        # 构建额外的上下文信息（从kwargs中）
+        additional_context = ""
+        if kwargs:
+            for key, value in kwargs.items():
+                if value:  # 只添加非空值
+                    additional_context += f"\n{key}: {value}"
+        
         employed = self.employed
     
         # 根据是否就业选择不同的提示词模板
@@ -273,6 +281,10 @@ class Resident(BaseAgent):
                 tax_rate_message=tax_rate_message, 
                 job_market_info=job_market_info,
                 weather_condition=weather_condition)
+        
+        # 添加额外的上下文信息到提示词中
+        if additional_context:
+            prompt += additional_context
     
         # 构建 desired_job_and_min_salary 和 speech
         desired_job_and_min_salary = self.prompts_resident['decide_action_json'].format(
@@ -293,7 +305,26 @@ class Resident(BaseAgent):
             cleaned_response = re.sub(r'\s+', '', cleaned_response, flags=re.DOTALL)  # 删除所有空白字符，包括换行符
             cleaned_response = re.sub(r'}(?=.*})', '', cleaned_response, flags=re.DOTALL)
 
-            decision_data = json.loads(cleaned_response)
+            def merge_json(text):
+                # 提取所有 {...}，合并为一个对象
+                matches = re.findall(r'\{[^{}]*\}', text)
+                if not matches:
+                    return None
+                # 合并所有字段
+                result = {}
+                for m in matches:
+                    try:
+                        obj = json.loads(m)
+                        result.update(obj)
+                    except Exception:
+                        continue
+                return result if result else None
+
+            decision_data = None
+            try:
+                decision_data = json.loads(cleaned_response)
+            except Exception:
+                decision_data = merge_json(cleaned_response)
             select = decision_data.get("select")
             reason = decision_data.get("reason")
             speech = decision_data.get("speech", "")

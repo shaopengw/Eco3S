@@ -222,8 +222,12 @@ if __name__ == "__main__":
     else:
         raise FileNotFoundError(f"配置文件未找到: {args.config_path}")
 
-    # 设置模拟名称
-    SimulationContext.set_simulation_name(config["simulation"].get("simulation_name"))
+    # 设置模拟名称，传入人口数和时间步数
+    SimulationContext.set_simulation_name(
+        config["simulation"].get("simulation_name"),
+        population=config["simulation"]["initial_population"],
+        total_years=config["simulation"]["total_years"]
+    )
 
     # 运行实验
     asyncio.run(run_simulation(config))

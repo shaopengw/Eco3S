@@ -1606,16 +1606,19 @@ class CodeArchitectAgent(BaseAgent):
 		# 判断文件类型并调用相应函数
 		description_md = ""
 		modules_config_yaml = ""
+		config_files = {}
 		if config_path:
 			description_md_path = os.path.join(os.path.dirname(config_path), 'description.md')
 			modules_config_yaml_path = os.path.join(os.path.dirname(config_path), 'modules_config.yaml')
 			with open(description_md_path, 'r', encoding='utf-8') as f:
 				description_md = f.read()
-			with open(modules_config_yaml_path, 'r', encoding='utf-8') as f:
-				modules_config_yaml = f.read()
+			if os.path.exists(modules_config_yaml_path):
+				with open(modules_config_yaml_path, 'r', encoding='utf-8') as f:
+					modules_config_yaml = f.read()
+					config_files['modules_config.yaml'] = modules_config_yaml
 		filename = os.path.basename(file_path)
 		if 'prompt' in filename:
-			await self.generate_prompt_file(filename, description_md)
+			await self.generate_prompt_file(filename, description_md, config_files)
 		else:
 			await self.generate_config_file(filename, description_md, modules_config_yaml)
 		
@@ -1681,7 +1684,7 @@ class CodeArchitectAgent(BaseAgent):
 			if not response:
 				self.logger.error("LLM未返回响应")
 				continue
-			print(f"大模型回复：：{response}")
+			# print(f"大模型回复：：{response}")
 			# 尝试应用修复
 			if self._apply_runtime_fix(response, main_file_path, simulator_file_path):
 				self.logger.info(f"✓ 修复完成")

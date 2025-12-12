@@ -9,9 +9,8 @@ from typing import List, Dict, Any, Optional, Tuple
 import matplotlib.pyplot as plt
 from datetime import datetime
 
-# 配置matplotlib支持中文显示
-plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei']  # 使用微软雅黑或黑体
-plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial']  # Use English fonts
+plt.rcParams['axes.unicode_minus'] = False  # Fix minus sign display issue
 
 class SimulationType(Enum):
     DEFAULT = "default"
@@ -30,6 +29,14 @@ class SimulationAnalyzer:
         self.history_folder = os.path.join("history", simulation_type.value)
         self.p_value = p_value
         self.y_value = y_value
+        
+        # 创建带时间戳的输出目录
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.analysis_results_dir = os.path.join(self.history_folder, 'analysis_results', timestamp)
+        os.makedirs(self.analysis_results_dir, exist_ok=True)
+        # 获取完整绝对路径用于输出
+        self.analysis_results_full_path = os.path.abspath(self.analysis_results_dir)
+        print(f"分析结果将保存至: {self.analysis_results_full_path}")
         
         # 定义每种模拟类型的关键指标
         self.metrics = {
@@ -83,8 +90,9 @@ class SimulationAnalyzer:
             
             # 提取文件夹名称中的p和y值进行过滤
             dir_name = os.path.basename(timestamp_dir)
-            p_match = re.search(r'p(\d+)', dir_name)
-            y_match = re.search(r'y(\d+)', dir_name)
+            # 支持 _p 和 _y 两种格式的参数提取
+            p_match = re.search(r'_p(\d+)', dir_name) or re.search(r'p(\d+)', dir_name)
+            y_match = re.search(r'_y(\d+)', dir_name) or re.search(r'y(\d+)', dir_name)
             
             current_p = int(p_match.group(1)) if p_match else None
             current_y = int(y_match.group(1)) if y_match else None
@@ -138,8 +146,9 @@ class SimulationAnalyzer:
         # 合并所有年份
         all_years = set()
         for df in dataframes:
-            all_years.update(df['years'].unique())
-        all_years = sorted(list(all_years))
+            df['years'] = pd.to_numeric(df['years'], errors='coerce')
+            all_years.update(df['years'].dropna().unique())
+        all_years = sorted([int(y) for y in all_years if not np.isnan(y)])
         
         # 初始化结果字典
         processed_data = {'years': all_years}
@@ -230,7 +239,7 @@ class SimulationAnalyzer:
             
             # 绘制平均值线
             mean_line = plt.plot(years, result[f'{metric}_mean'], 
-                               label='平均值', color='blue', linewidth=2)
+                               label='Mean', color='blue', linewidth=2)
             
             # 添加标准差区域
             if f'{metric}_std' in result:
@@ -240,29 +249,39 @@ class SimulationAnalyzer:
                                mean_array - std_array,
                                mean_array + std_array,
                                alpha=0.2, color='blue',
-                               label='±1 标准差')
+                               label='±1 Std Dev')
             
             # 添加最大值和最小值
             if f'{metric}_max' in result and f'{metric}_min' in result:
                 plt.plot(years, result[f'{metric}_max'], 
-                       '--', color='red', alpha=0.5, label='最大值')
+                       '--', color='red', alpha=0.5, label='Maximum')
                 plt.plot(years, result[f'{metric}_min'], 
-                       '--', color='green', alpha=0.5, label='最小值')
+                       '--', color='green', alpha=0.5, label='Minimum')
             
-            plt.title(f'{metric} 时序统计')
-            plt.xlabel('年份')
+            plt.title(f'{metric} Time Series Statistics')
+            plt.xlabel('Year')
             plt.ylabel(metric)
             plt.legend()
             plt.grid(True, alpha=0.3)
             
+            # Limit x-axis ticks to maximum 20
+            if len(years) > 20:
+                step = len(years) // 20
+                tick_indices = list(range(0, len(years), step))
+                if len(years) - 1 not in tick_indices:
+                    tick_indices.append(len(years) - 1)
+                plt.xticks([years[i] for i in tick_indices])
+            else:
+                plt.xticks(years)
+            
             # 保存图表
-            plots_dir = os.path.join(self.history_folder, 'analysis_results')
-            os.makedirs(plots_dir, exist_ok=True)
             current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-            save_path = os.path.join(plots_dir, f'{metric}_time_series_{current_time}.png')
+            save_path = os.path.join(self.analysis_results_dir, f'{metric}_time_series_{current_time}.png')
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
             plt.close()
-            print(f"已保存时序统计图：{save_path}")
+            # 输出完整绝对路径
+            save_path_full = os.path.abspath(save_path)
+            print(f"已保存时序统计图：{save_path_full}")
 
     def calculate_statistics(self, results: List[Dict[str, Any]]) -> Dict[str, Dict[str, float]]:
         """
@@ -276,10 +295,14 @@ class SimulationAnalyzer:
             
         stats = {}
         
-        # 合并所有结果中的指标
-        all_metrics = set()
+        # 合并所有结果中的指标，保持第一次出现的顺序
+        all_metrics = []
+        seen_metrics = set()
         for result in results:
-            all_metrics.update(result.keys())
+            for metric in result.keys():
+                if metric not in seen_metrics:
+                    all_metrics.append(metric)
+                    seen_metrics.add(metric)
             
         for metric in all_metrics:
             values = [result[metric] for result in results if metric in result]
@@ -296,6 +319,34 @@ class SimulationAnalyzer:
         
         return stats
 
+    def _find_common_suffix(self, strings: List[str]) -> str:
+        """
+        找出字符串列表的最长公共后缀
+        :param strings: 字符串列表
+        :return: 公共后缀
+        """
+        if not strings:
+            return ""
+        if len(strings) == 1:
+            return strings[0]
+        
+        # 将字符串按下划线分割并反转
+        split_strings = [s.split('_')[::-1] for s in strings]
+        
+        # 找出公共后缀部分
+        common_parts = []
+        min_length = min(len(s) for s in split_strings)
+        
+        for i in range(min_length):
+            parts_at_i = [s[i] for s in split_strings]
+            if len(set(parts_at_i)) == 1:  # 所有字符串在这个位置都相同
+                common_parts.append(parts_at_i[0])
+            else:
+                break
+        
+        # 反转回来并用下划线连接
+        return '_'.join(common_parts[::-1]) if common_parts else ""
+
     def plot_statistics(self, stats: Dict[str, Dict[str, float]], output_dir: str = "history"):
         """
         绘制统计图表
@@ -305,58 +356,88 @@ class SimulationAnalyzer:
         if not stats:
             print("警告：没有数据可以绘制图表")
             return
-            
-        # 确保输出目录存在
-        os.makedirs(os.path.join(output_dir, self.simulation_type.value, 'analysis_results'), exist_ok=True)
         
-        # 根据指标名称的后缀进行分组
-        grouped_metrics = {}
+        # 首先按最后两个部分进行初步分组
+        temp_groups = {}
         for metric_name, metric_data in stats.items():
-            # 从指标名称的末尾开始匹配，将最后两个词相同的指标视为同一组
             parts = metric_name.split('_')
             if len(parts) >= 2:
-                group_key = '_'.join(parts[-2:]) # 取最后两个部分作为组键
+                temp_key = '_'.join(parts[-2:])
             else:
-                group_key = metric_name # 如果不足两个部分，则使用完整指标名作为组键
+                temp_key = metric_name
+            
+            if temp_key not in temp_groups:
+                temp_groups[temp_key] = []
+            temp_groups[temp_key].append((metric_name, metric_data))
+        
+        # 对每个初步分组找出公共后缀作为真正的组键
+        grouped_metrics = {}
+        group_order = []
+        
+        for temp_key, metrics_list in temp_groups.items():
+            metric_names = [m[0] for m in metrics_list]
+            # 找出这组指标的公共后缀
+            group_key = self._find_common_suffix(metric_names)
+            
+            # 如果没有公共后缀，使用临时键
+            if not group_key:
+                group_key = temp_key
             
             if group_key not in grouped_metrics:
                 grouped_metrics[group_key] = []
-            grouped_metrics[group_key].append((metric_name, metric_data))
+                group_order.append(group_key)
+            grouped_metrics[group_key].extend(metrics_list)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        for group_key, metrics_in_group in grouped_metrics.items():
-            # 按平均值绝对值排序组内指标
-            sorted_group_metrics = sorted(
-                metrics_in_group,
-                key=lambda x: abs(x[1]['mean']),
-                reverse=True
-            )
+        for group_key in group_order:  # 按原始顺序遍历组
+            metrics_in_group = grouped_metrics[group_key]
+            # 保持原始顺序，不再按平均值排序
             
-            metrics = [m[0] for m in sorted_group_metrics]
-            means = [m[1]['mean'] for m in sorted_group_metrics]
-            stds = [m[1]['std'] for m in sorted_group_metrics]
+            metrics = [m[0] for m in metrics_in_group]
+            means = [m[1]['mean'] for m in metrics_in_group]
+            stds = [m[1]['std'] for m in metrics_in_group]
             
             if not metrics:
                 print(f"警告：组 '{group_key}' 中没有有效指标，跳过绘图。")
                 continue
 
+            # Limit to top 20 metrics if more than 20
+            if len(metrics) > 20:
+                metrics = metrics[:20]
+                means = means[:20]
+                stds = stds[:20]
+
+            # 简化横坐标标签：移除与组键（标题）重复的后缀
+            simplified_labels = []
+            for metric in metrics:
+                # 如果指标名称以组键结尾，则移除该后缀
+                if metric.endswith(group_key) and len(metric) > len(group_key):
+                    # 移除后缀和分隔符
+                    prefix = metric[:-len(group_key)].rstrip('_')
+                    simplified_labels.append(prefix if prefix else metric)
+                else:
+                    simplified_labels.append(metric)
+
             plt.figure(figsize=(15, 8))
             x = np.arange(len(metrics))
             plt.bar(x, means, yerr=stds, align='center', alpha=0.8, capsize=5)
             
-            plt.title(f'{self.simulation_type.value} 模拟统计数据 - {group_key}')
-            plt.xticks(x, metrics, rotation=45, ha='right')
-            plt.ylabel('数值')
+            plt.title(f'{self.simulation_type.value} Simulation Statistics - {group_key}')
+            plt.xticks(x, simplified_labels, rotation=45, ha='right')
+            plt.ylabel('Value')
             plt.grid(True, axis='y', linestyle='--', alpha=0.7)
             
             # 调整布局以防止标签被切off
             plt.tight_layout()
             
             # 保存图表
-            output_path = os.path.join(output_dir, self.simulation_type.value,'analysis_results', f'statistics_{group_key}_{timestamp}.png')
+            output_path = os.path.join(self.analysis_results_dir, f'statistics_{group_key}_{timestamp}.png')
             plt.savefig(output_path)
             plt.close()
+            # 输出完整绝对路径
+            output_path_full = os.path.abspath(output_path)
+            print(f"已保存统计图表：{output_path_full}")
 
     def generate_report(self, stats: Dict[str, Dict[str, float]], output_dir: str = "history", report_type: str = "json"):
         """
@@ -375,13 +456,12 @@ class SimulationAnalyzer:
         report.append(f"\n生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         report.append("\n## 统计概要")
         
-        # 按平均值降序排序指标
-        sorted_metrics = sorted(stats.items(), key=lambda x: abs(x[1]['mean']) if 'mean' in x[1] else 0, reverse=True)
+        # 保持原始顺序，不再排序
         
-        report.append("\n| 指标 | 平均值 | 标准差 | 最小值 | 最大值 | 样本数 |")
-        report.append("|------|--------|--------|--------|--------|--------|")
+        report.append("\n| Metric | Mean | Std Dev | Min | Max | Count |")
+        report.append("|--------|------|---------|-----|-----|-------|")
         
-        for metric, data in sorted_metrics:
+        for metric, data in stats.items():
             mean_val = data.get('mean', 'N/A')
             std_val = data.get('std', 'N/A')
             min_val = data.get('min', 'N/A')
@@ -408,12 +488,13 @@ class SimulationAnalyzer:
             )
         
         # 保存报告
-        os.makedirs(os.path.join(output_dir, self.simulation_type.value, 'analysis_results'), exist_ok=True)
-        report_path = os.path.join(output_dir, self.simulation_type.value,'analysis_results', f'{report_type}_statistics_report_{timestamp}.md')
+        report_path = os.path.join(self.analysis_results_dir, f'{report_type}_statistics_report_{timestamp}.md')
         with open(report_path, 'w', encoding='utf-8') as f:
             f.write('\n'.join(report))
         
-        print(f"已生成{report_type.upper()}统计报告：{report_path}")
+        # 输出完整绝对路径
+        report_path_full = os.path.abspath(report_path)
+        print(f"已生成{report_type.upper()}统计报告：{report_path_full}")
         return report_path
 
     def generate_csv_report(self, csv_data: Dict[str, Any], output_dir: str = "history"):
@@ -500,7 +581,10 @@ def main():
     else:
         print("警告：未找到CSV运行数据文件，跳过CSV时序数据绘图和报告生成。")
     
-    print(f"分析完成！结果保存在 history/{args.type}/analysis_results/ 目录下")
+    print(f"\n{'='*80}")
+    print(f"分析完成！所有结果已保存至：")
+    print(f"{analyzer.analysis_results_full_path}")
+    print(f"{'='*80}")
 
 if __name__ == "__main__":
     main()

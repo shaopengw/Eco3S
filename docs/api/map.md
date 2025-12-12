@@ -7,7 +7,7 @@
 ### 初始化参数
 - width: int - 地图宽度
 - height: int - 地图高度
-- data_file: str - 城市数据文件路径（默认'config/towns_data.json'）
+- data_file: str - 城市数据文件路径（默认'config/default/towns_data.json'）
 
 ### 核心属性
 - grid: numpy.ndarray - 基础地图网格

@@ -36,7 +36,6 @@ actions:
       - name: "update_job"
         type: "boolean"
         required: false
-        # 注意：默认模拟中此参数默认值为 true，TEOG模拟中为 false。
         # 请根据实际模拟需求选择合适的默认值。
         default: true # 是否更新职业，如果为false则保留原职业
     

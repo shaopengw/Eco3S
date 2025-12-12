@@ -58,9 +58,11 @@ class JobMarket:
                 self.jobs_info[job]["total"] += additional_jobs
                 allocated_count += additional_jobs
 
-            # 将所有剩余的工作分配给农民，确保非负
+            # 将所有剩余的工作分配给第一个职业（如果有剩余），确保非负
             remaining_jobs = max(0, total_count - allocated_count)
-            self.jobs_info["农民"]["total"] += remaining_jobs
+            if remaining_jobs > 0 and self.professions_ratio:
+                first_job = next(iter(self.professions_ratio))
+                self.jobs_info[first_job]["total"] += remaining_jobs
     
     def add_job(self, job, num=1):
         """
