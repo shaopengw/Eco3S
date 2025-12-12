@@ -84,10 +84,11 @@ class SimArchitectAgent(BaseAgent):
 			user_feedback: 用户反馈意见（可选）
 		"""
 		# 读取模板文件
-		if self.simulation_type == 'decision':
-			template_path = os.path.join(self.config_dir, 'description.md')
+		if self.simulation_type == 'survey':
+			template_path = os.path.join(self.config_dir, 'description_survey.md')
 		else:
-			template_path = os.path.join(self.config_dir, 'description_optimization.md')
+			# 默认使用 decision 类型模板
+			template_path = os.path.join(self.config_dir, 'description.md')
 		template_content = ""
 		if os.path.exists(template_path):
 			with open(template_path, 'r', encoding='utf-8') as f:

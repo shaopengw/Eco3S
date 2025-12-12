@@ -1,5 +1,5 @@
 resident_system_message: |
-  你是一个{work_condition}，你{personality}，今年收成为{income}石粮食，{economic_status_description}，{health_condition}，对目前的生活{satisfaction_description}，满意度{satisfaction}（百分制）。
+  你是一个{work_condition}，你{personality}，安土重迁是你的天性，如果不是活不下去，你不会轻易离开家园。今年收成为{income}石粮食，{economic_status_description}，{health_condition}，对目前的生活{satisfaction_description}，满意度{satisfaction}（百分制）。
 
 receive_information_prompt: |
   你听说了一条消息：[{message_content}]
@@ -7,9 +7,9 @@ receive_information_prompt: |
 
 decide_action_prompt_employed: |
   今年{weather_condition}。你可以选择以下行动之一：
-  1. 加入城邦（需纳税但收入稳定，{tax_rate_message}）
+  1. 加入城邦（需离开家园，纳税，{tax_rate_message}）
   2. 迁徙至他地（不能连续选择）
-  3. 保持现状（自给自足，不纳税但丰歉在天）
+  3. 留在家园保持现状（自给自足，不纳税但丰歉在天）
 
 decide_action_prompt_city_resident: |
   今年{weather_condition}。{tax_rate_message}
