@@ -45,12 +45,6 @@ class TEOGSimulator:
         self.gdp = self.calculate_gdp()  # 确保先计算初始GDP
         self.average_satisfaction = self.calculate_average_satisfaction()  # 计算初始满意度
         
-        # 创建结果文件
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        data_dir = SimulationContext.get_data_dir()
-        SimulationContext.ensure_directories()
-        self.result_file = os.path.join(data_dir, f"running_data_{timestamp}.csv")
-        
         self.save_initial_results()
         self.start_time = None  # 用于记录模拟开始时间
         self.end_time = None    # 用于记录模拟结束时间
@@ -68,6 +62,12 @@ class TEOGSimulator:
 
     async def run(self):
         """运行模拟"""
+        # 创建结果文件
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        data_dir = SimulationContext.get_data_dir()
+        SimulationContext.ensure_directories()
+        result_file = os.path.join(data_dir, f"running_data_{timestamp}.csv")
+        
         while not self.time.is_end():
             # 打印当前时间步信息
             print(Back.GREEN + f"年份:{self.time.current_time}" + Back.RESET)
@@ -112,7 +112,7 @@ class TEOGSimulator:
                 'ordinary_type': OrdinaryGovernmentAgent,
                 'leader_type': HighRankingGovernmentAgent,
             }
-            # government_decision = await self.collect_group_decision(government_config)
+            government_decision = await self.collect_group_decision(government_config)
             
             if government_decision:
                 self.execute_government_decision(government_decision)
@@ -122,8 +122,6 @@ class TEOGSimulator:
 
             # 4. 年终：更新和记录数据
             self.update_annual_results()
-            # 在每个时间步结束时保存结果
-            self.save_results(self.result_file, append=True)
             # 记录年度记忆
             if government_decision:
                 changes_summary = self.summarize_time_step_results()
@@ -136,9 +134,11 @@ class TEOGSimulator:
                     )
             
             print(f"城市居民：{self.get_urban_scale()}，农民：{self.population.get_population() - self.get_urban_scale()}")
+            # 在每个时间步结束时保存结果
+            self.save_results(result_file, append=True)
             self.time.step()
 
-    async def initialize_salaries(self):
+    def initialize_salaries(self):
         """
         初始化沿河城市和非沿河城市的基本工资。
         """
@@ -146,6 +146,7 @@ class TEOGSimulator:
             job_market = town_data.get('job_market')
             if job_market:
                 original_salary_city = job_market.jobs_info["城市居民"]["base_salary"]
+                new_salary = original_salary_city
                 if job_market.town_type == "非沿河":
                     new_salary = original_salary_city * 0.7
                     self.salary_non_canal = new_salary
@@ -286,18 +287,49 @@ class TEOGSimulator:
             # 执行所有决策动作
             success = True
             
+            # 获取当前预算
+            current_budget = self.government.get_budget()
+            salary = self.calculate_total_salaries()
+
+            # 从决策数据中提取各项支出
+            public_budget = decision_data.get("public_budget", 0)
+            maintenance_investment = decision_data.get("maintenance_investment", 0)
+
+            # 计算计划总支出
+            total_planned_expenditure = public_budget + maintenance_investment
+            print(f"计划总支出: {total_planned_expenditure:.2f} = {public_budget:.2f} + {maintenance_investment:.2f}")
+            
+            # 如果计划总支出超过预算，则按比例缩减
+            if total_planned_expenditure > current_budget:
+                if total_planned_expenditure > 0:
+                    scaling_factor = current_budget / total_planned_expenditure
+                    
+                    # 按比例缩减各项支出
+                    decision_data["public_budget"] = public_budget * scaling_factor
+                    decision_data["maintenance_investment"] = maintenance_investment * scaling_factor
+                    print(f"按比例缩减后，公共预算: {decision_data['public_budget']:.2f}")
+                    print(f"按比例缩减后，维护投资: {decision_data['maintenance_investment']:.2f}")
+                    print(f"预算不足，按比例缩减开支。缩放比例: {scaling_factor:.2f}")
+            else:
+                print(f"预算充足，无需缩减。当前预算: {current_budget:.2f}，计划支出: {total_planned_expenditure:.2f}")
+
             # 获取决策键并随机打乱顺序
-            import random
             decision_keys = list(decision_data.keys())
             random.shuffle(decision_keys)
 
             # 按随机顺序处理政府决策
             for key in decision_keys:
-                if key == "maintenance_investment":
+                if key == "public_budget":
+                    self.government.handle_public_budget(
+                        budget_allocation=decision_data["public_budget"], 
+                        salary=salary, 
+                        job_total_count=self.get_job_total_count(), 
+                        residents=self.residents
+                    )
+                elif key == "maintenance_investment":
                     self.government.maintain_canal(
                         maintenance_investment=decision_data["maintenance_investment"]
                     )
-
                 elif key == "tax_adjustment":
                     self.government.adjust_tax_rate(decision_data["tax_adjustment"])
 
@@ -320,10 +352,20 @@ class TEOGSimulator:
                 self.population.death()
                 continue
             
+            # 职业检查：如果居民职业为None，在就业市场中分配"农民"职业
+            if resident.job is None:
+                # 获取居民所在城镇的就业市场
+                town_data = self.towns.towns.get(resident.town)
+                if town_data and 'job_market' in town_data:
+                    job_market = town_data['job_market']
+                    job_market.assign_specific_job_withoutcheck(resident, "农民")
+                else:
+                    print(f"警告：无法找到居民 {resident.resident_id} 所在城镇 {resident.town} 的就业市场")
+            
             # 收集居民行为决策
             tax_rate = self.government.get_tax_rate()
             climate_impact_factor = self.climate.get_current_impact(self.time.current_time, self.time.start_time)
-            task = resident.decide_action_by_llm(tax_rate, self.basic_living_cost, climate_impact_factor)
+            task = resident.decide_action_by_llm(tax_rate=tax_rate, basic_living_cost=self.basic_living_cost, climate_impact=climate_impact_factor)
             tasks.append(task)
             resident_decisions.append(resident)  # 保存对应的居民对象
 
@@ -398,22 +440,13 @@ class TEOGSimulator:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = os.path.join(data_dir, f"running_data_{timestamp}.csv")
         
-        if append:
-            # 创建一个字典，包含每个指标的最新数据点
-            last_row_data = {key: [value[-1]] for key, value in self.results.items() if value}
-            df = pd.DataFrame(last_row_data)
-        else:
-            df = pd.DataFrame(self.results)
+        # 始终从完整的 self.results 创建 DataFrame
+        df = pd.DataFrame(self.results)
         
-        if append and os.path.exists(filename):
-            # 追加模式，不写入表头
-            df.to_csv(filename, mode='a', header=False, index=False)
-        else:
-            # 新文件或覆盖模式
-            df.to_csv(filename, index=False)
+        # 始终使用覆盖模式写入，以保证数据的完整性
+        df.to_csv(filename, index=False)
         
-        if not append:
-            print(f"模拟结果已保存至 {filename}")
+        print(f"模拟结果已完整保存至 {filename}")
     
     def calculate_gdp(self):
         """
@@ -566,14 +599,17 @@ class TEOGSimulator:
 
     def calculate_total_salaries(self):
         """
-        计算总收入
-        :return: 总收入
+        计算城市居民总收入
+        :return: 城市居民总收入
         """
         total_salary = 0
         
         for town_name, town_data in self.towns.towns.items():
-            if town_data.get('job_market'):
-                total_salary += town_data['job_market'].get_other_total_salary()
+            job_market = town_data.get('job_market')
+            if job_market and "城市居民" in job_market.jobs_info:
+                # 只计算城市居民的收入
+                city_job_info = job_market.jobs_info["城市居民"]
+                total_salary += city_job_info["base_salary"] * len(city_job_info["employed"])
         
         return total_salary
 
@@ -591,3 +627,16 @@ class TEOGSimulator:
         
         # 确保城市规模不超过总人口
         return min(urban_scale, total_population)
+    
+    def get_job_total_count(self):
+        """
+        获取所有职业的岗位总数
+        :return: 所有职业的岗位总数
+        """
+        total_count = 0
+        for town_name, town_data in self.towns.towns.items():
+            job_market = town_data.get('job_market')
+            if job_market:
+                for job_type, job_info in job_market.jobs_info.items():
+                    total_count += job_info["total"]
+        return total_count

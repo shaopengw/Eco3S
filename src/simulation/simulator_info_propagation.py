@@ -55,12 +55,12 @@ class InfoPropagationSimulator:
                 await self.run_single_round(year)
             
             # # 运行知识问答调查
-            # print("\n开始进行知识问答调查...")
-            # await self.run_knowledge_survey()
+            print("\n开始进行知识问答调查...")
+            await self.run_knowledge_survey()
             
             # # 运行奖励问题调查
-            # print("\n开始进行奖励问题调查...")
-            # await self.run_incentive_survey()
+            print("\n开始进行奖励问题调查...")
+            await self.run_incentive_survey()
             
             # 保存当前策略的结果
             self.save_strategy_results()
@@ -79,7 +79,7 @@ class InfoPropagationSimulator:
             self.time.set_current_time(year)  # 设置当前时间
         
         # 1. 执行信息传播策略
-        # await self.execute_propagation_strategy(year)
+        await self.execute_propagation_strategy(year)
 
         # 3. 收集数据
         self.collect_round_data(year)
@@ -375,8 +375,8 @@ class InfoPropagationSimulator:
                 if response:
                     # 清理LLM返回的字符串并解析JSON
                     cleaned_response = response.strip()
-                    cleaned_response = re.sub(r"^```json\\s*|\\s*```$", "", cleaned_response, flags=re.DOTALL).strip()
-
+                    # cleaned_response = re.sub(r"^```json\\s*|\\s*```$", "", cleaned_response, flags=re.DOTALL).strip()
+                    cleaned_response = cleaned_response.replace("```json", "").replace("```", "").strip()
                     try:
                         response_json = json.loads(cleaned_response)
                         select = response_json.get("select", '').upper()

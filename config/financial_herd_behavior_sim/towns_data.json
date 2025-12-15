@@ -1,0 +1,27 @@
+{
+  "map_boundaries": {
+    "min_longitude": 0.0,
+    "max_longitude": 100.0,
+    "min_latitude": 0.0,
+    "max_latitude": 100.0
+  },
+  "canals": [
+    {
+      "name": "Main Trading Network",
+      "towns": [
+        {"name": "Central Exchange", "longitude": 50.0, "latitude": 50.0},
+        {"name": "Eastern Market", "longitude": 75.0, "latitude": 50.0}
+      ]
+    },
+    {
+      "name": "Secondary Trading Network",
+      "towns": [
+        {"name": "Western Hub", "longitude": 25.0, "latitude": 50.0},
+        {"name": "Northern Trading Post", "longitude": 50.0, "latitude": 75.0}
+      ]
+    }
+  ],
+  "other_towns": [
+    {"name": "Southern Investment Center", "longitude": 50.0, "latitude": 25.0}
+  ]
+}

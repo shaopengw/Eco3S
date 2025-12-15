@@ -1,5 +1,18 @@
 # Social Network 模块 API 文档
 
+## 提示
+
+**属性命名规范**：
+- SocialNetwork 类的异质图属性名为 **`hetero_graph`**
+- SocialNetwork 类的超图属性名为 **`hyper_graph`**
+
+使用示例：
+```python
+# 正确 ✓
+neighbors = social_network.hetero_graph.get_neighbors(node_id)
+groups = social_network.hyper_graph.get_hyperedges()
+```
+
 ## 核心类结构
 
 ### HeterogeneousGraph
@@ -28,6 +41,13 @@
 
 #### 初始化参数
 无需参数，自动创建异质图和超图实例。
+
+#### 类属性
+- **hetero_graph**: HeterogeneousGraph - 异质图实例
+- **hyper_graph**: Hypergraph - 超图实例
+- **residents**: dict - 居民字典 {resident_id: resident_object}
+
+**重要提示**：访问异质图时使用 `social_network.hetero_graph`，访问超图时使用 `social_network.hyper_graph`。
 
 #### 主要方法
 
