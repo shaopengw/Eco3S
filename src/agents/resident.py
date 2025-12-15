@@ -417,8 +417,13 @@ class Resident(BaseAgent):
                     pass
 
             if not callable_obj:
-                self.resident_log.error(f"居民 {self.resident_id} 无法解析函数：{func_path}")
-                return False
+                # 返回未解析的函数信息，由simulator处理
+                return {
+                    'unresolved_function': func_path,
+                    'action': action,
+                    'resident': self,
+                    'kwargs': kwargs
+                }
 
             # 构建参数
             available = {**{k: v for k, v in self.__dict__.items()}, **kwargs}

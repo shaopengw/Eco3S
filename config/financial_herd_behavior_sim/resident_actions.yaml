@@ -1,0 +1,31 @@
+actions:
+  1:
+    name: "buy_asset"
+    description: "买入资产"
+    function: "buy_asset"
+    is_async: false
+    parameters:
+      - name: "amount"
+        type: "number"
+        required: false
+        default: 1
+        description: "买入数量（默认1单位）"
+    
+  2:
+    name: "sell_asset"
+    description: "卖出资产"
+    function: "sell_asset"
+    is_async: false
+    parameters:
+      - name: "amount"
+        type: "number"
+        required: false
+        default: 1
+        description: "卖出数量（默认1单位）"
+    
+  3:
+    name: "hold_position"
+    description: "持有当前仓位不交易"
+    function: "hold_position"
+    is_async: false
+    parameters: []

@@ -159,7 +159,7 @@ class Simulator:
                 if resident.job == "叛军":
                     tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
                 else:
-                    tasks.append(resident.decide_action_by_llm(tax_rate, self.basic_living_cost))
+                    tasks.append(resident.decide_action_by_llm(tax_rate=tax_rate, basic_living_cost=self.basic_living_cost))
 
                 # 更新居民寿命（每年）
                 if resident.update_resident_status(self.basic_living_cost):

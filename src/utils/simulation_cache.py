@@ -3,6 +3,9 @@ import pickle
 import logging
 from datetime import datetime
 from typing import Any, Optional, Type, TypeVar
+import yaml
+import time as time_module
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from src.agents.resident import Resident, ResidentGroup, ResidentSharedInformationPool
 from src.agents.government import (
@@ -238,6 +241,8 @@ class SimulationCache:
                         }
                     elif attr_name == 'social_network':
                         state[attr_name] = attr_value.to_dict() if hasattr(attr_value, 'to_dict') else {}
+                    elif attr_name == 'result_file':
+                        state[attr_name] = attr_value
                     else:
                         # 尝试直接保存其他属性
                         try:
@@ -298,74 +303,120 @@ class SimulationCache:
                     if isinstance(residents_data, tuple) and len(residents_data) > 0:
                         residents_data = residents_data[0]
                     if isinstance(residents_data, list):
-                        # 预加载配置文件
-                        import yaml
+                        start_time = time_module.time()
+                        print(f"开始恢复 {len(residents_data)} 个居民...")
+                        
+                        # 预加载配置文件（在主线程中加载一次）
                         with open(config["data"]["resident_prompt_path"], 'r', encoding='utf-8') as file:
                             prompts_resident = yaml.safe_load(file)
                         with open(config["data"]["resident_actions_path"], 'r', encoding='utf-8') as file:
                             actions_config = yaml.safe_load(file)
                         
-                        for res_state in residents_data:
-                            resident = Resident(
-                                resident_id=res_state.get('resident_id'),
-                                job_market=None,  # 临时设为None，后续更新
-                                shared_pool=ResidentSharedInformationPool(),
-                                map=simulator.map,
-                                prompts_resident=prompts_resident,
-                                actions_config=actions_config,
-                                lightweight=True  # 使用轻量级初始化
-                            )
-                            # 初始化model_manager和model_backend
-                            resident.model_manager = ModelManager()
-                            model_config = resident.model_manager.get_random_model_config()
-                            resident.model_type = ModelType(model_config["model_type"])
-                            resident.model_config = ChatGPTConfig(**model_config["model_config"])
-                            resident.model_backend = ModelFactory.create(
-                                model_platform=model_config["model_platform"],
-                                model_type=resident.model_type,
-                                model_config_dict=resident.model_config.as_dict(),
-                            )
-                            resident.token_counter = OpenAITokenCounter(resident.model_type)
-                            resident.context_creator = ScoreBasedContextCreator(resident.token_counter, 4096)
-                            # 恢复居民状态
-                            resident.shared_pool.shared_info = res_state.get('shared_pool', {})
-                            resident.location = res_state.get('location')
-                            resident.town = res_state.get('town')
-                            resident.employed = res_state.get('employed')
-                            resident.job = res_state.get('job')
-                            resident.income = res_state.get('income')
-                            resident.satisfaction = res_state.get('satisfaction')
-                            resident.health_index = res_state.get('health_index')
-                            resident.lifespan = res_state.get('lifespan')
-                            resident.personality = res_state.get('personality')
-                            resident.system_message = res_state.get('system_message')
-                            
-                            # 恢复记忆系统
-                            memory_state = res_state.get('memory')
-                            if memory_state:
-                                resident.memory = MemoryManager(
-                                    agent_id=resident.resident_id,
-                                    model_type=resident.model_type,
-                                    group_type='resident',
-                                    window_size=5
+                        # 共享资源（在主线程中创建）
+                        shared_pool = ResidentSharedInformationPool()
+                        model_manager = ModelManager()
+                        model_config = model_manager.get_random_model_config()
+                        model_type = ModelType(model_config["model_type"])
+                        model_config_obj = ChatGPTConfig(**model_config["model_config"])
+                        
+                        # 定义单个居民恢复函数
+                        def restore_single_resident(res_state):
+                            """恢复单个居民的函数"""
+                            try:
+                                resident = Resident(
+                                    resident_id=res_state.get('resident_id'),
+                                    job_market=None,
+                                    shared_pool=shared_pool,
+                                    map=simulator.map,
+                                    prompts_resident=prompts_resident,
+                                    actions_config=actions_config,
+                                    lightweight=True
                                 )
-                                resident.memory.set_agent(resident)
-                                # 恢复聊天历史
-                                for msg in memory_state.get('chat_history', []):
-                                    record = MemoryRecord(
-                                        message=BaseMessage.make_assistant_message(
-                                            role_name='resident',
-                                            content=msg['content']
-                                        ) if msg['role'] == 'assistant' else BaseMessage.make_user_message(
-                                            role_name='resident',
-                                            content=msg['content']
-                                        ),
-                                        role_at_backend=msg['role']
+                                
+                                # 共享模型配置
+                                resident.model_manager = model_manager
+                                resident.model_type = model_type
+                                resident.model_config = model_config_obj
+                                resident.model_backend = ModelFactory.create(
+                                    model_platform=model_config["model_platform"],
+                                    model_type=model_type,
+                                    model_config_dict=model_config_obj.as_dict(),
+                                )
+                                resident.token_counter = OpenAITokenCounter(model_type)
+                                resident.context_creator = ScoreBasedContextCreator(resident.token_counter, 4096)
+                                
+                                # 恢复居民状态
+                                resident.location = res_state.get('location')
+                                resident.town = res_state.get('town')
+                                resident.employed = res_state.get('employed')
+                                resident.job = res_state.get('job')
+                                resident.income = res_state.get('income')
+                                resident.satisfaction = res_state.get('satisfaction')
+                                resident.health_index = res_state.get('health_index')
+                                resident.lifespan = res_state.get('lifespan')
+                                resident.personality = res_state.get('personality')
+                                resident.system_message = res_state.get('system_message')
+                                
+                                # 恢复记忆系统（简化版本）
+                                memory_state = res_state.get('memory')
+                                if memory_state and (memory_state.get('chat_history') or memory_state.get('longterm_memory')):
+                                    resident.memory = MemoryManager(
+                                        agent_id=resident.resident_id,
+                                        model_type=model_type,
+                                        group_type='resident',
+                                        window_size=5
                                     )
-                                    resident.memory.personal_memory.write_record(record)
-                                # 恢复长期记忆
-                                resident.memory.personal_memory.longterm_memory = memory_state.get('longterm_memory', [])
-                            simulator.residents[resident.resident_id] = resident
+                                    resident.memory.set_agent(resident)
+                                    # 仅恢复最近的聊天历史
+                                    chat_history = memory_state.get('chat_history', [])
+                                    for msg in chat_history[-10:]:
+                                        record = MemoryRecord(
+                                            message=BaseMessage.make_assistant_message(
+                                                role_name='resident',
+                                                content=msg['content']
+                                            ) if msg['role'] == 'assistant' else BaseMessage.make_user_message(
+                                                role_name='resident',
+                                                content=msg['content']
+                                            ),
+                                            role_at_backend=msg['role']
+                                        )
+                                        resident.memory.personal_memory.write_record(record)
+                                    resident.memory.personal_memory.longterm_memory = memory_state.get('longterm_memory', [])
+                                
+                                return resident.resident_id, resident
+                            except Exception as e:
+                                print(f"恢复居民 {res_state.get('resident_id')} 失败: {e}")
+                                import traceback
+                                traceback.print_exc()
+                                return None, None
+                        
+                        # 使用线程池并发恢复
+                        max_workers = min(os.cpu_count() * 2, len(residents_data), 32)
+                        completed = 0
+                        
+                        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                            # 提交所有任务
+                            future_to_resident = {
+                                executor.submit(restore_single_resident, res_state): res_state 
+                                for res_state in residents_data
+                            }
+                            
+                            # 收集结果
+                            for future in as_completed(future_to_resident):
+                                try:
+                                    resident_id, resident = future.result()
+                                    if resident_id and resident:
+                                        simulator.residents[resident_id] = resident
+                                        completed += 1
+                                        
+                                        # 显示进度
+                                        if completed % 100 == 0:
+                                            print(f"  已恢复 {completed}/{len(residents_data)} 个居民")
+                                except Exception as e:
+                                    print(f"处理居民恢复结果时出错: {e}")
+                        
+                        total_time = time_module.time() - start_time
+                        print(f"完成恢复 {completed} 个居民，耗时: {total_time:.2f}秒")
 
             # 重建城镇
             if 'towns' in state:
@@ -519,7 +570,7 @@ class SimulationCache:
                 simulator.government_officials = {}
 
             # 恢复叛乱数据
-            if 'rebellion' in state:
+            if 'rebellion' in state and config.get("data", {}).get("rebels_prompt_path"):
                 rebellion_state = state.get('rebellion')
                 if isinstance(rebellion_state, tuple) and len(rebellion_state) > 0:
                     rebellion_state = rebellion_state[0]
@@ -612,6 +663,18 @@ class SimulationCache:
             simulator.rebellion_history = state.get('rebellion_history') if 'rebellion_history' in state else None
             simulator.start_time = state.get('start_time') if 'start_time' in state else None
             simulator.end_time = state.get('end_time') if 'end_time' in state else None
+            
+            # 恢复或创建 result_file
+            if 'result_file' in state and state.get('result_file'):
+                simulator.result_file = state.get('result_file')
+            else:
+                # 如果缓存中没有 result_file，重新生成
+                from src.utils.simulation_context import SimulationContext
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                data_dir = SimulationContext.get_data_dir()
+                SimulationContext.ensure_directories()
+                simulator.result_file = os.path.join(data_dir, f"running_data_{timestamp}.csv")
+                print(f"重新生成 result_file: {simulator.result_file}")
 
             return simulator
         except Exception as e:

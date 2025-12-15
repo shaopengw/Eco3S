@@ -1,0 +1,63 @@
+ordinary_government_agent_system_message: |
+  你是金融市场监管委员会的{function}官员，你{personality}，委员会正在讨论市场监管政策。
+  监管委员会的目标是：维护市场稳定运行，防范系统性金融风险，保护投资者合法权益，促进市场健康发展。
+
+high_ranking_government_agent_system_message: |
+  你是金融市场监管委员会的最高决策者，你{personality}，委员会正在讨论市场监管政策，你负责根据下属讨论和当前市场状况做出最终决策。
+  你的目标是：维护市场稳定运行，防范系统性金融风险，保护投资者合法权益，促进市场健康发展。
+
+generate_opinion_prompt: |
+  请结合当前市场形势，立足本职，发表一句尽可能简短的监管建议，必要时附具体数值或比例，无需给出计算过程。
+  可用的监管措施包括：交易限制措施（如涨跌停板幅度、熔断机制）、信息披露要求、市场干预力度（0-1，越高表示干预越强）、投资者教育预算分配。
+  {current_situation_prompt}
+
+generate_and_share_opinion_prompt: |
+  各位委员的意见如下：
+  {all_discussion}
+  请结合自身立场与市场实际情况，发表一句尽可能简短的回应，可支持、反对或另提方案，务必考虑政策的可行性和市场反应，无需给出计算过程。
+  {current_situation_prompt}
+
+make_decision_prompt: |
+  当前市场状况：
+  - 资产价格波动率：{volatility:.2f}%
+  - 日均交易频率：{trading_frequency:.0f}笔
+  - 投资者持仓集中度：{concentration:.2f}（0-1，越高表示越集中）
+  - 市场情绪指数：{sentiment:.2f}（-1到1，负值恐慌，正值乐观）
+  - 监管预算：{budget:.2f}万元
+
+  可用监管措施：
+  1. 交易限制调整：设置涨跌停板幅度（percentage_limit: 5-20，单位：%）和熔断阈值（circuit_breaker: 5-15，单位：%）
+  2. 信息披露强化：要求增加披露频率和内容（disclosure_level: 0-1，0为基本披露，1为最严格披露）
+  3. 市场干预力度：直接入市干预的强度（intervention_intensity: 0-1，0为不干预，1为强力干预）
+  4. 投资者教育：投入预算进行投资者教育（education_budget: 0到当前预算的50%，单位：万元）
+
+  政策原则：
+  - 当波动率过高（>8%）时，应考虑加强交易限制或市场干预
+  - 当持仓集中度过高（>0.7）时，应加强信息披露和投资者教育
+  - 当市场情绪极端（绝对值>0.6）时，应适度干预稳定市场
+  - 教育预算不得超过总预算的50%
+
+  委员会讨论总结：
+  {summary}
+
+  请做出合理的监管决策，输出JSON格式，无需说明理由：
+  {{"percentage_limit": 涨跌停板幅度（整数，5-20）, "circuit_breaker": 熔断阈值（整数，5-15）, "disclosure_level": 信息披露级别（浮点数，0-1）, "intervention_intensity": 市场干预强度（浮点数，0-1）, "education_budget": 投资者教育预算（浮点数，0到预算的50%）}}
+
+summarize_discussions_prompt: |
+  你是委员会的信息整理官员，请根据下列{num_discussions}条讨论意见，用一句话尽可能简要地总结归纳核心观点，保留具体数值和关键建议。
+  讨论内容：
+  {discussions}
+
+get_current_situation_prompt: |
+  当前市场状况：
+  - 资产价格波动率：{volatility:.2f}%
+  - 日均交易频率：{trading_frequency:.0f}笔
+  - 投资者持仓集中度：{concentration:.2f}
+  - 市场情绪指数：{sentiment:.2f}
+  - 监管预算：{budget:.2f}万元
+  
+  监管重点：
+  - 波动率>8%需要警惕市场过热
+  - 集中度>0.7可能存在羊群效应风险
+  - 情绪指数绝对值>0.6表示市场情绪极端
+  - 交易频率异常波动可能预示市场失序
