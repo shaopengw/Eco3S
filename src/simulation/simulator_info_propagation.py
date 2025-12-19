@@ -19,6 +19,9 @@ class InfoPropagationSimulator:
         self.config = config
         self.conversation_volume = 0
         
+        # 初始化日志记录器
+        self.logger = LogManager.get_logger('simulator_info_propagation', console_output=True)
+        
         # 实验相关参数
         self.current_strategy = None
         self.seed_count = self.config["simulation"]["seed_count"]  # 种子策略中的种子人物数量
@@ -45,6 +48,7 @@ class InfoPropagationSimulator:
         for strategy in PropagationStrategy:
             self.current_strategy = strategy
             print(f"{Back.GREEN}策略 {strategy.value} 实验开始{Back.RESET}")
+            self.logger.info(f"策略 {strategy.value} 实验开始")
             self.conversation_volume = 0  # 重置讨论内容计数器
 
             # 重置时间状态，确保每个策略从初始时间开始
@@ -55,11 +59,11 @@ class InfoPropagationSimulator:
                 await self.run_single_round(year)
             
             # # 运行知识问答调查
-            print("\n开始进行知识问答调查...")
+            self.logger.info("\n开始进行知识问答调查...")
             await self.run_knowledge_survey()
             
             # # 运行奖励问题调查
-            print("\n开始进行奖励问题调查...")
+            self.logger.info("\n开始进行奖励问题调查...")
             await self.run_incentive_survey()
             
             # 保存当前策略的结果
@@ -67,11 +71,11 @@ class InfoPropagationSimulator:
             
             # 重置居民状态，准备下一个策略的实验
             await self.reset_resident_states()
-            print(f"居民状态已重置")
+            self.logger.info(f"居民状态已重置")
 
     async def run_single_round(self, year: int):
         """运行单轮实验"""
-        print(f"时间步 {year}, 策略 {self.current_strategy.value}")
+        self.logger.info(f"时间步 {year}, 策略 {self.current_strategy.value}")
         self.start_time = datetime.now()  # 记录模拟开始时间
 
         # 重置或确保时间状态正确
@@ -274,7 +278,7 @@ class InfoPropagationSimulator:
 
                     # 确保解析后的答案数量足够
                     if len(parsed_choices) < total_questions:
-                        print(f"警告: 居民 {resident.resident_id} 答案长度不足，期望{total_questions}，实际{len(parsed_choices)}")
+                        self.logger.warning(f"警告: 居民 {resident.resident_id} 答案长度不足，期望{total_questions}，实际{len(parsed_choices)}")
                         problematic_residents.append((resident, 0))  # 记录居民及尝试次数
                     else:
                         choices.append(choice)
@@ -285,7 +289,7 @@ class InfoPropagationSimulator:
             residents_to_retry = []
             for resident, attempts in problematic_residents:
                 if attempts >= 3:
-                    print(f"警告: 居民 {resident.resident_id} 已经尝试3次，仍然答案长度不足")
+                    self.logger.warning(f"警告: 居民 {resident.resident_id} 已经尝试3次，仍然答案长度不足")
                     continue
                 prompt = resident.prompts_resident['questionnaire_prompt'].format(
                     questionnaire_content=questionnaire,
@@ -308,7 +312,7 @@ class InfoPropagationSimulator:
                             parsed_choices[int(q_num)] = ans.upper()
 
                         if len(parsed_choices) < total_questions:
-                            print(f"警告: 居民 {resident.resident_id} 答案长度不足，期望{total_questions}，实际{len(parsed_choices)}")
+                            self.logger.warning(f"警告: 居民 {resident.resident_id} 答案长度不足，期望{total_questions}，实际{len(parsed_choices)}")
                             problematic_residents.append((resident, attempts + 1))  # 再次记录居民及增加尝试次数
                         else:
                             choices.append(choice)
@@ -328,7 +332,7 @@ class InfoPropagationSimulator:
 
             # 确保解析后的答案数量足够
             if len(parsed_choices) < total_questions:
-                print(f"警告: 居民{resident.resident_id}答案长度不足，期望{total_questions}，实际{len(parsed_choices)}")
+                self.logger.warning(f"警告: 居民{resident.resident_id}答案长度不足，期望{total_questions}，实际{len(parsed_choices)}")
                 continue
 
             # 计算每题的准确率
@@ -351,11 +355,11 @@ class InfoPropagationSimulator:
         }
 
         # 输出准确率结果
-        print(f"\n知识问答结果分析:")
-        print(f"总体准确率: {overall_accuracy:.2f}%")
-        print("各题目准确率:")
+        self.logger.info(f"\n知识问答结果分析:")
+        self.logger.info(f"总体准确率: {overall_accuracy:.2f}%")
+        self.logger.info("各题目准确率:")
         for i, accuracy in enumerate(question_accuracies, 1):
-            print(f"问题 {i}: {accuracy:.2f}%")
+            self.logger.info(f"问题 {i}: {accuracy:.2f}%")
 
     async def run_incentive_survey(self):
         """运行奖励问题调查"""
@@ -389,7 +393,7 @@ class InfoPropagationSimulator:
                             incentive_choices_b_count += 1
 
                     except json.JSONDecodeError as e:
-                        print(f"解析奖励问题JSON响应出错: {e}, 原始响应: '{cleaned_response}'")
+                        self.logger.error(f"解析奖励问题JSON响应出错: {e}, 原始响应: '{cleaned_response}'")
                         continue
 
         # 更新当前策略的结果
@@ -400,8 +404,8 @@ class InfoPropagationSimulator:
         }
 
         # 输出统计结果
-        print(f"\n奖励问题统计:")
-        print(f"总回答人数: {total_responses}，选择A的人数: {incentive_choices_a_count}，选择B的人数: {incentive_choices_b_count}")
+        self.logger.info(f"\n奖励问题统计:")
+        self.logger.info(f"总回答人数: {total_responses}，选择A的人数: {incentive_choices_a_count}，选择B的人数: {incentive_choices_b_count}")
 
     def save_strategy_results(self):
         """保存当前策略的结果"""
@@ -425,10 +429,11 @@ class InfoPropagationSimulator:
         if filename is None:
             # 如果没有指定文件名，使用默认的命名规则
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = os.path.join(data_dir, f"running_data_{timestamp}.json")
+            pid = os.getpid()  # 获取进程ID以避免并行实验文件名冲突
+            filename = os.path.join(data_dir, f"running_data_{timestamp}_pid{pid}.json")
         
         # 保存为JSON格式
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(self.experiment_results, f, ensure_ascii=False, indent=2)
         
-        print(f"实验结果已保存至 {filename}")
+        self.logger.info(f"实验结果已保存至 {filename}")

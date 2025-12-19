@@ -54,10 +54,11 @@ class SimulationCache:
         # 生成基本文件名
         filename = f"simulation_cache_p{population}_y{total_years}"
         
-        # 如果需要，添加时间戳
+        # 如果需要，添加时间戳和进程ID（避免并行实验文件名冲突）
         if with_timestamp:
             now = datetime.now()
-            filename += f"_{now.strftime('%Y%m%d_%H%M%S')}"
+            pid = os.getpid()
+            filename += f"_{now.strftime('%Y%m%d_%H%M%S')}_pid{pid}"
         
         # 添加文件扩展名
         filename += ".pkl"
@@ -671,10 +672,27 @@ class SimulationCache:
                 # 如果缓存中没有 result_file，重新生成
                 from src.utils.simulation_context import SimulationContext
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                pid = os.getpid()  # 获取进程ID以避免并行实验文件名冲突
                 data_dir = SimulationContext.get_data_dir()
                 SimulationContext.ensure_directories()
-                simulator.result_file = os.path.join(data_dir, f"running_data_{timestamp}.csv")
+                simulator.result_file = os.path.join(data_dir, f"running_data_{timestamp}_pid{pid}.csv")
                 print(f"重新生成 result_file: {simulator.result_file}")
+            
+            # 重新初始化logger（logger对象无法被序列化，需要在恢复后重新创建）
+            from src.utils.logger import LogManager
+            # 根据simulator类名确定logger名称
+            logger_name_map = {
+                'Simulator': 'simulator',
+                'TEOGSimulator': 'simulator_TEOG',
+                'InfoPropagationSimulator': 'simulator_info_propagation',
+                'ClimateMigrationSimSimulator': 'simulator_climate_migration',
+                'FinancialHerdBehaviorSimSimulator': 'simulator_financial_herd_behavior',
+                'SurveySimulator': 'simulator_survey',
+                'YourSimulator': 'simulator_template'
+            }
+            logger_name = logger_name_map.get(simulator_class.__name__, 'simulator')
+            simulator.logger = LogManager.get_logger(logger_name, console_output=True)
+            print(f"已重新初始化logger: {logger_name}")
 
             return simulator
         except Exception as e:

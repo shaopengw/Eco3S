@@ -18,6 +18,11 @@ parser.add_argument(
     action="store_true",
     help="Resume simulation from cached data if available.",
 )
+parser.add_argument(
+    "--save_cache",
+    action="store_true",
+    help="Save simulation state to cache file after completion.",
+)
 
 # 主运行函数
 async def run_simulation(config: dict[str, Any]) -> None:
@@ -27,35 +32,38 @@ async def run_simulation(config: dict[str, Any]) -> None:
     """
     print(f"开始读取缓存文件...")
 
-    # 从配置文件中获取 resume_from_cache
+    # 从配置文件中获取缓存相关配置
     resume_from_cache = config.get('simulation', {}).get('resume_from_cache', False)
+    save_cache = config.get('simulation', {}).get('save_cache', False)
     cache_dir = "./backups"  # 缓存文件存放的目录
 
     # 获取模拟参数
     population = config['simulation']['initial_population']
     total_years = config['simulation']['total_years']
     
-    # 使用SimulationCache查找最新的缓存文件
-    result = SimulationCache.find_latest_cache(
-        population=population,
-        target_years=total_years,
-        cache_dir=cache_dir
-    )
-    found_cache_file = result[0] if result else None
-    found_year = result[1] if result else None
-    
     simulator = None
-    # 总是为当前运行生成一个新的缓存文件名
-    # 这确保了如果模拟继续，cache_file 总是有效的路径
+    cache_file = None
+    # 设置缓存文件路径
     cache_file = SimulationCache.generate_cache_filename(
         population=population,
         total_years=total_years,
         cache_dir=cache_dir,
         with_timestamp=True
     )
-
-    if found_cache_file:
-        if os.path.exists(found_cache_file):
+    
+    # 只有当resume_from_cache为True时才查找和加载缓存
+    if resume_from_cache:
+        print(f"开始查找缓存文件...")
+        # 使用SimulationCache查找最新的缓存文件
+        result = SimulationCache.find_latest_cache(
+            population=population,
+            target_years=total_years,
+            cache_dir=cache_dir
+        )
+        found_cache_file = result[0] if result else None
+        found_year = result[1] if result else None
+        
+        if found_cache_file and os.path.exists(found_cache_file):
             if found_year == total_years:
                 response = input(f"发现已有的模拟文件 {found_cache_file}，是否需要重新模拟？(Y/N): ")
                 if response.upper() == 'Y':
@@ -77,10 +85,12 @@ async def run_simulation(config: dict[str, Any]) -> None:
                         print(f"成功从缓存加载模拟状态，将继续模拟 {simulator_years} 年...")
                     else:
                         print("缓存加载失败，将从头开始模拟...")
-                        simulator = None # 确保如果加载失败，会创建一个新的模拟器
+                        simulator = None
                 except Exception as e:
                     print(f"加载缓存失败: {e}")
-                    simulator = None # 确保如果加载失败，会创建一个新的模拟器
+                    simulator = None
+        else:
+            print("未找到可用的缓存文件，将从头开始模拟...")
     
     if simulator is None:
         print("开始初始化......")
@@ -240,7 +250,7 @@ async def run_simulation(config: dict[str, Any]) -> None:
     except Exception as e:
         logging.error(f"模拟运行过程中发生错误: {e}")
     finally:
-        if simulator and resume_from_cache: # 只有当 resume_from_cache 为 True 时才保存缓存
+        if simulator and save_cache and cache_file: # 只有当 save_cache 为 True 时才保存缓存
             try:
                 # 使用SimulationCache保存缓存
                 if SimulationCache.save_cache(simulator, cache_file):
@@ -265,6 +275,7 @@ if __name__ == "__main__":
 
     # 将命令行参数添加到配置中
     config["resume_from_cache"] = args.resume_from_cache
+    config["save_cache"] = args.save_cache
 
     # 设置模拟名称
     population = config["simulation"].get("initial_population")

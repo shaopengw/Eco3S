@@ -25,9 +25,10 @@ def plot_rebellions_over_time(years, rebellions):
     SimulationContext.ensure_directories()
     plots_dir = SimulationContext.get_plots_dir()
     
-    # 获取当前时间并格式化
+    # 获取当前时间并格式化（添加进程ID避免并行冲突）
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_path = os.path.join(plots_dir, f"rebellions_{current_time}.png")
+    pid = os.getpid()
+    save_path = os.path.join(plots_dir, f"rebellions_{current_time}_pid{pid}.png")
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"叛乱次数图表已保存至：{save_path}")
     plt.close()
@@ -51,9 +52,10 @@ def plot_unemployment_rate_over_time(years, unemployment_rate):
     SimulationContext.ensure_directories()
     plots_dir = SimulationContext.get_plots_dir()
     
-    # 获取当前时间并格式化
+    # 获取当前时间并格式化（添加进程ID避免并行冲突）
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_path = os.path.join(plots_dir, f"unemployment_rate_{current_time}.png")
+    pid = os.getpid()
+    save_path = os.path.join(plots_dir, f"unemployment_rate_{current_time}_pid{pid}.png")
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"失业率图表已保存至：{save_path}")
     plt.close()
@@ -77,9 +79,10 @@ def plot_population_over_time(years, population):
     SimulationContext.ensure_directories()
     plots_dir = SimulationContext.get_plots_dir()
     
-    # 获取当前时间并格式化
+    # 获取当前时间并格式化（添加进程ID避免并行冲突）
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_path = os.path.join(plots_dir, f"population_{current_time}.png")
+    pid = os.getpid()
+    save_path = os.path.join(plots_dir, f"population_{current_time}_pid{pid}.png")
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"人口数量图表已保存至：{save_path}")
     plt.close()
@@ -103,9 +106,10 @@ def plot_government_budget_over_time(years, government_budget):
     SimulationContext.ensure_directories()
     plots_dir = SimulationContext.get_plots_dir()
     
-    # 获取当前时间并格式化
+    # 获取当前时间并格式化（添加进程ID避免并行冲突）
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_path = os.path.join(plots_dir, f"government_budget_{current_time}.png")
+    pid = os.getpid()
+    save_path = os.path.join(plots_dir, f"government_budget_{current_time}_pid{pid}.png")
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"政府预算图表已保存至：{save_path}")
     plt.close()
@@ -124,9 +128,10 @@ def plot_rebellion_strength_over_time(years, rebellion_strength):
     SimulationContext.ensure_directories()
     plots_dir = SimulationContext.get_plots_dir()
     
-    # 获取当前时间并格式化
+    # 获取当前时间并格式化（添加进程ID避免并行冲突）
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_path = os.path.join(plots_dir, f"rebellion_strength_{current_time}.png")
+    pid = os.getpid()
+    save_path = os.path.join(plots_dir, f"rebellion_strength_{current_time}_pid{pid}.png")
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"叛乱强度图表已保存至：{save_path}")
     plt.close()
@@ -145,9 +150,10 @@ def plot_satisfaction_over_time(years, average_satisfaction):
     SimulationContext.ensure_directories()
     plots_dir = SimulationContext.get_plots_dir()
     
-    # 获取当前时间并格式化
+    # 获取当前时间并格式化（添加进程ID避免并行冲突）
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_path = os.path.join(plots_dir, f"average_satisfaction_{current_time}.png")
+    pid = os.getpid()
+    save_path = os.path.join(plots_dir, f"average_satisfaction_{current_time}_pid{pid}.png")
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"平均满意度图表已保存至：{save_path}")
     plt.close()
@@ -166,9 +172,10 @@ def plot_tax_rate_over_time(years, tax_rate):
     SimulationContext.ensure_directories()
     plots_dir = SimulationContext.get_plots_dir()
     
-    # 获取当前时间并格式化
+    # 获取当前时间并格式化（添加进程ID避免并行冲突）
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_path = os.path.join(plots_dir, f"tax_rate_{current_time}.png")
+    pid = os.getpid()
+    save_path = os.path.join(plots_dir, f"tax_rate_{current_time}_pid{pid}.png")
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"税率图表已保存至：{save_path}")
     plt.close()
@@ -187,9 +194,10 @@ def plot_river_navigability_over_time(years, river_navigability):
     SimulationContext.ensure_directories()
     plots_dir = SimulationContext.get_plots_dir()
     
-    # 获取当前时间并格式化
+    # 获取当前时间并格式化（添加进程ID避免并行冲突）
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_path = os.path.join(plots_dir, f"river_navigability_{current_time}.png")
+    pid = os.getpid()
+    save_path = os.path.join(plots_dir, f"river_navigability_{current_time}_pid{pid}.png")
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"河流通航性图表已保存至：{save_path}")
     plt.close()
@@ -208,9 +216,10 @@ def plot_gdp_over_time(years, gdp):
     SimulationContext.ensure_directories()
     plots_dir = SimulationContext.get_plots_dir()
     
-    # 获取当前时间并格式化
+    # 获取当前时间并格式化（添加进程ID避免并行冲突）
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_path = os.path.join(plots_dir, f"gdp_{current_time}.png")
+    pid = os.getpid()
+    save_path = os.path.join(plots_dir, f"gdp_{current_time}_pid{pid}.png")
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"GDP图表已保存至：{save_path}")
     plt.close()
@@ -229,9 +238,10 @@ def plot_urban_scale_over_time(years, urban_scale):
     SimulationContext.ensure_directories()
     plots_dir = SimulationContext.get_plots_dir()
     
-    # 获取当前时间并格式化
+    # 获取当前时间并格式化（添加进程ID避免并行冲突）
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_path = os.path.join(plots_dir, f"urban_scale_{current_time}.png")
+    pid = os.getpid()
+    save_path = os.path.join(plots_dir, f"urban_scale_{current_time}_pid{pid}.png")
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"城市规模图表已保存至：{save_path}")
     plt.close()

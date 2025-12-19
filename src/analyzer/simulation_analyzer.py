@@ -507,16 +507,32 @@ class SimulationAnalyzer:
             print("警告：没有有效的CSV数据可以生成报告")
             return
             
+        years = csv_data['years']
+        
         # 提取所有指标（除了years）
-        metrics = set()
+        metrics = []
+        seen_metrics = set()
         for key in csv_data.keys():
             if key != 'years':
                 # 提取基本指标名（去掉_mean, _std等后缀）
                 base_metric = key.rsplit('_', 1)[0]
-                metrics.add(base_metric)
+                if base_metric not in seen_metrics:
+                    metrics.append(base_metric)
+                    seen_metrics.add(base_metric)
         
-        # 计算每个指标的统计数据
-        stats = {}
+        # 生成详细报告
+        report = []
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report.append(f"# {self.simulation_type.value} 模拟CSV统计报告")
+        report.append(f"\n生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        # 1. 添加整体统计概要
+        report.append("\n## 统计概要（跨所有年份）")
+        report.append("\n| Metric | Mean | Std Dev | Min | Max | Count |")
+        report.append("|--------|------|---------|-----|-----|-------|")
+        
+        # 计算每个指标的整体统计数据
+        overall_stats = {}
         for metric in metrics:
             if f'{metric}_mean' in csv_data:
                 # 过滤掉NaN值
@@ -524,16 +540,65 @@ class SimulationAnalyzer:
                 if not mean_values:
                     continue
                     
-                stats[metric] = {
+                overall_stats[metric] = {
                     'mean': np.mean(mean_values),
                     'std': np.std(mean_values) if len(mean_values) > 1 else 0,
                     'min': np.min(mean_values),
                     'max': np.max(mean_values),
                     'count': len(mean_values)
                 }
+                
+                data = overall_stats[metric]
+                report.append(
+                    f"| {metric} | {data['mean']:.4f} | "
+                    f"{data['std']:.4f} | "
+                    f"{data['min']:.4f} | "
+                    f"{data['max']:.4f} | "
+                    f"{data['count']} |"
+                )
         
-        # 生成报告
-        return self.generate_report(stats, output_dir, "csv")
+        # 2. 为每个指标添加详细的年度数据表
+        for metric in metrics:
+            if f'{metric}_mean' not in csv_data:
+                continue
+                
+            report.append(f"\n## {metric} - 年度详细数据")
+            report.append("\n| Year | Mean | Std Dev | Min | Max |")
+            report.append("|------|------|---------|-----|-----|")
+            
+            mean_data = csv_data.get(f'{metric}_mean', [])
+            std_data = csv_data.get(f'{metric}_std', [])
+            min_data = csv_data.get(f'{metric}_min', [])
+            max_data = csv_data.get(f'{metric}_max', [])
+            
+            for i, year in enumerate(years):
+                if i >= len(mean_data):
+                    break
+                    
+                mean_val = mean_data[i] if i < len(mean_data) else np.nan
+                std_val = std_data[i] if i < len(std_data) else np.nan
+                min_val = min_data[i] if i < len(min_data) else np.nan
+                max_val = max_data[i] if i < len(max_data) else np.nan
+                
+                # 格式化数值，处理NaN
+                mean_str = f"{mean_val:.4f}" if not np.isnan(mean_val) else "N/A"
+                std_str = f"{std_val:.4f}" if not np.isnan(std_val) else "N/A"
+                min_str = f"{min_val:.4f}" if not np.isnan(min_val) else "N/A"
+                max_str = f"{max_val:.4f}" if not np.isnan(max_val) else "N/A"
+                
+                report.append(
+                    f"| {year} | {mean_str} | {std_str} | {min_str} | {max_str} |"
+                )
+        
+        # 保存报告
+        report_path = os.path.join(self.analysis_results_dir, f'csv_statistics_report_{timestamp}.md')
+        with open(report_path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(report))
+        
+        # 输出完整绝对路径
+        report_path_full = os.path.abspath(report_path)
+        print(f"已生成CSV统计报告：{report_path_full}")
+        return report_path
 
 def main():
     import argparse

@@ -105,9 +105,6 @@ class RebelLeader(BaseAgent):
         :param summary: 普通叛军的讨论报告
         :return: 决策结果
         """
-        # 等待讨论结束
-        if not self.shared_pool.is_ended():
-            return None
         towns_analysis = self.analysis_towns_stats(towns_stats)
         strength = self.rebellion.get_strength()
         resources = self.rebellion.get_resources()
@@ -263,6 +260,3 @@ class RebelsSharedInformationPool:
         async with self.lock:
             self.discussions.clear()
 
-    def is_ended(self) -> bool:
-        """检查讨论是否结束"""
-        return True

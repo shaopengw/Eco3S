@@ -1,5 +1,6 @@
 import os
 from datetime import datetime
+import random
 
 class SimulationContext:
     """模拟环境上下文管理器"""
@@ -19,13 +20,14 @@ class SimulationContext:
     
     @classmethod
     def set_simulation_name(cls, simulation_name: str = None, population: int = None, total_years: int = None):
-        """设置当前模拟名称，如果不提供或为空字符串则使用时间戳+p人口数+y时间步数"""
+        """设置当前模拟名称，如果不提供或为空字符串则使用时间戳+p人口数+y时间步数+进程ID"""
         if simulation_name is None or simulation_name == "":
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            pid = os.getpid()  # 使用进程ID确保并行实验不冲突
             if population is not None and total_years is not None:
-                simulation_name = f"{timestamp}_p{population}_y{total_years}"
+                simulation_name = f"{timestamp}_p{population}_y{total_years}_pid{pid}"
             else:
-                simulation_name = timestamp
+                simulation_name = f"{timestamp}_pid{pid}"
             print(f"设置模拟名称为: {simulation_name}")
         cls._simulation_name = simulation_name
 

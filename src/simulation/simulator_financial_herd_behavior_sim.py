@@ -32,9 +32,10 @@ class FinancialHerdBehaviorSimSimulator:
 
         # 数据文件
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        pid = os.getpid()  # 获取进程ID以避免并行实验文件名冲突
         data_dir = SimulationContext.get_data_dir()
         SimulationContext.ensure_directories()
-        self.result_file = os.path.join(data_dir, f"running_data_{timestamp}.csv")
+        self.result_file = os.path.join(data_dir, f"running_data_{timestamp}_pid{pid}.csv")
     
     def initialize_resident_assets(self):
         """初始化居民的资产和现金"""
@@ -397,7 +398,8 @@ class FinancialHerdBehaviorSimSimulator:
         
         if filename is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = os.path.join(data_dir, f"running_data_{timestamp}.csv")
+            pid = os.getpid()  # 获取进程ID以避免并行实验文件名冲突
+            filename = os.path.join(data_dir, f"running_data_{timestamp}_pid{pid}.csv")
         
         if append:
             last_row_data = {key: [value[-1]] for key, value in self.results.items() if value}

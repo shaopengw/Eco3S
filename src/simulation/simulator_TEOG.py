@@ -14,6 +14,9 @@ if "sphinx" not in sys.modules:
 class TEOGSimulator:
     def __init__(self, map, time, government, government_officials, population, social_network, residents, towns, transport_economy, climate, config):
         """初始化模拟器类"""
+        # 初始化日志记录器
+        self.logger = LogManager.get_logger('simulator_TEOG', console_output=True)
+        
         self.map = map
         self.time = time
         self.government = government
@@ -62,19 +65,23 @@ class TEOGSimulator:
 
     async def run(self):
         """运行模拟"""
+        self.start_time = datetime.now()  # 记录模拟开始时间
+
         # 创建结果文件
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        pid = os.getpid()  # 获取进程ID以避免并行实验文件名冲突
         data_dir = SimulationContext.get_data_dir()
         SimulationContext.ensure_directories()
-        result_file = os.path.join(data_dir, f"running_data_{timestamp}.csv")
+        result_file = os.path.join(data_dir, f"running_data_{timestamp}_pid{pid}.csv")
         
         while not self.time.is_end():
             # 打印当前时间步信息
             print(Back.GREEN + f"年份:{self.time.current_time}" + Back.RESET)
+            self.logger.info(f"年份:{self.time.current_time}")
             # 更新属性变量
             # 更新运河状态和居民收入
             climate_impact_factor = self.climate.get_current_impact(self.time.current_time, self.time.start_time)
-            print(f"天气影响因子：{climate_impact_factor}")
+            self.logger.info(f"天气影响因子：{climate_impact_factor}")
 
             self.map.decay_river_condition_naturally(climate_impact_factor)
             river_navigability = self.map.get_navigability() 
@@ -88,7 +95,7 @@ class TEOGSimulator:
             # 居民
             self.average_satisfaction = self.calculate_average_satisfaction() # 更新平均满意度
             self.population.update_birth_rate(self.average_satisfaction) # 更新出生率
-            print(f"GDP：{self.gdp}，税收收入：{self.tax_income}，政府预算：{self.government.budget}，政府规模：{self.get_urban_scale()}")
+            self.logger.info(f"GDP：{self.gdp}，税收收入：{self.tax_income}，政府预算：{self.government.budget}，政府规模：{self.get_urban_scale()}")
             
             # 居民出生（每年）
             new_count = int(self.population.birth_rate * self.population.get_population())
@@ -133,11 +140,21 @@ class TEOGSimulator:
                         changes_summary
                     )
             
-            print(f"城市居民：{self.get_urban_scale()}，农民：{self.population.get_population() - self.get_urban_scale()}")
+            self.logger.info(f"城市居民：{self.get_urban_scale()}，农民：{self.population.get_population() - self.get_urban_scale()}")
             # 在每个时间步结束时保存结果
             self.save_results(result_file, append=True)
             self.time.step()
-
+        self.end_time = datetime.now()  # 记录模拟结束时间
+        self.display_total_simulation_time()
+    
+    def display_total_simulation_time(self):
+        """
+        显示总模拟时间
+        """
+        if self.start_time and self.end_time:
+            total_time = self.end_time - self.start_time
+            self.logger.info(f"总模拟时间: {total_time}")
+    
     def initialize_salaries(self):
         """
         初始化沿河城市和非沿河城市的基本工资。
@@ -153,7 +170,7 @@ class TEOGSimulator:
                     job_market.jobs_info["城市居民"]["base_salary"] = new_salary
                     job_market.jobs_info["农民"]["base_salary"] = new_salary
 
-                print(f"居民工资初始化：{town_name} "
+                self.logger.info(f"居民工资初始化：{town_name} "
                     f"新工资 {new_salary:.2f} "
                     f"(非沿河城市: {job_market.town_type == '非沿河'})")
 
@@ -164,7 +181,7 @@ class TEOGSimulator:
         :param max_rounds: 最大讨论轮数
         :return: 决策结果
         """
-        print("开始收集政府决策")
+        self.logger.info("开始收集政府决策")
 
         # 获取群体决策配置
         try:
@@ -174,7 +191,7 @@ class TEOGSimulator:
                 group_decision_enabled = group_decision_config.get('enabled', True)
                 configured_max_rounds = group_decision_config.get('max_rounds', 2)
         except Exception as e:
-            print(f"读取群体决策配置失败，使用默认值：{e}")
+            self.logger.info(f"读取群体决策配置失败，使用默认值：{e}", level='warning')
             group_decision_enabled = True
             configured_max_rounds = max_rounds
 
@@ -219,7 +236,7 @@ class TEOGSimulator:
 
         # 后续轮次：基于之前的讨论内容发表见解
         for round_num in range(2, configured_max_rounds + 1):
-            print(f"第{round_num}轮决策")
+            self.logger.info(f"第{round_num}轮决策")
             round_tasks = [
                 member.generate_and_share_opinion(group_param)
                 for member in random.sample(ordinary_members, len(ordinary_members))
@@ -233,7 +250,7 @@ class TEOGSimulator:
         ]
 
         # 处理讨论结果
-        if info_officers and leaders and shared_pool.is_ended():
+        if info_officers and leaders:
             discussion_summary = await info_officers[0].summarize_discussions()
             if discussion_summary:
                 decision = await leaders[0].make_decision(discussion_summary, group_param)
@@ -272,10 +289,10 @@ class TEOGSimulator:
                         return extracted
 
                     if attempt < max_retries - 1:
-                        print(f"决策内容格式错误，第{attempt + 1}次重试...")
+                        self.logger.info(f"决策内容格式错误，第{attempt + 1}次重试...", level='warning')
                         continue
                     else:
-                        print("达到最大重试次数，决策执行失败")
+                        self.logger.info("达到最大重试次数，决策执行失败", level='error')
                         return None
 
         try:
@@ -297,7 +314,7 @@ class TEOGSimulator:
 
             # 计算计划总支出
             total_planned_expenditure = public_budget + maintenance_investment
-            print(f"计划总支出: {total_planned_expenditure:.2f} = {public_budget:.2f} + {maintenance_investment:.2f}")
+            self.logger.info(f"计划总支出: {total_planned_expenditure:.2f} = {public_budget:.2f} + {maintenance_investment:.2f}")
             
             # 如果计划总支出超过预算，则按比例缩减
             if total_planned_expenditure > current_budget:
@@ -307,11 +324,11 @@ class TEOGSimulator:
                     # 按比例缩减各项支出
                     decision_data["public_budget"] = public_budget * scaling_factor
                     decision_data["maintenance_investment"] = maintenance_investment * scaling_factor
-                    print(f"按比例缩减后，公共预算: {decision_data['public_budget']:.2f}")
-                    print(f"按比例缩减后，维护投资: {decision_data['maintenance_investment']:.2f}")
-                    print(f"预算不足，按比例缩减开支。缩放比例: {scaling_factor:.2f}")
+                    self.logger.info(f"按比例缩减后，公共预算: {decision_data['public_budget']:.2f}")
+                    self.logger.info(f"按比例缩减后，维护投资: {decision_data['maintenance_investment']:.2f}")
+                    self.logger.info(f"预算不足，按比例缩减开支。缩放比例: {scaling_factor:.2f}")
             else:
-                print(f"预算充足，无需缩减。当前预算: {current_budget:.2f}，计划支出: {total_planned_expenditure:.2f}")
+                self.logger.info(f"预算充足，无需缩减。当前预算: {current_budget:.2f}，计划支出: {total_planned_expenditure:.2f}")
 
             # 获取决策键并随机打乱顺序
             decision_keys = list(decision_data.keys())
@@ -336,7 +353,7 @@ class TEOGSimulator:
             return success
 
         except Exception as e:
-            print(f"执行决策时出错：{e}")
+            self.logger.error(f"执行决策时出错：{e}")
             return False
 
     async def handle_resident_actions(self):
@@ -360,7 +377,7 @@ class TEOGSimulator:
                     job_market = town_data['job_market']
                     job_market.assign_specific_job_withoutcheck(resident, "农民")
                 else:
-                    print(f"警告：无法找到居民 {resident.resident_id} 所在城镇 {resident.town} 的就业市场")
+                    self.logger.warning(f"警告：无法找到居民 {resident.resident_id} 所在城镇 {resident.town} 的就业市场")
             
             # 收集居民行为决策
             tax_rate = self.government.get_tax_rate()
@@ -386,14 +403,14 @@ class TEOGSimulator:
                     try:
                         await resident.execute_decision(select, reason=reason)
                     except Exception as e:
-                        print(f"执行居民 {resident.resident_id} 动作失败: {e}")
+                        self.logger.info(f"执行居民 {resident.resident_id} 动作失败: {e}", level='error')
 
                 elif isinstance(result, tuple) and len(result) == 2:
                     select, reason = result
                     try:
                         await resident.execute_decision(select, reason=reason)
                     except Exception as e:
-                        print(f"执行居民 {resident.resident_id} 动作失败: {e}")
+                        self.logger.info(f"执行居民 {resident.resident_id} 动作失败: {e}", level='error')
                 
             
             # 并发执行所有发言传播任务
@@ -438,7 +455,8 @@ class TEOGSimulator:
         if filename is None:
             # 如果没有指定文件名，使用默认的命名规则
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = os.path.join(data_dir, f"running_data_{timestamp}.csv")
+            pid = os.getpid()  # 获取进程ID以避免并行实验文件名冲突
+            filename = os.path.join(data_dir, f"running_data_{timestamp}_pid{pid}.csv")
         
         # 始终从完整的 self.results 创建 DataFrame
         df = pd.DataFrame(self.results)
@@ -446,7 +464,7 @@ class TEOGSimulator:
         # 始终使用覆盖模式写入，以保证数据的完整性
         df.to_csv(filename, index=False)
         
-        print(f"模拟结果已完整保存至 {filename}")
+        self.logger.info(f"模拟结果已完整保存至 {filename}")
     
     def calculate_gdp(self):
         """
@@ -466,7 +484,7 @@ class TEOGSimulator:
         :param climate_impact: 气候影响因子
         :param river_navigability: 运河通航能力因子 (仅对城市居民有影响)
         """
-        print(f"收入更新：综合影响因子: (运河影响{river_navigability},天气影响{climate_impact}) ")
+        self.logger.info(f"收入更新：综合影响因子: (运河影响{river_navigability},天气影响{climate_impact}) ")
         
         # 初始化工资记录
         income_records = {
@@ -481,14 +499,14 @@ class TEOGSimulator:
             town_data = self.towns.towns.get(town_name)
 
             if not (town_data and 'job_market' in town_data):
-                print(f"警告：无法找到居民 {resident.resident_id} 所在城镇 {town_name} 的就业市场信息。")
+                self.logger.warning(f"警告：无法找到居民 {resident.resident_id} 所在城镇 {town_name} 的就业市场信息。")
                 continue
 
             job_market = town_data['job_market']
             job_type = resident.job
 
             if job_type not in job_market.jobs_info:
-                print(f"警告：城镇 {town_name} 的就业市场中没有 '{job_type}' 职业信息。")
+                self.logger.warning(f"警告：城镇 {town_name} 的就业市场中没有 '{job_type}' 职业信息。")
                 continue
 
             base_salary = job_market.jobs_info[job_type]["base_salary"]
@@ -516,13 +534,13 @@ class TEOGSimulator:
                 if income_records[key] is None:
                     income_records[key] = resident.income
             else:
-                print(f"警告：居民 {resident.resident_id} 的职业 '{job_type}' 未在就业市场中找到相应信息。")
+                self.logger.warning(f"警告：居民 {resident.resident_id} 的职业 '{job_type}' 未在就业市场中找到相应信息。")
         
         # 输出工资信息
-        print("\n===== 工资统计 =====")
+        self.logger.info("\n===== 工资统计 =====")
         for category, income in income_records.items():
             if income is not None:
-                print(f"{category}: {income}")
+                self.logger.info(f"{category}: {income}")
 
     def summarize_time_step_results(self):
         """总结当前时间步的各项指标变化"""
@@ -585,16 +603,16 @@ class TEOGSimulator:
 
         # 更新全局居民列表
         self.residents.update(new_residents)
-        print(f"{len(new_residents)} 名新居民已出生")
+        self.logger.info(f"{len(new_residents)} 名新居民已出生")
 
         # 添加到城镇
         self.towns.initialize_resident_groups(new_residents)
-        print("新居民已加入各自城镇")
+        self.logger.info("新居民已加入各自城镇")
 
         # 添加到社交网络
         if new_residents:
             self.social_network.add_new_residents(new_residents)
-            print(f"{len(new_residents)} 名新居民已加入社交网络")
+            self.logger.info(f"{len(new_residents)} 名新居民已加入社交网络")
             # self.social_network.visualize()
 
     def calculate_total_salaries(self):
