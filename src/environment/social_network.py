@@ -190,6 +190,8 @@ class SocialNetwork:
         self.hetero_graph = HeterogeneousGraph()
         self.hyper_graph = Hypergraph()
         self.residents = {}  # 添加residents字典
+        self.dialogue_count = 0  # 当前时间步的对话计数
+        self.MAX_DIALOGUES_PER_STEP = 20000  # 每个时间步最大对话量
 
     def add_resident(self, resident_id, node_type):
         """
@@ -218,6 +220,10 @@ class SocialNetwork:
         :param current_depth: 当前传播层数
         :param max_depth: 最大传播层数
         """
+        # 检查对话量限制
+        if self.dialogue_count >= self.MAX_DIALOGUES_PER_STEP:
+            return
+        
         if current_depth > max_depth:
             return
             
@@ -233,6 +239,7 @@ class SocialNetwork:
                 tasks.append(self.residents[neighbor].receive_information(message))
         
         if tasks:
+            self.dialogue_count += len(tasks)  # 更新对话计数
             responses = await asyncio.gather(*tasks)
             # 收集所有有效回应
             next_layer_tasks = []
@@ -260,6 +267,10 @@ class SocialNetwork:
         :param current_depth: 当前传播层数
         :param max_depth: 最大传播层数
         """
+        # 检查对话量限制
+        if self.dialogue_count >= self.MAX_DIALOGUES_PER_STEP:
+            return
+        
         if current_depth > max_depth:
             return
             
@@ -275,6 +286,7 @@ class SocialNetwork:
                 tasks.append(self.residents[member].receive_information(message))
         
         if tasks:
+            self.dialogue_count += len(tasks)  # 更新对话计数
             responses = await asyncio.gather(*tasks)
             # 收集所有有效回应
             next_layer_tasks = []
@@ -751,6 +763,12 @@ class SocialNetwork:
         plt.savefig(save_path, dpi=300, bbox_inches='tight', pad_inches=0.5)
         print(f"社交网络节点度分布表已保存至：{save_path}")
         plt.close()
+
+    def reset_dialogue_count(self):
+        """
+        重置当前时间步的对话计数器
+        """
+        self.dialogue_count = 0
 
     def update_network_edges(self, update_ratio=0.2):
         """

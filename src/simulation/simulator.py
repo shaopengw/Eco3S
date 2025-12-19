@@ -51,6 +51,9 @@ class Simulator:
         self.rebellion_history = []  # 存储叛乱历史记录
         self.config = config
         
+        # 初始化日志记录器
+        self.logger = LogManager.get_logger('simulator', console_output=True)
+        
         # 保存初始数据
         self.gdp = self.calculate_gdp()  # 确保先计算初始GDP
         self.average_satisfaction = self.calculate_average_satisfaction()  # 计算初始满意度
@@ -78,16 +81,18 @@ class Simulator:
         
         # 创建结果文件
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        pid = os.getpid()  # 获取进程ID以避免并行实验文件名冲突
         data_dir = SimulationContext.get_data_dir()
         SimulationContext.ensure_directories()
-        result_file = os.path.join(data_dir, f"running_data_{timestamp}.csv")
+        result_file = os.path.join(data_dir, f"running_data_{timestamp}_pid{pid}.csv")
         
         while not self.time.is_end():
             # 打印当前时间步信息
             print(Back.GREEN + f"年份:{self.time.current_time}" + Back.RESET)
+            self.logger.info(f"年份:{self.time.current_time}")
             current_year = self.time.current_time
             start_year = self.time.start_time
-            print(f"天气影响因子：{self.climate.get_current_impact(current_year,start_year)}")
+            self.logger.info(f"天气影响因子：{self.climate.get_current_impact(current_year,start_year)}")
             
             # 更新属性变量
             # 政府
@@ -103,8 +108,8 @@ class Simulator:
             self.average_satisfaction = self.calculate_average_satisfaction() # 更新平均满意度
             self.population.update_birth_rate(self.average_satisfaction) # 更新出生率
             self.rebellion_records = 0
-            print(f"GDP：{self.gdp}，税收收入：{self.tax_income}，政府预算：{self.government.budget}")
-            print(f"河运价格：{self.transport_economy.river_price}，维护成本：{self.transport_economy.calculate_maintenance_cost(self.map.get_navigability())}")
+            self.logger.info(f"GDP：{self.gdp}，税收收入：{self.tax_income}，政府预算：{self.government.budget}")
+            self.logger.info(f"河运价格：{self.transport_economy.river_price}，维护成本：{self.transport_economy.calculate_maintenance_cost(self.map.get_navigability())}")
 
             # 居民出生（每年）
             new_count = int(self.population.birth_rate * self.population.get_population())
@@ -118,7 +123,7 @@ class Simulator:
             )
             await self.integrate_new_residents(new_residents)
             self.population.birth(new_count)
-            print(f"新加入{new_count}名居民")
+            self.logger.info(f"新加入{new_count}名居民")
 
             # 收集政府和叛军的决策（每年）
             government_decision = None
@@ -145,6 +150,9 @@ class Simulator:
                 self.execute_government_decision(government_decision)
             if rebellion_decision:
                 self.execute_rebellion_decision(rebellion_decision)
+
+            # 重置社交网络的对话计数器
+            self.social_network.reset_dialogue_count()
 
             # 居民行为
             tasks = []
@@ -198,7 +206,7 @@ class Simulator:
                         await resident.execute_decision(select)
                 
                 if job_request_count > 0:
-                    print(f"\n收集到 {job_request_count} 个求职请求")
+                    self.logger.info(f"\n收集到 {job_request_count} 个求职请求")
                 
                 # 并发执行所有发言传播任务
                 if speech_tasks:
@@ -206,10 +214,10 @@ class Simulator:
             
             # 处理所有城镇的求职信息
             if town_job_requests:
-                print(f"\n开始处理 {len(town_job_requests)} 个城镇的求职请求")
+                self.logger.info(f"\n开始处理 {len(town_job_requests)} 个城镇的求职请求")
                 hiring_results = self.towns.process_town_job_requests(town_job_requests)
             else:
-                print("\n本轮无求职请求")
+                self.logger.info("\n本轮无求职请求")
             
             # # 打印每个城镇的求职信息统计--测试用
             # for town, requests in town_job_requests.items():
@@ -258,7 +266,7 @@ class Simulator:
         """
         if self.start_time and self.end_time:
             total_time = self.end_time - self.start_time
-            print(f"总模拟时间: {total_time}")
+            self.logger.info(f"总模拟时间: {total_time}")
 
     async def collect_group_decision(self, group_type, config, max_rounds=2):
         """
@@ -268,7 +276,7 @@ class Simulator:
         :param max_rounds: 最大讨论轮数
         :return: 决策结果
         """
-        print(f"开始收集 {group_type} 的决策")
+        self.logger.info(f"开始收集 {group_type} 的决策")
 
         # 获取群体决策配置
         try:
@@ -280,7 +288,7 @@ class Simulator:
                 group_decision_enabled = group_config.get('enabled', True)
                 configured_max_rounds = group_config.get('max_rounds', 2)
         except Exception as e:
-            print(f"读取群体决策配置失败，使用默认值：{e}")
+            self.logger.warning(f"读取群体决策配置失败，使用默认值：{e}")
             group_decision_enabled = True
             configured_max_rounds = max_rounds
 
@@ -302,8 +310,8 @@ class Simulator:
         if not group_decision_enabled:
             leader = leaders[0]
             decision = await leader.make_decision(
-                summary="直接决策模式，无群体讨论。",
-                towns_stats=group_param
+                "直接决策模式，无群体讨论。",
+                group_param
             )
             return decision
 
@@ -330,7 +338,7 @@ class Simulator:
 
         # 后续轮次：基于之前的讨论内容发表见解
         for round_num in range(2, configured_max_rounds + 1):
-            print(f"第{round_num}轮决策")
+            self.logger.info(f"第{round_num}轮决策")
             round_tasks = [
                 member.generate_and_share_opinion(group_param)
                 for member in random.sample(ordinary_members, len(ordinary_members))
@@ -345,7 +353,7 @@ class Simulator:
         ]
 
         # 处理讨论结果
-        if info_officers and leaders and shared_pool.is_ended():
+        if info_officers and leaders:
             discussion_summary = await info_officers[0].summarize_discussions()
             if discussion_summary:
                 decision = await leaders[0].make_decision(discussion_summary, group_param)
@@ -396,10 +404,10 @@ class Simulator:
                         return extracted
 
                     if attempt < max_retries - 1:
-                        print(f"决策内容格式错误，第{attempt + 1}次重试...")
+                        self.logger.warning(f"决策内容格式错误，第{attempt + 1}次重试...")
                         continue
                     else:
-                        print("达到最大重试次数，决策执行失败")
+                        self.logger.error("达到最大重试次数，决策执行失败")
                         return None
 
         try:
@@ -427,10 +435,10 @@ class Simulator:
                 river_price = self.transport_economy.river_price
                 sea_price = self.transport_economy.sea_price
                 transport_cost = transport_task * (river_price * transport_ratio + sea_price * (1 - transport_ratio))
-                print(f"运输成本: {transport_cost:.2f} = {transport_task:.2f} * ({river_price:.2f} * {transport_ratio:.2f} + {sea_price:.2f} * (1 - {transport_ratio:.2f}))")
+                self.logger.info(f"运输成本: {transport_cost:.2f} = {transport_task:.2f} * ({river_price:.2f} * {transport_ratio:.2f} + {sea_price:.2f} * (1 - {transport_ratio:.2f}))")
                 # 计算计划总支出
                 total_planned_expenditure = public_budget + maintenance_investment + military_support + transport_cost
-                print(f"计划总支出: {total_planned_expenditure:.2f} = {public_budget:.2f} + {maintenance_investment:.2f} + {military_support:.2f} + {transport_cost:.2f}")
+                self.logger.info(f"计划总支出: {total_planned_expenditure:.2f} = {public_budget:.2f} + {maintenance_investment:.2f} + {military_support:.2f} + {transport_cost:.2f}")
                 # 如果计划总支出超过预算，则按比例缩减
                 if total_planned_expenditure > current_budget:
                     # 计算可用于非运输支出的预算
@@ -446,12 +454,12 @@ class Simulator:
                         decision_data["public_budget"] = public_budget * scaling_factor
                         decision_data["maintenance_investment"] = maintenance_investment * scaling_factor
                         decision_data["military_support"] = military_support * scaling_factor
-                        print(f"按比例缩减后，公共预算: {decision_data['public_budget']:.2f}")
-                        print(f"按比例缩减后，维护投资: {decision_data['maintenance_investment']:.2f}")
-                        print(f"按比例缩减后，军事支持: {decision_data['military_support']:.2f}")
-                        print(f"预算不足，按比例缩减开支。缩放比例: {scaling_factor:.2f}")
+                        self.logger.info(f"按比例缩减后，公共预算: {decision_data['public_budget']:.2f}")
+                        self.logger.info(f"按比例缩减后，维护投资: {decision_data['maintenance_investment']:.2f}")
+                        self.logger.info(f"按比例缩减后，军事支持: {decision_data['military_support']:.2f}")
+                        self.logger.info(f"预算不足，按比例缩减开支。缩放比例: {scaling_factor:.2f}")
                 else:
-                    print(f"预算充足，无需缩减。当前预算: {current_budget:.2f}，计划支出: {total_planned_expenditure:.2f}")
+                    self.logger.info(f"预算充足，无需缩减。当前预算: {current_budget:.2f}，计划支出: {total_planned_expenditure:.2f}")
 
                 # 获取决策键并固定执行顺序（transport_ratio最后执行，因为它有内部预算自适应）
                 decision_keys = []
@@ -507,7 +515,7 @@ class Simulator:
             return success
 
         except Exception as e:
-            print(f"执行决策时出错：{e}")
+            self.logger.error(f"执行决策时出错：{e}")
             return False
 
     def save_results(self, filename=None, append=False):
@@ -527,7 +535,8 @@ class Simulator:
         if filename is None:
             # 如果没有指定文件名，使用默认的命名规则
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = os.path.join(data_dir, f"running_data_{timestamp}.csv")
+            pid = os.getpid()  # 获取进程ID以避免并行实验文件名冲突
+            filename = os.path.join(data_dir, f"running_data_{timestamp}_pid{pid}.csv")
         
         # 始终从完整的 self.results 创建 DataFrame
         df = pd.DataFrame(self.results)
@@ -535,7 +544,7 @@ class Simulator:
         # 始终使用覆盖模式写入，以保证数据的完整性
         df.to_csv(filename, index=False)
         
-        print(f"模拟结果已完整保存至 {filename}")
+        self.logger.info(f"模拟结果已完整保存至 {filename}")
 
     async def integrate_new_residents(self, new_residents):
         """将新居民整合到系统中"""
@@ -544,16 +553,16 @@ class Simulator:
 
         # 更新全局居民列表
         self.residents.update(new_residents)
-        print(f"{len(new_residents)} 名新居民已出生")
+        self.logger.info(f"{len(new_residents)} 名新居民已出生")
 
         # 添加到城镇
         self.towns.initialize_resident_groups(new_residents)
-        print("新居民已加入各自城镇")
+        self.logger.info("新居民已加入各自城镇")
 
         # 添加到社交网络
         if new_residents:
             self.social_network.add_new_residents(new_residents)
-            print(f"{len(new_residents)} 名新居民已加入社交网络")
+            self.logger.info(f"{len(new_residents)} 名新居民已加入社交网络")
             # self.social_network.visualize()
 
     def calculate_average_satisfaction(self):
@@ -562,12 +571,12 @@ class Simulator:
         :return: 平均满意度（浮点数）
         """
         if not self.residents:
-            print("没有居民，平均满意度为 0.0")
+            self.logger.warning("没有居民，平均满意度为 0.0")
             return 0.0
 
         total_satisfaction = sum(resident.satisfaction for resident in self.residents.values())
         average_satisfaction = total_satisfaction / self.population.population
-        print(f"平均满意度: {average_satisfaction} = {total_satisfaction / self.population.population:.2f}")
+        self.logger.info(f"平均满意度: {average_satisfaction} = {total_satisfaction / self.population.population:.2f}")
         return average_satisfaction
 
     def get_basic_living_cost(self):
@@ -584,7 +593,7 @@ class Simulator:
         :return: 调整后的基本生活所需值
         """
         self.basic_living_cost = max(500, self.basic_living_cost + adjustment)  # 确保基本生活所需值不低于500
-        print(f"基本生活所需值调整为: {self.basic_living_cost}")
+        self.logger.info(f"基本生活所需值调整为: {self.basic_living_cost}")
         return self.basic_living_cost
 
     def calculate_total_unemployment_rate(self):
@@ -609,7 +618,7 @@ class Simulator:
         # 计算总体失业率
         if total_residents == 0:
             return 0.0
-        print(f"总体就业率: {total_employed} / {total_residents} = {total_employed / total_residents:.2f}")
+        self.logger.info(f"总体就业率: {total_employed} / {total_residents} = {total_employed / total_residents:.2f}")
         unemployment_rate = (1.0 - (total_employed / total_residents)) * 100
         return unemployment_rate
 
@@ -642,7 +651,7 @@ class Simulator:
         
         # 验证目标城镇
         if target_town and target_town not in self.towns.towns:
-            print(f"目标城镇 {target_town} 不存在")
+            self.logger.warning(f"目标城镇 {target_town} 不存在")
             return False
         if strength_investment <= 0:
             return False
@@ -656,7 +665,7 @@ class Simulator:
         gov_loss_rate = 0
 
         if town_rebels < strength_investment:
-            print(f"目标城镇 {target_town} 叛军数量不足，未能成功发起叛乱")
+            self.logger.warning(f"目标城镇 {target_town} 叛军数量不足，未能成功发起叛乱")
             return False
         elif town_defense == 0:
             
@@ -670,12 +679,12 @@ class Simulator:
 
             #更新状态
             self.rebellion_records += 1
-            print(f"\n=== 第 {self.rebellion_records} 次叛乱 ===")
-            print(f"叛乱成功")
-            print(f"战场：{target_town}")
-            print(f"兵力对比：政府军 {town_defense} vs 叛军 {rebel_strength}")
-            print(f"叛军获得资源{gov_loss_budget}")
-            print(f"\n===========================")
+            self.logger.info(f"\n=== 第 {self.rebellion_records} 次叛乱 ===")
+            self.logger.info(f"叛乱成功")
+            self.logger.info(f"战场：{target_town}")
+            self.logger.info(f"兵力对比：政府军 {town_defense} vs 叛军 {rebel_strength}")
+            self.logger.info(f"叛军获得资源{gov_loss_budget}")
+            self.logger.info(f"\n===========================")
             
             # 记录叛乱信息
             rebellion_info = {
@@ -728,14 +737,14 @@ class Simulator:
 
             #更新状态
             self.rebellion_records += 1
-            print(f"\n=== 第 {self.rebellion_records} 次叛乱 ===")
-            print(f"叛乱成功" if success else f"叛乱失败")
-            print(f"战场：{target_town}")
-            print(f"兵力对比：政府军 {town_defense} vs 叛军 {rebel_strength}")
-            print(f"损耗率：政府军 {gov_loss_rate*100:.1f}% | 叛军 {rebel_loss_rate*100:.1f}%")
-            print(f"实际损耗：政府军 -{gov_loss} | 叛军 -{rebel_loss}")
-            print(f"叛军获得资源{gov_loss_budget} " if success else f"叛军失去资源{rebel_loss_resources}")
-            print(f"\n===========================")
+            self.logger.info(f"\n=== 第 {self.rebellion_records} 次叛乱 ===")
+            self.logger.info(f"叛乱成功" if success else f"叛乱失败")
+            self.logger.info(f"战场：{target_town}")
+            self.logger.info(f"兵力对比：政府军 {town_defense} vs 叛军 {rebel_strength}")
+            self.logger.info(f"损耗率：政府军 {gov_loss_rate*100:.1f}% | 叛军 {rebel_loss_rate*100:.1f}%")
+            self.logger.info(f"实际损耗：政府军 -{gov_loss} | 叛军 -{rebel_loss}")
+            self.logger.info(f"叛军获得资源{gov_loss_budget} " if success else f"叛军失去资源{rebel_loss_resources}")
+            self.logger.info(f"\n===========================")
     
         return True
     
@@ -759,7 +768,7 @@ class Simulator:
                     resident.handle_death()
                     del self.residents[army_id]
                     self.population.death()
-                    print(f"{army_type} {army_id} 战死，失去生命")
+                    self.logger.info(f"{army_type} {army_id} 战死，失去生命")
 
     def calculate_total_rebels(self):
         """
@@ -975,7 +984,7 @@ class Simulator:
         self.results["gdp"].append(self.gdp)
 
         # 打印当前状态
-        print(f"年份: {self.time.current_time}, "
+        self.logger.info(f"年份: {self.time.current_time}, "
               f"叛乱次数: {self.rebellion_records}, "
               f"人口数量: {self.population.get_population()}, "
               f"失业率: {self.results['unemployment_rate'][-1]:.2f}%, "

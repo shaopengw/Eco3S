@@ -116,12 +116,7 @@ class HighRankingGovernmentAgent(BaseAgent):
         根据普通政府官员的讨论作出决策
         :return: 决策结果
         """
-        # 等待讨论结束
-        if not self.shared_pool.is_ended():
-            return None
-        # 政府状态删去运河维护政策支持，改为运河状态（通航比率），增加当前失业率
-        #       决策为多个动作的组合。如果支出之和大于财政预算，则优先满足重要的（决策按照重要性排序）。
-        # 政府和叛军的决策，只计算比例， 然后系统根据现有资源自动计算绝对值。这样避免LLM输出结果超过预算。
+        # 政府决策为多个动作的组合。
         current_budget = self.government.get_budget()
 
         # 获取维持当前就业所需的资金
@@ -378,11 +373,6 @@ class government_SharedInformationPool:
             self.discussions.clear()
             self.is_discussion_ended = False
 
-    def is_ended(self) -> bool:
-        """
-        检查讨论是否结束
-        """
-        return self.is_discussion_ended
 
 class InformationOfficer(BaseAgent):
     def __init__(self, agent_id, government, shared_pool):

@@ -53,6 +53,8 @@ class ClimateMigrationSimSimulator:
     
         self.results = self.init_results()
 
+        # 初始化日志记录器
+        self.logger = LogManager.get_logger('simulator_climate_migration', console_output=False)
     
         self.start_time = None
 
@@ -62,6 +64,7 @@ class ClimateMigrationSimSimulator:
 
     
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        pid = os.getpid()  # 获取进程ID以避免并行实验文件名冲突
 
     
         data_dir = SimulationContext.get_data_dir()
@@ -70,7 +73,7 @@ class ClimateMigrationSimSimulator:
         SimulationContext.ensure_directories()
 
     
-        self.result_file = os.path.join(data_dir, f"running_data_{timestamp}.csv")
+        self.result_file = os.path.join(data_dir, f"running_data_{timestamp}_pid{pid}.csv")
 
     def init_results(self):
 
@@ -477,7 +480,8 @@ class ClimateMigrationSimSimulator:
         
         if filename is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = os.path.join(data_dir, f"running_data_{timestamp}.csv")
+            pid = os.getpid()  # 获取进程ID以避免并行实验文件名冲突
+            filename = os.path.join(data_dir, f"running_data_{timestamp}_pid{pid}.csv")
         
         if append:
             last_row_data = {key: [value[-1]] for key, value in self.results.items() if value}
@@ -755,7 +759,7 @@ class ClimateMigrationSimSimulator:
 
 
     
-                if info_officers and leaders and shared_pool.is_ended():
+                if info_officers and leaders:
 
 
     

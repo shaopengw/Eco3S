@@ -37,5 +37,6 @@ from src.environment.towns import Towns
 from src.environment.time import Time
 
 from src.utils.simulation_context import SimulationContext
+from src.utils.logger import LogManager
 
 

@@ -13,7 +13,7 @@ simulation:
   birth_rate: 0.05
   group_decision:
     government:
-      enabled: 1
+      enabled: 0
       max_rounds: 2
     rebellion:
       enabled: 0
@@ -23,8 +23,9 @@ simulation:
   map_width: 100
   max_retry_attempts: 3
   response_probability: 0.05
-  resume_from_cache: 1
+  resume_from_cache: 0
+  save_cache: 1
   retry_delay: 1
   simulation_name: ""
   start_year: 1650
-  total_years: 5
+  total_years: 15
