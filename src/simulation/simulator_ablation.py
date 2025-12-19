@@ -214,10 +214,7 @@ class SimulatorAblation(Simulator):
         """
         基于规则的叛军决策（用于消融实验）
         
-        规则逻辑：
-        1. 评估各城镇的叛乱成功概率
-        2. 选择最有利的目标城镇
-        3. 决定投入的兵力
+        规则逻辑：只要城镇叛军数 > 官员数，就有60%概率发动叛乱
         
         Args:
             rebellion_strength: 叛军总力量
@@ -230,64 +227,41 @@ class SimulatorAblation(Simulator):
             决策JSON字符串
         """
         decision = {
-            "action": "maintain",  # maintain/rebellion
+            "action": "maintain",
             "target_town": None,
-            "strength_investment": 0
+            "stage_rebellion": 0 
         }
         
-        # 规则1：寻找最佳目标城镇
-        best_target = None
-        best_score = -1
-        
+        # 找出所有叛军数量大于官员数量的城镇
+        advantageous_towns = []
         for town in towns_stats:
             rebel_count = town['rebel_count']
             official_count = town['official_count']
             
-            # 跳过没有叛军的城镇
-            if rebel_count == 0:
-                continue
-            
-            # 计算优势分数：叛军人数 - 官兵人数
-            # 分数越高越有利
-            score = rebel_count - official_count
-            
-            # 如果平均满意度很低(<30)，增加叛乱倾向
-            if avg_satisfaction < 30:
-                score += 5
-            
-            if score > best_score:
-                best_score = score
-                best_target = town
+            # 只要叛军数 > 官员数，就是有利城镇
+            if rebel_count > official_count:
+                advantage = rebel_count - official_count
+                advantageous_towns.append({
+                    'town': town,
+                    'advantage': advantage,
+                    'rebel_count': rebel_count
+                })
         
-        # 规则2：决定是否叛乱
-        # - 有明显优势的城镇(score > 0)：叛乱
-        # - 整体力量优势(rebellion_strength > government_military)且满意度低：叛乱
-        # - 满意度极低(<25)：冒险叛乱
-        if best_target and best_score > 0:
+        # 如果没有有利城镇，直接返回
+        if not advantageous_towns:
+            import json
+            return json.dumps(decision, ensure_ascii=False)
+        
+        # 选择优势最大的城镇
+        best_town = max(advantageous_towns, key=lambda x: x['advantage'])
+        
+        # 60%概率发动叛乱（简单随机）
+        if random.random() < 0.6:
             decision["action"] = "rebellion"
-            decision["target_town"] = best_target['town_name']
-            # 投入该城镇的所有叛军，但不超过总兵力的80%
-            decision["strength_investment"] = min(
-                best_target['rebel_count'],
-                int(rebellion_strength * 0.8)
-            )
-        elif rebellion_strength > government_military * 1.5 and avg_satisfaction < 40:
-            # 整体优势很大时，即使单个城镇没有优势也可以叛乱
-            if best_target:
-                decision["action"] = "rebellion"
-                decision["target_town"] = best_target['town_name']
-                decision["strength_investment"] = min(
-                    best_target['rebel_count'],
-                    int(rebellion_strength * 0.6)
-                )
-        elif avg_satisfaction < 25 and best_target:
-            # 满意度极低时，冒险叛乱
-            decision["action"] = "rebellion"
-            decision["target_town"] = best_target['town_name']
-            decision["strength_investment"] = min(
-                best_target['rebel_count'],
-                int(rebellion_strength * 0.5)
-            )
+            decision["target_town"] = best_town['town']['town_name']
+            # 投入该城镇80%的叛军
+            decision["stage_rebellion"] = max(1, int(best_town['rebel_count'] * 0.8))
+            decision["provocative_speech"] = ""
         
         import json
         return json.dumps(decision, ensure_ascii=False)
