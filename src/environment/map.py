@@ -180,19 +180,21 @@ class Map:
             return None
         return self.town_graph.get(town_name, []).copy()
 
-    def visualize_map(self):
+    def visualize_map(self, output_file='experiment_dataset\\plot_results\\map_visualization.png'):
         """
         可视化地图，显示沿河区域、市场城镇和地形崎岖指数
+        :param output_file: 输出文件路径
         """
-        plt.figure(figsize=(10, 15))
+        # 设置高分辨率图像
+        fig = plt.figure(figsize=(12, 18), dpi=100)
 
         # 绘制地形崎岖指数
         plt.imshow(self.terrain_ruggedness, cmap='terrain', alpha=0.6, 
                 extent=[0, self.width, self.height, 0])
 
         # 绘制沿河区域
-        river_y, river_x = np.where(self.river_grid > 0)  # 改为>0以显示部分损坏的运河
-        plt.scatter(river_x, river_y, color='blue', label='Canals', s=10) # 标签改为Canals
+        river_y, river_x = np.where(self.river_grid > 0)
+        plt.scatter(river_x, river_y, color='blue', label='Canals', s=10)
 
         # 准备城市数据
         canal_towns = []
@@ -208,36 +210,39 @@ class Map:
         if canal_towns:
             canal_x = [town[0] for town in canal_towns]
             canal_y = [town[1] for town in canal_towns]
-            plt.scatter(canal_x, canal_y, color='red', label='Canal Towns', s=50, marker='s')
+            plt.scatter(canal_x, canal_y, color='red', label='Canal Towns', s=80, marker='s')
             
             for x, y, name in canal_towns:
                 plt.annotate(name, 
                             xy=(x, y),
                             xytext=(5, 5), 
                             textcoords='offset points',
-                            fontsize=8,
-                            fontproperties='SimHei',
+                            fontsize=12,
                             bbox=dict(facecolor='white', edgecolor='none', alpha=0.7))
         
         # 绘制非运河城市和名称标注
         if other_towns:
             other_x = [town[0] for town in other_towns]
             other_y = [town[1] for town in other_towns]
-            plt.scatter(other_x, other_y, color='green', label='Other towns', s=50, marker='^')
+            plt.scatter(other_x, other_y, color='green', label='Other Towns', s=80, marker='^')
             
             for x, y, name in other_towns:
                 plt.annotate(name, 
                             xy=(x, y),
                             xytext=(5, 5), 
                             textcoords='offset points',
-                            fontsize=8,
-                            fontproperties='SimHei',
+                            fontsize=12,
                             bbox=dict(facecolor='white', edgecolor='none', alpha=0.7))
 
-        plt.title("地图", fontproperties='SimHei', fontsize=14)
-        plt.xlabel("经度方向", fontproperties='SimHei')
-        plt.ylabel("纬度方向", fontproperties='SimHei')
-        plt.legend()
+        plt.title("Map Visualization", fontsize=20, fontweight='bold')
+        plt.xlabel("Longitude Direction", fontsize=16)
+        plt.ylabel("Latitude Direction", fontsize=16)
+        plt.legend(fontsize=14, loc='upper right')
+        plt.tick_params(labelsize=12)
+        
+        # 保存为PNG格式，高分辨率
+        plt.savefig(output_file, dpi=120, bbox_inches='tight', format='png')
+        print(f"Map visualization saved to: {output_file}")
         plt.show()
 
     def update_river_condition(self, maintenance_ratio):
@@ -375,7 +380,7 @@ class Map:
 
 if __name__ == "__main__":
     # 初始化地图
-    map = Map(width=100, height=150,data_file='config/TEOG/towns_data.json')
+    map = Map(width=100, height=150,data_file='config/default/towns_data.json')
     map.initialize_map()
 
     # 打印地图信息

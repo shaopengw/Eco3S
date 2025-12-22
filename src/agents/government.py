@@ -28,10 +28,10 @@ class OrdinaryGovernmentAgent(BaseAgent):
             river_price = self.government.transport_economy.river_price
             sea_price = self.government.transport_economy.sea_price
             transport_task = self.government.transport_economy.transport_task
-            maintenance_cost_base = self.government.transport_economy.maintenance_cost_base
+            maintenance_cost = self.government.transport_economy.calculate_maintenance_cost(self.government.map.get_navigability())
             return self.government.prompts['get_current_situation_prompt'].format(
                 budget=self.government.get_budget(), military_strength=self.government.get_military_strength(), tax_rate=self.government.get_tax_rate()*100,
-                transport_task=transport_task, river_price=river_price, sea_price=sea_price, maintenance_cost_base=maintenance_cost_base,
+                transport_task=transport_task, river_price=river_price, sea_price=sea_price, maintenance_cost_base=maintenance_cost,
                 maintain_employment_cost=maintain_employment_cost)
         else:
             # 没有运输经济模块时，使用简化版本
@@ -128,7 +128,7 @@ class HighRankingGovernmentAgent(BaseAgent):
             river_price = self.government.transport_economy.river_price
             sea_price = self.government.transport_economy.sea_price
             transport_task = self.government.transport_economy.transport_task
-            maintenance_cost_base = self.government.transport_economy.maintenance_cost_base
+            maintenance_cost = self.government.transport_economy.calculate_maintenance_cost(self.government.map.get_navigability())
             
             # 计算各项支出的成本基准
             transport_cost_river = river_price * transport_task  # 全部河运成本
@@ -137,7 +137,7 @@ class HighRankingGovernmentAgent(BaseAgent):
             prompt = self.government.prompts['make_decision_prompt'].format(
                 current_budget=current_budget, military_strength=self.government.get_military_strength(),
                 tax_rate=self.government.get_tax_rate()*100, transport_task=transport_task, river_price=river_price,
-                sea_price=sea_price, maintenance_cost_base=maintenance_cost_base, maintain_employment_cost=maintain_employment_cost,
+                sea_price=sea_price, maintenance_cost_base=maintenance_cost, maintain_employment_cost=maintain_employment_cost,
                 transport_cost_river=transport_cost_river, transport_cost_sea=transport_cost_sea, summary=summary)
         else:
             # 没有运输经济模块时，使用简化版本

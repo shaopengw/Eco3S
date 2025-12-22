@@ -1,1 +1,731 @@
-[]
+[
+  {
+    "gender": "男性",
+    "lifespan": 30,
+    "residence": "沿河",
+    "satisfaction": 39,
+    "health_index": 1,
+    "income": 10,
+    "personality": "忠厚、怯懦"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 2,
+    "residence": "非沿河",
+    "satisfaction": 48,
+    "health_index": 4,
+    "income": 20,
+    "personality": "老实、世故"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 70,
+    "residence": "非沿河",
+    "satisfaction": 86,
+    "health_index": 3,
+    "income": 10,
+    "personality": "计较、倔强"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 10,
+    "residence": "非沿河",
+    "satisfaction": 51,
+    "health_index": 3,
+    "income": 0,
+    "personality": "多疑、善妒"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 50,
+    "residence": "沿河",
+    "satisfaction": 83,
+    "health_index": 3,
+    "income": 20,
+    "personality": "忍让、守信"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 14,
+    "residence": "沿河",
+    "satisfaction": 39,
+    "health_index": 3,
+    "income": 0,
+    "personality": "敏感、圆滑"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 2,
+    "residence": "沿河",
+    "satisfaction": 97,
+    "health_index": 3,
+    "income": 20,
+    "personality": "坚韧、忠厚"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 17,
+    "residence": "沿河",
+    "satisfaction": 94,
+    "health_index": 2,
+    "income": 10,
+    "personality": "蛮横、孤僻"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 16,
+    "residence": "沿河",
+    "satisfaction": 44,
+    "health_index": 3,
+    "income": 50,
+    "personality": "懒惰、圆滑"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 16,
+    "residence": "沿河",
+    "satisfaction": 45,
+    "health_index": 3,
+    "income": 50,
+    "personality": "倔强、吝啬"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 49,
+    "residence": "沿河",
+    "satisfaction": 81,
+    "health_index": 3,
+    "income": 10,
+    "personality": "守节、奸诈"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 10,
+    "residence": "沿河",
+    "satisfaction": 38,
+    "health_index": 2,
+    "income": 20,
+    "personality": "自私、乐天"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 29,
+    "residence": "沿河",
+    "satisfaction": 50,
+    "health_index": 3,
+    "income": 50,
+    "personality": "顽固、知礼"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 15,
+    "residence": "沿河",
+    "satisfaction": 4,
+    "health_index": 2,
+    "income": 0,
+    "personality": "吝啬、暴躁"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 28,
+    "residence": "沿河",
+    "satisfaction": 100,
+    "health_index": 1,
+    "income": 10,
+    "personality": "激进、敏感"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 45,
+    "residence": "沿河",
+    "satisfaction": 65,
+    "health_index": 3,
+    "income": 5,
+    "personality": "愚昧、虚荣"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 13,
+    "residence": "非沿河",
+    "satisfaction": 96,
+    "health_index": 5,
+    "income": 10,
+    "personality": "守节、迂腐"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 45,
+    "residence": "非沿河",
+    "satisfaction": 2,
+    "health_index": 4,
+    "income": 5,
+    "personality": "狭隘、耿直"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 13,
+    "residence": "非沿河",
+    "satisfaction": 96,
+    "health_index": 5,
+    "income": 50,
+    "personality": "执拗、圆滑"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 54,
+    "residence": "非沿河",
+    "satisfaction": 88,
+    "health_index": 3,
+    "income": 20,
+    "personality": "刻薄、偏执"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 55,
+    "residence": "非沿河",
+    "satisfaction": 22,
+    "health_index": 3,
+    "income": 50,
+    "personality": "善妒、多虑"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 2,
+    "residence": "非沿河",
+    "satisfaction": 97,
+    "health_index": 3,
+    "income": 20,
+    "personality": "狭隘、迂腐"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 25,
+    "residence": "非沿河",
+    "satisfaction": 58,
+    "health_index": 4,
+    "income": 20,
+    "personality": "吝啬、执拗"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 36,
+    "residence": "沿河",
+    "satisfaction": 11,
+    "health_index": 2,
+    "income": 50,
+    "personality": "谄媚、愚昧"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 52,
+    "residence": "沿河",
+    "satisfaction": 34,
+    "health_index": 3,
+    "income": 0,
+    "personality": "刁钻、吝啬"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 2,
+    "residence": "非沿河",
+    "satisfaction": 34,
+    "health_index": 3,
+    "income": 10,
+    "personality": "执拗、圆滑"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 19,
+    "residence": "沿河",
+    "satisfaction": 84,
+    "health_index": 2,
+    "income": 0,
+    "personality": "多虑、耿直"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 29,
+    "residence": "沿河",
+    "satisfaction": 74,
+    "health_index": 3,
+    "income": 5,
+    "personality": "势利、耿直"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 36,
+    "residence": "沿河",
+    "satisfaction": 7,
+    "health_index": 4,
+    "income": 0,
+    "personality": "安分、怯懦"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 30,
+    "residence": "沿河",
+    "satisfaction": 35,
+    "health_index": 2,
+    "income": 10,
+    "personality": "孝顺、孤僻"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 14,
+    "residence": "非沿河",
+    "satisfaction": 60,
+    "health_index": 3,
+    "income": 0,
+    "personality": "重义、耿直"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 20,
+    "residence": "沿河",
+    "satisfaction": 25,
+    "health_index": 4,
+    "income": 5,
+    "personality": "精明、隐忍"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 39,
+    "residence": "非沿河",
+    "satisfaction": 97,
+    "health_index": 4,
+    "income": 10,
+    "personality": "守信、懒惰"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 12,
+    "residence": "沿河",
+    "satisfaction": 47,
+    "health_index": 2,
+    "income": 50,
+    "personality": "勤恳、偏执"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 1,
+    "residence": "非沿河",
+    "satisfaction": 59,
+    "health_index": 1,
+    "income": 10,
+    "personality": "执拗、机灵"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 38,
+    "residence": "沿河",
+    "satisfaction": 71,
+    "health_index": 4,
+    "income": 0,
+    "personality": "激进、顽固"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 78,
+    "residence": "沿河",
+    "satisfaction": 12,
+    "health_index": 4,
+    "income": 10,
+    "personality": "世故、圆滑"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 29,
+    "residence": "非沿河",
+    "satisfaction": 96,
+    "health_index": 4,
+    "income": 50,
+    "personality": "奸诈、刁钻"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 62,
+    "residence": "非沿河",
+    "satisfaction": 53,
+    "health_index": 3,
+    "income": 50,
+    "personality": "执拗、多虑"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 35,
+    "residence": "非沿河",
+    "satisfaction": 17,
+    "health_index": 3,
+    "income": 10,
+    "personality": "善妒、守信"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 2,
+    "residence": "沿河",
+    "satisfaction": 26,
+    "health_index": 3,
+    "income": 50,
+    "personality": "知礼、忍让"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 46,
+    "residence": "沿河",
+    "satisfaction": 68,
+    "health_index": 5,
+    "income": 0,
+    "personality": "保守、孝顺"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 11,
+    "residence": "沿河",
+    "satisfaction": 66,
+    "health_index": 1,
+    "income": 5,
+    "personality": "谨慎、守节"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 43,
+    "residence": "沿河",
+    "satisfaction": 80,
+    "health_index": 2,
+    "income": 50,
+    "personality": "计较、懒惰"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 34,
+    "residence": "沿河",
+    "satisfaction": 43,
+    "health_index": 4,
+    "income": 10,
+    "personality": "坚韧、贪婪"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 18,
+    "residence": "非沿河",
+    "satisfaction": 79,
+    "health_index": 3,
+    "income": 0,
+    "personality": "多疑、自私"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 75,
+    "residence": "非沿河",
+    "satisfaction": 77,
+    "health_index": 3,
+    "income": 0,
+    "personality": "偏执、忠厚"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 46,
+    "residence": "非沿河",
+    "satisfaction": 26,
+    "health_index": 3,
+    "income": 10,
+    "personality": "懒惰、圆滑"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 37,
+    "residence": "沿河",
+    "satisfaction": 50,
+    "health_index": 5,
+    "income": 20,
+    "personality": "精明、孤僻"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 60,
+    "residence": "沿河",
+    "satisfaction": 47,
+    "health_index": 2,
+    "income": 5,
+    "personality": "善妒、敦厚"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 8,
+    "residence": "非沿河",
+    "satisfaction": 13,
+    "health_index": 3,
+    "income": 5,
+    "personality": "吝啬、油滑"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 71,
+    "residence": "沿河",
+    "satisfaction": 49,
+    "health_index": 2,
+    "income": 5,
+    "personality": "愚昧、势利"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 47,
+    "residence": "沿河",
+    "satisfaction": 59,
+    "health_index": 4,
+    "income": 10,
+    "personality": "贪婪、敏感"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 52,
+    "residence": "沿河",
+    "satisfaction": 60,
+    "health_index": 4,
+    "income": 20,
+    "personality": "敦厚、执拗"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 24,
+    "residence": "沿河",
+    "satisfaction": 76,
+    "health_index": 5,
+    "income": 0,
+    "personality": "顽固、豁达"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 25,
+    "residence": "沿河",
+    "satisfaction": 37,
+    "health_index": 2,
+    "income": 20,
+    "personality": "计较、克己"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 52,
+    "residence": "沿河",
+    "satisfaction": 75,
+    "health_index": 3,
+    "income": 5,
+    "personality": "要强、敏感"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 58,
+    "residence": "沿河",
+    "satisfaction": 44,
+    "health_index": 3,
+    "income": 20,
+    "personality": "怯懦、孝顺"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 10,
+    "residence": "沿河",
+    "satisfaction": 23,
+    "health_index": 3,
+    "income": 20,
+    "personality": "守节、克己"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 54,
+    "residence": "沿河",
+    "satisfaction": 32,
+    "health_index": 4,
+    "income": 5,
+    "personality": "守节、计较"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 42,
+    "residence": "沿河",
+    "satisfaction": 7,
+    "health_index": 3,
+    "income": 5,
+    "personality": "节俭、重义"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 6,
+    "residence": "非沿河",
+    "satisfaction": 94,
+    "health_index": 3,
+    "income": 0,
+    "personality": "顽固、隐忍"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 30,
+    "residence": "沿河",
+    "satisfaction": 24,
+    "health_index": 3,
+    "income": 20,
+    "personality": "自私、顽固"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 37,
+    "residence": "沿河",
+    "satisfaction": 25,
+    "health_index": 3,
+    "income": 10,
+    "personality": "忠厚、保守"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 47,
+    "residence": "非沿河",
+    "satisfaction": 85,
+    "health_index": 3,
+    "income": 5,
+    "personality": "老实、要强"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 30,
+    "residence": "非沿河",
+    "satisfaction": 94,
+    "health_index": 2,
+    "income": 0,
+    "personality": "偏执、安分"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 10,
+    "residence": "沿河",
+    "satisfaction": 56,
+    "health_index": 2,
+    "income": 20,
+    "personality": "守信、谄媚"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 11,
+    "residence": "沿河",
+    "satisfaction": 85,
+    "health_index": 4,
+    "income": 5,
+    "personality": "虚荣、孝顺"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 41,
+    "residence": "沿河",
+    "satisfaction": 64,
+    "health_index": 2,
+    "income": 5,
+    "personality": "精明、势利"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 54,
+    "residence": "沿河",
+    "satisfaction": 58,
+    "health_index": 1,
+    "income": 10,
+    "personality": "刁钻、愚昧"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 52,
+    "residence": "非沿河",
+    "satisfaction": 61,
+    "health_index": 3,
+    "income": 10,
+    "personality": "乐天、敦厚"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 54,
+    "residence": "非沿河",
+    "satisfaction": 35,
+    "health_index": 4,
+    "income": 20,
+    "personality": "宽容、顽固"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 11,
+    "residence": "沿河",
+    "satisfaction": 96,
+    "health_index": 5,
+    "income": 0,
+    "personality": "勤恳、敏感"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 12,
+    "residence": "沿河",
+    "satisfaction": 88,
+    "health_index": 3,
+    "income": 5,
+    "personality": "计较、善妒"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 12,
+    "residence": "非沿河",
+    "satisfaction": 89,
+    "health_index": 3,
+    "income": 0,
+    "personality": "奸诈、圆滑"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 2,
+    "residence": "沿河",
+    "satisfaction": 9,
+    "health_index": 4,
+    "income": 20,
+    "personality": "暴躁、吝啬"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 12,
+    "residence": "非沿河",
+    "satisfaction": 8,
+    "health_index": 3,
+    "income": 10,
+    "personality": "克己、油滑"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 58,
+    "residence": "沿河",
+    "satisfaction": 79,
+    "health_index": 2,
+    "income": 10,
+    "personality": "乐天、老实"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 65,
+    "residence": "沿河",
+    "satisfaction": 68,
+    "health_index": 4,
+    "income": 5,
+    "personality": "虚荣、安分"
+  },
+  {
+    "gender": "男性",
+    "lifespan": 12,
+    "residence": "沿河",
+    "satisfaction": 32,
+    "health_index": 3,
+    "income": 5,
+    "personality": "愚昧、势利"
+  },
+  {
+    "gender": "女性",
+    "lifespan": 46,
+    "residence": "沿河",
+    "satisfaction": 80,
+    "health_index": 3,
+    "income": 50,
+    "personality": "油滑、执拗"
+  }
+]
