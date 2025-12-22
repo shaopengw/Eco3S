@@ -18,23 +18,29 @@ class SimulationType(Enum):
     INFO_PROPAGATION = "info_propagation"
 
 class SimulationAnalyzer:
-    def __init__(self, simulation_type: SimulationType, p_value: Optional[int] = None, y_value: Optional[int] = None):
+    def __init__(self, simulation_type: SimulationType, p_value: Optional[int] = None, y_value: Optional[int] = None, input_files: Optional[List[str]] = None, output_dir: Optional[str] = None):
         """
         初始化模拟分析器
         :param simulation_type: 模拟类型
         :param p_value: 过滤参数p的值
         :param y_value: 过滤参数y的值
+        :param input_files: 指定要分析的文件列表
+        :param output_dir: 指定保存分析结果的目录
         """
         self.simulation_type = simulation_type
         self.history_folder = os.path.join("history", simulation_type.value)
         self.p_value = p_value
         self.y_value = y_value
+        self.input_files = input_files
+        self.custom_output_dir = output_dir
         
-        # 创建带时间戳的输出目录
+        # 创建带时间戳的输出目录（支持自定义保存地址）
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.analysis_results_dir = os.path.join(self.history_folder, 'analysis_results', timestamp)
+        if self.custom_output_dir:
+            self.analysis_results_dir = os.path.join(self.custom_output_dir, timestamp)
+        else:
+            self.analysis_results_dir = os.path.join(self.history_folder, 'analysis_results', timestamp)
         os.makedirs(self.analysis_results_dir, exist_ok=True)
-        # 获取完整绝对路径用于输出
         self.analysis_results_full_path = os.path.abspath(self.analysis_results_dir)
         print(f"分析结果将保存至: {self.analysis_results_full_path}")
         
@@ -83,38 +89,15 @@ class SimulationAnalyzer:
         json_results = []
         csv_dataframes = []
         
-        # 遍历历史文件夹下的所有子文件夹（时间戳文件夹）
-        for timestamp_dir in glob.glob(os.path.join(self.history_folder, "*")):
-            if not os.path.isdir(timestamp_dir):
-                continue
-            
-            # 提取文件夹名称中的p和y值进行过滤
-            dir_name = os.path.basename(timestamp_dir)
-            # 支持 _p 和 _y 两种格式的参数提取
-            p_match = re.search(r'_p(\d+)', dir_name) or re.search(r'p(\d+)', dir_name)
-            y_match = re.search(r'_y(\d+)', dir_name) or re.search(r'y(\d+)', dir_name)
-            
-            current_p = int(p_match.group(1)) if p_match else None
-            current_y = int(y_match.group(1)) if y_match else None
-            
-            if self.p_value is not None and current_p != self.p_value:
-                # print(f"跳过文件夹 {dir_name}: p值不匹配 (期望: {self.p_value}, 实际: {current_p})")
-                continue
-            if self.y_value is not None and current_y != self.y_value:
-                # print(f"跳过文件夹 {dir_name}: y值不匹配 (期望: {self.y_value}, 实际: {current_y})")
-                continue
-                
-            # 查找运行数据文件 (支持json和csv)
-            running_data_files = glob.glob(os.path.join(timestamp_dir, "running_data_*.json"))
-            running_data_files.extend(glob.glob(os.path.join(timestamp_dir, "running_data_*.csv")))
-            
-            for file_path in running_data_files:
+        if self.input_files:
+            # 直接分析指定文件
+            for file_path in self.input_files:
                 try:
                     if file_path.endswith('.json'):
                         with open(file_path, 'r', encoding='utf-8') as f:
                             data = json.load(f)
                             numeric_data = self.extract_numeric_data(data)
-                            if numeric_data:  # 只添加非空数据
+                            if numeric_data:
                                 json_results.append(numeric_data)
                                 print(f"从 {os.path.basename(file_path)} 提取了 {len(numeric_data)} 个指标")
                     elif file_path.endswith('.csv'):
@@ -122,16 +105,46 @@ class SimulationAnalyzer:
                         if 'years' not in df.columns:
                             print(f"警告：CSV文件 {os.path.basename(file_path)} 缺少必要的'years'列")
                             continue
-                        
-                        # 收集所有CSV数据框
                         csv_dataframes.append(df)
                         print(f"加载CSV文件: {os.path.basename(file_path)}")
                 except Exception as e:
                     print(f"无法加载文件 {file_path}: {e}")
-        
-        # 处理所有CSV数据框
+        else:
+            # 遍历历史文件夹下的所有子文件夹（时间戳文件夹）
+            for timestamp_dir in glob.glob(os.path.join(self.history_folder, "*")):
+                if not os.path.isdir(timestamp_dir):
+                    continue
+                # ...existing code...
+                dir_name = os.path.basename(timestamp_dir)
+                p_match = re.search(r'_p(\d+)', dir_name) or re.search(r'p(\d+)', dir_name)
+                y_match = re.search(r'_y(\d+)', dir_name) or re.search(r'y(\d+)', dir_name)
+                current_p = int(p_match.group(1)) if p_match else None
+                current_y = int(y_match.group(1)) if y_match else None
+                if self.p_value is not None and current_p != self.p_value:
+                    continue
+                if self.y_value is not None and current_y != self.y_value:
+                    continue
+                running_data_files = glob.glob(os.path.join(timestamp_dir, "running_data_*.json"))
+                running_data_files.extend(glob.glob(os.path.join(timestamp_dir, "running_data_*.csv")))
+                for file_path in running_data_files:
+                    try:
+                        if file_path.endswith('.json'):
+                            with open(file_path, 'r', encoding='utf-8') as f:
+                                data = json.load(f)
+                                numeric_data = self.extract_numeric_data(data)
+                                if numeric_data:
+                                    json_results.append(numeric_data)
+                                    print(f"从 {os.path.basename(file_path)} 提取了 {len(numeric_data)} 个指标")
+                        elif file_path.endswith('.csv'):
+                            df = pd.read_csv(file_path)
+                            if 'years' not in df.columns:
+                                print(f"警告：CSV文件 {os.path.basename(file_path)} 缺少必要的'years'列")
+                                continue
+                            csv_dataframes.append(df)
+                            print(f"加载CSV文件: {os.path.basename(file_path)}")
+                    except Exception as e:
+                        print(f"无法加载文件 {file_path}: {e}")
         csv_results = self.process_csv_data(csv_dataframes) if csv_dataframes else {}
-        
         return json_results, csv_results
 
     def process_csv_data(self, dataframes: List[pd.DataFrame]) -> Dict[str, Any]:
@@ -608,30 +621,38 @@ def main():
                       required=True, help='模拟类型')
     parser.add_argument('--p', type=int, help='过滤参数p的值')
     parser.add_argument('--y', type=int, help='过滤参数y的值')
-    
+    parser.add_argument('--input_files', type=str, nargs='*', help='指定要分析的文件路径（支持多个）')
+    parser.add_argument('--output_dir', type=str, help='指定分析结果保存目录')
+
     args = parser.parse_args()
-    
-    # 创建分析器实例
-    analyzer = SimulationAnalyzer(SimulationType(args.type), p_value=args.p, y_value=args.y)
-    
+
+    # 创建分析器实例，支持新参数
+    analyzer = SimulationAnalyzer(
+        SimulationType(args.type),
+        p_value=args.p,
+        y_value=args.y,
+        input_files=args.input_files,
+        output_dir=args.output_dir
+    )
+
     # 加载运行数据
     json_results, csv_results = analyzer.load_simulation_results()
-    
+
     if not json_results and not csv_results:
         print(f"未找到任何运行数据文件")
         return
-    
+
     print(f"找到 {len(json_results)} 个JSON运行数据文件和 {len(csv_results.keys()) if isinstance(csv_results, dict) and 'years' in csv_results else 0} 个CSV运行数据文件")
-    
+
     stats = {} # Initialize stats to avoid NameError if json_results is empty
 
     if json_results:
         # 计算统计数据 (只针对JSON数据)
         stats = analyzer.calculate_statistics(json_results)
-        
+
         # 生成统计图表 (只针对JSON数据)
         analyzer.plot_statistics(stats)
-        
+
         # 生成报告 (只针对JSON数据)
         analyzer.generate_report(stats)
     else:
@@ -640,12 +661,12 @@ def main():
     if csv_results and isinstance(csv_results, dict) and 'years' in csv_results:
         # 生成时序统计图（针对CSV数据）
         analyzer.plot_time_series_statistics(csv_results)
-        
+
         # 为CSV数据生成统计报告
         analyzer.generate_csv_report(csv_results)
     else:
         print("警告：未找到CSV运行数据文件，跳过CSV时序数据绘图和报告生成。")
-    
+
     print(f"\n{'='*80}")
     print(f"分析完成！所有结果已保存至：")
     print(f"{analyzer.analysis_results_full_path}")

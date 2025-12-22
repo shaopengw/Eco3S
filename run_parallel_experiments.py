@@ -6,6 +6,7 @@
   python run_parallel_experiments.py 5 entrypoints/main_ablation.py
   python run_parallel_experiments.py 5 entrypoints/main_info_propagation.py
   python run_parallel_experiments.py 3 entrypoints/main_climate_migration_sim.py
+  python run_parallel_experiments.py 2 entrypoints/main_financial_herd_behavior_sim.py
 """
 import subprocess
 import sys
