@@ -89,6 +89,54 @@ class OrdinaryGovernmentAgent(BaseAgent):
             # 如果共享信息池为空，调用generate_opinion函数
             await self.generate_opinion(salary)
 
+    async def make_decision(self, summary, salary):
+        """
+        根据讨论总结作出决策（用于非独裁模式）
+        :param summary: 讨论总结或高级官员的总结发言
+        :param salary: 薪资信息
+        :return: 决策结果
+        """
+        current_budget = self.government.get_budget()
+        maintain_employment_cost = salary * 0.05
+
+        # 检查是否有运输经济模块
+        if self.government.transport_economy:
+            # 获取运输经济相关参数
+            river_price = self.government.transport_economy.river_price
+            sea_price = self.government.transport_economy.sea_price
+            transport_task = self.government.transport_economy.transport_task
+            maintenance_cost = self.government.transport_economy.calculate_maintenance_cost(self.government.map.get_navigability())
+            
+            # 计算各项支出的成本基准
+            transport_cost_river = river_price * transport_task  # 全部河运成本
+            transport_cost_sea = sea_price * transport_task      # 全部海运成本
+
+            prompt = self.government.prompts['make_decision_prompt'].format(
+                current_budget=current_budget, military_strength=self.government.get_military_strength(),
+                tax_rate=self.government.get_tax_rate()*100, transport_task=transport_task, river_price=river_price,
+                sea_price=sea_price, maintenance_cost_base=maintenance_cost, maintain_employment_cost=maintain_employment_cost,
+                transport_cost_river=transport_cost_river, transport_cost_sea=transport_cost_sea, summary=summary)
+        else:
+            # 没有运输经济模块时，使用简化版本
+            prompt = self.government.prompts.get('make_decision_prompt_simple',
+                "当前预算：{current_budget}，军事力量：{military_strength}，税率：{tax_rate}%，维持就业成本：{maintain_employment_cost}。\n讨论总结：{summary}\n请做出决策。").format(
+                current_budget=current_budget, 
+                military_strength=self.government.get_military_strength(),
+                tax_rate=self.government.get_tax_rate()*100, 
+                maintain_employment_cost=maintain_employment_cost, 
+                summary=summary)
+        
+        try:
+            self.update_system_message()
+            decision = await self.generate_llm_response(prompt)
+
+            if decision:
+                self.government_log.info(f"普通政府官员 {self.agent_id} 的决策：{decision}")
+                return decision
+        except Exception as e:
+            self.government_log.error(f"普通政府官员 {self.agent_id} 在做出决策时出错：{e}")
+            return "无法做出决策"
+
 class HighRankingGovernmentAgent(BaseAgent):
     def __init__(self, agent_id, government, shared_pool):
         """
@@ -110,6 +158,47 @@ class HighRankingGovernmentAgent(BaseAgent):
         更新系统提示词，包含居民当前的状态信息
         """
         self.system_message = self.government.prompts['high_ranking_government_agent_system_message'].format(personality=self.personality)
+
+    async def summarize_discussion_for_voting(self, summary, salary):
+        """
+        高级官员总结讨论，为后续投票提供参考（用于非独裁模式）
+        :param summary: 信息整理官的总结
+        :param salary: 薪资信息
+        :return: 高级官员的总结发言
+        """
+        current_budget = self.government.get_budget()
+        maintain_employment_cost = salary * 0.05
+        
+        # 检查是否有运输经济模块
+        if self.government.transport_economy:
+            river_price = self.government.transport_economy.river_price
+            sea_price = self.government.transport_economy.sea_price
+            transport_task = self.government.transport_economy.transport_task
+            maintenance_cost = self.government.transport_economy.calculate_maintenance_cost(self.government.map.get_navigability())
+            
+            prompt = self.government.prompts['summarize_discussion_for_voting_prompt'].format(
+                summary=summary,
+                current_budget=current_budget,
+                military_strength=self.government.get_military_strength(),
+                tax_rate=self.government.get_tax_rate()*100,
+                transport_task=transport_task,
+                river_price=river_price,
+                sea_price=sea_price,
+                maintenance_cost_base=maintenance_cost,
+                maintain_employment_cost=maintain_employment_cost
+            )
+        else:
+            prompt = f"众官已充分讨论，信息官归纳如下：\n{summary}\n\n请用2-3句话总结要点，为后续投票提供参考。"
+        
+        try:
+            self.update_system_message()
+            leader_summary = await self.generate_llm_response(prompt)
+            if leader_summary:
+                self.government_log.info(f"高级政府官员 {self.agent_id} 的总结发言：{leader_summary}")
+                return leader_summary
+        except Exception as e:
+            self.government_log.error(f"高级政府官员 {self.agent_id} 在总结讨论时出错：{e}")
+            return summary  # 如果出错，返回原始总结
 
     async def make_decision(self, summary, salary):
         """
