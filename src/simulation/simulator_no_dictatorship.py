@@ -1,9 +1,9 @@
 from .simulator_imports import *
 
-class SimulatorNoSocialNetwork:
-    def __init__(self, map, time, government, government_officials, rebellion, rebels_agents, population, residents, towns, transport_economy, climate, config):
+class SimulatorNoDictatorship:
+    def __init__(self, map, time, government, government_officials, rebellion, rebels_agents, population, social_network, residents, towns, transport_economy, climate, config):
         """
-        初始化模拟器类（消融实验版本 - 无社交网络）
+        初始化模拟器类（非独裁模式）
         :param map: 地图对象
         :param time: 时间对象
         :param government: 政府对象
@@ -11,6 +11,7 @@ class SimulatorNoSocialNetwork:
         :param rebellion: 叛军对象
         :param rebels_agents: 叛军列表
         :param population: 人口对象
+        :param social_network: 社会网络对象
         :param residents: 居民列表
         :param towns: 城镇对象
         :param transport_economy: 运输经济对象
@@ -23,6 +24,7 @@ class SimulatorNoSocialNetwork:
         self.rebellion = rebellion
         self.rebels_agents = rebels_agents
         self.population = population
+        self.social_network = social_network
         self.residents = residents
         self.towns = towns
         self.transport_economy = transport_economy
@@ -50,7 +52,7 @@ class SimulatorNoSocialNetwork:
         self.config = config
         
         # 初始化日志记录器
-        self.logger = LogManager.get_logger('simulator_no_social_network', console_output=True)
+        self.logger = LogManager.get_logger('simulator', console_output=True)
         
         # 保存初始数据
         self.gdp = self.calculate_gdp()  # 确保先计算初始GDP
@@ -115,7 +117,7 @@ class SimulatorNoSocialNetwork:
                 count=new_count,
                 map=self.map,
                 residents=self.residents,
-                social_network=None,  # 消融实验：不使用社交网络
+                social_network=self.social_network,
                 resident_prompt_path=self.config["data"]["resident_prompt_path"],
                 resident_actions_path=self.config["data"]["resident_actions_path"],
             )
@@ -149,15 +151,22 @@ class SimulatorNoSocialNetwork:
             if rebellion_decision:
                 self.execute_rebellion_decision(rebellion_decision)
 
+            # 重置社交网络的对话计数器
+            self.social_network.reset_dialogue_count()
+
             # 居民行为
             tasks = []
+            speech_tasks = []
             # 清空上一轮的求职信息
             town_job_requests = defaultdict(list)
             
             for resident_name in list(self.residents.keys()):
                 resident = self.residents[resident_name]
                 tax_rate = self.government.get_tax_rate()
-                tasks.append(resident.decide_action_by_llm(tax_rate=tax_rate, basic_living_cost=self.basic_living_cost))
+                if resident.job == "叛军":
+                    tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
+                else:
+                    tasks.append(resident.decide_action_by_llm(tax_rate=tax_rate, basic_living_cost=self.basic_living_cost))
 
                 # 更新居民寿命（每年）
                 if resident.update_resident_status(self.basic_living_cost):
@@ -181,11 +190,14 @@ class SimulatorNoSocialNetwork:
                         town_job_requests[result["town"]].append(result)
                         job_request_count += 1
                     elif isinstance(result, tuple) and len(result) == 4:
-                        # 处理带有发言的决策结果（消融实验：不传播发言）
+                        # 处理带有发言的决策结果
                         select, reason, speech, relation_type = result
                         # 执行决策
                         await resident.execute_decision(select)
-                        # 消融实验：移除发言传播
+                        # 收集发言传播任务
+                        speech_tasks.append(asyncio.create_task(
+                            self.social_network.spread_speech_in_network(resident.resident_id, speech, relation_type)
+                        ))
                     elif isinstance(result, tuple) and len(result) == 2:
                         # 处理普通决策结果
                         select, reason = result
@@ -194,6 +206,10 @@ class SimulatorNoSocialNetwork:
                 
                 if job_request_count > 0:
                     self.logger.info(f"\n收集到 {job_request_count} 个求职请求")
+                
+                # 并发执行所有发言传播任务
+                if speech_tasks:
+                    await asyncio.gather(*speech_tasks)
             
             # 处理所有城镇的求职信息
             if town_job_requests:
@@ -213,6 +229,8 @@ class SimulatorNoSocialNetwork:
 
         self.end_time = datetime.now()  # 记录模拟结束时间
         self.display_total_simulation_time()
+        self.social_network.plot_degree_distribution()
+        # self.social_network.visualize()
 
     def display_total_simulation_time(self):
         """
@@ -224,7 +242,7 @@ class SimulatorNoSocialNetwork:
 
     async def collect_group_decision(self, group_type, config, max_rounds=2):
         """
-        收集群体决策
+        收集群体决策（非独裁模式）
         :param group_type: 群体类型
         :param config: 群体配置
         :param max_rounds: 最大讨论轮数
@@ -306,14 +324,118 @@ class SimulatorNoSocialNetwork:
             or isinstance(member, RebelsInformationOfficer)
         ]
 
-        # 处理讨论结果
-        if info_officers and leaders:
+        # 非独裁模式决策逻辑
+        if group_type == 'government' and info_officers and leaders:
+            # 1. 信息整理员总结讨论
+            discussion_summary = await info_officers[0].summarize_discussions()
+            if not discussion_summary:
+                return None
+            
+            # 2. 高级官员总结发言
+            leader_summary = await leaders[0].summarize_discussion_for_voting(discussion_summary, group_param)
+            self.logger.info(f"高级官员总结发言: {leader_summary}")
+            
+            # 3. 获取所有决策官员（不包括信息整理官，共5人：4个普通官员+1个高级官员）
+            decision_makers = ordinary_members + leaders
+            
+            # 4. 所有官员并发给出自己的决策
+            decision_tasks = [
+                member.make_decision(leader_summary, group_param)
+                for member in decision_makers
+            ]
+            all_decisions = await asyncio.gather(*decision_tasks)
+            
+            # 5. 解析所有决策并计算平均值
+            averaged_decision = self.average_decisions(all_decisions)
+            
+            if averaged_decision:
+                self.logger.info(f"平均决策结果: {averaged_decision}")
+                return json.dumps(averaged_decision)
+            
+            return None
+        
+        # 叛军保持原有逻辑
+        if group_type == 'rebellion' and info_officers and leaders:
             discussion_summary = await info_officers[0].summarize_discussions()
             if discussion_summary:
                 decision = await leaders[0].make_decision(discussion_summary, group_param)
                 return decision
 
         return None
+
+    def average_decisions(self, decisions):
+        """
+        对所有决策结果取平均
+        :param decisions: 所有决策的列表
+        :return: 平均后的决策字典
+        """
+        if not decisions:
+            return None
+        
+        def extract_json_from_text(text):
+            """从文本中提取JSON内容"""
+            import re
+            json_pattern = r'\{[^{}]*\}'
+            matches = re.findall(json_pattern, text)
+            for match in matches:
+                try:
+                    return json.loads(match)
+                except json.JSONDecodeError:
+                    continue
+            return None
+        
+        # 解析所有决策
+        parsed_decisions = []
+        for decision in decisions:
+            if isinstance(decision, str):
+                # 删除前缀和后缀
+                decision = decision.strip().removeprefix('```json').removesuffix('```')
+                try:
+                    parsed = json.loads(decision)
+                    parsed_decisions.append(parsed)
+                except json.JSONDecodeError:
+                    # 尝试从文本中提取JSON
+                    extracted = extract_json_from_text(decision)
+                    if extracted:
+                        parsed_decisions.append(extracted)
+        
+        if not parsed_decisions:
+            self.logger.warning("没有有效的决策可供平均")
+            return None
+        
+        self.logger.info(f"成功解析 {len(parsed_decisions)} 个决策")
+        
+        # 计算平均值
+        avg_decision = {
+            "public_budget": 0,
+            "transport_ratio": 0,
+            "maintenance_investment": 0,
+            "military_support": 0,
+            "tax_adjustment": 0
+        }
+        
+        for decision in parsed_decisions:
+            for key in avg_decision.keys():
+                if key in decision:
+                    avg_decision[key] += decision[key]
+        
+        # 取平均
+        num_decisions = len(parsed_decisions)
+        for key in avg_decision.keys():
+            avg_decision[key] = avg_decision[key] / num_decisions
+        
+        # 确保整数字段为整数
+        avg_decision["public_budget"] = int(avg_decision["public_budget"])
+        avg_decision["maintenance_investment"] = int(avg_decision["maintenance_investment"])
+        avg_decision["military_support"] = int(avg_decision["military_support"])
+        
+        # 确保 transport_ratio 在 0-1 之间
+        avg_decision["transport_ratio"] = max(0, min(1, avg_decision["transport_ratio"]))
+        
+        # 确保 tax_adjustment 在 -0.1 到 0.1 之间
+        avg_decision["tax_adjustment"] = max(-0.1, min(0.1, avg_decision["tax_adjustment"]))
+        
+        return avg_decision
 
     def execute_government_decision(self, decision):
         """执行政府决策"""
@@ -501,7 +623,7 @@ class SimulatorNoSocialNetwork:
         self.logger.info(f"模拟结果已完整保存至 {filename}")
 
     async def integrate_new_residents(self, new_residents):
-        """将新居民整合到系统中（消融实验版本 - 无社交网络）"""
+        """将新居民整合到系统中"""
         if not new_residents:
             return
 
@@ -512,6 +634,12 @@ class SimulatorNoSocialNetwork:
         # 添加到城镇
         self.towns.initialize_resident_groups(new_residents)
         self.logger.info("新居民已加入各自城镇")
+
+        # 添加到社交网络
+        if new_residents:
+            self.social_network.add_new_residents(new_residents)
+            self.logger.info(f"{len(new_residents)} 名新居民已加入社交网络")
+            # self.social_network.visualize()
 
     def calculate_average_satisfaction(self):
         """
@@ -904,6 +1032,11 @@ class SimulatorNoSocialNetwork:
         current_navigability = self.map.get_navigability()
         change_rate = (current_navigability - old_navigability) / old_navigability if old_navigability != 0 else 0
         self.towns.adjust_job_market(change_rate, self.residents)
+
+        # 每3-5年更新一次社交网络
+        current_year = self.time.current_time
+        if current_year % random.randint(3, 5) == 0:
+            self.social_network.update_network_edges()  # 更新社交网络边
         
         self.propaganda_prob = 0
         

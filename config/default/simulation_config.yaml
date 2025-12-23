@@ -1,7 +1,7 @@
 data:
   climate_info_path: experiment_dataset/climate_data/climate.csv
   government_info_path: experiment_dataset/government_data/official_data.json
-  government_prompt_path: config/default/ablation_government_prompts.yaml
+  government_prompt_path: config/default/government_prompts.yaml
   jobs_config_path: config/default/jobs_config.yaml
   rebellion_info_path: experiment_dataset/rebellion_data/rebels_data.json
   rebels_prompt_path: config/default/rebels_prompts.yaml
