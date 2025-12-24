@@ -1,0 +1,81 @@
+selected_modules:
+  - module_name: "time"
+    display_name: "时间系统"
+    api_doc: "time.md"
+    required: true
+      
+  - module_name: "map"
+    display_name: "地图系统"
+    api_doc: "map.md"
+    required: true
+      
+  - module_name: "population"
+    display_name: "人口系统"
+    api_doc: "population.md"
+    required: true
+      
+  - module_name: "resident"
+    display_name: "居民系统"
+    api_doc: "resident.md"
+    config_files: "resident_actions.yaml, residents_prompts.yaml"
+    required: true
+      
+  - module_name: "towns"
+    display_name: "城镇系统"
+    api_doc: "towns.md"
+    config_files: "towns_data.json"
+    required: true
+
+  - module_name: "job_market"
+    display_name: "就业市场"
+    api_doc: "job_market.md"
+    config_files: "jobs_config.yaml"
+    required: true
+
+  - module_name: "social_network"
+    display_name: "社交网络"
+    api_doc: "social_network.md"
+    required: true
+
+  - module_name: "government"
+    display_name: "政府系统"
+    api_doc: "government.md"
+    config_files: "government_prompts.yaml"
+    required: true
+
+simulation:
+  name: "customer_satisfaction_sim"
+  description: "模拟观察服务质量和产品体验动态变化对顾客满意度、忠诚度和购买决策的影响"
+  total_years: 10
+  initial_population: 1000
+  random_seed: 42
+
+module_parameters:
+  resident:
+    initial_satisfaction: 0.7
+
+  job_market:
+    base_salary:
+      农民: 2000
+      工人: 3000
+      商人: 4000
+
+  social_network:
+    network_density: 0.3
+
+  towns:
+    count: 5
+    types: ["沿河", "非沿河"]
+    initial_resources: 100000
+
+  map:
+    width: 100
+    height: 100
+
+data_collection:
+  enabled: true
+  metrics:
+    - population
+    - average_satisfaction
+  frequency: "yearly"
+  output_format: "csv"

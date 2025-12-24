@@ -1,0 +1,22 @@
+{
+  "map_boundaries": {
+    "min_longitude": 0.0,
+    "max_longitude": 100.0,
+    "min_latitude": 0.0,
+    "max_latitude": 100.0
+  },
+  "canals": [
+    {
+      "name": "服务商业带",
+      "towns": [
+        {"name": "中心商业区", "longitude": 50.0, "latitude": 50.0},
+        {"name": "东部购物中心", "longitude": 75.0, "latitude": 50.0},
+        {"name": "西部市场区", "longitude": 25.0, "latitude": 50.0}
+      ]
+    }
+  ],
+  "other_towns": [
+    {"name": "北部社区", "longitude": 50.0, "latitude": 75.0},
+    {"name": "南部居民区", "longitude": 50.0, "latitude": 25.0}
+  ]
+}

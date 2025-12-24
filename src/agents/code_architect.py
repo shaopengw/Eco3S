@@ -1899,6 +1899,7 @@ class CodeArchitectAgent(BaseAgent):
 		"""
 		精确修改文件中的指定参数，保持文件结构不变。
 		支持 yaml/json/文本三种类型的参数替换。
+		支持通过点分路径（e.g. 'a.b.c'）进行深层嵌套修改和新增。
 		"""
 		changes = []
 		# 备份原文件
@@ -1906,15 +1907,29 @@ class CodeArchitectAgent(BaseAgent):
 		shutil.copy(file_path, backup_path)
 		with open(file_path, 'r', encoding='utf-8') as f:
 			original_content = f.read()
+
+		def _set_nested_value(data_dict, path, value):
+			keys = path.split('.')
+			temp_dict = data_dict
+			for key in keys[:-1]:
+				# 如果路径中的某个键对应的值不是字典，就创建一个新字典
+				if not isinstance(temp_dict.get(key), dict):
+					temp_dict[key] = {}
+				temp_dict = temp_dict[key]
+			
+			last_key = keys[-1]
+			old_value = temp_dict.get(last_key)
+			temp_dict[last_key] = value
+			return old_value
+
 		# YAML 文件
 		if file_path.endswith(('.yaml', '.yml')):
 			data = yaml.safe_load(original_content)
 			for mod in modifications:
 				param = mod.get('parameter')
 				new_value = mod.get('value')
-				if param in data:
-					old_value = data[param]
-					data[param] = new_value
+				if param:
+					old_value = _set_nested_value(data, param, new_value)
 					changes.append(f"{param}: {old_value} -> {new_value}")
 			with open(file_path, 'w', encoding='utf-8') as f:
 				yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
@@ -1924,9 +1939,8 @@ class CodeArchitectAgent(BaseAgent):
 			for mod in modifications:
 				param = mod.get('parameter')
 				new_value = mod.get('value')
-				if param in data:
-					old_value = data[param]
-					data[param] = new_value
+				if param:
+					old_value = _set_nested_value(data, param, new_value)
 					changes.append(f"{param}: {old_value} -> {new_value}")
 			with open(file_path, 'w', encoding='utf-8') as f:
 				json.dump(data, f, indent=2, ensure_ascii=False)

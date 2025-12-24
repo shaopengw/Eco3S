@@ -1464,6 +1464,18 @@ class ProjectMasterAgent(BaseAgent):
                                 with open(config_path, 'r', encoding='utf-8') as f:
                                     config_data = yaml.safe_load(f)
                                 
+                                # 递归更新函数
+                                def update_steps_recursively(data, steps):
+                                    if isinstance(data, dict):
+                                        for key, value in data.items():
+                                            if key in ['total_steps', 'total_years']:
+                                                data[key] = steps
+                                            else:
+                                                update_steps_recursively(value, steps)
+                                    elif isinstance(data, list):
+                                        for item in data:
+                                            update_steps_recursively(item, steps)
+
                                 # Update population
                                 if 'simulation' not in config_data: config_data['simulation'] = {}
                                 config_data['simulation']['initial_population'] = new_pop
@@ -1472,11 +1484,8 @@ class ProjectMasterAgent(BaseAgent):
                                 if 'agents' in config_data and 'resident_agents' in config_data['agents']:
                                     config_data['agents']['resident_agents']['count'] = new_pop
 
-                                # Update steps
-                                if 'simulation' not in config_data: config_data['simulation'] = {}
-                                if 'time' not in config_data['simulation']: config_data['simulation']['time'] = {}
-                                config_data['simulation']['time']['total_steps'] = new_steps
-                                config_data['simulation']['time']['total_years'] = new_steps
+                                # Recursively update steps
+                                update_steps_recursively(config_data, new_steps)
                                 
                                 with open(config_path, 'w', encoding='utf-8') as f:
                                     yaml.dump(config_data, f, allow_unicode=True)

@@ -1,0 +1,38 @@
+actions:
+  1:
+    name: "purchase_decision"
+    description: "进行购买决策"
+    function: "handle_purchase"
+    is_async: false
+    parameters:
+      - name: "product_type"
+        type: "string"
+        required: false
+        description: "购买的产品类型"
+      - name: "purchase_amount"
+        type: "number"
+        required: false
+        description: "购买金额"
+    
+  2:
+    name: "feedback"
+    description: "提供反馈和建议"
+    function: "handle_feedback"
+    is_async: true
+    parameters:
+      - name: "feedback_content"
+        type: "string"
+        required: false
+        description: "反馈内容"
+      - name: "feedback_type"
+        type: "string"
+        required: false
+        default: "general"
+        description: "反馈类型：产品、服务、价格等"
+
+  3:
+    name: "wait_and_observe"
+    description: "保持观望"
+    function: "handle_wait"
+    is_async: false
+    parameters: []
