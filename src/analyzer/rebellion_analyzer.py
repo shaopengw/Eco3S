@@ -393,6 +393,150 @@ class RebellionAnalyzer:
         }
         
         return trend_result
+
+    @staticmethod
+    def _compute_gini(array: List[float]) -> float:
+        """
+        计算Gini系数用于表示地理或数值分布的不平等性
+        """
+        arr = np.array(array, dtype=float)
+        if arr.size == 0:
+            return 0.0
+        # 如果所有值都为0，则Gini为0
+        if np.all(arr == 0):
+            return 0.0
+        # 基本Gini计算
+        sorted_arr = np.sort(arr)
+        n = arr.size
+        cumvals = np.cumsum(sorted_arr)
+        gini = (2.0 * np.sum((np.arange(1, n+1) * sorted_arr))) / (n * cumvals[-1]) - (n + 1) / n
+        return float(gini)
+
+    def compute_additional_metrics(self) -> Dict:
+        """
+        计算用于跨实验比较的额外直观指标，基于所有解析到的模拟记录（self.all_rebellion_records）。
+
+        返回示例字段：
+            - 平均峰值强度（Mean Peak Intensity）
+            - 平均到峰时间（Mean Time To Peak）
+            - 城镇累积叛乱负担的Gini系数（Gini）
+            - 城镇平均持续年数（Persistence）
+            - 平均发生过叛乱的城镇比例（Prop Ever Rebel）
+            - 叛乱率差距的AUC（AUC Gap）与波动（Volatility）
+            - 沿河与非沿河城镇的首发年平均差（First Rebel Year Difference）
+        """
+        # 使用最小年份数进行对齐
+        min_years = min(len(records) for records in self.all_rebellion_records)
+
+        towns = set().union(self.canal_towns, self.non_canal_towns)
+        if not towns:
+            return {}
+
+        per_run_town_cumulative = []  # 每次模拟中每个城镇的累积叛乱次数
+        per_run_first_year = []  # 每次模拟中每个城镇的首发年（或np.nan）
+        peak_intensities = []
+        time_to_peaks = []
+        prop_ever_rebel = []
+
+        for records in self.all_rebellion_records:
+            town_cum = {t: 0 for t in towns}
+            town_first = {t: np.nan for t in towns}
+
+            yearly_totals = []
+            for year_idx in range(min_years):
+                record = records[year_idx]
+                target_towns = record['decision'].get('target_towns', [])
+                total_rebel_towns = 0
+                for town in target_towns:
+                    name = town.get('town_name', '')
+                    stage = town.get('stage_rebellion', 0)
+                    if stage > 0 and name in towns:
+                        town_cum[name] += 1
+                        total_rebel_towns += 1
+                        if np.isnan(town_first[name]):
+                            town_first[name] = record['year']
+                yearly_totals.append(total_rebel_towns)
+
+            per_run_town_cumulative.append(town_cum)
+            per_run_first_year.append(town_first)
+
+            # 峰值强度与到峰时间
+            yearly_totals = np.array(yearly_totals)
+            peak_idx = int(np.argmax(yearly_totals))
+            peak_intensities.append(float(yearly_totals.max()))
+            time_to_peaks.append(float(peak_idx))
+
+            # 发生过叛乱的城镇比例
+            ever_rebel_count = sum(1 for v in town_cum.values() if v > 0)
+            prop_ever_rebel.append(ever_rebel_count / len(towns))
+
+        # 计算城镇层面的统计（基于每次模拟的累积值）
+        # 将每次模拟的字典转换为每个城镇的列表
+        town_names = sorted(list(towns))
+        town_values_matrix = {t: [] for t in town_names}
+        for run_dict in per_run_town_cumulative:
+            for t in town_names:
+                town_values_matrix[t].append(run_dict.get(t, 0))
+
+        # 计算每个城镇的平均累积值
+        town_mean_cum = np.array([np.mean(town_values_matrix[t]) for t in town_names])
+
+        gini = float(self._compute_gini(town_mean_cum))
+        mean_peak_intensity = float(np.mean(peak_intensities))
+        mean_time_to_peak = float(np.mean(time_to_peaks))
+        mean_prop_ever = float(np.mean(prop_ever_rebel))
+
+        # Persistence: 每个城镇在一轮中被统计为叛乱的平均年数（先求每run的城镇均值，再平均）
+        per_run_persistence = []
+        for run_dict in per_run_town_cumulative:
+            per_run_persistence.append(np.mean(list(run_dict.values())))
+        persistence_mean = float(np.mean(per_run_persistence))
+
+        # 首发年差异（沿河 vs 非沿河）——按run先计算均值，再跨run平均
+        per_run_first_diff = []
+        for run_first in per_run_first_year:
+            canal_firsts = [v for k, v in run_first.items() if (k in self.canal_towns) and (not np.isnan(v))]
+            non_canal_firsts = [v for k, v in run_first.items() if (k in self.non_canal_towns) and (not np.isnan(v))]
+            if canal_firsts and non_canal_firsts:
+                per_run_first_diff.append(np.mean(canal_firsts) - np.mean(non_canal_firsts))
+        first_year_diff_mean = float(np.mean(per_run_first_diff)) if per_run_first_diff else float('nan')
+
+        # 使用已有DF计算gap的AUC与波动
+        try:
+            df = self.analyze_yearly_rebellions()
+            auc_gap = float(np.trapz(df['差距(率)'].values))
+            gap_volatility = float(np.std(df['差距(率)'].values, ddof=1)) if len(df) > 1 else 0.0
+        except Exception:
+            auc_gap = float('nan')
+            gap_volatility = float('nan')
+
+        metrics = {
+            '平均峰值强度': mean_peak_intensity,
+            '平均到峰时间(相对开始年)': mean_time_to_peak,
+            '城镇累积叛乱Gini': gini,
+            '城镇平均持续年数(Persistence)': persistence_mean,
+            '平均发生过叛乱的城镇比例': mean_prop_ever,
+            '首发年(沿河 - 非沿河)平均差': first_year_diff_mean,
+            '叛乱率差距AUC': auc_gap,
+            '叛乱率差距波动(Std)': gap_volatility
+        }
+
+        return metrics
+
+    def save_additional_metrics(self, metrics: Dict, output_path: str = None):
+        """
+        将额外的指标保存为JSON文件
+        """
+        if output_path is None:
+            output_path = self.log_paths[0].parent / 'rebellion_additional_metrics.json'
+
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(metrics, f, ensure_ascii=False, indent=2)
+
+        print(f"额外指标已保存至: {output_path}")
     
     def save_summary_csv(self, df: pd.DataFrame, output_path: str = None):
         """
@@ -569,7 +713,7 @@ class RebellionAnalyzer:
         # 3. Boxplot Comparison
         fig, ax = plt.subplots(figsize=(10, 6))
         data_to_plot = [df['沿河城镇叛乱次数'], df['非沿河城镇叛乱次数']]
-        bp = ax.boxplot(data_to_plot, labels=['Canal Towns', 'Non-Canal Towns'], patch_artist=True)
+        bp = ax.boxplot(data_to_plot, tick_labels=['Canal Towns', 'Non-Canal Towns'], patch_artist=True)
         
         # Set boxplot colors
         colors = ['lightblue', 'lightcoral']
@@ -623,7 +767,10 @@ class RebellionAnalyzer:
         
         # 趋势分析
         trend_results = self.analyze_gap_trend(df)
-        
+
+        # 额外跨实验比较指标（无论是否指定输出目录都计算）
+        additional_metrics = self.compute_additional_metrics()
+
         # 保存结果
         if output_dir is None:
             output_dir = self.log_paths[0].parent
@@ -633,6 +780,8 @@ class RebellionAnalyzer:
                                      str(Path(output_dir) / 'statistical_report.txt'))
         
         # 生成可视化
+        # 保存额外指标
+        self.save_additional_metrics(additional_metrics, str(Path(output_dir) / 'rebellion_additional_metrics.json'))
         self.plot_visualizations(df, output_dir)
         
         print("分析完成！所有结果已保存到:", output_dir)

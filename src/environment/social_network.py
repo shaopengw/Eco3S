@@ -116,6 +116,12 @@ class Hypergraph:
         """
         incidences = [(group_id, member) for member in members] # 格式转换
         self.hypergraph.add_incidences_from(incidences)
+    
+    def remove_hyperedge_node(self, group_id, member):
+        """
+        从超图中移除一个关联关系。
+        """
+        self.hypergraph.remove_incidences(group_id, member)
 
     def get_nodes(self):
         """

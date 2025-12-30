@@ -18,14 +18,14 @@ simulation:
     rebellion:
       enabled: 0
       max_rounds: 2
-  initial_population: 2000
+  initial_population: 5
   map_height: 150
   map_width: 100
   max_retry_attempts: 3
   response_probability: 0.05
   resume_from_cache: 0
-  save_cache: 1
+  save_cache: 0
   retry_delay: 1
   simulation_name: ""
   start_year: 1650
-  total_years: 15
+  total_years: 2

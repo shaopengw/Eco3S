@@ -33,11 +33,11 @@ module_parameters:
     width: 100
   resident:
     feedback_probability: 0.8
-    initial_loyalty: 50
+    initial_loyalty: 60
     initial_satisfaction: 70
-    purchase_threshold: 60
+    purchase_threshold: 50
   social_network:
-    influence_factor: 0.5
+    influence_factor: 0.6
     network_density: 0.3
   towns:
     count: 1
@@ -46,12 +46,12 @@ module_parameters:
     - 服务中心
 product_experience:
   base_level: 0.7
-  decay_rate: 0.02
-  improvement_rate: 0.05
+  decay_rate: 0.01
+  improvement_rate: 0.08
 service_quality:
   base_level: 0.7
-  decay_rate: 0.02
-  improvement_rate: 0.05
+  decay_rate: 0.01
+  improvement_rate: 0.08
 simulation:
   birth_rate: 0.02
   group_decision:
@@ -61,7 +61,7 @@ simulation:
     rebellion:
       enabled: 0
       max_rounds: 2
-  initial_population: 50
+  initial_population: 20
   map_height: 100
   map_width: 100
   max_retry_attempts: 3
