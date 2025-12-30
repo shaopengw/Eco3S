@@ -298,7 +298,7 @@ class Resident(BaseAgent):
             self.update_system_message(basic_living_cost)
             response = await self.generate_llm_response(prompt)
             if not response:
-                return "2", "发生错误，继续当前工作"
+                return "3", "发生错误，继续当前工作"
     
             # 清理LLM返回的字符串，移除可能存在的```json和```标记以及换行符
             cleaned_response = re.sub(r"^```json\s*|\s*```$", "", response, flags=re.DOTALL).strip()
@@ -331,12 +331,9 @@ class Resident(BaseAgent):
             satisfaction_change = decision_data.get("satisfaction_change")
             desired_job = decision_data.get("desired_job")
             min_salary = decision_data.get("min_salary")
-    
             if satisfaction_change is not None:
                 # 确保满意度在0-100范围内
-                old_satisfaction = self.satisfaction
                 self.satisfaction = max(0, min(100, self.satisfaction + satisfaction_change))
-                # print(f"居民 {self.resident_id} 收到满意度变化{satisfaction_change}：{old_satisfaction} -> {self.satisfaction}")
 
             # 记录居民的决策信息
             if desired_job is None and min_salary is None:
@@ -380,7 +377,7 @@ class Resident(BaseAgent):
         except Exception as e:
             self.resident_log.error(f"居民 {self.resident_id} 决策出错：{e}")
             self.resident_log.error(f"居民 {self.resident_id} 返回内容：{response}")
-            return "2", "发生错误，继续当前工作"  # 默认选择继续工作
+            return "3", "发生错误，继续当前工作"  # 默认选择继续工作
 
     async def execute_decision(self, select, *args, **kwargs):
         """
@@ -786,6 +783,16 @@ class Resident(BaseAgent):
             # 如果不更新职业，则重新分配原来的工作
             if not update_job and old_job:
                 self.job_market.assign_specific_job_withoutcheck(self, old_job)
+
+        # 更新超图
+        social_network = self.get_social_network()
+        if social_network:
+            if old_town:
+                old_group_id = f"hometown_{old_town}"
+                social_network.hyper_graph.remove_hyperedge_node(old_group_id, self.resident_id)
+            if target_town:
+                new_group_id = f"hometown_{target_town}"
+                social_network.hyper_graph.add_hyperedge(new_group_id, [self.resident_id])
 
         self.resident_log.info(f"居民 {self.resident_id} 从 {old_town} 迁移到了 {target_town}")
         return True
