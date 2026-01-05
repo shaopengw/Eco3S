@@ -9,8 +9,14 @@ from typing import List, Dict, Any, Optional, Tuple
 import matplotlib.pyplot as plt
 from datetime import datetime
 
-plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial']  # Use English fonts
+plt.rcParams['font.family'] = 'Times New Roman'  # Use Times New Roman font
 plt.rcParams['axes.unicode_minus'] = False  # Fix minus sign display issue
+plt.rcParams['font.size'] = 14  # Increase base font size
+plt.rcParams['axes.labelsize'] = 16  # Increase axis label size
+plt.rcParams['axes.titlesize'] = 18  # Increase title size
+plt.rcParams['xtick.labelsize'] = 14  # Increase x-tick label size
+plt.rcParams['ytick.labelsize'] = 14  # Increase y-tick label size
+plt.rcParams['legend.fontsize'] = 14  # Increase legend font size
 
 class SimulationType(Enum):
     DEFAULT = "default"
@@ -18,6 +24,14 @@ class SimulationType(Enum):
     INFO_PROPAGATION = "info_propagation"
 
 class SimulationAnalyzer:
+    # 定义特定指标的标记映射
+    METRIC_LABELS = {
+        'river_navigability': ('Canal Navigability', '(a)'),
+        'unemployment_rate': ('Unemployment Rate', '(b)'),
+        'average_satisfaction': ('Average Satisfaction', '(c)'),
+        'rebellion_resources': ('Rebellion Resources', '(d)')
+    }
+    
     def __init__(self, simulation_type: SimulationType, p_value: Optional[int] = None, y_value: Optional[int] = None, input_files: Optional[List[str]] = None, output_dir: Optional[str] = None):
         """
         初始化模拟分析器
@@ -224,6 +238,26 @@ class SimulationAnalyzer:
         
         return processed_data
 
+    def format_metric_name(self, metric: str) -> str:
+        """
+        格式化指标名称：将下划线替换为空格，每个单词首字母大写
+        :param metric: 原始指标名
+        :return: 格式化后的指标名
+        """
+        return ' '.join(word.capitalize() for word in metric.split('_'))
+    
+    def get_metric_title(self, metric: str) -> str:
+        """
+        获取指标的完整标题（包括标记）
+        :param metric: 指标名
+        :return: 完整标题
+        """
+        if metric in self.METRIC_LABELS:
+            formatted_name, label = self.METRIC_LABELS[metric]
+            return f'{label} {formatted_name}'
+        else:
+            return self.format_metric_name(metric)
+    
     def plot_time_series_statistics(self, result: Dict[str, Any]):
         """
         为CSV数据绘制时序统计图
@@ -248,17 +282,17 @@ class SimulationAnalyzer:
             if f'{metric}_mean' not in result:
                 continue
                 
-            plt.figure(figsize=(12, 6))
+            fig, ax = plt.subplots(figsize=(12, 6))
             
             # 绘制平均值线
-            mean_line = plt.plot(years, result[f'{metric}_mean'], 
+            mean_line = ax.plot(years, result[f'{metric}_mean'], 
                                label='Mean', color='blue', linewidth=2)
             
             # 添加标准差区域
             if f'{metric}_std' in result:
                 mean_array = np.array(result[f'{metric}_mean'])
                 std_array = np.array(result[f'{metric}_std'])
-                plt.fill_between(years, 
+                ax.fill_between(years, 
                                mean_array - std_array,
                                mean_array + std_array,
                                alpha=0.2, color='blue',
@@ -266,16 +300,15 @@ class SimulationAnalyzer:
             
             # 添加最大值和最小值
             if f'{metric}_max' in result and f'{metric}_min' in result:
-                plt.plot(years, result[f'{metric}_max'], 
+                ax.plot(years, result[f'{metric}_max'], 
                        '--', color='red', alpha=0.5, label='Maximum')
-                plt.plot(years, result[f'{metric}_min'], 
+                ax.plot(years, result[f'{metric}_min'], 
                        '--', color='green', alpha=0.5, label='Minimum')
             
-            plt.title(f'{metric} Time Series Statistics')
-            plt.xlabel('Year')
-            plt.ylabel(metric)
-            plt.legend()
-            plt.grid(True, alpha=0.3)
+            ax.set_xlabel('Year')
+            ax.set_ylabel(self.format_metric_name(metric))
+            ax.legend()
+            ax.grid(True, alpha=0.3)
             
             # Limit x-axis ticks to maximum 20
             if len(years) > 20:
@@ -283,14 +316,18 @@ class SimulationAnalyzer:
                 tick_indices = list(range(0, len(years), step))
                 if len(years) - 1 not in tick_indices:
                     tick_indices.append(len(years) - 1)
-                plt.xticks([years[i] for i in tick_indices])
+                ax.set_xticks([years[i] for i in tick_indices])
             else:
-                plt.xticks(years)
+                ax.set_xticks(years)
+            
+            # 添加标题到图片下方
+            title_text = self.get_metric_title(metric)
+            fig.text(0.5, -0.05, title_text, ha='center', fontsize=18, weight='bold')
             
             # 保存图表
             current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
             save_path = os.path.join(self.analysis_results_dir, f'{metric}_time_series_{current_time}.png')
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            plt.savefig(save_path, dpi=300, bbox_inches='tight', pad_inches=0.5)
             plt.close()
             # 输出完整绝对路径
             save_path_full = os.path.abspath(save_path)
@@ -432,21 +469,25 @@ class SimulationAnalyzer:
                 else:
                     simplified_labels.append(metric)
 
-            plt.figure(figsize=(15, 8))
+            fig, ax = plt.subplots(figsize=(15, 8))
             x = np.arange(len(metrics))
-            plt.bar(x, means, yerr=stds, align='center', alpha=0.8, capsize=5)
+            ax.bar(x, means, yerr=stds, align='center', alpha=0.8, capsize=5)
             
-            plt.title(f'{self.simulation_type.value} Simulation Statistics - {group_key}')
-            plt.xticks(x, simplified_labels, rotation=45, ha='right')
-            plt.ylabel('Value')
-            plt.grid(True, axis='y', linestyle='--', alpha=0.7)
+            ax.set_xticks(x)
+            ax.set_xticklabels(simplified_labels, rotation=45, ha='right')
+            ax.set_ylabel('Value')
+            ax.grid(True, axis='y', linestyle='--', alpha=0.7)
+            
+            # 添加标题到图片下方
+            title_text = f'{self.simulation_type.value} Simulation Statistics - {self.format_metric_name(group_key)}'
+            fig.text(0.5, -0.05, title_text, ha='center', fontsize=18, weight='bold')
             
             # 调整布局以防止标签被切off
             plt.tight_layout()
             
             # 保存图表
             output_path = os.path.join(self.analysis_results_dir, f'statistics_{group_key}_{timestamp}.png')
-            plt.savefig(output_path)
+            plt.savefig(output_path, dpi=300, bbox_inches='tight', pad_inches=0.5)
             plt.close()
             # 输出完整绝对路径
             output_path_full = os.path.abspath(output_path)

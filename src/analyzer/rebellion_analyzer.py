@@ -351,7 +351,9 @@ class RebellionAnalyzer:
     
     def analyze_gap_trend(self, df: pd.DataFrame) -> Dict:
         """
-        分析沿河和非沿河地区叛乱率差距的变化趋势
+        分析叛乱趋势：
+        1. 沿河和非沿河地区叛乱率差距的变化趋势
+        2. 沿河城镇叛乱率随时间的变化趋势（城镇-年份pooled regression）
         
         Args:
             df: 年度统计DataFrame
@@ -373,8 +375,66 @@ class RebellionAnalyzer:
         gaps_count = df['差距(次数)'].values
         slope_count, intercept_count, r_value_count, p_value_count, std_err_count = stats.linregress(years, gaps_count)
         
+        # ==================== 新增分析：城镇-年份pooled regression ====================
+        # 确定最小的年份数（以最短的模拟为准）
+        min_years = min(len(records) for records in self.all_rebellion_records)
+        
+        # 构建城镇-年份级别的数据
+        # 格式：每个（城镇，年份）组合对应一个叛乱率（跨多次模拟的平均）
+        town_year_data = []
+        
+        for town_name in self.canal_towns:
+            for year_idx in range(min_years):
+                # 收集该城镇在该年份的所有模拟数据
+                rebellion_occurrences = []
+                
+                for records in self.all_rebellion_records:
+                    if year_idx >= len(records):
+                        continue
+                    
+                    record = records[year_idx]
+                    target_towns = record['decision'].get('target_towns', [])
+                    
+                    # 检查该城镇在这次模拟的这一年是否发生叛乱
+                    is_rebel = 0
+                    for town in target_towns:
+                        if town.get('town_name', '') == town_name:
+                            stage = town.get('stage_rebellion', 0)
+                            if stage > 0:
+                                is_rebel = 1
+                                break
+                    
+                    rebellion_occurrences.append(is_rebel)
+                
+                # 计算该城镇在该年份的平均叛乱率
+                avg_rebellion_rate = np.mean(rebellion_occurrences) if rebellion_occurrences else 0
+                
+                town_year_data.append({
+                    'town': town_name,
+                    'time_step': year_idx,  # 使用时间步 0, 1, 2, ...
+                    'rebellion_rate': avg_rebellion_rate
+                })
+        
+        # 转换为DataFrame
+        town_year_df = pd.DataFrame(town_year_data)
+        
+        # 进行pooled回归：rebellion_rate ~ time_step
+        if len(town_year_df) > 0:
+            time_steps = town_year_df['time_step'].values
+            rebellion_rates = town_year_df['rebellion_rate'].values
+            
+            slope_pooled, intercept_pooled, r_value_pooled, p_value_pooled, std_err_pooled = stats.linregress(time_steps, rebellion_rates)
+            
+            # 计算一些描述性统计
+            early_period_pooled = town_year_df[town_year_df['time_step'] < min_years // 2]['rebellion_rate'].mean()
+            late_period_pooled = town_year_df[town_year_df['time_step'] >= min_years // 2]['rebellion_rate'].mean()
+        else:
+            slope_pooled = intercept_pooled = r_value_pooled = p_value_pooled = std_err_pooled = 0
+            early_period_pooled = late_period_pooled = 0
+        
+        # ==================== 合并结果 ====================
         trend_result = {
-            # 叛乱率差距趋势
+            # 叛乱率差距趋势（原有分析）
             '前半段平均叛乱率差距': first_half_gap_rate,
             '后半段平均叛乱率差距': second_half_gap_rate,
             '叛乱率差距变化': second_half_gap_rate - first_half_gap_rate,
@@ -389,7 +449,22 @@ class RebellionAnalyzer:
             '叛乱次数差距回归斜率': slope_count,
             '叛乱次数差距R方值': r_value_count ** 2,
             '叛乱次数差距趋势P值': p_value_count,
-            '叛乱次数差距趋势是否显著(p<0.05)': p_value_count < 0.05
+            '叛乱次数差距趋势是否显著(p<0.05)': p_value_count < 0.05,
+            
+            # 沿河城镇叛乱率趋势（城镇-年份pooled regression，新增）
+            '沿河城镇叛乱率回归斜率': slope_pooled,
+            '沿河城镇叛乱率回归截距': intercept_pooled,
+            '沿河城镇叛乱率R方值': r_value_pooled ** 2,
+            '沿河城镇叛乱率趋势P值': p_value_pooled,
+            '沿河城镇叛乱率趋势是否显著(p<0.05)': p_value_pooled < 0.05,
+            '沿河城镇叛乱率标准误': std_err_pooled,
+            '沿河城镇前半段平均叛乱率': early_period_pooled,
+            '沿河城镇后半段平均叛乱率': late_period_pooled,
+            '沿河城镇叛乱率变化': late_period_pooled - early_period_pooled,
+            '沿河城镇叛乱率趋势方向': '上升' if late_period_pooled > early_period_pooled else '下降',
+            '总观测数(城镇×年份)': len(town_year_df),
+            '沿河城镇数': len(self.canal_towns),
+            '观测年份数': min_years
         }
         
         return trend_result
@@ -643,7 +718,23 @@ class RebellionAnalyzer:
             f.write(f"叛乱次数差距趋势P值: {trend_results['叛乱次数差距趋势P值']:.4f}\n")
             f.write(f"叛乱次数差距趋势是否显著(p<0.05): {'显著' if trend_results['叛乱次数差距趋势是否显著(p<0.05)'] else '不显著'}\n\n")
             
-            f.write("六、结论总结\n")
+            f.write("六、沿河城镇叛乱率时间趋势分析（城镇-年份pooled regression）\n")
+            f.write("-" * 60 + "\n")
+            f.write(f"总观测数(城镇×年份): {trend_results['总观测数(城镇×年份)']}\n")
+            f.write(f"沿河城镇数: {trend_results['沿河城镇数']}\n")
+            f.write(f"观测年份数: {trend_results['观测年份数']}\n\n")
+            f.write(f"前半段平均叛乱率: {trend_results['沿河城镇前半段平均叛乱率']:.4f}\n")
+            f.write(f"后半段平均叛乱率: {trend_results['沿河城镇后半段平均叛乱率']:.4f}\n")
+            f.write(f"叛乱率变化: {trend_results['沿河城镇叛乱率变化']:.4f} ({trend_results['沿河城镇叛乱率趋势方向']})\n\n")
+            f.write(f"回归方程: rebellion_rate = {trend_results['沿河城镇叛乱率回归截距']:.6f} + {trend_results['沿河城镇叛乱率回归斜率']:.6f} × time_step\n")
+            f.write(f"回归斜率: {trend_results['沿河城镇叛乱率回归斜率']:.6f}\n")
+            f.write(f"回归截距: {trend_results['沿河城镇叛乱率回归截距']:.6f}\n")
+            f.write(f"标准误: {trend_results['沿河城镇叛乱率标准误']:.6f}\n")
+            f.write(f"R方值: {trend_results['沿河城镇叛乱率R方值']:.4f}\n")
+            f.write(f"趋势P值: {trend_results['沿河城镇叛乱率趋势P值']:.4f}\n")
+            f.write(f"趋势是否显著(p<0.05): {'显著' if trend_results['沿河城镇叛乱率趋势是否显著(p<0.05)'] else '不显著'}\n\n")
+            
+            f.write("七、结论总结\n")
             f.write("-" * 60 + "\n")
             if stats_results['叛乱率是否显著(p<0.05)']:
                 if stats_results['沿河城镇平均叛乱率'] > stats_results['非沿河城镇平均叛乱率']:
@@ -655,6 +746,14 @@ class RebellionAnalyzer:
             else:
                 f.write(f"✗ 沿河与非沿河城镇的叛乱率差异不显著 (p={stats_results['叛乱率P值']:.4f})\n")
                 f.write(f"  需要更多数据或检查模型设置\n")
+
+            if trend_results['沿河城镇叛乱率趋势是否显著(p<0.05)']:
+                if trend_results['沿河城镇叛乱率回归斜率'] > 0:
+                    f.write(f"✓ 沿河城镇的叛乱率随时间呈显著上升趋势 (斜率={trend_results['沿河城镇叛乱率回归斜率']:.6f}, p={trend_results['沿河城镇叛乱率趋势P值']:.4f})\n")
+                else:
+                    f.write(f"✓ 沿河城镇的叛乱率随时间呈显著下降趋势 (斜率={trend_results['沿河城镇叛乱率回归斜率']:.6f}, p={trend_results['沿河城镇叛乱率趋势P值']:.4f})\n")
+            else:
+                f.write(f"○ 沿河城镇的叛乱率时间趋势不显著 (p={trend_results['沿河城镇叛乱率趋势P值']:.4f})\n")
         
         print(f"统计报告已保存至: {output_path}")
     
@@ -673,18 +772,23 @@ class RebellionAnalyzer:
         
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        # 设置绘图风格
+        # 设置绘图风格和字体
         plt.style.use('seaborn-v0_8-whitegrid' if 'seaborn-v0_8-whitegrid' in plt.style.available else 'default')
+        plt.rcParams['font.family'] = 'Times New Roman'
+        plt.rcParams['font.size'] = 14
         
         # 1. Time Series Line Chart
         fig, ax = plt.subplots(figsize=(14, 6))
-        ax.plot(df['年份'], df['沿河城镇叛乱次数'], marker='o', label='Canal Towns', linewidth=2)
-        ax.plot(df['年份'], df['非沿河城镇叛乱次数'], marker='s', label='Non-Canal Towns', linewidth=2)
-        ax.set_xlabel('Year', fontsize=12)
-        ax.set_ylabel('Number of Rebellions', fontsize=12)
-        ax.set_title('Rebellion Frequency Comparison: Canal vs Non-Canal Towns', fontsize=14, fontweight='bold')
-        ax.legend(fontsize=11)
+        ax.plot(df['年份'], df['沿河城镇叛乱次数'], marker='o', label='Canal Towns', linewidth=2.5, markersize=6)
+        ax.plot(df['年份'], df['非沿河城镇叛乱次数'], marker='s', label='Non-Canal Towns', linewidth=2.5, markersize=6)
+        ax.set_xlabel('Year', fontsize=16, fontweight='bold')
+        ax.set_ylabel('Number of Rebellions', fontsize=16, fontweight='bold')
+        ax.set_title('Rebellion Frequency Comparison', fontsize=18, fontweight='bold')
+        ax.legend(fontsize=14)
         ax.grid(True, alpha=0.3)
+        ax.set_xticks(df['年份'])
+        ax.tick_params(axis='both', labelsize=13)
+        plt.xticks(rotation=45, ha='right')
         plt.tight_layout()
         plt.savefig(output_dir / 'rebellion_time_series.png', dpi=300, bbox_inches='tight')
         print(f"Time series chart saved to: {output_dir / 'rebellion_time_series.png'}")
@@ -692,37 +796,54 @@ class RebellionAnalyzer:
         
         # 2. Rebellion Rate Gap Trend Chart
         fig, ax = plt.subplots(figsize=(14, 6))
-        ax.plot(df['年份'], df['差距(率)'], marker='o', color='red', linewidth=2, label='Rate Gap')
-        ax.axhline(y=0, color='black', linestyle='--', alpha=0.5)
+        ax.plot(df['年份'], df['差距(率)'], marker='o', color='red', linewidth=2.5, label='Rate Gap', markersize=6)
+        ax.axhline(y=0, color='black', linestyle='--', alpha=0.5, linewidth=1.5)
         
         # Add trend line
         z = np.polyfit(df['年份'], df['差距(率)'], 1)
         p = np.poly1d(z)
-        ax.plot(df['年份'], p(df['年份']), "b--", alpha=0.8, label=f'Trend Line (slope={z[0]:.6f})')
+        ax.plot(df['年份'], p(df['年份']), "b--", alpha=0.8, linewidth=2, label=f'Trend Line (slope={z[0]:.6f})')
         
-        ax.set_xlabel('Year', fontsize=12)
-        ax.set_ylabel('Rebellion Rate Gap (Canal - Non-Canal)', fontsize=12)
-        ax.set_title('Trend of Rebellion Rate Gap Between Canal and Non-Canal Towns', fontsize=14, fontweight='bold')
-        ax.legend(fontsize=11)
+        ax.set_xlabel('Year', fontsize=16, fontweight='bold')
+        ax.set_ylabel('Rebellion Rate Gap (Canal - Non-Canal)', fontsize=16, fontweight='bold')
+        ax.set_title('Trend of Rebellion Rate Gap Between Canal and Non-Canal Towns', fontsize=18, fontweight='bold')
+        ax.legend(fontsize=14)
         ax.grid(True, alpha=0.3)
+        ax.set_xticks(df['年份'])
+        ax.tick_params(axis='both', labelsize=13)
+        plt.xticks(rotation=45, ha='right')
         plt.tight_layout()
         plt.savefig(output_dir / 'rebellion_rate_gap_trend.png', dpi=300, bbox_inches='tight')
         print(f"Rebellion rate gap trend chart saved to: {output_dir / 'rebellion_rate_gap_trend.png'}")
         plt.close()
         
         # 3. Boxplot Comparison
-        fig, ax = plt.subplots(figsize=(10, 6))
+        fig, ax = plt.subplots(figsize=(8, 6))
         data_to_plot = [df['沿河城镇叛乱次数'], df['非沿河城镇叛乱次数']]
-        bp = ax.boxplot(data_to_plot, tick_labels=['Canal Towns', 'Non-Canal Towns'], patch_artist=True)
+        bp = ax.boxplot(data_to_plot, tick_labels=['Canal Towns', 'Non-Canal Towns'], 
+                       patch_artist=True, widths=0.4)
         
         # Set boxplot colors
-        colors = ['lightblue', 'lightcoral']
+        colors = ['#66B3FF', '#FF9999']
         for patch, color in zip(bp['boxes'], colors):
             patch.set_facecolor(color)
+            patch.set_edgecolor('black')
         
-        ax.set_ylabel('Number of Rebellions', fontsize=12)
-        ax.set_title('Distribution Comparison of Rebellions: Canal vs Non-Canal Towns', fontsize=14, fontweight='bold')
+        for median in bp['medians']:
+            median.set_color('darkred')
+            median.set_linewidth(2)
+        
+
+        for flier in bp['fliers']:
+            flier.set_marker('o')
+            flier.set_markerfacecolor('gray')
+            flier.set_markeredgecolor('black')
+            flier.set_markersize(6)
+        
+        ax.set_ylabel('Number of Rebellions', fontsize=16, fontweight='bold')
+        ax.set_title('Distribution Comparison of Rebellions', fontsize=18, fontweight='bold')
         ax.grid(True, alpha=0.3, axis='y')
+        ax.tick_params(axis='both', labelsize=14)
         plt.tight_layout()
         plt.savefig(output_dir / 'rebellion_boxplot.png', dpi=300, bbox_inches='tight')
         print(f"Boxplot saved to: {output_dir / 'rebellion_boxplot.png'}")
@@ -737,16 +858,22 @@ class RebellionAnalyzer:
         ax.bar(x, df['非沿河城镇叛乱次数'], width, bottom=df['沿河城镇叛乱次数'], 
                label='Non-Canal Towns', color='coral')
         
-        ax.set_xlabel('Year', fontsize=12)
-        ax.set_ylabel('Number of Rebellions', fontsize=12)
-        ax.set_title('Stacked Distribution of Rebellions: Canal vs Non-Canal Towns', fontsize=14, fontweight='bold')
-        ax.legend(fontsize=11)
+        ax.set_xlabel('Year', fontsize=16, fontweight='bold')
+        ax.set_ylabel('Number of Rebellions', fontsize=16, fontweight='bold')
+        ax.set_title('Stacked Distribution of Rebellions', fontsize=18, fontweight='bold')
+        ax.legend(fontsize=14)
         ax.grid(True, alpha=0.3, axis='y')
-        plt.xticks(rotation=45)
+        ax.set_xticks(df['年份'])
+        ax.tick_params(axis='both', labelsize=13)
+        plt.xticks(rotation=45, ha='right')
         plt.tight_layout()
         plt.savefig(output_dir / 'rebellion_stacked_bar.png', dpi=300, bbox_inches='tight')
         print(f"Stacked bar chart saved to: {output_dir / 'rebellion_stacked_bar.png'}")
         plt.close()
+        
+        # 恢复默认字体设置
+        plt.rcParams['font.family'] = ['SimHei', 'Microsoft YaHei']
+        plt.rcParams['font.size'] = 10
         
         print(f"\n所有图表已单独保存完成！")
     

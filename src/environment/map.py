@@ -185,16 +185,20 @@ class Map:
         可视化地图，显示沿河区域、市场城镇和地形崎岖指数
         :param output_file: 输出文件路径
         """
+        # 设置字体为 Times New Roman
+        plt.rcParams['font.family'] = 'Times New Roman'
+        plt.rcParams['font.size'] = 16
+        
         # 设置高分辨率图像
-        fig = plt.figure(figsize=(12, 18), dpi=100)
-
-        # 绘制地形崎岖指数
-        plt.imshow(self.terrain_ruggedness, cmap='terrain', alpha=0.6, 
-                extent=[0, self.width, self.height, 0])
+        fig, ax = plt.subplots(figsize=(12, 18), dpi=100)
+        
+        # 设置纯色浅绿色背景
+        ax.set_facecolor('lightgreen')
+        fig.patch.set_facecolor('white')
 
         # 绘制沿河区域
         river_y, river_x = np.where(self.river_grid > 0)
-        plt.scatter(river_x, river_y, color='blue', label='Canals', s=10)
+        plt.scatter(river_x, river_y, color='blue', label='Canals', s=15)
 
         # 准备城市数据
         canal_towns = []
@@ -210,35 +214,41 @@ class Map:
         if canal_towns:
             canal_x = [town[0] for town in canal_towns]
             canal_y = [town[1] for town in canal_towns]
-            plt.scatter(canal_x, canal_y, color='red', label='Canal Towns', s=80, marker='s')
+            plt.scatter(canal_x, canal_y, color='red', label='Canal Towns', s=100, marker='s')
             
             for x, y, name in canal_towns:
                 plt.annotate(name, 
                             xy=(x, y),
                             xytext=(5, 5), 
                             textcoords='offset points',
-                            fontsize=12,
-                            bbox=dict(facecolor='white', edgecolor='none', alpha=0.7))
+                            fontsize=18,
+                            fontfamily='Times New Roman',
+                            bbox=dict(facecolor='white', edgecolor='none', alpha=0.8))
         
         # 绘制非运河城市和名称标注
         if other_towns:
             other_x = [town[0] for town in other_towns]
             other_y = [town[1] for town in other_towns]
-            plt.scatter(other_x, other_y, color='green', label='Other Towns', s=80, marker='^')
+            plt.scatter(other_x, other_y, color='green', label='Other Towns', s=100, marker='^')
             
             for x, y, name in other_towns:
                 plt.annotate(name, 
                             xy=(x, y),
                             xytext=(5, 5), 
                             textcoords='offset points',
-                            fontsize=12,
-                            bbox=dict(facecolor='white', edgecolor='none', alpha=0.7))
+                            fontsize=18,
+                            fontfamily='Times New Roman',
+                            bbox=dict(facecolor='white', edgecolor='none', alpha=0.8))
 
-        plt.title("Map Visualization", fontsize=20, fontweight='bold')
-        plt.xlabel("Longitude Direction", fontsize=16)
-        plt.ylabel("Latitude Direction", fontsize=16)
-        plt.legend(fontsize=14, loc='upper right')
-        plt.tick_params(labelsize=12)
+        plt.title("Map Visualization", fontsize=28, fontweight='bold', fontfamily='Times New Roman', pad=10,)
+        plt.xlabel("Longitude Direction", fontsize=22, fontfamily='Times New Roman')
+        plt.ylabel("Latitude Direction", fontsize=22, fontfamily='Times New Roman')
+        plt.legend(fontsize=20, loc='upper right', prop={'family': 'Times New Roman'})
+        plt.tick_params(labelsize=18)
+        
+        # 设置坐标轴范围
+        ax.set_xlim(0, self.width)
+        ax.set_ylim(self.height, 0)
         
         # 保存为PNG格式，高分辨率
         plt.savefig(output_file, dpi=120, bbox_inches='tight', format='png')
