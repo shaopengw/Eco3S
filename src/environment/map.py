@@ -71,6 +71,14 @@ class Map:
                 y = self.latitude_to_y(town['latitude'])
                 towns.append({'x': x, 'y': y, 'name': town['name'], 'type': 'canal', 'river_name': canal['name']})
 
+        # 处理counties格式
+        for county in self.town_data.get('counties', []):
+            for town in county.get('towns', []):
+                x = self.longitude_to_x(town['longitude'])
+                y = self.latitude_to_y(town['latitude'])
+                # counties中的城镇默认为非运河类型
+                towns.append({'x': x, 'y': y, 'name': town['name'], 'type': 'non_canal'})
+
         # 处理其他城市
         for town in self.town_data.get('other_towns', []):
             x = self.longitude_to_x(town['longitude'])

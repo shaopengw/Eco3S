@@ -60,18 +60,26 @@ select_modules_output_format: |
   注意：只返回JSON数组，不要有其他文字。
 
 generate_description_prompt: |
-  请根据以下需求信息，生成一份简明的实验设计文档（markdown格式）。
+  请根据以下需求信息，生成一份完整的实验设计文档（markdown格式）。
+  注意：尽可能详细，涵盖所有关键部分。
 
-  需求：
+  用户原始需求:
+  {original_requirement}
+
+  系统解析后的需求：
   {requirement_dict}
 
   参考模板格式：
   {template_content}
 
 generate_description_with_feedback_prompt: |
-  请根据以下需求信息，生成一份简明的实验设计文档（markdown格式）。
+  请根据以下需求信息，生成一份完整的实验设计文档（markdown格式）。
+  注意：尽可能详细，涵盖所有关键部分。
+  
+  用户原始需求:
+  {original_requirement}
 
-  需求：
+  系统解析后的需求：
   {requirement_dict}
 
   参考模板格式：

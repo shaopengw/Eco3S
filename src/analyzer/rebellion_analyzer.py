@@ -379,9 +379,9 @@ class RebellionAnalyzer:
         # 确定最小的年份数（以最短的模拟为准）
         min_years = min(len(records) for records in self.all_rebellion_records)
         
-        # 构建城镇-年份级别的数据
+        # 构建城镇-年份级别的数据（沿河城镇）
         # 格式：每个（城镇，年份）组合对应一个叛乱率（跨多次模拟的平均）
-        town_year_data = []
+        canal_town_year_data = []
         
         for town_name in self.canal_towns:
             for year_idx in range(min_years):
@@ -409,28 +409,81 @@ class RebellionAnalyzer:
                 # 计算该城镇在该年份的平均叛乱率
                 avg_rebellion_rate = np.mean(rebellion_occurrences) if rebellion_occurrences else 0
                 
-                town_year_data.append({
+                canal_town_year_data.append({
                     'town': town_name,
                     'time_step': year_idx,  # 使用时间步 0, 1, 2, ...
                     'rebellion_rate': avg_rebellion_rate
                 })
         
         # 转换为DataFrame
-        town_year_df = pd.DataFrame(town_year_data)
+        canal_town_year_df = pd.DataFrame(canal_town_year_data)
         
-        # 进行pooled回归：rebellion_rate ~ time_step
-        if len(town_year_df) > 0:
-            time_steps = town_year_df['time_step'].values
-            rebellion_rates = town_year_df['rebellion_rate'].values
+        # 进行pooled回归：rebellion_rate ~ time_step（沿河城镇）
+        if len(canal_town_year_df) > 0:
+            time_steps = canal_town_year_df['time_step'].values
+            rebellion_rates = canal_town_year_df['rebellion_rate'].values
             
-            slope_pooled, intercept_pooled, r_value_pooled, p_value_pooled, std_err_pooled = stats.linregress(time_steps, rebellion_rates)
+            slope_canal, intercept_canal, r_value_canal, p_value_canal, std_err_canal = stats.linregress(time_steps, rebellion_rates)
             
             # 计算一些描述性统计
-            early_period_pooled = town_year_df[town_year_df['time_step'] < min_years // 2]['rebellion_rate'].mean()
-            late_period_pooled = town_year_df[town_year_df['time_step'] >= min_years // 2]['rebellion_rate'].mean()
+            early_period_canal = canal_town_year_df[canal_town_year_df['time_step'] < min_years // 2]['rebellion_rate'].mean()
+            late_period_canal = canal_town_year_df[canal_town_year_df['time_step'] >= min_years // 2]['rebellion_rate'].mean()
         else:
-            slope_pooled = intercept_pooled = r_value_pooled = p_value_pooled = std_err_pooled = 0
-            early_period_pooled = late_period_pooled = 0
+            slope_canal = intercept_canal = r_value_canal = p_value_canal = std_err_canal = 0
+            early_period_canal = late_period_canal = 0
+        
+        # ==================== 新增分析：非沿河城镇-年份pooled regression ====================
+        # 构建城镇-年份级别的数据（非沿河城镇）
+        non_canal_town_year_data = []
+        
+        for town_name in self.non_canal_towns:
+            for year_idx in range(min_years):
+                # 收集该城镇在该年份的所有模拟数据
+                rebellion_occurrences = []
+                
+                for records in self.all_rebellion_records:
+                    if year_idx >= len(records):
+                        continue
+                    
+                    record = records[year_idx]
+                    target_towns = record['decision'].get('target_towns', [])
+                    
+                    # 检查该城镇在这次模拟的这一年是否发生叛乱
+                    is_rebel = 0
+                    for town in target_towns:
+                        if town.get('town_name', '') == town_name:
+                            stage = town.get('stage_rebellion', 0)
+                            if stage > 0:
+                                is_rebel = 1
+                                break
+                    
+                    rebellion_occurrences.append(is_rebel)
+                
+                # 计算该城镇在该年份的平均叛乱率
+                avg_rebellion_rate = np.mean(rebellion_occurrences) if rebellion_occurrences else 0
+                
+                non_canal_town_year_data.append({
+                    'town': town_name,
+                    'time_step': year_idx,
+                    'rebellion_rate': avg_rebellion_rate
+                })
+        
+        # 转换为DataFrame
+        non_canal_town_year_df = pd.DataFrame(non_canal_town_year_data)
+        
+        # 进行pooled回归：rebellion_rate ~ time_step（非沿河城镇）
+        if len(non_canal_town_year_df) > 0:
+            time_steps = non_canal_town_year_df['time_step'].values
+            rebellion_rates = non_canal_town_year_df['rebellion_rate'].values
+            
+            slope_non_canal, intercept_non_canal, r_value_non_canal, p_value_non_canal, std_err_non_canal = stats.linregress(time_steps, rebellion_rates)
+            
+            # 计算一些描述性统计
+            early_period_non_canal = non_canal_town_year_df[non_canal_town_year_df['time_step'] < min_years // 2]['rebellion_rate'].mean()
+            late_period_non_canal = non_canal_town_year_df[non_canal_town_year_df['time_step'] >= min_years // 2]['rebellion_rate'].mean()
+        else:
+            slope_non_canal = intercept_non_canal = r_value_non_canal = p_value_non_canal = std_err_non_canal = 0
+            early_period_non_canal = late_period_non_canal = 0
         
         # ==================== 合并结果 ====================
         trend_result = {
@@ -451,19 +504,35 @@ class RebellionAnalyzer:
             '叛乱次数差距趋势P值': p_value_count,
             '叛乱次数差距趋势是否显著(p<0.05)': p_value_count < 0.05,
             
-            # 沿河城镇叛乱率趋势（城镇-年份pooled regression，新增）
-            '沿河城镇叛乱率回归斜率': slope_pooled,
-            '沿河城镇叛乱率回归截距': intercept_pooled,
-            '沿河城镇叛乱率R方值': r_value_pooled ** 2,
-            '沿河城镇叛乱率趋势P值': p_value_pooled,
-            '沿河城镇叛乱率趋势是否显著(p<0.05)': p_value_pooled < 0.05,
-            '沿河城镇叛乱率标准误': std_err_pooled,
-            '沿河城镇前半段平均叛乱率': early_period_pooled,
-            '沿河城镇后半段平均叛乱率': late_period_pooled,
-            '沿河城镇叛乱率变化': late_period_pooled - early_period_pooled,
-            '沿河城镇叛乱率趋势方向': '上升' if late_period_pooled > early_period_pooled else '下降',
-            '总观测数(城镇×年份)': len(town_year_df),
+            # 沿河城镇叛乱率趋势（城镇-年份pooled regression）
+            '沿河城镇叛乱率回归斜率': slope_canal,
+            '沿河城镇叛乱率回归截距': intercept_canal,
+            '沿河城镇叛乱率R方值': r_value_canal ** 2,
+            '沿河城镇叛乱率趋势P值': p_value_canal,
+            '沿河城镇叛乱率趋势是否显著(p<0.05)': p_value_canal < 0.05,
+            '沿河城镇叛乱率标准误': std_err_canal,
+            '沿河城镇前半段平均叛乱率': early_period_canal,
+            '沿河城镇后半段平均叛乱率': late_period_canal,
+            '沿河城镇叛乱率变化': late_period_canal - early_period_canal,
+            '沿河城镇叛乱率趋势方向': '上升' if late_period_canal > early_period_canal else '下降',
+            '沿河城镇总观测数(城镇×年份)': len(canal_town_year_df),
             '沿河城镇数': len(self.canal_towns),
+            
+            # 非沿河城镇叛乱率趋势（城镇-年份pooled regression）
+            '非沿河城镇叛乱率回归斜率': slope_non_canal,
+            '非沿河城镇叛乱率回归截距': intercept_non_canal,
+            '非沿河城镇叛乱率R方值': r_value_non_canal ** 2,
+            '非沿河城镇叛乱率趋势P值': p_value_non_canal,
+            '非沿河城镇叛乱率趋势是否显著(p<0.05)': p_value_non_canal < 0.05,
+            '非沿河城镇叛乱率标准误': std_err_non_canal,
+            '非沿河城镇前半段平均叛乱率': early_period_non_canal,
+            '非沿河城镇后半段平均叛乱率': late_period_non_canal,
+            '非沿河城镇叛乱率变化': late_period_non_canal - early_period_non_canal,
+            '非沿河城镇叛乱率趋势方向': '上升' if late_period_non_canal > early_period_non_canal else '下降',
+            '非沿河城镇总观测数(城镇×年份)': len(non_canal_town_year_df),
+            '非沿河城镇数': len(self.non_canal_towns),
+            
+            # 观测年份数（沿河和非沿河相同）
             '观测年份数': min_years
         }
         
@@ -720,7 +789,7 @@ class RebellionAnalyzer:
             
             f.write("六、沿河城镇叛乱率时间趋势分析（城镇-年份pooled regression）\n")
             f.write("-" * 60 + "\n")
-            f.write(f"总观测数(城镇×年份): {trend_results['总观测数(城镇×年份)']}\n")
+            f.write(f"总观测数(城镇×年份): {trend_results['沿河城镇总观测数(城镇×年份)']}\n")
             f.write(f"沿河城镇数: {trend_results['沿河城镇数']}\n")
             f.write(f"观测年份数: {trend_results['观测年份数']}\n\n")
             f.write(f"前半段平均叛乱率: {trend_results['沿河城镇前半段平均叛乱率']:.4f}\n")
@@ -734,7 +803,23 @@ class RebellionAnalyzer:
             f.write(f"趋势P值: {trend_results['沿河城镇叛乱率趋势P值']:.4f}\n")
             f.write(f"趋势是否显著(p<0.05): {'显著' if trend_results['沿河城镇叛乱率趋势是否显著(p<0.05)'] else '不显著'}\n\n")
             
-            f.write("七、结论总结\n")
+            f.write("七、非沿河城镇叛乱率时间趋势分析（城镇-年份pooled regression）\n")
+            f.write("-" * 60 + "\n")
+            f.write(f"总观测数(城镇×年份): {trend_results['非沿河城镇总观测数(城镇×年份)']}\n")
+            f.write(f"非沿河城镇数: {trend_results['非沿河城镇数']}\n")
+            f.write(f"观测年份数: {trend_results['观测年份数']}\n\n")
+            f.write(f"前半段平均叛乱率: {trend_results['非沿河城镇前半段平均叛乱率']:.4f}\n")
+            f.write(f"后半段平均叛乱率: {trend_results['非沿河城镇后半段平均叛乱率']:.4f}\n")
+            f.write(f"叛乱率变化: {trend_results['非沿河城镇叛乱率变化']:.4f} ({trend_results['非沿河城镇叛乱率趋势方向']})\n\n")
+            f.write(f"回归方程: rebellion_rate = {trend_results['非沿河城镇叛乱率回归截距']:.6f} + {trend_results['非沿河城镇叛乱率回归斜率']:.6f} × time_step\n")
+            f.write(f"回归斜率: {trend_results['非沿河城镇叛乱率回归斜率']:.6f}\n")
+            f.write(f"回归截距: {trend_results['非沿河城镇叛乱率回归截距']:.6f}\n")
+            f.write(f"标准误: {trend_results['非沿河城镇叛乱率标准误']:.6f}\n")
+            f.write(f"R方值: {trend_results['非沿河城镇叛乱率R方值']:.4f}\n")
+            f.write(f"趋势P值: {trend_results['非沿河城镇叛乱率趋势P值']:.4f}\n")
+            f.write(f"趋势是否显著(p<0.05): {'显著' if trend_results['非沿河城镇叛乱率趋势是否显著(p<0.05)'] else '不显著'}\n\n")
+            
+            f.write("八、结论总结\n")
             f.write("-" * 60 + "\n")
             if stats_results['叛乱率是否显著(p<0.05)']:
                 if stats_results['沿河城镇平均叛乱率'] > stats_results['非沿河城镇平均叛乱率']:
@@ -754,6 +839,14 @@ class RebellionAnalyzer:
                     f.write(f"✓ 沿河城镇的叛乱率随时间呈显著下降趋势 (斜率={trend_results['沿河城镇叛乱率回归斜率']:.6f}, p={trend_results['沿河城镇叛乱率趋势P值']:.4f})\n")
             else:
                 f.write(f"○ 沿河城镇的叛乱率时间趋势不显著 (p={trend_results['沿河城镇叛乱率趋势P值']:.4f})\n")
+            
+            if trend_results['非沿河城镇叛乱率趋势是否显著(p<0.05)']:
+                if trend_results['非沿河城镇叛乱率回归斜率'] > 0:
+                    f.write(f"✓ 非沿河城镇的叛乱率随时间呈显著上升趋势 (斜率={trend_results['非沿河城镇叛乱率回归斜率']:.6f}, p={trend_results['非沿河城镇叛乱率趋势P值']:.4f})\n")
+                else:
+                    f.write(f"✓ 非沿河城镇的叛乱率随时间呈显著下降趋势 (斜率={trend_results['非沿河城镇叛乱率回归斜率']:.6f}, p={trend_results['非沿河城镇叛乱率趋势P值']:.4f})\n")
+            else:
+                f.write(f"○ 非沿河城镇的叛乱率时间趋势不显著 (p={trend_results['非沿河城镇叛乱率趋势P值']:.4f})\n")
         
         print(f"统计报告已保存至: {output_path}")
     

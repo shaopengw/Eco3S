@@ -19,6 +19,7 @@ import pandas as pd
 import yaml
 import networkx as nx
 from colorama import Back
+import numpy as np
 
 from src.agents.government import (
     OrdinaryGovernmentAgent,

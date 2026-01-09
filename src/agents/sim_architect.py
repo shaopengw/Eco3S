@@ -73,12 +73,13 @@ class SimArchitectAgent(BaseAgent):
 			modules = []
 		return modules
 
-	async def generate_description_md(self, requirement_dict, previous_description=None, user_feedback=None):
+	async def generate_description_md(self, original_requirement, requirement_dict, previous_description=None, user_feedback=None):
 		"""
 		调用大模型，生成 description.md 文件内容。
 		参考config_template/description.md作为模板。
 		
 		Args:
+			original_requirement: 用户的原始需求字符串
 			requirement_dict: 需求字典
 			previous_description: 上一个版本的设计文档（可选）
 			user_feedback: 用户反馈意见（可选）
@@ -98,6 +99,7 @@ class SimArchitectAgent(BaseAgent):
 		if previous_description and user_feedback:
 			# 有反馈的情况
 			prompt = self.prompts['generate_description_with_feedback_prompt'].format(
+				original_requirement=original_requirement,
 				requirement_dict=requirement_dict,
 				template_content=template_content,
 				previous_description=previous_description,
@@ -106,6 +108,7 @@ class SimArchitectAgent(BaseAgent):
 		else:
 			# 没有反馈的情况
 			prompt = self.prompts['generate_description_prompt'].format(
+				original_requirement=original_requirement,
 				requirement_dict=requirement_dict,
 				template_content=template_content
 			)

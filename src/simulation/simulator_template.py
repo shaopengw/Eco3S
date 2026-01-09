@@ -202,6 +202,11 @@ class YourSimulator:
                 task = resident.decide_action_by_llm(tax_rate=tax_rate, basic_living_cost=self.basic_living_cost)
             # 2.基于LLM的决策(无叛军情况)
             task = resident.decide_action_by_llm(tax_rate=tax_rate, basic_living_cost=self.basic_living_cost)
+            
+            # 重要提示：如需传递额外信息给LLM，请通过kwargs传递完整文本，而非在提示词模板中使用占位符
+            # 示例：
+            # market_info = f"当前价格：{price}元，库存：{stock}件"
+            # task = resident.decide_action_by_llm(tax_rate=tax_rate, market_info=market_info)
 
             tasks.append(task)
             

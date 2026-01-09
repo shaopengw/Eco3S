@@ -171,7 +171,7 @@ class ProjectMasterAgent(BaseAgent):
         
         return history_dir
 
-    async def run_design_phase(self, requirement_dict, previous_version=None, user_feedback=None):
+    async def run_design_phase(self, original_requirement, requirement_dict, previous_version=None, user_feedback=None):
         """
         运行设计阶段，调用 SimArchitectAgent。
         
@@ -236,6 +236,7 @@ class ProjectMasterAgent(BaseAgent):
                 design_context['user_feedback'] = user_feedback
             
             description_md = await designer.generate_description_md(
+                original_requirement,
                 design_context.get('parsed_req'),
                 design_context.get('previous_description'),
                 design_context.get('user_feedback')
@@ -929,7 +930,7 @@ class ProjectMasterAgent(BaseAgent):
 
 
 
-    async def run_full_workflow(self, requirement_text, max_iterations=3):
+    async def run_full_workflow(self, requirement_text, max_iterations=5):
         """
         运行完整的工作流程。
         
@@ -952,7 +953,7 @@ class ProjectMasterAgent(BaseAgent):
         
         # 2. 设计阶段
         self.logger.info("\n阶段 2: 系统设计")
-        design_results = await self.run_design_phase(requirement_dict)
+        design_results = await self.run_design_phase(requirement_text, requirement_dict)
         
         # 3. 编码阶段
         self.logger.info("\n阶段 3: 代码生成")
@@ -1180,6 +1181,7 @@ class ProjectMasterAgent(BaseAgent):
             
             # 运行设计阶段
             design_results = await self.run_design_phase(
+                requirement_text,
                 requirement_dict,
                 previous_version=previous_design,
                 user_feedback=user_feedback
