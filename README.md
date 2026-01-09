@@ -71,12 +71,20 @@ python src/analyzer/simulation_analyzer.py --type default
 
 # 分析特定参数的结果
 python src/analyzer/simulation_analyzer.py --type default --p 5 --y 2
+
+# 直接指定文件进行分析（支持 json/csv，多文件用空格分隔）
+python src/analyzer/simulation_analyzer.py --type default --input_files history/default/20240101/running_data_1.json history/default/20240102/running_data_2.csv
+
+# 自定义输出目录（默认写入 history/<type>/analysis_results/<timestamp>）
+python src/analyzer/simulation_analyzer.py --type default --output_dir ./my_reports
 ```
 
 **参数说明:**
 *   `--type`: **必填**。指定模拟类型，可选值包括 `default`, `TEOG`, `info_propagation`。
 *   `--p`: **可选**。用于过滤模拟结果文件夹的 `p` 初始化人口数量。
 *   `--y`: **可选**。用于过滤模拟结果文件夹的 `y` 总模拟步长。
+*   `--input_files`: **可选**。直接指定要分析的文件路径（绝对或相对），支持多个 json/csv 文件；提供后不会再遍历 history 目录。
+*   `--output_dir`: **可选**。指定分析结果保存的根目录，工具会在该目录下按时间戳创建子目录。
 
 分析结果保存在 `history/<simulation_type>/analysis_results/` 目录。
 

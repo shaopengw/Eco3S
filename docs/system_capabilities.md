@@ -33,7 +33,7 @@ AgentWorld 是一个多智能体社会模拟系统，能够模拟居民、政府
 - 就业市场 (JobMarket)
 - 人口管理 (Population)
 - 时间系统 (Time)
-- 交通经济 (TransportEconomy)
+- 运输经济 (TransportEconomy)
 
 ### 2.5 社交网络 (SocialNetwork)
 - 社交关系构建

@@ -53,7 +53,7 @@ async def run_simulation(config):
     )
 
     # 居民对象
-    residents = await generate_canal_agents(
+    residents = await generate_canal_agents( # 函数名generate_canal_agents不可修改
         resident_info_path=config["data"].get("resident_info_path", ""),
         map=map,
         initial_population=config["simulation"].get("initial_population", 1000),
