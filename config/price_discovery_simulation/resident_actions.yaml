@@ -1,0 +1,92 @@
+actions:
+  1:
+    name: "sell_on_exchange_a"
+    description: "在交易所A卖出股票"
+    function: "sell_stock"
+    is_async: false
+    parameters:
+      - name: "exchange"
+        type: "string"
+        required: true
+        default: "A"
+        description: "交易所标识"
+      - name: "quantity"
+        type: "number"
+        required: false
+        description: "卖出数量，不指定则卖出全部"
+      - name: "price"
+        type: "number"
+        required: false
+        description: "期望价格，不指定则市价交易"
+    
+  2:
+    name: "sell_on_exchange_b"
+    description: "在交易所B卖出股票"
+    function: "sell_stock"
+    is_async: false
+    parameters:
+      - name: "exchange"
+        type: "string"
+        required: true
+        default: "B"
+        description: "交易所标识"
+      - name: "quantity"
+        type: "number"
+        required: false
+        description: "卖出数量，不指定则卖出全部"
+      - name: "price"
+        type: "number"
+        required: false
+        description: "期望价格，不指定则市价交易"
+
+  3:
+    name: "buy_on_exchange_a"
+    description: "在交易所A买入股票"
+    function: "buy_stock"
+    is_async: false
+    parameters:
+      - name: "exchange"
+        type: "string"
+        required: true
+        default: "A"
+        description: "交易所标识"
+      - name: "quantity"
+        type: "number"
+        required: false
+        description: "买入数量"
+      - name: "budget"
+        type: "number"
+        required: false
+        description: "投资预算"
+
+  4:
+    name: "buy_on_exchange_b"
+    description: "在交易所B买入股票"
+    function: "buy_stock"
+    is_async: false
+    parameters:
+      - name: "exchange"
+        type: "string"
+        required: true
+        default: "B"
+        description: "交易所标识"
+      - name: "quantity"
+        type: "number"
+        required: false
+        description: "买入数量"
+      - name: "budget"
+        type: "number"
+        required: false
+        description: "投资预算"
+
+  5:
+    name: "observe_market"
+    description: "观察市场价格"
+    function: "observe_price"
+    is_async: false
+    parameters:
+      - name: "exchanges"
+        type: "list"
+        required: false
+        default: ["A", "B"]
+        description: "要观察的交易所列表"

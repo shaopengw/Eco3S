@@ -1,0 +1,34 @@
+actions:
+  1:
+    name: "purchase"
+    description: "购买商品并存储"
+    function: "handle_purchase"
+    is_async: false
+    parameters:
+      - name: "purchase_amount"
+        type: "number"
+        required: false
+        description: "购买数量，根据当前价格和库存容量决定"
+    
+  2:
+    name: "store"
+    description: "出售库存商品"
+    function: "handle_store"
+    is_async: false
+    parameters:
+      - name: "sell_amount"
+        type: "number"
+        required: false
+        description: "出售数量，根据当前库存和市场价格决定"
+
+  3:
+    name: "adjust_price"
+    description: "维持当前策略"
+    function: "handle_maintain"
+    is_async: false
+    parameters:
+      - name: "maintain_strategy"
+        type: "boolean"
+        required: true
+        default: true
+        description: "是否维持当前购买和存储策略"

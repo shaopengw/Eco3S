@@ -1,0 +1,55 @@
+selected_modules:
+  - module_name: "time"
+    display_name: "时间系统"
+    api_doc: "time.md"
+    required: true
+      
+  - module_name: "map"
+    display_name: "地图系统"
+    api_doc: "map.md"
+    required: true
+      
+  - module_name: "population"
+    display_name: "人口系统"
+    api_doc: "population.md"
+    required: true
+      
+  - module_name: "resident"
+    display_name: "居民系统"
+    api_doc: "resident.md"
+    config_files: "resident_actions.yaml, residents_prompts.yaml"
+    required: true
+
+  - module_name: "towns"
+    display_name: "城镇系统"
+    api_doc: "towns.md"
+    config_files: "towns_data.json"
+    required: true
+  
+  - module_name: "job_market"
+    display_name: "就业市场"
+    api_doc: "job_market.md"
+    config_files: "jobs_config.yaml"
+    required: true
+      
+  - module_name: "social_network"
+    display_name: "社交网络"
+    api_doc: "social_network.md"
+    required: true
+  
+  - module_name: "government"
+    display_name: "政府系统"
+    api_doc: "government.md"
+    config_files: "government_prompts.yaml"
+    required: true
+      
+  - module_name: "rebels"
+    display_name: "叛军系统"
+    api_doc: "rebels.md"
+    config_files: "rebels_prompts.yaml"
+    required: true
+      
+  - module_name: "climate"
+    display_name: "气候系统"
+    api_doc: "climate.md"
+    required: true

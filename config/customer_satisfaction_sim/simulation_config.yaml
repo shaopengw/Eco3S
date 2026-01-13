@@ -53,7 +53,7 @@ service_quality:
   decay_rate: 0.01
   improvement_rate: 0.08
 simulation:
-  birth_rate: 0.02
+  birth_rate: 0.05
   group_decision:
     government:
       enabled: 0
@@ -61,7 +61,7 @@ simulation:
     rebellion:
       enabled: 0
       max_rounds: 2
-  initial_population: 20
+  initial_population: 200
   map_height: 100
   map_width: 100
   max_retry_attempts: 3
@@ -72,7 +72,7 @@ simulation:
   seed_count: 1
   simulation_name: customer_satisfaction_sim
   start_year: 2024
-  total_years: 5
+  total_years: 30
 thresholds:
   loyalty:
     high: 75

@@ -1,0 +1,104 @@
+{
+  "map_boundaries": {
+    "min_longitude": 0.0,
+    "max_longitude": 100.0,
+    "min_latitude": 0.0,
+    "max_latitude": 100.0
+  },
+  "exchanges": [
+    {
+      "name": "主板交易所",
+      "towns": [
+        {
+          "name": "交易所A",
+          "longitude": 30.0,
+          "latitude": 50.0,
+          "type": "primary_exchange",
+          "initial_price": 100.0,
+          "trading_fee": 0.001,
+          "price_update_interval": 1,
+          "market_depth": 1000
+        }
+      ]
+    },
+    {
+      "name": "二板交易所",
+      "towns": [
+        {
+          "name": "交易所B",
+          "longitude": 70.0,
+          "latitude": 50.0,
+          "type": "secondary_exchange",
+          "initial_price": 100.0,
+          "trading_fee": 0.0015,
+          "price_update_interval": 1,
+          "market_depth": 800
+        }
+      ]
+    }
+  ],
+  "other_towns": [
+    {
+      "name": "信息中心",
+      "longitude": 50.0,
+      "latitude": 30.0,
+      "type": "information_hub",
+      "description": "价格信息汇总与分发中心"
+    },
+    {
+      "name": "监管机构",
+      "longitude": 50.0,
+      "latitude": 70.0,
+      "type": "regulatory_body",
+      "description": "市场监管与秩序维护"
+    },
+    {
+      "name": "结算中心",
+      "longitude": 20.0,
+      "latitude": 30.0,
+      "type": "clearing_house",
+      "description": "交易结算与清算服务"
+    }
+  ],
+  "stock_configuration": {
+    "stock_symbol": "SIM001",
+    "stock_name": "模拟股票",
+    "initial_stock_price": 100.0,
+    "total_shares": 1000000,
+    "volatility_model": "geometric_brownian_motion",
+    "drift_rate": 0.0001,
+    "volatility_rate": 0.02
+  },
+  "trading_parameters": {
+    "simulation_duration": 10,
+    "time_unit": "year",
+    "trade_frequency": 100,
+    "price_discovery_threshold": 0.01,
+    "arbitrage_threshold": 0.005,
+    "information_delay": 0
+  },
+  "market_participants": {
+    "total_traders": 1000,
+    "trader_distribution": {
+      "交易所A": 0.6,
+      "交易所B": 0.4
+    },
+    "trader_types": {
+      "informed_traders": 0.2,
+      "noise_traders": 0.6,
+      "arbitrageurs": 0.2
+    }
+  },
+  "price_discovery_metrics": {
+    "information_share_calculation": true,
+    "price_convergence_tracking": true,
+    "common_efficient_price_estimation": true,
+    "contribution_measurement_method": "hasbrouck_information_share"
+  },
+  "exchange_interconnection": {
+    "price_information_sharing": true,
+    "cross_exchange_trading": false,
+    "arbitrage_allowed": true,
+    "information_transmission_speed": 1.0
+  }
+}

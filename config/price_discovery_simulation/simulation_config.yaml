@@ -1,0 +1,159 @@
+data:
+  climate_info_path: experiment_dataset/climate_data/climate.csv
+  government_info_path: experiment_dataset/government_data/official_data.json
+  government_prompt_path: config/price_discovery_simulation/government_prompts.yaml
+  jobs_config_path: config/price_discovery_simulation/jobs_config.yaml
+  message_config_path: config/price_discovery_simulation/message_config.yaml
+  questionnaire_path: config/price_discovery_simulation/questionnaire.yaml
+  rebellion_info_path: experiment_dataset/rebellion_data/rebels_data.json
+  rebels_prompt_path: config/price_discovery_simulation/rebels_prompts.yaml
+  resident_actions_path: config/price_discovery_simulation/resident_actions.yaml
+  resident_info_path: experiment_dataset/resident_data/resident_data.json
+  resident_prompt_path: config/price_discovery_simulation/residents_prompts.yaml
+  towns_data_path: config/price_discovery_simulation/towns_data.json
+data_collection:
+  enabled: true
+  frequency: per_step
+  metrics:
+  - exchange_A_price
+  - exchange_B_price
+  - common_efficient_price
+  - price_spread
+  - exchange_A_volume
+  - exchange_B_volume
+  - total_volume
+  - price_discovery_efficiency
+  - exchange_A_contribution
+  - exchange_B_contribution
+  - convergence_speed
+  - price_volatility
+  - price_stability_index
+  - average_satisfaction
+  - trading_activity
+  output_format: csv
+  output_path: output/price_discovery_simulation/
+experiment:
+  expected_findings:
+  - 不同交易所在价格发现效率上的差异
+  - 交易所对共同有效价格形成的贡献差异
+  - 价格稳定性的差异
+  hypothesis: 两个交易所的价格收敛速度和一致性存在差异
+  limitations:
+  - 简化假设下的模拟
+  - 不考虑市场结构变化
+  - 不考虑外部影响因素
+  special_settings:
+    enable_manipulation: false
+    enable_strategy_trading: false
+module_parameters:
+  climate:
+    enabled: true
+    shock_magnitude: 0.05
+    shock_probability: 0.1
+    volatility_base: 0.02
+  job_market:
+    base_salary:
+      buyer: 0
+      observer: 0
+      seller: 0
+    job_types:
+    - buyer
+    - seller
+    - observer
+    unemployment_rate: 0.0
+  map:
+    height: 100
+    location_sigma: 5.0
+    max_connection_distance: 50
+    navigability: 1.0
+    width: 100
+  population:
+    birth_rate: 0.01
+    initial_population: 5
+  resident:
+    basic_living_cost: 0
+    health_index_range:
+    - 0.8
+    - 1.0
+    initial_satisfaction: 0.7
+    lifespan_range:
+    - 1000
+    - 1000
+    trading_behavior:
+      buy_threshold: 0.6
+      observation_weight: 0.7
+      risk_aversion: 0.5
+      sell_threshold: 0.4
+  social_network:
+    information_spread_rate: 0.9
+    max_connections: 20
+    network_density: 0.8
+  time:
+    start_time: 0
+    time_unit: trading_period
+    total_steps: 30
+  towns:
+    count: 2
+    exchange_config:
+      exchange_A:
+        liquidity_ratio: 1.0
+        price_update_frequency: 1
+        transaction_fee: 0.001
+      exchange_B:
+        liquidity_ratio: 0.8
+        price_update_frequency: 1
+        transaction_fee: 0.002
+    initial_resources: 1000000
+    types:
+    - exchange_A
+    - exchange_B
+simulation:
+  birth_rate: 0.05
+  group_decision:
+    government:
+      enabled: 0
+      max_rounds: 2
+    rebellion:
+      enabled: 0
+      max_rounds: 2
+  initial_population: 200
+  map_height: 100
+  map_width: 100
+  max_retry_attempts: 3
+  message_type: P
+  random_seed: 42
+  response_probability: 0.8
+  resume_from_cache: 0
+  retry_delay: 1
+  seed_count: 2
+  simulation_name: price_discovery_simulation
+  start_year: 0
+  total_years: 30
+stock_parameters:
+  price:
+    initial_price: 120.0
+    price_range:
+    - 50.0
+    - 200.0
+    tick_size: 0.01
+  price_discovery:
+    convergence_threshold: 0.01
+    information_lag: 0
+    update_interval: 1
+  stock:
+    name: Stock A
+    symbol: STOCK_A
+    total_shares: 100000
+  trading:
+    max_order_size: 1000
+    min_order_size: 1
+    trade_frequency: 1.0
+visualization:
+  enabled: true
+  plots:
+  - price_comparison
+  - volume_comparison
+  - contribution_chart
+  - convergence_analysis
+  save_plots: true
+  update_frequency: 1

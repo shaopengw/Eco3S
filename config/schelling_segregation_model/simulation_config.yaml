@@ -1,0 +1,91 @@
+data:
+  climate_info_path: experiment_dataset/climate_data/climate.csv
+  government_info_path: experiment_dataset/government_data/official_data.json
+  government_prompt_path: config/schelling_segregation_model/government_prompts.yaml
+  jobs_config_path: config/schelling_segregation_model/jobs_config.yaml
+  message_config_path: config/schelling_segregation_model/message_config.yaml
+  questionnaire_path: config/schelling_segregation_model/questionnaire.yaml
+  rebellion_info_path: experiment_dataset/rebellion_data/rebels_data.json
+  rebels_prompt_path: config/schelling_segregation_model/rebels_prompts.yaml
+  resident_actions_path: config/schelling_segregation_model/resident_actions.yaml
+  resident_info_path: experiment_dataset/resident_data/resident_data.json
+  resident_prompt_path: config/schelling_segregation_model/residents_prompts.yaml
+  towns_data_path: config/schelling_segregation_model/towns_data.json
+experiment:
+  active_scenario: baseline_50percent
+  scenarios:
+  - description: 基线场景：50%聚居倾向
+    name: baseline_50percent
+    similarity_threshold: 0.5
+  - description: 低倾向场景：30%聚居倾向
+    name: low_preference_30percent
+    similarity_threshold: 0.3
+  - description: 高倾向场景：80%聚居倾向
+    name: high_preference_80percent
+    similarity_threshold: 0.8
+metrics:
+  migration:
+    migration_rate: 0.08
+  population:
+  - total_population
+  - population_by_type
+  satisfaction:
+  - average_satisfaction
+  - satisfaction_by_type
+  socioeconomic:
+  - gdp
+  - unemployment_rate
+  - social_stability_index
+  spatial_segregation:
+  - average_similarity
+  - segregation_index
+  - cluster_size
+  - boundary_length
+output:
+  data_logging:
+    enabled: true
+    log_level: INFO
+    output_dir: output/schelling_segregation_model/logs
+  metrics_export:
+    enabled: true
+    format:
+    - csv
+    - json
+    output_dir: output/schelling_segregation_model/metrics
+  visualization:
+    enabled: true
+    output_dir: output/schelling_segregation_model/visualizations
+    save_interval: 1
+simulation:
+  birth_rate: 0.02
+  economic:
+    base_living_cost: 100
+    initial_income_range:
+    - 80
+    - 150
+  group_decision:
+    government:
+      enabled: 1
+      max_rounds: 2
+    rebellion:
+      enabled: 1
+      max_rounds: 2
+  initial_population: 20
+  map_height: 10
+  map_width: 10
+  max_retry_attempts: 3
+  message_type: S
+  response_probability: 0.8
+  resume_from_cache: 0
+  retry_delay: 1
+  schelling_model:
+    empty_ratio: 0.1
+    max_relocation_attempts: 10
+    neighbor_range: 1
+    relocation_strategy: random_empty
+    resident_types: 2
+    similarity_threshold: 0.5
+  seed_count: 1
+  simulation_name: schelling_segregation_model
+  start_year: 0
+  total_years: 5

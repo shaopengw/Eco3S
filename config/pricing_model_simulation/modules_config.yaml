@@ -1,0 +1,81 @@
+selected_modules:
+  - module_name: "time"
+    display_name: "时间系统"
+    api_doc: "time.md"
+    required: true
+      
+  - module_name: "map"
+    display_name: "地图系统"
+    api_doc: "map.md"
+    required: true
+      
+  - module_name: "population"
+    display_name: "人口系统"
+    api_doc: "population.md"
+    required: true
+      
+  - module_name: "resident"
+    display_name: "居民系统"
+    api_doc: "resident.md"
+    config_files: "resident_actions.yaml, residents_prompts.yaml"
+    required: true
+      
+  - module_name: "towns"
+    display_name: "城镇系统"
+    api_doc: "towns.md"
+    onfig_files: "towns_data.json"
+    required: true
+      
+  - module_name: "social_network"
+    display_name: "社交网络"
+    api_doc: "social_network.md"
+    required: true
+      
+module_parameters:
+  resident:
+    basic_living_cost: 1000
+    initial_satisfaction: 0.7
+    health_index_range: [0.3, 1.0]
+    lifespan_range: [60, 90]
+    
+  job_market:
+    job_types: ["农民", "工人", "商人"]
+    base_salary:
+      农民: 2000
+      工人: 3000
+      商人: 4000
+    unemployment_rate: 0.05
+    
+  social_network:
+    network_density: 0.3
+    information_spread_rate: 0.5
+    max_connections: 10
+    
+  towns:
+    count: 5
+    types: ["沿河", "非沿河"]
+    initial_resources: 100000
+    
+  map:
+    width: 100
+    height: 100
+    max_connection_distance: 20
+    location_sigma: 2.0
+    navigability: 0.8
+
+simulation:
+  name: "pricing_model_simulation"
+  description: "复现基于理性预期和竞争性存储的商品定价模型，并在不同参数设定下进行数值模拟和统计分析。"
+  total_time: 100
+  initial_price: 50
+  demand_elasticity: 0.5
+  storage_cost_rate: 0.1
+  storage_depreciation: 0.05
+
+data_collection:
+  enabled: true
+  metrics:
+    - equilibrium_price_sequence
+    - inventory_stockout_probability
+  frequency: "yearly"
+  output_format: "csv"

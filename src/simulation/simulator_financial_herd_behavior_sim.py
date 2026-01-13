@@ -131,6 +131,7 @@ class FinancialHerdBehaviorSimSimulator:
         )
         await self.integrate_new_residents(new_residents)
         self.population.birth(new_count)
+        print(f"新加入{new_count}名居民")
 
         # 收集居民决策
         tasks = []
@@ -151,16 +152,19 @@ class FinancialHerdBehaviorSimSimulator:
                 f"最近20交易日价格趋势：{self.get_price_trend_description()}"
             )
             
-            task = resident.decide_action_by_llm(
-                tax_rate=0.0,
-                basic_living_cost=0.0,
-                climate_impact=0.0,
-                市场信息=market_info_text
-            )
-            tasks.append(task)
-            
+            # 更新居民寿命（每年）
             if resident.update_resident_status(0):
+                del self.residents[resident_name]
                 self.population.death()
+                continue
+            print(f"居民 {resident.resident_id} (正在决策...")
+            # task = resident.decide_action_by_llm(
+            #     tax_rate=0.0,
+            #     basic_living_cost=0.0,
+            #     climate_impact=0.0,
+            #     市场信息=market_info_text
+            # )
+            # tasks.append(task)
 
         # 执行决策
         if tasks:
@@ -558,10 +562,27 @@ class FinancialHerdBehaviorSimSimulator:
 
     async def integrate_new_residents(self, new_residents):
         """整合新居民并初始化其资产"""
+        if not new_residents:
+            return
+        
         import random
-        for resident in new_residents:
+        # new_residents是字典，需要遍历其值
+        for resident in new_residents.values():
             # 初始化新居民的资产
             resident.cash = random.uniform(1000, 5000)
             resident.asset_holdings = random.randint(0, 10)
             resident.last_action = None
-            self.residents[resident.resident_id] = resident
+        
+        # 更新全局居民列表
+        self.residents.update(new_residents)
+        print(f"{len(new_residents)} 名新居民已出生")
+        
+        # 添加到城镇（如果towns有这个方法）
+        if hasattr(self.towns, 'initialize_resident_groups'):
+            self.towns.initialize_resident_groups(new_residents)
+            print("新居民已加入各自城镇")
+        
+        # 添加到社交网络
+        if new_residents:
+            self.social_network.add_new_residents(new_residents)
+            print(f"{len(new_residents)} 名新居民已加入社交网络")
