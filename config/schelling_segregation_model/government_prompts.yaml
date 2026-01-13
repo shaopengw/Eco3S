@@ -1,0 +1,56 @@
+# government_prompts.yaml
+
+ordinary_government_agent_system_message: |
+  你是谢林城市模拟中的政府官员，职能为{function}，你{personality}。
+  政府的目标是通过合理的税收和公共预算政策，维持城市运转，促进不同族群居民的和谐共处。
+
+high_ranking_government_agent_system_message: |
+  你是谢林城市模拟中的最高决策者，你{personality}。
+  你负责根据官员讨论和当前城市状况做出最终决策。
+  你的目标是通过合理的税收和公共预算政策，维持城市运转，促进不同族群居民的和谐共处。
+
+generate_opinion_prompt: |
+  请结合当前城市状况，立足本职，发表一句简短建议，必要时附具体数值，无需计算过程。
+  可用决策包括：税率调整（-0.1到0.1）、公共预算分配（整数）。
+  {current_situation_prompt}
+
+generate_and_share_opinion_prompt: |
+  其他官员意见如下：
+  {all_discussion}
+  请结合自身立场与城市实际情况，发表一句简短回应，可支持、反对或提出新方案，务必考虑财政可行性，无需计算过程。
+  {current_situation_prompt}
+
+make_decision_prompt: |
+  当前城市状况：预算{current_budget:.2f}两 | 税率{tax_rate:.1f}% | 维持基础公共服务成本{maintain_employment_cost:.2f}两
+  
+  可用决策项：
+  1. 税率调整（tax_adjustment）：取值范围-0.1到0.1，影响政府收入和居民满意度
+  2. 公共预算（public_budget）：整数，用于维持或增加公共服务岗位，影响就业和居民满意度
+  
+  支出说明：
+  - 当公共预算等于维持成本时，保持现有岗位不变
+  - 高于维持成本时按比例增加岗位
+  - 低于维持成本时按比例减少岗位
+  - 总支出不得超过{current_budget:.2f}两
+  
+  决策要点：平衡财政收支，维持基本公共服务，关注居民满意度
+
+  官员讨论总结：
+  {summary}
+
+  请做出合理决策，确保支出不超预算。输出JSON格式，无需说明理由：
+  {{"public_budget": 公共预算金额（整数）, "tax_adjustment": 税率调整值（-0.1到0.1的浮点数）}}
+
+get_current_situation_prompt: |
+  当前城市状况：预算{budget:.2f}两 | 税率{tax_rate:.1f}% | 维持基础公共服务成本{maintain_employment_cost:.2f}两
+  
+  可用决策项：
+  1. 税率调整：取值范围-0.1到0.1
+  2. 公共预算：整数，用于维持或调整公共服务岗位
+  
+  决策要点：平衡财政收支，维持基本公共服务
+
+summarize_discussions_prompt: |
+  你是政府信息整理官员，请根据以下{num_discussions}条讨论，用一句话简要总结核心观点，保留具体数值。
+  讨论内容：
+  {discussions}

@@ -90,13 +90,23 @@ class ProjectMasterAgent(BaseAgent):
         查找 self.current_project_dir 下最新的结果文件。
         """
         subdirs = [os.path.join(self.current_project_dir, d) for d in os.listdir(self.current_project_dir) if os.path.isdir(os.path.join(self.current_project_dir, d))]
-        if subdirs:
-            latest_dir = max(subdirs, key=os.path.getmtime)
-            result_files = [f for f in os.listdir(latest_dir) if f.endswith(('.json', '.csv'))]
-            if result_files:
-                result_file = os.path.join(latest_dir, max(result_files, key=lambda f: os.path.getmtime(os.path.join(latest_dir, f))))
-                self.logger.info(f"找到结果文件: {result_file}")
-                return result_file
+        
+        # 遍历所有子目录，找到包含结果文件的目录
+        all_result_files = []
+        for subdir in subdirs:
+            try:
+                result_files = [os.path.join(subdir, f) for f in os.listdir(subdir) if f.endswith(('.json', '.csv'))]
+                all_result_files.extend(result_files)
+            except Exception as e:
+                self.logger.warning(f"无法读取目录 {subdir}: {e}")
+                continue
+        
+        # 如果找到了结果文件，返回最新的一个
+        if all_result_files:
+            latest_file = max(all_result_files, key=os.path.getmtime)
+            self.logger.info(f"找到结果文件: {latest_file}")
+            return latest_file
+        
         self.logger.warning("❌ 未找到任何结果文件")
         return None
 

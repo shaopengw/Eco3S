@@ -1,0 +1,227 @@
+# message_config.yaml
+# 资产市场泡沫模拟 - 消息配置文件
+# 实验名称: asset_market_bubble_sim
+
+# ============================================
+# 市场信息广播消息
+# ============================================
+
+# 市场开盘信息
+market_opening_message: |
+  市场开盘公告：
+  1. 本期为第{period}交易期，共{total_periods}期
+  2. 当前资产基础价值：{fundamental_value}元（剩余{remaining_periods}期分红×0.1元）
+  3. 上期收盘价：{last_price}元
+  4. 当前订单簿深度：买单{bid_depth}笔，卖单{ask_depth}笔
+  5. 祝各位交易顺利！
+
+# 市场收盘信息
+market_closing_message: |
+  市场收盘公告：
+  1. 本期交易结束，成交量：{volume}笔
+  2. 收盘价：{closing_price}元
+  3. 价格涨跌：{price_change:+.2f}元 ({price_change_pct:+.1f}%)
+  4. 最高价：{high_price}元，最低价：{low_price}元
+  5. 本期分红已发放：每份资产0.1元
+
+# 分红发放通知
+dividend_notification: |
+  分红通知：
+  1. 您持有{asset_count}份资产
+  2. 本期分红收入：{dividend_income}元
+  3. 账户现金余额：{cash_balance}元
+  4. 资产剩余价值：{remaining_value}元
+
+# ============================================
+# 市场动态信息（短消息）
+# ============================================
+
+market_update_short: |
+  市场快讯：
+  1. 当前价格：{current_price}元
+  2. 成交量：{recent_volume}笔
+  3. 买卖价差：{spread}元
+  4. 市场热度：{market_heat}
+
+# 价格预警信息
+price_alert_short: |
+  价格预警：
+  1. 价格波动：{volatility_level}
+  2. 当前价格：{current_price}元 vs 基础价值：{fundamental_value}元
+  3. 偏离度：{deviation_pct}%
+  4. 建议：{recommendation}
+
+# ============================================
+# 市场分析信息（长消息）
+# ============================================
+
+market_analysis_long: |
+  市场深度分析（第{period}期）：
+  1. 价格走势：当前价格{current_price}元，较基础价值{fundamental_value}元{deviation_direction}{deviation_pct}%
+  2. 交易活跃度：本期成交{volume}笔，较上期{volume_change}
+  3. 市场情绪：{market_sentiment}（基于订单簿分析）
+  4. 订单簿状况：买盘{bid_orders}笔（总额{bid_volume}元），卖盘{ask_orders}笔（总额{ask_volume}元）
+  5. 技术指标：{technical_indicators}
+  6. 风险提示：剩余{remaining_periods}期，到期后资产价值归零
+  7. 基本面：理论价值={fundamental_value}元（{remaining_periods}期×0.1元分红）
+  8. 建议策略：{strategy_suggestion}
+
+# 泡沫预警信息
+bubble_warning_long: |
+  市场泡沫预警：
+  1. 价格严重偏离基础价值：当前{current_price}元 vs 理论值{fundamental_value}元
+  2. 溢价率：{premium_rate}%（超过{threshold}%警戒线）
+  3. 历史价格：最高{max_price}元，最低{min_price}元
+  4. 交易特征：{trading_characteristics}
+  5. 风险等级：{risk_level}
+  6. 市场参与者分布：{participant_distribution}
+  7. 主要驱动因素：{driving_factors}
+  8. 专家建议：{expert_advice}
+
+# 崩盘警示信息
+crash_warning_long: |
+  市场崩盘警示：
+  1. 价格急速下跌：从{peak_price}元跌至{current_price}元
+  2. 跌幅：{drop_pct}%（{drop_periods}期内）
+  3. 恐慌性抛售：卖单{sell_orders}笔，买单仅{buy_orders}笔
+  4. 流动性：{liquidity_status}
+  5. 止损建议：{stop_loss_advice}
+  6. 基础价值回归：理论价值{fundamental_value}元
+  7. 剩余期限：{remaining_periods}期后资产归零
+  8. 应对策略：{crisis_strategy}
+
+# ============================================
+# 社交网络传播消息
+# ============================================
+
+# 看涨情绪传播
+bullish_sentiment_message: |
+  市场热议（看涨）：
+  1. 近期价格持续上涨，涨幅{gain_pct}%
+  2. 多位交易者看好后市
+  3. 技术面显示{technical_signal}
+  4. 市场流传：{market_rumor}
+  5. 跟风建议：{follow_advice}
+
+# 看跌情绪传播
+bearish_sentiment_message: |
+  市场热议（看跌）：
+  1. 价格承压，下跌{loss_pct}%
+  2. 部分交易者开始离场
+  3. 风险提示：距离到期仅剩{remaining_periods}期
+  4. 市场传言：{market_rumor}
+  5. 谨慎建议：{caution_advice}
+
+# 中性观望消息
+neutral_sentiment_message: |
+  市场观望情绪：
+  1. 价格在{price_range}元区间震荡
+  2. 买卖力量相对均衡
+  3. 等待明确信号
+  4. 理性分析：{rational_analysis}
+
+# ============================================
+# 交易确认消息
+# ============================================
+
+# 买入成功通知
+buy_confirmation: |
+  交易确认（买入）：
+  1. 成交价格：{price}元/份
+  2. 成交数量：{quantity}份
+  3. 交易金额：{total_amount}元
+  4. 剩余现金：{remaining_cash}元
+  5. 持仓总量：{total_assets}份
+
+# 卖出成功通知
+sell_confirmation: |
+  交易确认（卖出）：
+  1. 成交价格：{price}元/份
+  2. 成交数量：{quantity}份
+  3. 交易收入：{total_income}元
+  4. 当前现金：{current_cash}元
+  5. 剩余持仓：{remaining_assets}份
+
+# 交易失败通知
+trade_failure: |
+  交易失败：
+  1. 失败原因：{reason}
+  2. 建议：{suggestion}
+  3. 当前状态：现金{cash}元，持仓{assets}份
+
+# ============================================
+# 策略建议消息
+# ============================================
+
+# 基本面分析建议
+fundamental_analysis_advice: |
+  基本面分析：
+  1. 资产理论价值：{fundamental_value}元
+  2. 当前市场价格：{market_price}元
+  3. 价值评估：{valuation}
+  4. 剩余收益：{remaining_dividends}元（{remaining_periods}期×0.1元）
+  5. 投资建议：{investment_advice}
+
+# 技术分析建议
+technical_analysis_advice: |
+  技术分析：
+  1. 价格趋势：{trend}
+  2. 支撑位：{support_level}元
+  3. 阻力位：{resistance_level}元
+  4. 交易信号：{trading_signal}
+  5. 操作建议：{operation_advice}
+
+# 趋势跟随建议
+trend_following_advice: |
+  趋势跟随：
+  1. 市场主流方向：{market_direction}
+  2. 参与者行为：{participant_behavior}
+  3. 动量指标：{momentum}
+  4. 跟随策略：{following_strategy}
+  5. 风险控制：{risk_control}
+
+# ============================================
+# 系统通知消息
+# ============================================
+
+# 资产到期通知
+asset_expiration_notice: |
+  资产到期通知：
+  1. 交易期已结束（第{total_periods}期）
+  2. 资产价值归零
+  3. 最终收盘价：{final_price}元
+  4. 累计分红收入：{total_dividends}元
+  5. 感谢参与本次模拟！
+
+# 模拟结束总结
+simulation_summary: |
+  模拟实验总结：
+  1. 总交易期数：{total_periods}期
+  2. 价格最高点：{max_price}元（第{max_price_period}期）
+  3. 价格最低点：{min_price}元（第{min_price_period}期）
+  4. 总成交量：{total_volume}笔
+  5. 泡沫形成期：第{bubble_start}期至第{bubble_peak}期
+  6. 崩盘期：第{crash_start}期至第{crash_end}期
+  7. 最大偏离度：{max_deviation}%
+  8. 市场效率评估：{market_efficiency}
+
+# ============================================
+# 消息模板变量说明
+# ============================================
+# {period} - 当前交易期数
+# {total_periods} - 总交易期数
+# {remaining_periods} - 剩余交易期数
+# {fundamental_value} - 资产基础价值
+# {current_price} - 当前价格
+# {market_price} - 市场价格
+# {last_price} - 上期价格
+# {closing_price} - 收盘价
+# {volume} - 交易量
+# {price_change} - 价格变化
+# {price_change_pct} - 价格变化百分比
+# {deviation_pct} - 偏离百分比
+# {asset_count} - 资产数量
+# {cash_balance} - 现金余额
+# {market_sentiment} - 市场情绪
+# {risk_level} - 风险等级
+# ============================================

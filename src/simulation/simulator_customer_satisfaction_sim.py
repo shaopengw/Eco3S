@@ -56,6 +56,12 @@ class CustomerSatisfactionSimSimulator:
             self.rebels_agents = {}
 
     
+            # 依据配置决定是否记录经济类指标（如未配置则不记录）
+            data_collection_cfg = (self.config or {}).get('data_collection', {}) if isinstance(self.config, dict) else {}
+            metrics_list = set(data_collection_cfg.get('metrics', []) or [])
+            self._track_gdp = 'gdp' in metrics_list
+            self._track_unemployment = 'unemployment_rate' in metrics_list
+
             self.results = self.init_results()
 
     
@@ -80,33 +86,19 @@ class CustomerSatisfactionSimSimulator:
             self.result_file = os.path.join(data_dir, f"running_data_{timestamp}_pid{pid}.csv")
     
     def init_results(self):
-
-    
-            return {
-
-    
+            # 仅在启用时包含经济类指标
+            result = {
                 "years": [],
-
-    
-                "unemployment_rate": [],
-
-    
                 "population": [],
-
-    
                 "average_satisfaction": [],
-
-    
                 "customer_loyalty": [],
-
-    
                 "purchase_decisions": [],
-
-    
-                "gdp": [],
-
-    
             }
+            if getattr(self, '_track_unemployment', False):
+                result["unemployment_rate"] = []
+            if getattr(self, '_track_gdp', False):
+                result["gdp"] = []
+            return result
 
     async def run(self):
         """主运行流程：初始化→主循环→结束"""
@@ -152,10 +144,11 @@ class CustomerSatisfactionSimSimulator:
             # 更新所有居民的收入（基于工作和表现）
             self.update_residents_income()
 
-            self.gdp = self.calculate_gdp()
+            # 仅在启用时计算 GDP
+            self.gdp = self.calculate_gdp() if self._track_gdp else 0
 
 
-            if self.government:
+            if self.government and self._track_gdp:
 
 
                 self.tax_income = self.gdp * self.government.get_tax_rate()
@@ -176,7 +169,7 @@ class CustomerSatisfactionSimSimulator:
             self.population.update_birth_rate(self.average_satisfaction)
 
 
-            if self.government:
+            if self.government and self._track_gdp:
 
 
                 self.logger.info(f"GDP：{self.gdp}，税收收入：{self.tax_income}，政府预算：{self.government.budget}")
@@ -268,19 +261,18 @@ class CustomerSatisfactionSimSimulator:
                 resident = self.residents[resident_name]
 
 
+                # 先检查居民是否死亡，死亡则删除并跳过
+                if resident.update_resident_status(self.basic_living_cost):
+                    del self.residents[resident_name]
+                    self.population.death()
+                    continue
+
+
                 tax_rate = self.government.get_tax_rate() if self.government else 0
 
 
                 task = resident.decide_action_by_llm(tax_rate=tax_rate, basic_living_cost=self.basic_living_cost)
-
-
                 tasks.append(task)
-
-
-                if resident.update_resident_status(self.basic_living_cost):
-
-
-                    self.population.death()
 
 
             if tasks:
@@ -316,34 +308,13 @@ class CustomerSatisfactionSimSimulator:
                         select, reason, speech, relation_type = result
 
 
-                        # 处理居民的具体决策动作
+                        # 处理居民的具体决策动作（购买统计已移至handle_resident_action）
 
 
                         self.handle_resident_action(resident, select, reason)
 
 
                         await resident.execute_decision(select, map=self.map)
-
-
-                        if str(select) == "1":  # 购买决策
-
-
-                            self.purchase_decisions += 1
-
-
-                            self.logger.info(f"统计购买决策：当前总数={self.purchase_decisions}")
-
-
-                        elif str(select) == "2":  # 提供反馈
-
-
-                            pass  # 反馈已在handle_resident_action中处理
-
-
-                        elif str(select) == "3":  # 保持观望
-
-
-                            pass  # 观望已在handle_resident_action中处理
 
 
                         if speech and speech.strip():
@@ -382,34 +353,13 @@ class CustomerSatisfactionSimSimulator:
                         select, reason = result
 
 
-                        # 处理居民的具体决策动作
+                        # 处理居民的具体决策动作（购买统计已移至handle_resident_action）
 
 
                         self.handle_resident_action(resident, select, reason)
 
 
                         await resident.execute_decision(select, map=self.map)
-
-
-                        if str(select) == "1":  # 购买决策
-
-
-                            self.purchase_decisions += 1
-
-
-                            self.logger.info(f"统计购买决策：当前总数={self.purchase_decisions}")
-
-
-                        elif str(select) == "2":  # 提供反馈
-
-
-                            pass  # 反馈已在handle_resident_action中处理
-
-
-                        elif str(select) == "3":  # 保持观望
-
-
-                            pass  # 观望已在handle_resident_action中处理
 
 
                 if speech_tasks:
@@ -444,7 +394,7 @@ class CustomerSatisfactionSimSimulator:
     def collect_results(self):
 
 
-            total_unemployment_rate = self.calculate_total_unemployment_rate()
+            total_unemployment_rate = self.calculate_total_unemployment_rate() if self._track_unemployment else None
 
 
             if self.government:
@@ -462,7 +412,8 @@ class CustomerSatisfactionSimSimulator:
             self.results["years"].append(self.time.current_time)
 
 
-            self.results["unemployment_rate"].append(total_unemployment_rate)
+            if self._track_unemployment:
+                self.results["unemployment_rate"].append(total_unemployment_rate)
 
 
             self.results["population"].append(self.population.get_population())
@@ -477,31 +428,23 @@ class CustomerSatisfactionSimSimulator:
             self.results["purchase_decisions"].append(purchase_decisions_count)
 
 
-            self.results["gdp"].append(self.gdp)
+            if self._track_gdp:
+                self.results["gdp"].append(self.gdp)
 
 
-            self.logger.info(f"年份: {self.time.current_time}, "
-
-
-                  f"人口数量: {self.population.get_population()}, "
-
-
-                  f"失业率: {self.results['unemployment_rate'][-1]:.2f}%, "
-
-
-                  f"平均满意度: {self.results['average_satisfaction'][-1]:.2f}, "
-
-
-                  f"顾客忠诚度: {self.results['customer_loyalty'][-1]:.2f}%, "
-
-
-                  f"购买决策数: {self.results['purchase_decisions'][-1]}, "
-
-
-                  f"GDP: {self.results['gdp'][-1]:.2f}"
-
-
-            )
+            # 组合可用指标进行日志输出
+            log_parts = [
+                f"年份: {self.time.current_time}",
+                f"人口数量: {self.population.get_population()}",
+                f"平均满意度: {self.results['average_satisfaction'][-1]:.2f}",
+                f"顾客忠诚度: {self.results['customer_loyalty'][-1]:.2f}%",
+                f"购买决策数: {self.results['purchase_decisions'][-1]}",
+            ]
+            if self._track_unemployment:
+                log_parts.insert(2, f"失业率: {self.results['unemployment_rate'][-1]:.2f}%")
+            if self._track_gdp:
+                log_parts.append(f"GDP: {self.results['gdp'][-1]:.2f}")
+            self.logger.info(", ".join(log_parts))
 
 
             self.purchase_decisions = 0
@@ -875,9 +818,11 @@ class CustomerSatisfactionSimSimulator:
             self.logger.warning("没有居民，平均满意度为 0.0")
             return 0.0
         
-        total_satisfaction = sum(resident.satisfaction for resident in self.residents.values())
+        # 额外稳健性：在统计口径上将满意度限制在[0,100]
+        bounded = (max(0, min(100, resident.satisfaction)) for resident in self.residents.values())
+        total_satisfaction = sum(bounded)
         average_satisfaction = total_satisfaction / self.population.population
-        self.logger.info(f"平均满意度: {average_satisfaction} = {total_satisfaction / self.population.population:.2f}")
+        self.logger.info(f"平均满意度: {average_satisfaction:.2f}")
         return average_satisfaction
     
     def calculate_total_unemployment_rate(self):
@@ -976,12 +921,14 @@ class CustomerSatisfactionSimSimulator:
         
         changes = {
             "人口变化率": self.calculate_change_rate("population", current_idx),
-            "GDP变化率": self.calculate_change_rate("gdp", current_idx),
             "平均满意度变化": self.calculate_change_rate("average_satisfaction", current_idx),
-            "失业率变化": self.calculate_change_rate("unemployment_rate", current_idx),
             "顾客忠诚度变化": self.calculate_change_rate("customer_loyalty", current_idx),
             "购买决策数": self.results["purchase_decisions"][current_idx],
         }
+        if self._track_gdp and "gdp" in self.results:
+            changes["GDP变化率"] = self.calculate_change_rate("gdp", current_idx)
+        if self._track_unemployment and "unemployment_rate" in self.results:
+            changes["失业率变化"] = self.calculate_change_rate("unemployment_rate", current_idx)
         return changes
     
     def calculate_change_rate(self, metric, current_idx):
@@ -1031,36 +978,54 @@ class CustomerSatisfactionSimSimulator:
                 if select == "1":  # 购买决策
 
 
-                    # 购买行为：消费一定金额，获得满意度提升
+                    # 购买行为：需同时满足收入条件和满意度条件
 
 
                     if resident.income > self.basic_living_cost:
 
 
-                        purchase_amount = min(resident.income * 0.2, 1000)  # 花费20%收入或最多1000
+                        # 满意度影响购买意愿：满意度<40不购买，40-60低概率购买，>60正常购买
 
 
-                        # 购买后获得满意度提升
+                        if resident.satisfaction < 40:
 
 
-                        satisfaction_boost = random.uniform(5, 15)
+                            # 满意度太低，拒绝购买
 
 
-                        resident.satisfaction = min(100, resident.satisfaction + satisfaction_boost)
+                            resident.satisfaction = max(0, resident.satisfaction - 3)
 
 
-                        self.logger.info(f"居民 {resident.resident_id} 购买商品，花费 {purchase_amount:.2f}，满意度提升 {satisfaction_boost:.2f}")
+                            self.logger.info(f"居民 {resident.resident_id} 满意度过低({resident.satisfaction:.1f})拒绝购买，满意度下降 3")
+
+
+                        elif resident.satisfaction < 60:
+                            # 满意度一般，30%概率购买
+                            if random.random() < 0.3:
+                                purchase_amount = min(resident.income * 0.1, 500)  # 低满意度时少量购买
+                                satisfaction_boost = random.uniform(2, 5)
+                                resident.satisfaction = min(100, resident.satisfaction + satisfaction_boost)
+                                self.purchase_decisions += 1  # 成功购买，计数
+                                self.logger.info(f"居民 {resident.resident_id} 犹豫后购买，花费 {purchase_amount:.2f}，满意度提升 {satisfaction_boost:.2f}")
+
+
+                            else:
+                                resident.satisfaction = max(0, resident.satisfaction - 2)
+                                self.logger.info(f"居民 {resident.resident_id} 满意度一般({resident.satisfaction:.1f})放弃购买，满意度下降 2")
+
+
+                        else:
+                            # 满意度高，正常购买
+                            purchase_amount = min(resident.income * 0.2, 1000)  # 花费20%收入或最多1000
+                            satisfaction_boost = random.uniform(3, 10)
+                            resident.satisfaction = min(100, resident.satisfaction + satisfaction_boost)
+                            self.purchase_decisions += 1  # 成功购买，计数
+                            self.logger.info(f"居民 {resident.resident_id} 购买商品，花费 {purchase_amount:.2f}，满意度提升 {satisfaction_boost:.2f}")
 
 
                     else:
-
-
                         # 收入不足，满意度下降
-
-
                         resident.satisfaction = max(0, resident.satisfaction - 5)
-
-
                         self.logger.info(f"居民 {resident.resident_id} 收入不足无法购买，满意度下降 5")
 
 

@@ -1,0 +1,21 @@
+{
+  "map_boundaries": {
+    "min_longitude": 116.0,
+    "max_longitude": 116.5,
+    "min_latitude": 39.5,
+    "max_latitude": 40.0
+  },
+  "counties": [
+    {
+      "name": "交易区",
+      "towns": [
+        {
+          "name": "资产交易中心",
+          "longitude": 116.25,
+          "latitude": 39.75
+        }
+      ]
+    }
+  ],
+  "other_towns": []
+}

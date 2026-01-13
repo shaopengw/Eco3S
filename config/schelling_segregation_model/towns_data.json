@@ -1,0 +1,132 @@
+{
+  "map_boundaries": {
+    "min_longitude": 0.0,
+    "max_longitude": 10.0,
+    "min_latitude": 0.0,
+    "max_latitude": 10.0
+  },
+  "counties": [
+    {
+      "name": "Grid Zone A",
+      "towns": [
+        {"name": "Cell_0_0", "longitude": 0.5, "latitude": 0.5},
+        {"name": "Cell_0_1", "longitude": 0.5, "latitude": 1.5},
+        {"name": "Cell_0_2", "longitude": 0.5, "latitude": 2.5},
+        {"name": "Cell_0_3", "longitude": 0.5, "latitude": 3.5},
+        {"name": "Cell_0_4", "longitude": 0.5, "latitude": 4.5},
+        {"name": "Cell_1_0", "longitude": 1.5, "latitude": 0.5},
+        {"name": "Cell_1_1", "longitude": 1.5, "latitude": 1.5},
+        {"name": "Cell_1_2", "longitude": 1.5, "latitude": 2.5},
+        {"name": "Cell_1_3", "longitude": 1.5, "latitude": 3.5},
+        {"name": "Cell_1_4", "longitude": 1.5, "latitude": 4.5}
+      ]
+    },
+    {
+      "name": "Grid Zone B",
+      "towns": [
+        {"name": "Cell_2_0", "longitude": 2.5, "latitude": 0.5},
+        {"name": "Cell_2_1", "longitude": 2.5, "latitude": 1.5},
+        {"name": "Cell_2_2", "longitude": 2.5, "latitude": 2.5},
+        {"name": "Cell_2_3", "longitude": 2.5, "latitude": 3.5},
+        {"name": "Cell_2_4", "longitude": 2.5, "latitude": 4.5},
+        {"name": "Cell_3_0", "longitude": 3.5, "latitude": 0.5},
+        {"name": "Cell_3_1", "longitude": 3.5, "latitude": 1.5},
+        {"name": "Cell_3_2", "longitude": 3.5, "latitude": 2.5},
+        {"name": "Cell_3_3", "longitude": 3.5, "latitude": 3.5},
+        {"name": "Cell_3_4", "longitude": 3.5, "latitude": 4.5}
+      ]
+    },
+    {
+      "name": "Grid Zone C",
+      "towns": [
+        {"name": "Cell_4_0", "longitude": 4.5, "latitude": 0.5},
+        {"name": "Cell_4_1", "longitude": 4.5, "latitude": 1.5},
+        {"name": "Cell_4_2", "longitude": 4.5, "latitude": 2.5},
+        {"name": "Cell_4_3", "longitude": 4.5, "latitude": 3.5},
+        {"name": "Cell_4_4", "longitude": 4.5, "latitude": 4.5},
+        {"name": "Cell_5_0", "longitude": 5.5, "latitude": 0.5},
+        {"name": "Cell_5_1", "longitude": 5.5, "latitude": 1.5},
+        {"name": "Cell_5_2", "longitude": 5.5, "latitude": 2.5},
+        {"name": "Cell_5_3", "longitude": 5.5, "latitude": 3.5},
+        {"name": "Cell_5_4", "longitude": 5.5, "latitude": 4.5}
+      ]
+    },
+    {
+      "name": "Grid Zone D",
+      "towns": [
+        {"name": "Cell_6_0", "longitude": 6.5, "latitude": 0.5},
+        {"name": "Cell_6_1", "longitude": 6.5, "latitude": 1.5},
+        {"name": "Cell_6_2", "longitude": 6.5, "latitude": 2.5},
+        {"name": "Cell_6_3", "longitude": 6.5, "latitude": 3.5},
+        {"name": "Cell_6_4", "longitude": 6.5, "latitude": 4.5},
+        {"name": "Cell_7_0", "longitude": 7.5, "latitude": 0.5},
+        {"name": "Cell_7_1", "longitude": 7.5, "latitude": 1.5},
+        {"name": "Cell_7_2", "longitude": 7.5, "latitude": 2.5},
+        {"name": "Cell_7_3", "longitude": 7.5, "latitude": 3.5},
+        {"name": "Cell_7_4", "longitude": 7.5, "latitude": 4.5}
+      ]
+    }
+  ],
+  "other_towns": [
+    {"name": "Cell_8_0", "longitude": 8.5, "latitude": 0.5},
+    {"name": "Cell_8_1", "longitude": 8.5, "latitude": 1.5},
+    {"name": "Cell_8_2", "longitude": 8.5, "latitude": 2.5},
+    {"name": "Cell_8_3", "longitude": 8.5, "latitude": 3.5},
+    {"name": "Cell_8_4", "longitude": 8.5, "latitude": 4.5},
+    {"name": "Cell_9_0", "longitude": 9.5, "latitude": 0.5},
+    {"name": "Cell_9_1", "longitude": 9.5, "latitude": 1.5},
+    {"name": "Cell_9_2", "longitude": 9.5, "latitude": 2.5},
+    {"name": "Cell_9_3", "longitude": 9.5, "latitude": 3.5},
+    {"name": "Cell_9_4", "longitude": 9.5, "latitude": 4.5},
+    {"name": "Cell_0_5", "longitude": 0.5, "latitude": 5.5},
+    {"name": "Cell_1_5", "longitude": 1.5, "latitude": 5.5},
+    {"name": "Cell_2_5", "longitude": 2.5, "latitude": 5.5},
+    {"name": "Cell_3_5", "longitude": 3.5, "latitude": 5.5},
+    {"name": "Cell_4_5", "longitude": 4.5, "latitude": 5.5},
+    {"name": "Cell_5_5", "longitude": 5.5, "latitude": 5.5},
+    {"name": "Cell_6_5", "longitude": 6.5, "latitude": 5.5},
+    {"name": "Cell_7_5", "longitude": 7.5, "latitude": 5.5},
+    {"name": "Cell_8_5", "longitude": 8.5, "latitude": 5.5},
+    {"name": "Cell_9_5", "longitude": 9.5, "latitude": 5.5},
+    {"name": "Cell_0_6", "longitude": 0.5, "latitude": 6.5},
+    {"name": "Cell_1_6", "longitude": 1.5, "latitude": 6.5},
+    {"name": "Cell_2_6", "longitude": 2.5, "latitude": 6.5},
+    {"name": "Cell_3_6", "longitude": 3.5, "latitude": 6.5},
+    {"name": "Cell_4_6", "longitude": 4.5, "latitude": 6.5},
+    {"name": "Cell_5_6", "longitude": 5.5, "latitude": 6.5},
+    {"name": "Cell_6_6", "longitude": 6.5, "latitude": 6.5},
+    {"name": "Cell_7_6", "longitude": 7.5, "latitude": 6.5},
+    {"name": "Cell_8_6", "longitude": 8.5, "latitude": 6.5},
+    {"name": "Cell_9_6", "longitude": 9.5, "latitude": 6.5},
+    {"name": "Cell_0_7", "longitude": 0.5, "latitude": 7.5},
+    {"name": "Cell_1_7", "longitude": 1.5, "latitude": 7.5},
+    {"name": "Cell_2_7", "longitude": 2.5, "latitude": 7.5},
+    {"name": "Cell_3_7", "longitude": 3.5, "latitude": 7.5},
+    {"name": "Cell_4_7", "longitude": 4.5, "latitude": 7.5},
+    {"name": "Cell_5_7", "longitude": 5.5, "latitude": 7.5},
+    {"name": "Cell_6_7", "longitude": 6.5, "latitude": 7.5},
+    {"name": "Cell_7_7", "longitude": 7.5, "latitude": 7.5},
+    {"name": "Cell_8_7", "longitude": 8.5, "latitude": 7.5},
+    {"name": "Cell_9_7", "longitude": 9.5, "latitude": 7.5},
+    {"name": "Cell_0_8", "longitude": 0.5, "latitude": 8.5},
+    {"name": "Cell_1_8", "longitude": 1.5, "latitude": 8.5},
+    {"name": "Cell_2_8", "longitude": 2.5, "latitude": 8.5},
+    {"name": "Cell_3_8", "longitude": 3.5, "latitude": 8.5},
+    {"name": "Cell_4_8", "longitude": 4.5, "latitude": 8.5},
+    {"name": "Cell_5_8", "longitude": 5.5, "latitude": 8.5},
+    {"name": "Cell_6_8", "longitude": 6.5, "latitude": 8.5},
+    {"name": "Cell_7_8", "longitude": 7.5, "latitude": 8.5},
+    {"name": "Cell_8_8", "longitude": 8.5, "latitude": 8.5},
+    {"name": "Cell_9_8", "longitude": 9.5, "latitude": 8.5},
+    {"name": "Cell_0_9", "longitude": 0.5, "latitude": 9.5},
+    {"name": "Cell_1_9", "longitude": 1.5, "latitude": 9.5},
+    {"name": "Cell_2_9", "longitude": 2.5, "latitude": 9.5},
+    {"name": "Cell_3_9", "longitude": 3.5, "latitude": 9.5},
+    {"name": "Cell_4_9", "longitude": 4.5, "latitude": 9.5},
+    {"name": "Cell_5_9", "longitude": 5.5, "latitude": 9.5},
+    {"name": "Cell_6_9", "longitude": 6.5, "latitude": 9.5},
+    {"name": "Cell_7_9", "longitude": 7.5, "latitude": 9.5},
+    {"name": "Cell_8_9", "longitude": 8.5, "latitude": 9.5},
+    {"name": "Cell_9_9", "longitude": 9.5, "latitude": 9.5}
+  ]
+}

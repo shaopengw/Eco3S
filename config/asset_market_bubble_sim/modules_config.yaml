@@ -1,0 +1,90 @@
+# 模块配置
+selected_modules:
+  - module_name: "time"
+    display_name: "时间系统"
+    api_doc: "time.md"
+    required: true
+      
+  - module_name: "map"
+    display_name: "地图系统"
+    api_doc: "map.md"
+    required: true
+      
+  - module_name: "population"
+    display_name: "人口系统"
+    api_doc: "population.md"
+    required: true
+      
+  - module_name: "resident"
+    display_name: "居民系统"
+    api_doc: "resident.md"
+    config_files: "resident_actions.yaml, residents_prompts.yaml"
+    required: true
+      
+  - module_name: "towns"
+    display_name: "城镇系统"
+    api_doc: "towns.md"
+    required: true
+  
+  - module_name: "social_network"
+    display_name: "社交网络"
+    api_doc: "social_network.md"
+    required: true
+      
+  - module_name: "government"
+    display_name: "政府系统"
+    api_doc: "government.md"
+    config_files: "government_prompts.yaml"
+    required: true
+      
+# 实验基础配置
+simulation:
+  name: "asset_market_bubble_sim"
+  description: "观察资产市场泡沫的形成与崩溃"
+  total_years: 10
+  initial_population: 100
+  random_seed: 42
+
+# 模块参数配置
+module_parameters:
+  resident:
+    basic_living_cost: 0
+    initial_satisfaction: 0.5
+    health_index_range: [0.3, 1.0]
+    lifespan_range: [60, 90]
+    
+  job_market:
+    job_types: ["农民", "工人", "商人"]
+    base_salary:
+      农民: 2000
+      工人: 3000
+      商人: 4000
+    unemployment_rate: 0.05
+    
+  social_network:
+    network_density: 0.3
+    information_spread_rate: 0.5
+    max_connections: 10
+    
+  towns:
+    count: 1
+    types: ["城镇"]
+    initial_resources: 0
+    
+  map:
+    width: 100
+    height: 100
+    max_connection_distance: 20  
+    location_sigma: 2.0  
+    navigability: 0.8
+    
+# 数据收集配置
+data_collection:
+  enabled: true
+  metrics:
+    - population
+    - asset_price
+    - trading_volume
+    - asset_distribution
+  frequency: "yearly"
+  output_format: "csv"
