@@ -2,16 +2,19 @@
   <div class="simulation-description">
     <div class="description-content" v-html="renderedDescription"></div>
     <div class="action-buttons">
-      <el-button @click="$emit('view-history')">模拟历史</el-button>
-      <el-button @click="$emit('analyze-data')">数据分析</el-button>
-      <el-button type="primary" @click="$emit('start-simulation')">开始模拟</el-button>
+      <el-button @click="$emit('view-history')">{{ t('simulation.historyButton') }}</el-button>
+      <el-button @click="$emit('analyze-data')">{{ t('simulation.analyzeButton') }}</el-button>
+      <el-button type="primary" @click="$emit('start-simulation')">{{ t('simulation.startButton') }}</el-button>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, inject } from 'vue'
 import { marked } from 'marked'
+
+const useI18nFunc = inject('useI18n')
+const { t } = useI18nFunc()
 
 const props = defineProps({
   configType: {

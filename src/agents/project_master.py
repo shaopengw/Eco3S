@@ -10,7 +10,7 @@ class ProjectMasterAgent(BaseAgent):
     """
     项目管理师Agent，继承BaseAgent，负责协调整个实验流程，调用其他agent并进行质量控制。
     """
-    def __init__(self, agent_id, docs_dir, config_template_dir, web_mode=False, session_callback=None):
+    def __init__(self, agent_id, docs_dir, config_template_dir, web_mode=False, session_callback=None, session=None):
         super().__init__(agent_id, group_type='project_master', window_size=5)
         self.docs_dir = docs_dir
         self.config_template_dir = config_template_dir
@@ -19,6 +19,8 @@ class ProjectMasterAgent(BaseAgent):
         self.current_simulation_name = None
         self.max_regeneration_attempts = 3
         self.logger = CustomLogger('project_master').logger
+        self.web_mode = web_mode  # Web模式标志
+        self.session = session  # 存储session对象
         
         # 子Agent实例（延迟初始化）
         self.code_architect = None
@@ -53,6 +55,56 @@ class ProjectMasterAgent(BaseAgent):
         for f in check_files:
             print(f"  ✓ {f}")
         print(f"{'='*60}")
+        
+        # 如果是Web模式，通过session发送确认请求
+        if self.web_mode and self.session:
+            try:
+                # 发送提示信息到前端
+                if 'output_queue' in self.session:
+                    import time
+                    from datetime import datetime
+                    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    self.session['output_queue'].put(f"[{timestamp}] {'='*60}")
+                    self.session['output_queue'].put(f"[{timestamp}] 检测到 {step_name} 的所有文件已存在:")
+                    for f in check_files:
+                        self.session['output_queue'].put(f"[{timestamp}]   ✓ {f}")
+                    self.session['output_queue'].put(f"[{timestamp}] {'='*60}")
+                
+                # 设置等待确认状态
+                self.session['waiting_confirmation'] = True
+                self.session['confirmation_message'] = f"检测到 {step_name} 的所有文件已存在，是否重新生成？"
+                self.session['confirmation_type'] = 'yes_no'
+                self.session['confirmation_options'] = []
+                self.session['user_confirmation'] = None
+                
+                # 等待用户响应（最多等待5分钟）
+                max_wait_time = 300  # 5分钟
+                wait_time = 0
+                while wait_time < max_wait_time:
+                    if not self.session.get('waiting_confirmation', False):
+                        # 用户已响应
+                        user_confirmed = self.session.get('user_confirmation', False)
+                        if user_confirmed:
+                            self.logger.info(f"用户选择重新执行步骤: {step_name}")
+                            return True
+                        else:
+                            self.logger.info(f"用户选择跳过步骤: {step_name}")
+                            if 'output_queue' in self.session:
+                                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                self.session['output_queue'].put(f"[{timestamp}] ✓ 跳过步骤: {step_name}")
+                            return False
+                    time.sleep(0.5)
+                    wait_time += 0.5
+                
+                # 超时，默认跳过
+                self.logger.warning(f"等待用户确认超时，跳过步骤: {step_name}")
+                self.session['waiting_confirmation'] = False
+                return False
+                
+            except Exception as e:
+                self.logger.warning(f"Web模式确认失败: {e}，使用命令行模式")
+        
+        # 非Web模式，使用命令行确认
         user_input = input("是否重新生成？(y/yes=重新生成, 其他=跳过使用现有文件): ").strip().lower()
         
         if user_input in ['y', 'yes']:
@@ -157,7 +209,7 @@ class ProjectMasterAgent(BaseAgent):
         创建项目文件夹结构。
         配置文件放在 config/[模拟名称] 文件夹下。
         """
-        # 项目根目录（AgentWorld项目根目录）
+        # 项目根目录（Eco3S项目根目录）
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         
         # 创建 config/[模拟名称] 文件夹
@@ -226,14 +278,68 @@ class ProjectMasterAgent(BaseAgent):
             print(f"发现已存在的设计文档")
             print(f"路径: {desc_path}")
             print(f"{'='*60}")
-            user_input = input("是否重新生成？(y/yes=重新生成, 其他=跳过使用现有文件): ").strip().lower()
             
-            if user_input not in ['y', 'yes']:
-                self.logger.info("跳过生成，使用现有设计文档")
-                print(f"✓ 跳过，使用现有设计文档")
-                with open(desc_path, 'r', encoding='utf-8') as f:
-                    description_md = f.read()
-                should_generate_desc = False
+            # 如果是Web模式，通过session发送确认请求
+            if self.web_mode and self.session:
+                try:
+                    # 发送提示信息到前端
+                    if 'output_queue' in self.session:
+                        import time
+                        from datetime import datetime
+                        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        self.session['output_queue'].put(f"[{timestamp}] {'='*60}")
+                        self.session['output_queue'].put(f"[{timestamp}] 发现已存在的设计文档")
+                        self.session['output_queue'].put(f"[{timestamp}] 路径: {desc_path}")
+                        self.session['output_queue'].put(f"[{timestamp}] {'='*60}")
+                    
+                    # 设置等待确认状态
+                    self.session['waiting_confirmation'] = True
+                    self.session['confirmation_message'] = "发现已存在的设计文档，是否重新生成？"
+                    self.session['confirmation_type'] = 'yes_no'
+                    self.session['confirmation_options'] = []
+                    self.session['user_confirmation'] = None
+                    
+                    # 等待用户响应（最多等待5分钟）
+                    max_wait_time = 300
+                    wait_time = 0
+                    while wait_time < max_wait_time:
+                        if not self.session.get('waiting_confirmation', False):
+                            user_confirmed = self.session.get('user_confirmation', False)
+                            if not user_confirmed:
+                                self.logger.info("跳过生成，使用现有设计文档")
+                                if 'output_queue' in self.session:
+                                    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                    self.session['output_queue'].put(f"[{timestamp}] ✓ 跳过，使用现有设计文档")
+                                with open(desc_path, 'r', encoding='utf-8') as f:
+                                    description_md = f.read()
+                                should_generate_desc = False
+                                break
+                            else:
+                                # 用户选择重新生成
+                                break
+                        time.sleep(0.5)
+                        wait_time += 0.5
+                    
+                    # 超时，默认跳过
+                    if wait_time >= max_wait_time:
+                        self.logger.warning("等待用户确认超时，跳过生成")
+                        self.session['waiting_confirmation'] = False
+                        with open(desc_path, 'r', encoding='utf-8') as f:
+                            description_md = f.read()
+                        should_generate_desc = False
+                        
+                except Exception as e:
+                    self.logger.warning(f"Web模式确认失败: {e}，使用命令行模式")
+            else:
+                # 非Web模式，使用命令行确认
+                user_input = input("是否重新生成？(y/yes=重新生成, 其他=跳过使用现有文件): ").strip().lower()
+                
+                if user_input not in ['y', 'yes']:
+                    self.logger.info("跳过生成，使用现有设计文档")
+                    print(f"✓ 跳过，使用现有设计文档")
+                    with open(desc_path, 'r', encoding='utf-8') as f:
+                        description_md = f.read()
+                    should_generate_desc = False
         
         if should_generate_desc:
             # 构建带反馈的参数
@@ -269,12 +375,56 @@ class ProjectMasterAgent(BaseAgent):
             print(f"发现已存在的模块配置文件")
             print(f"路径: {modules_config_path}")
             print(f"{'='*60}")
-            user_input = input("是否重新生成？(y/yes=重新生成, 其他=跳过使用现有文件): ").strip().lower()
             
-            if user_input not in ['y', 'yes']:
-                self.logger.info("跳过生成，使用现有模块配置文件")
-                print(f"✓ 跳过，使用现有模块配置文件")
-                should_generate_modules_config = False
+            # 如果是Web模式，通过session发送确认请求
+            if self.web_mode and self.session:
+                try:
+                    if 'output_queue' in self.session:
+                        import time
+                        from datetime import datetime
+                        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        self.session['output_queue'].put(f"[{timestamp}] {'='*60}")
+                        self.session['output_queue'].put(f"[{timestamp}] 发现已存在的模块配置文件")
+                        self.session['output_queue'].put(f"[{timestamp}] 路径: {modules_config_path}")
+                        self.session['output_queue'].put(f"[{timestamp}] {'='*60}")
+                    
+                    self.session['waiting_confirmation'] = True
+                    self.session['confirmation_message'] = "发现已存在的模块配置文件，是否重新生成？"
+                    self.session['confirmation_type'] = 'yes_no'
+                    self.session['confirmation_options'] = []
+                    self.session['user_confirmation'] = None
+                    
+                    max_wait_time = 300
+                    wait_time = 0
+                    while wait_time < max_wait_time:
+                        if not self.session.get('waiting_confirmation', False):
+                            user_confirmed = self.session.get('user_confirmation', False)
+                            if not user_confirmed:
+                                self.logger.info("跳过生成，使用现有模块配置文件")
+                                if 'output_queue' in self.session:
+                                    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                    self.session['output_queue'].put(f"[{timestamp}] ✓ 跳过，使用现有模块配置文件")
+                                should_generate_modules_config = False
+                                break
+                            else:
+                                break
+                        time.sleep(0.5)
+                        wait_time += 0.5
+                    
+                    if wait_time >= max_wait_time:
+                        self.logger.warning("等待用户确认超时，跳过生成")
+                        self.session['waiting_confirmation'] = False
+                        should_generate_modules_config = False
+                        
+                except Exception as e:
+                    self.logger.warning(f"Web模式确认失败: {e}，使用命令行模式")
+            else:
+                user_input = input("是否重新生成？(y/yes=重新生成, 其他=跳过使用现有文件): ").strip().lower()
+                
+                if user_input not in ['y', 'yes']:
+                    self.logger.info("跳过生成，使用现有模块配置文件")
+                    print(f"✓ 跳过，使用现有模块配置文件")
+                    should_generate_modules_config = False
         
         if should_generate_modules_config:
             config_context = {
@@ -347,7 +497,8 @@ class ProjectMasterAgent(BaseAgent):
                 config_dir=self.current_config_dir,
                 config_template_dir=self.config_template_dir,
                 simulation_name=self.current_simulation_name,
-                simulation_type=simulation_type  # 传递模拟类型
+                simulation_type=simulation_type,  # 传递模拟类型
+                session=self.session  # 传递session对象
             )
         
         coder = self.code_architect
@@ -890,52 +1041,68 @@ class ProjectMasterAgent(BaseAgent):
             # === 步骤 3: 依次修改文件 ===
             self.logger.info("步骤 3: 根据诊断结果依次修改配置文件")
             
-            # 询问用户是否继续修改
-            print(f"\n{'='*60}")
-            print(f"检测到配置需要调整，准备根据诊断结果依次修改文件")
-            print(f"{'='*60}")
-            user_input = input("是否开始修改？(y/yes=继续, 其他=跳过): ").strip().lower()
-
-            coder = self.code_architect
+            # 检查是否是自动模式
+            # 读取诊断结果
+            with open(diagnosis_path, 'r', encoding='utf-8') as f:
+                diagnosis_result = json.load(f)
             
-            if user_input in ['y', 'yes']:
-                # 依次修改文件
-                modification_results = await coder.modify_file_sequentially(
-                    diagnosis_path,
-                    self.current_config_dir,
-                    design_doc=design_doc
-                )
-                
-                if modification_results:
-                    self.logger.info(f"✓ 已完成 {len(modification_results)} 个文件的修改")
-                    return {
-                        'evaluation_report': evaluation_report,
-                        'needs_adjustment': True,
-                        'diagnosis_path': diagnosis_path,
-                        'modification_results': modification_results
-                    }
-                else:
-                    self.logger.warning("未成功修改任何文件")
-                    return {
-                        'evaluation_report': evaluation_report,
-                        'needs_adjustment': True,
-                        'diagnosis_path': diagnosis_path,
-                        'modification_results': []
-                    }
-            else:
-                self.logger.info("用户跳过修改")
-                return {
-                    'evaluation_report': evaluation_report,
-                    'needs_adjustment': True,
-                    'diagnosis_path': diagnosis_path,
-                    'modification_results': None
-                }
+            self.logger.info(f"\n{'='*60}")
+            self.logger.info(f"检测到配置需要调整，等待用户确认")
+            self.logger.info(f"{'='*60}")
+            
+            # 返回结果，等待用户确认
+            return {
+                'evaluation_report': evaluation_report,
+                'needs_adjustment': True,
+                'diagnosis_path': diagnosis_path,
+                'diagnosis_result': diagnosis_result,
+                'waiting_user_confirmation': True  # 标记等待用户确认
+            }
         else:
             self.logger.info("✓ 结果符合预期，无需调整")
             return {
                 'evaluation_report': evaluation_report,
                 'needs_adjustment': False,
                 'optimization_completed': True
+            }
+    
+    async def apply_optimization_adjustments(self, diagnosis_path, design_doc=None):
+        """
+        应用优化调整，根据诊断结果修改配置文件
+        
+        Args:
+            diagnosis_path: 诊断结果文件路径
+            design_doc: 设计文档内容（可选）
+        
+        Returns:
+            dict: 修改结果
+        """
+        self.logger.info("="*50)
+        self.logger.info("开始应用优化调整")
+        self.logger.info("="*50)
+        
+        coder = self.code_architect
+        
+        # 依次修改文件
+        modification_results = await coder.modify_file_sequentially(
+            diagnosis_path,
+            self.current_config_dir,
+            design_doc=design_doc
+        )
+        
+        if modification_results:
+            self.logger.info(f"✓ 已完成 {len(modification_results)} 个文件的修改")
+            return {
+                'success': True,
+                'modification_results': modification_results,
+                'message': f'成功修改了 {len(modification_results)} 个文件'
+            }
+        else:
+            self.logger.warning("未成功修改任何文件")
+            return {
+                'success': False,
+                'modification_results': [],
+                'message': '未成功修改任何文件'
             }
 
 

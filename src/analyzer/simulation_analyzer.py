@@ -26,10 +26,10 @@ class SimulationType(Enum):
 class SimulationAnalyzer:
     # 定义特定指标的标记映射
     METRIC_LABELS = {
-        'river_navigability': ('Canal Navigability', '(a)'),
-        'unemployment_rate': ('Unemployment Rate', '(b)'),
-        'average_satisfaction': ('Average Satisfaction', '(c)'),
-        'rebellion_resources': ('Rebellion Resources', '(d)')
+        'river_navigability': ('Canal Navigability', ''),
+        'unemployment_rate': ('Unemployment Rate', ''),
+        'average_satisfaction': ('Average Satisfaction', ''),
+        'rebellion_resources': ('Rebellion Resources', '')
     }
     
     def __init__(self, simulation_type: SimulationType, p_value: Optional[int] = None, y_value: Optional[int] = None, input_files: Optional[List[str]] = None, output_dir: Optional[str] = None):

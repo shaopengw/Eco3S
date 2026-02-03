@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 echo ========================================
-echo AgentWorld 前后端启动脚本
+echo Eco3S 前后端启动脚本
 echo ========================================
 echo.
 
@@ -16,7 +16,7 @@ echo ✓ Python环境正常
 
 echo.
 echo [2/3] 启动后端服务...
-start "AgentWorld Backend" cmd /k "cd /d %~dp0 && echo 正在启动后端服务... && python src\app.py"
+start "Eco3S Backend" cmd /k "cd /d %~dp0 && echo 正在启动后端服务... && python src\app.py"
 timeout /t 3 >nul
 
 echo.
@@ -26,7 +26,7 @@ if not exist node_modules (
     echo 首次运行，正在安装前端依赖...
     call npm install
 )
-start "AgentWorld Frontend" cmd /k "npm run dev"
+start "Eco3S Frontend" cmd /k "npm run dev"
 
 echo.
 echo ========================================

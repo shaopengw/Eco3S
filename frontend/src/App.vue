@@ -1,7 +1,7 @@
 <template>
   <div class="app-container" :class="{ 'dark': isDark }">
     <header class="app-header">
-      <h1 class="app-title">AgentWorld</h1>
+      <h1 class="app-title">{{ t('header.title') }}</h1>
       <div class="header-controls">
         <el-button-group>
           <el-button
@@ -9,14 +9,13 @@
             @click="toggleTheme"
             text
           >
-            {{ isDark ? '浅色' : '深色' }}
+            {{ isDark ? t('header.lightMode') : t('header.darkMode') }}
           </el-button>
           <el-button
-            :icon="isDark ? 'Sunny' : 'Moon'"
             @click="toggleLanguage"
             text
           >
-            {{ language === 'zh' ? 'English' : '中文' }}
+            {{ t('header.language') }}
           </el-button>
         </el-button-group>
       </div>
@@ -28,20 +27,22 @@
         :default-active="activeSimulation"
         @select="handleSelect"
       >
-        <el-menu-item-group title="创建新模拟">
+        <el-menu-item-group :title="t('menu.createNew')">
           <el-menu-item index="ai_creator">
             <el-icon><Plus /></el-icon>
-            <span>{{ t('AI辅助创建') }}</span>
+            <span>{{ t('menu.aiAssisted') }}</span>
           </el-menu-item>
         </el-menu-item-group>
         
-        <el-menu-item-group title="已有模拟">
+        <el-menu-item-group :title="t('menu.existingSimulations')">
           <el-menu-item 
             v-for="sim in availableSimulations" 
             :key="sim" 
             :index="sim"
           >
-            <span>{{ t(getSimulationName(sim)) }}</span>
+            <el-tooltip :content="formatSimulationName(sim)" placement="right">
+              <span class="menu-item-label" :title="formatSimulationName(sim)">{{ formatSimulationName(sim) }}</span>
+            </el-tooltip>
           </el-menu-item>
         </el-menu-item-group>
       </el-menu>
@@ -95,7 +96,7 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue';
+import { ref, watch, onMounted, provide } from 'vue';
 import { Sunny, Moon, Plus } from '@element-plus/icons-vue';
 import './style.css';
 import ConfigEditor from './components/ConfigEditor.vue'
@@ -104,6 +105,7 @@ import SimulationDescription from './components/SimulationDescription.vue'
 import SimulationHistory from './components/SimulationHistory.vue'
 import DataAnalyzer from './components/DataAnalyzer.vue'
 import AISystemCreator from './components/AISystemCreator.vue'
+import { useI18n } from './i18n'
 
 const activeSimulation = ref('default')
 const showSimulation = ref(false)
@@ -111,38 +113,21 @@ const showHistory = ref(false)
 const showAnalyzer = ref(false)
 const showAICreator = ref(false) // 新增AI创建器状态
 const isDark = ref(false)
-const language = ref('zh')
 const availableSimulations = ref(['default', 'TEOG', 'info_propagation']) // 可用的模拟列表
 
-// 简单的翻译函数
-const translations = {
-  zh: {
-    'AI辅助创建': 'AI辅助创建',
-    '默认模拟': '默认模拟',
-    'TEOG模拟': 'TEOG模拟',
-    '信息传播模拟': '信息传播模拟',
-    'default': '默认模拟',
-    'TEOG': 'TEOG模拟',
-    'info_propagation': '信息传播模拟'
-  },
-  en: {
-    'AI辅助创建': 'AI-Assisted Creation',
-    '默认模拟': 'Default Simulation',
-    'TEOG模拟': 'TEOG Simulation',
-    '信息传播模拟': 'Information Propagation',
-    'default': 'Default Simulation',
-    'TEOG': 'TEOG Simulation',
-    'info_propagation': 'Information Propagation'
+// 使用i18n
+const { t, setLocale, getLocale } = useI18n()
+provide('useI18n', useI18n)
+
+const formatSimulationName = (simId) => {
+  if (!simId) return ''
+  if (simId === simId.toUpperCase()) {
+    return simId.replace(/_/g, ' ')
   }
-}
-
-const t = (key) => {
-  return translations[language.value][key] || key
-}
-
-const getSimulationName = (simId) => {
-  // 返回模拟的显示名称
-  return translations[language.value][simId] || simId
+  return simId
+    .split('_')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ')
 }
 
 const handleSelect = (index) => {
@@ -194,7 +179,9 @@ const toggleTheme = () => {
 }
 
 const toggleLanguage = () => {
-  language.value = language.value === 'zh' ? 'en' : 'zh'
+  const currentLocale = getLocale()
+  const newLocale = currentLocale === 'zh-CN' ? 'en-US' : 'zh-CN'
+  setLocale(newLocale)
 }
 
 // 加载可用的模拟列表
@@ -237,6 +224,11 @@ onMounted(() => {
   border-bottom: 1px solid var(--el-border-color-light);
 }
 
+.app-title {
+  font-size: 28px;
+  font-weight: bold;
+}
+
 .main-container {
   display: flex;
   flex: 1;
@@ -244,8 +236,26 @@ onMounted(() => {
 }
 
 .sidebar {
-  width: 200px;
+  width: 280px;
   border-right: 1px solid var(--el-border-color-light);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+  font-size: 15px;
+}
+
+.sidebar :deep(.el-menu-item-group__title) {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.sidebar :deep(.el-menu-item) {
+  font-size: 15px;
+}
+
+.sidebar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari and Opera */
 }
 
 .main-content {
@@ -280,5 +290,13 @@ onMounted(() => {
   --el-bg-color: #1a1a1a;
   --el-text-color-primary: #ffffff;
   --el-border-color-light: #333333;
+}
+
+.menu-item-label {
+  display: block;
+  padding: 0 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

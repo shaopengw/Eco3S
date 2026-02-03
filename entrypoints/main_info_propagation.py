@@ -11,7 +11,7 @@ parser.add_argument(
     type=str,
     help="配置文件路径",
     required=False,
-    default="config/info_propagation_config.yaml",
+    default="config/info_propagation/simulation_config.yaml",
 )
 
 async def run_simulation(config):
