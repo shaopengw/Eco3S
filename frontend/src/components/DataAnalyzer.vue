@@ -1,27 +1,27 @@
 <template>
   <div class="data-analyzer">
     <div class="analyzer-header">
-      <h2>数据分析</h2>
+      <h2>{{ t('dataAnalyzer.title') }}</h2>
       <div class="analyzer-controls">
         <el-form :inline="true" :model="analysisParams">
-          <el-form-item label="人口数量(p)">
+          <el-form-item :label="t('dataAnalyzer.population')">
             <el-input-number 
               v-model="analysisParams.p" 
               :min="1"
               :step="1"
-              placeholder="可选，用于过滤结果"
+              :placeholder="t('dataAnalyzer.populationPlaceholder')"
             />
           </el-form-item>
-          <el-form-item label="年份(y)">
+          <el-form-item :label="t('dataAnalyzer.year')">
             <el-input-number 
               v-model="analysisParams.y" 
               :min="1"
               :step="1"
-              placeholder="可选，用于过滤结果"
+              :placeholder="t('dataAnalyzer.yearPlaceholder')"
             />
           </el-form-item>
           <el-form-item>
-            <el-button type="primary" @click="runAnalysis">开始分析</el-button>
+            <el-button type="primary" @click="runAnalysis">{{ t('dataAnalyzer.startButton') }}</el-button>
           </el-form-item>
         </el-form>
       </div>
@@ -30,13 +30,13 @@
     <div class="analysis-content" v-loading="loading">
       <!-- 统计报告展示 -->
       <div class="report-section" v-if="report">
-        <h3>统计报告</h3>
+        <h3>{{ t('dataAnalyzer.reportTitle') }}</h3>
         <div class="markdown-content" v-html="renderedReport"></div>
       </div>
 
       <!-- 图表展示 -->
       <div class="plots-section" v-if="plots.length > 0">
-        <h3>分析图表</h3>
+        <h3>{{ t('dataAnalyzer.plotsTitle') }}</h3>
         <div class="plot-grid">
           <div v-for="plot in plots" :key="plot.path" class="plot-item">
             <div class="plot-title">{{ getPlotTitle(plot.name) }}</div>
@@ -53,9 +53,12 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, inject } from 'vue'
 import { marked } from 'marked'
 import { ElMessage } from 'element-plus'
+
+const useI18nFunc = inject('useI18n')
+const { t } = useI18nFunc()
 
 const props = defineProps({
   configType: {
@@ -120,7 +123,7 @@ const runAnalysis = async () => {
     })
 
     if (!response.ok) {
-      throw new Error('分析请求失败')
+      throw new Error(t('dataAnalyzer.requestFailed'))
     }
 
     const data = await response.json()
@@ -129,10 +132,10 @@ const runAnalysis = async () => {
     report.value = data.report
     plots.value = data.plots || []
     
-    ElMessage.success('分析完成')
+    ElMessage.success(t('dataAnalyzer.success'))
   } catch (error) {
-    console.error('分析失败:', error)
-    ElMessage.error('分析失败，请检查参数后重试')
+    console.error(t('dataAnalyzer.failed') + ':', error)
+    ElMessage.error(t('dataAnalyzer.failed'))
   } finally {
     loading.value = false
   }

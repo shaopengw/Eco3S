@@ -1,4 +1,4 @@
-# AgentWorld 前端
+# Eco3S 前端
 
 基于 Vue 3 + Vite 的多智能体模拟系统前端界面。
 

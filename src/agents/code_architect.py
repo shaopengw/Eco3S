@@ -9,10 +9,11 @@ class CodeArchitectAgent(BaseAgent):
 	编码师Agent，继承BaseAgent，负责根据设计文档和配置，自动生成模拟器代码、详细配置和提示词。
 	工作流程：每次只生成一个文件，逐步完成所有任务。
 	"""
-	def __init__(self, agent_id, simulator_output_dir, main_output_dir, docs_dir, config_dir, config_template_dir, simulation_name, simulation_type='decision'):
+	def __init__(self, agent_id, simulator_output_dir, main_output_dir, docs_dir, config_dir, config_template_dir, simulation_name, simulation_type='decision', session=None):
 		# 指定使用 CLAUDE 的 claude-sonnet-4-5-20250929 模型
-		super().__init__(agent_id, group_type='code_architect', window_size=3, 
-		                 model_api_name='CLAUDE', model_type_name='claude-sonnet-4-5-20250929')
+		# super().__init__(agent_id, group_type='code_architect', window_size=3, 
+		#                  model_api_name='CLAUDE', model_type_name='claude-sonnet-4-5-20250929')
+		super().__init__(agent_id, group_type='research_analyst', window_size=3)
 		
 		# 加载prompts配置
 		prompts_path = os.path.join(os.path.dirname(__file__), 'code_architect_prompts.yaml')
@@ -27,6 +28,7 @@ class CodeArchitectAgent(BaseAgent):
 		self.config_template_dir = config_template_dir  # config_template/
 		self.simulation_name = simulation_name
 		self.simulation_type = simulation_type  # 'decision' 或 'survey'
+		self.session = session  # Web模式的会话对象
 		self.logger = CustomLogger('code_architect').logger
 
 	def _wait_for_user_confirmation(self, step_name): #测试用
@@ -34,6 +36,22 @@ class CodeArchitectAgent(BaseAgent):
 		print(f"\n{'='*60}")
 		print(f"✓ {step_name} 已完成")
 		print(f"{'='*60}")
+		
+		# 如果是Web模式，将输出发送到前端，但不等待确认
+		if self.session:
+			try:
+				# 将输出发送到前端
+				if 'output_queue' in self.session:
+					self.session['output_queue'].put(f"\n{'='*60}")
+					self.session['output_queue'].put(f"✓ {step_name} 已完成")
+					self.session['output_queue'].put(f"{'='*60}")
+				self.logger.info(f"{step_name} 已完成，继续下一步")
+				# Web模式下自动继续，不等待用户确认
+				return
+			except Exception as e:
+				self.logger.warning(f"发送输出到前端失败: {e}")
+		
+		# 非Web模式，使用命令行确认
 		user_input = input("是否继续？(按回车继续/输入'n'退出): ").strip().lower()
 		if user_input == 'n':
 			self.logger.info("用户选择退出")
@@ -57,6 +75,55 @@ class CodeArchitectAgent(BaseAgent):
 		print(f"发现已存在的文件: {file_description}")
 		print(f"路径: {file_path}")
 		print(f"{'='*60}")
+		
+		# 如果是Web模式，通过session发送确认请求
+		if self.session:
+			try:
+				# 发送提示信息到前端
+				if 'output_queue' in self.session:
+					import time
+					from datetime import datetime
+					timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+					self.session['output_queue'].put(f"[{timestamp}] {'='*60}")
+					self.session['output_queue'].put(f"[{timestamp}] 发现已存在的{file_description}")
+					self.session['output_queue'].put(f"[{timestamp}] 路径: {file_path}")
+					self.session['output_queue'].put(f"[{timestamp}] {'='*60}")
+				
+				# 设置等待确认状态
+				self.session['waiting_confirmation'] = True
+				self.session['confirmation_message'] = f"发现已存在的{file_description}，是否重新生成？"
+				self.session['confirmation_type'] = 'yes_no'
+				self.session['confirmation_options'] = []
+				self.session['user_confirmation'] = None
+				
+				# 等待用户响应（最多等待5分钟）
+				max_wait_time = 300  # 5分钟
+				wait_time = 0
+				while wait_time < max_wait_time:
+					if not self.session.get('waiting_confirmation', False):
+						# 用户已响应
+						user_confirmed = self.session.get('user_confirmation', False)
+						if user_confirmed:
+							self.logger.info(f"用户选择重新生成: {file_description}")
+							return True
+						else:
+							self.logger.info(f"跳过生成，使用现有文件: {file_description}")
+							if 'output_queue' in self.session:
+								timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+								self.session['output_queue'].put(f"[{timestamp}] ✓ 跳过，使用现有文件")
+							return False
+					time.sleep(0.5)
+					wait_time += 0.5
+				
+				# 超时，默认跳过
+				self.logger.warning(f"等待用户确认超时，跳过生成: {file_description}")
+				self.session['waiting_confirmation'] = False
+				return False
+				
+			except Exception as e:
+				self.logger.warning(f"Web模式确认失败: {e}，使用命令行模式")
+		
+		# 非Web模式，使用命令行确认
 		user_input = input("是否重新生成？(y/yes=重新生成, 其他=跳过使用现有文件): ").strip().lower()
 		
 		if user_input in ['y', 'yes']:

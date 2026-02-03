@@ -1,8 +1,8 @@
-# AgentWorld
+# Eco3S
 
 ## 简介
 
-AgentWorld 是一个多智能体模拟系统，支持政府、居民和叛军等多种智能体之间的互动模拟，并提供可视化界面实时展示模拟过程。
+Eco3S 是一个多智能体模拟系统，支持政府、居民和叛军等多种智能体之间的互动模拟，并提供可视化界面实时展示模拟过程。
 
 ## 快速开始
 
@@ -10,8 +10,8 @@ AgentWorld 是一个多智能体模拟系统，支持政府、居民和叛军等
 
 ```bash
 # 创建虚拟环境
-conda create --name AGENTWORLD python=3.10
-conda activate AGENTWORLD
+conda create --name Eco3S python=3.10
+conda activate Eco3S
 
 # 安装依赖
 pip install -r requirements.txt
@@ -70,7 +70,7 @@ python entrypoints/main_info_propagation.py --config_path config/info_propagatio
 python src/analyzer/simulation_analyzer.py --type default
 
 # 分析特定参数的结果
-python src/analyzer/simulation_analyzer.py --type default --p 5 --y 2
+python src/analyzer/simulation_analyzer.py --type default --p 200 --y 15
 
 # 直接指定文件进行分析（支持 json/csv，多文件用空格分隔）
 python src/analyzer/simulation_analyzer.py --type default --input_files history/default/20240101/running_data_1.json history/default/20240102/running_data_2.csv

@@ -92,7 +92,7 @@ simulation:
     rebellion:
       enabled: 0
       max_rounds: 2
-  initial_population: 200
+  initial_population: 5
   investor_params:
     cognitive_bias_level: 0.6
     herd_behavior_threshold: 0.5
@@ -119,9 +119,9 @@ simulation:
     network_density: 0.3
   start_year: 1
   time:
-    total_steps: 30
-    total_years: 30
-  total_years: 30
+    total_steps: 2
+    total_years: 2
+  total_years: 2
 towns:
   count: 3
   initial_resources: 1000000

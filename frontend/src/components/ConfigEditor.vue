@@ -1,6 +1,9 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, inject } from 'vue'
 import { ElForm, ElFormItem, ElInput, ElButton, ElMessage } from 'element-plus'
+
+const useI18nFunc = inject('useI18n')
+const { t } = useI18nFunc()
 
 const props = defineProps({
   configType: {
@@ -20,7 +23,7 @@ const loadConfig = async () => {
     const data = await response.json()
     configData.value = data
   } catch (error) {
-    ElMessage.error('加载配置失败')
+    ElMessage.error(t('configEditor.loadFailed'))
     console.error('Error loading config:', error)
   }
 }
@@ -82,12 +85,12 @@ const saveConfig = async () => {
     })
     
     if (response.ok) {
-      ElMessage.success('配置保存成功')
+      ElMessage.success(t('configEditor.saveSuccess'))
     } else {
       throw new Error('保存失败')
     }
   } catch (error) {
-    ElMessage.error('保存配置失败')
+    ElMessage.error(t('configEditor.saveFailed'))
     console.error('Error saving config:', error)
   }
 }
@@ -104,25 +107,25 @@ onMounted(() => {
 <template>
   <div class="config-editor">
     <div class="config-header">
-      <h3>配置编辑器</h3>
+      <h3>{{ t('configEditor.title') }}</h3>
     </div>
     <div class="config-content">
       <el-form label-position="top" size="small">
         <template v-if="configData.simulation">
-          <div class="section-header">模拟参数</div>
+          <div class="section-header">{{ t('configEditor.simulationParams') }}</div>
           <template v-for="(value, key) in configData.simulation" :key="key">
             <template v-if="key !== 'group_decision'">
               <el-form-item :label="key.replace('_', ' ').toUpperCase()">
                 <el-input
                   v-model="configData.simulation[key]"
-                  :placeholder="'请输入' + key"
+                  :placeholder="t('configEditor.inputPlaceholder') + ' ' + key"
                 />
               </el-form-item>
             </template>
           </template>
 
           <template v-if="configData.simulation.group_decision">
-            <div class="section-header">群体决策参数</div>
+            <div class="section-header">{{ t('configEditor.groupDecisionParams') }}</div>
             <template
               v-for="(groupValue, groupKey) in configData.simulation.group_decision"
               :key="groupKey"
@@ -137,7 +140,7 @@ onMounted(() => {
                 >
                   <el-input
                     v-model="configData.simulation.group_decision[groupKey][key]"
-                    :placeholder="'请输入' + key"
+                    :placeholder="t('configEditor.inputPlaceholder') + ' ' + key"
                   />
                 </el-form-item>
               </template>
@@ -146,19 +149,19 @@ onMounted(() => {
         </template>
 
         <template v-if="configData.data">
-          <div class="section-header">数据参数</div>
+          <div class="section-header">{{ t('configEditor.dataParams') }}</div>
           <template v-for="(value, key) in configData.data" :key="key">
             <el-form-item :label="key.replace('_', ' ').toUpperCase()">
               <el-input
                 v-model="configData.data[key]"
-                :placeholder="'请输入' + key"
+                :placeholder="t('configEditor.inputPlaceholder') + ' ' + key"
               />
             </el-form-item>
           </template>
         </template>
 
         <el-form-item class="save-button-container">
-          <el-button type="primary" @click="saveConfig">保存配置</el-button>
+          <el-button type="primary" @click="saveConfig">{{ t('configEditor.saveButton') }}</el-button>
         </el-form-item>
       </el-form>
     </div>

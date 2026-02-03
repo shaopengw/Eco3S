@@ -1,0 +1,268 @@
+export default {
+  common: {
+    confirm: '确认',
+    cancel: '取消',
+    save: '保存',
+    delete: '删除',
+    edit: '编辑',
+    back: '返回',
+    submit: '提交',
+    reset: '重置',
+    search: '搜索',
+    loading: '加载中...',
+    success: '成功',
+    error: '错误',
+    warning: '警告',
+    info: '信息',
+    close: '关闭',
+    continue: '继续',
+    skip: '跳过',
+    retry: '重试',
+    regenerate: '重新生成',
+    useExisting: '使用现有文件',
+    index: '序号',
+    unknownFile: '未知文件',
+    noReason: '未提供原因',
+    modification: '修改',
+    modificationApplied: '已应用修改'
+  },
+  header: {
+    title: 'Eco3S',
+    lightMode: '浅色',
+    darkMode: '深色',
+    language: 'English'
+  },
+  menu: {
+    createNew: '创建新模拟',
+    aiAssisted: 'AI辅助创建',
+    existingSimulations: '已有模拟'
+  },
+  aiCreator: {
+    title: 'AI辅助模拟系统创建器',
+    steps: {
+      requirement: '需求输入',
+      parsing: '需求解析',
+      design: '系统设计',
+      coding: '代码生成',
+      simulation: '运行测试',
+      evaluation: '评估优化'
+    },
+    requirement: {
+      title: '输入模拟需求',
+      instructions: '使用说明',
+      instructionText: '请用自然语言描述您想要创建的模拟实验。系统将自动：',
+      instructionList: [
+        '分析需求并选择合适的模块',
+        '生成设计文档和配置文件',
+        '自动编写模拟器代码和入口文件',
+        '运行模拟并评估结果'
+      ],
+      mode: {
+        auto: '自动模式 - 一次性完成所有步骤',
+        interactive: '交互模式 - 每个阶段等待确认'
+      },
+      placeholder: '例如：我想研究气候变化对居民迁移的影响，需要模拟100个居民在不同气候条件下的行为，观察他们在极端天气下的决策...',
+      examples: '示例需求：',
+      exampleList: [
+        '我希望研究在一个有极端气候的世界中，政府如何通过调整税收和运河维护投资来平衡财政并抑制叛乱。模拟中应包含政府、居民和叛军三种角色，极端气候会随机发生并对运河造成破坏。',
+        '我想研究气候变化对居民迁移的影响，需要模拟100个居民在不同气候条件下的行为，观察他们在极端天气下的决策',
+        '我想创建一个信息传播模拟，研究不同的信息传播策略如何影响公众对政策的接受度'
+      ],
+      startCreation: '开始创建',
+      inputRequired: '请输入模拟需求'
+    },
+    phases: {
+      parsing: {
+        title: '需求解析中',
+        description: '正在分析您的需求',
+        task: 'AI正在解析您的需求，识别关键要素，选择合适的模块...',
+        completed: '需求解析完成',
+        simulationName: '模拟名称',
+        simulationType: '模拟类型',
+        projectDir: '项目目录',
+        timestamp: '需求解析',
+        cardTitle: '需求解析完成'
+      },
+      design: {
+        title: '系统设计中',
+        description: '正在设计系统架构',
+        task: '根据需求生成系统设计文档和配置文件，规划整体架构...',
+        completed: '系统设计完成',
+        designDoc: '设计文档',
+        moduleConfig: '模块配置',
+        viewDoc: '查看设计文档',
+        generatedDoc: '已生成 description.md',
+        generatedConfig: '已生成 modules_config.yaml',
+        timestamp: '系统设计',
+        cardTitle: '系统设计完成'
+      },
+      coding: {
+        title: '代码生成中',
+        description: '正在生成代码文件',
+        task: '自动编写模拟器代码、入口文件和配置文件...',
+        completed: '代码生成完成',
+        simulatorCode: '模拟器代码',
+        entryFile: '入口文件',
+        configFiles: '个配置文件',
+        promptFiles: '个提示词文件',
+        timestamp: '代码生成',
+        cardTitle: '代码生成完成',
+        generating: '正在生成代码...',
+        files: {
+          simulator: '模拟器代码 (simulator.py)',
+          main: '入口文件 (main.py)',
+          config: '配置文件 (config.yaml)',
+          prompts: '提示词文件 (prompts.yaml)'
+        }
+      },
+      simulation: {
+        title: '模拟运行中',
+        running: '正在运行模拟...',
+        smallScale: '运行小规模测试验证基本功能...',
+        largeScale: '运行大规模测试获取完整数据...',
+        completed: '模拟运行完成',
+        success: '模拟成功运行！结果已保存到实验数据目录。',
+        smallScaleCompleted: '小规模测试完成',
+        continueTest: '继续大规模测试',
+        mechanismAdjust: '机制解释与调整（可选）',
+        testOptions: '您可以选择直接进行大规模测试，或先进行机制调整优化后再测试',
+        timestamp: '模拟运行',
+        smallScaleTimestamp: '小规模测试',
+        smallScaleSuccess: '小规模测试成功运行！'
+      },
+      evaluation: {
+        title: '评估优化中',
+        running: '正在评估优化...',
+        task: '分析模拟结果，评估是否符合预期，提供优化建议...',
+        completed: '评估优化结果',
+        needsAdjustment: '需要调整',
+        meetsExpectations: '结果符合预期',
+        report: '评估报告',
+        diagnosis: '诊断建议',
+        fileToModify: '文件名',
+        reason: '修改原因',
+        confirmOptimization: '检测到配置需要调整。请选择是否应用优化建议。',
+        applyOptimization: '应用优化调整',
+        skipOptimization: '跳过优化',
+        modifications: '配置修改记录',
+        optimizationCompleted: '优化已完成',
+        optimizationSuccess: '模拟结果已达到预期目标，无需进一步调整。',
+        timestamp: '评估优化',
+        timestampCompleted: '评估完成'
+      }
+    },
+    interactive: {
+      reviewResults: '请审查当前阶段的结果',
+      feedbackPlaceholder: '输入您的反馈意见（留空表示接受当前结果）',
+      confirmContinue: '确认并继续',
+      regenerate: '重新生成',
+      viewFiles: '查看文件',
+      cancel: '取消',
+      note: '您可以直接修改生成的文件，或提供反馈意见重新生成。所有后续代码将严格依据设计文档生成。'
+    },
+    completion: {
+      title: '全流程完成',
+      message: 'AI系统创建完成！您可以在模拟列表中找到新创建的项目。',
+      goToSimulation: '前往模拟',
+      createNew: '创建新项目',
+      backToHome: '返回首页'
+    },
+    errors: {
+      title: '创建过程出现错误',
+      message: '创建过程出现错误，请查看输出日志了解详情。',
+      retryStep: '重试当前步骤',
+      restart: '重新开始'
+    },
+    mechanism: {
+      title: '机制解释与调整助手',
+      yourInput: '您',
+      aiAssistant: 'AI助手',
+      inputPlaceholder: '输入您的问题或调整建议... (输入 \'done\' 完成对话)',
+      send: '发送',
+      finish: '完成对话',
+      adjustmentList: '已收集的调整需求',
+      noAdjustments: '暂无调整需求',
+      requirement: '需求'
+    },
+    confirmation: {
+      title: '需要确认',
+      existingFile: '发现已存在的文件',
+      prompt: '是否重新生成？',
+      yes: '重新生成',
+      no: '使用现有文件',
+      note: {
+        regenerate: '选择"重新生成"：将删除现有文件并生成新的内容',
+        useExisting: '选择"使用现有文件"：跳过此步骤，保留并使用已存在的文件'
+      }
+    }
+  },
+  
+  simulation: {
+    startButton: '开始模拟',
+    historyButton: '模拟历史',
+    analyzeButton: '数据分析',
+  },
+  
+  simulationRunner: {
+    title: '模拟运行器',
+    backButton: '返回描述页面',
+    runButton: '运行模拟',
+    running: '运行中...',
+    output: '输出日志',
+    realtime: '实时数据',
+    results: '实验结果',
+    startFailed: '启动模拟失败',
+  },
+  
+  simulationHistory: {
+    title: '模拟历史',
+    backButton: '返回描述页面',
+    logsTab: '运行日志',
+    plotsTab: '结果图表',
+    logDialogTitle: '日志内容',
+    loadFailed: '加载历史数据失败',
+    loadLogFailed: '加载日志内容失败',
+    plotTitles: {
+      rebellions: '叛乱次数',
+      unemployment: '失业率',
+      population: '人口数量',
+      government: '政府预算',
+      rebellion: '叛乱强度',
+      average: '平均满意度',
+      tax: '税率',
+      river: '河流通航性',
+      gdp: 'GDP',
+      urban: '城市规模',
+      conversation: '对话量',
+      knowledge: '知识问答准确率',
+      incentive: '激励性选择',
+      default: '结果图表',
+    },
+  },
+  
+  dataAnalyzer: {
+    title: '数据分析',
+    population: '人口数量(p)',
+    year: '年份(y)',
+    startButton: '开始分析',
+    populationPlaceholder: '可选，用于过滤结果',
+    yearPlaceholder: '可选，用于过滤结果',
+    reportTitle: '统计报告',
+    plotsTitle: '分析图表',
+    success: '分析完成',
+    failed: '分析失败，请检查参数后重试',
+    requestFailed: '分析请求失败',
+  },
+  
+  configEditor: {
+    title: '配置编辑器',
+    simulationParams: '模拟参数',
+    groupDecisionParams: '群体决策参数',
+    dataParams: '数据参数',
+    saveButton: '保存配置',
+    inputPlaceholder: '请输入',
+    loadFailed: '加载配置失败',
+    saveFailed: '保存配置失败',
+    saveSuccess: '配置保存成功',
+  }
+}

@@ -4,17 +4,12 @@ class SchellingSegregationModelSimulator:
     
     def __init__(self, **kwargs):
 
-    
         self.logger = LogManager.get_logger('simulator', console_output=True)
 
-
-    
         self.map = kwargs.get('map')
 
-    
         self.time = kwargs.get('time')
 
-    
         self.population = kwargs.get('population')
 
     
@@ -185,7 +180,7 @@ class SchellingSegregationModelSimulator:
             self.population.birth(new_count)
 
 
-            self.logger.info(f"新加入{new_count}名居民")
+            self.logger.info(f"新加入{new_count}名居民，目前出生率为{self.population.birth_rate}")
 
 
             # 创建居民引用列表和任务列表，保持顺序一致
@@ -198,34 +193,22 @@ class SchellingSegregationModelSimulator:
 
 
             for resident in residents_list:
-
+                if resident.update_resident_status(self.basic_living_cost):
+                    del self.residents[resident.resident_id]
+                    self.population.death()
 
                 neighbor_similarity = self.calculate_neighbor_similarity(resident)
 
-
                 task = resident.decide_action_by_llm(
-
-
                     basic_living_cost=self.basic_living_cost,
-
-
                     neighbor_similarity=neighbor_similarity,
-
-
                     similarity_threshold=self.similarity_threshold
-
-
                 )
-
-
                 tasks.append(task)
-
 
             if tasks:
 
-
                 results = await asyncio.gather(*tasks)
-
 
                 for i, result in enumerate(results):
 
@@ -258,11 +241,6 @@ class SchellingSegregationModelSimulator:
 
                             self.logger.debug(f"居民 {resident.resident_id} 迁移: {old_location} -> {resident.location}, 当前总数: {self.migration_count}")
 
-
-                    if resident.update_resident_status(self.basic_living_cost):
-
-
-                        self.population.death()
 
 
             current_year = self.time.current_time
@@ -378,6 +356,9 @@ class SchellingSegregationModelSimulator:
             return 0.0
         
         total_satisfaction = sum(resident.satisfaction for resident in self.residents.values())
+        if self.population.population == 0:
+            self.logger.warning("人口为零，平均满意度为 0.0")
+            return 0.0
         average_satisfaction = total_satisfaction / self.population.population
         self.logger.info(f"平均满意度: {average_satisfaction} = {total_satisfaction / self.population.population:.2f}")
         return average_satisfaction
@@ -525,32 +506,61 @@ class SchellingSegregationModelSimulator:
 
 
     def calculate_segregation_index(self):
+        """
+        使用相异指数（Index of Dissimilarity）计算隔离指数。
+        该指数衡量两组在空间单元中的分布差异。
+        指数范围从0（完全整合）到1（完全隔离）。
+        """
         if not self.residents:
             return 0.0
 
-        type_a_regions = []
-        type_b_regions = []
-
+        type_a_total = 0
+        type_b_total = 0
         for resident in self.residents.values():
             resident_type = getattr(resident, 'resident_type', 'A')
+            if resident_type == 'A':
+                type_a_total += 1
+            else:
+                type_b_total += 1
+
+        if type_a_total == 0 or type_b_total == 0:
+            return 0.0  # 如果只有一个组别，则无隔离
+
+        # 动态调整邻域网格大小，例如，取地图较小维度的20%
+        map_width = self.map.width
+        map_height = self.map.height
+        grid_size = max(1, int(min(map_width, map_height) * 0.2))
+        
+        # 确保网格大小合理
+        num_cells_x = max(1, map_width // grid_size)
+        num_cells_y = max(1, map_height // grid_size)
+
+        neighborhoods = [[{'A': 0, 'B': 0} for _ in range(num_cells_y)] for _ in range(num_cells_x)]
+
+        for resident in self.residents.values():
             if resident.location:
+                x, y = resident.location
+                grid_x = min(int(x // grid_size), num_cells_x - 1)
+                grid_y = min(int(y // grid_size), num_cells_y - 1)
+                
+                resident_type = getattr(resident, 'resident_type', 'A')
                 if resident_type == 'A':
-                    type_a_regions.append(resident.location)
+                    neighborhoods[grid_x][grid_y]['A'] += 1
                 else:
-                    type_b_regions.append(resident.location)
+                    neighborhoods[grid_x][grid_y]['B'] += 1
 
-        if not type_a_regions or not type_b_regions:
-            return 0.0
+        dissimilarity_sum = 0
+        for i in range(num_cells_x):
+            for j in range(num_cells_y):
+                a_i = neighborhoods[i][j]['A']
+                b_i = neighborhoods[i][j]['B']
+                
+                term1 = a_i / type_a_total if type_a_total > 0 else 0
+                term2 = b_i / type_b_total if type_b_total > 0 else 0
+                
+                dissimilarity_sum += abs(term1 - term2)
 
-        min_distance = float('inf')
-        for loc_a in type_a_regions:
-            for loc_b in type_b_regions:
-                distance = abs(loc_a[0] - loc_b[0]) + abs(loc_a[1] - loc_b[1])
-                min_distance = min(min_distance, distance)
-
-        max_possible_distance = self.map.width + self.map.height
-        segregation_index = min_distance / max_possible_distance if max_possible_distance > 0 else 0.0
-
+        segregation_index = 0.5 * dissimilarity_sum
         return segregation_index
 
 

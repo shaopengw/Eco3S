@@ -29,15 +29,23 @@ class ModelManager:
             #     "model_types": ["gpt-4o"],
             #     "model_platform": ModelPlatformType.OPENAI,
             #     "url":os.getenv('OPENAI_API_BASE_URL'),
-            #     "api_key":os.getenv('OPENAI_API_KEY')
+            #     "api_key":os.getenv('OPENAI_API_KEY'),
+            #     "allow_random": True
             # },
             # "deepseek": {
-            #     "model_types": ["deepseek-chat"],
+            #     "model_types": ["deepseek-v3.2"],
             #     "model_platform": ModelPlatformType.OPENAI_COMPATIBLE_MODEL,
             #     "url":os.getenv('DEEPSEEK_API_BASE_URL'),
-            #     "api_key":os.getenv('DEEPSEEK_API_KEY')
+            #     "api_key":os.getenv('DEEPSEEK_API_KEY'),
+            #     "allow_random": True
             # },
-            
+            # "qwen": {
+            #     "model_types": ["qwen3-235b-a22b"],
+            #     "model_platform": ModelPlatformType.OPENAI_COMPATIBLE_MODEL,
+            #     "url":os.getenv('DEEPSEEK_API_BASE_URL'),
+            #     "api_key":os.getenv('DEEPSEEK_API_KEY'),
+            #     "allow_random": True
+            # },
         }
         # 统一模型配置
         self.model_config = {

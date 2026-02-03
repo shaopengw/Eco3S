@@ -1,9 +1,9 @@
 <template>
   <div class="simulation-runner">
     <div class="header">
-      <h2>模拟运行器</h2>
+      <h2>{{ t('simulationRunner.title') }}</h2>
       <el-button @click="$emit('back-to-description')" type="text">
-        返回描述页面
+        {{ t('simulationRunner.backButton') }}
       </el-button>
     </div>
 
@@ -13,7 +13,7 @@
         :loading="isRunning"
         @click="runSimulation"
       >
-        {{ isRunning ? '运行中...' : '运行模拟' }}
+        {{ isRunning ? t('simulationRunner.running') : t('simulationRunner.runButton') }}
       </el-button>
     </div>
 
@@ -23,7 +23,7 @@
       </div>
 
       <div class="results-panel">
-        <h3>实验结果</h3>
+        <h3>{{ t('simulationRunner.results') }}</h3>
         <div v-if="Object.keys(chartData).length > 0" class="charts-container">
           <div v-for="(chart, key) in chartData" :key="key" class="chart-item">
             <Line
@@ -49,7 +49,7 @@
 </template>
 
 <script setup>
-import { ref, onUnmounted, reactive } from 'vue'
+import { ref, onUnmounted, reactive, inject } from 'vue'
 import { Line } from 'vue-chartjs'
 import {
   Chart as ChartJS,
@@ -72,6 +72,9 @@ ChartJS.register(
   Tooltip,
   Legend
 )
+
+const useI18nFunc = inject('useI18n')
+const { t } = useI18nFunc()
 
 const props = defineProps({
   configType: {
@@ -105,7 +108,7 @@ const runSimulation = async () => {
       startStatusCheck()
     }
   } catch (error) {
-    console.error('启动模拟失败:', error)
+    console.error(t('simulationRunner.startFailed') + ':', error)
     isRunning.value = false
   }
 }
@@ -130,8 +133,7 @@ const getChartOptions = (title) => ({
       }
     },
     legend: {
-      display: true,
-      position: 'top'
+      display: false  // 隐藏数据集标签
     }
   },
   scales: {
@@ -158,7 +160,7 @@ const updateCharts = (data) => {
   if (!data.years || !Array.isArray(data.years)) return;
   
   // 遍历数据并更新或创建对应的图表
-  Object.entries(data).forEach(([key, values]) => {
+  Object.entries(data).forEach(([key, values], index) => {
     // 跳过非数组类型的数据和years键
     if (!Array.isArray(values) || key === 'years') return;
 
@@ -167,10 +169,9 @@ const updateCharts = (data) => {
       title: getChartTitle(key),
       labels: [...data.years],
       datasets: [{
-        label: getDatasetLabel(key),
         data: [...values],
-        borderColor: getChartColor(key),
-        backgroundColor: getChartColor(key, 0.2),
+        borderColor: getChartColor(index),
+        backgroundColor: getChartColor(index, 0.2),
         tension: 0.1,
         fill: true
       }]
@@ -210,55 +211,27 @@ const startStatusCheck = () => {
   }, 1000)  // 每秒检查一次状态
 }
 
-// 获取图表标题
+// 获取图表标题 - 首字母大写
 const getChartTitle = (key) => {
-  const titles = {
-    population: '人口数量变化',
-    unemployment_rate: '失业率变化',
-    government_budget: '政府预算变化',
-    rebellions: '叛乱次数变化',
-    rebellion_strength: '叛乱强度变化',
-    average_satisfaction: '平均满意度变化',
-    tax_rate: '税率变化',
-    river_navigability: '河流通航性变化',
-    gdp: 'GDP变化',
-    urban_scale: '城市规模变化'
-  }
-  return titles[key] || key
+  return key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ')
 }
 
-// 获取数据集标签
-const getDatasetLabel = (key) => {
-  const labels = {
-    population: '人口数量',
-    unemployment_rate: '失业率',
-    government_budget: '政府预算',
-    rebellions: '叛乱次数',
-    rebellion_strength: '叛乱强度',
-    average_satisfaction: '平均满意度',
-    tax_rate: '税率',
-    river_navigability: '河流通航性',
-    gdp: 'GDP',
-    urban_scale: '城市规模'
-  }
-  return labels[key] || key
-}
-
-// 获取图表颜色
-const getChartColor = (key, alpha = 1) => {
-  const colors = {
-    population: `rgba(75, 192, 192, ${alpha})`,
-    unemployment_rate: `rgba(255, 99, 132, ${alpha})`,
-    government_budget: `rgba(153, 102, 255, ${alpha})`,
-    rebellions: `rgba(255, 159, 64, ${alpha})`,
-    rebellion_strength: `rgba(255, 99, 132, ${alpha})`,
-    average_satisfaction: `rgba(75, 192, 192, ${alpha})`,
-    tax_rate: `rgba(153, 102, 255, ${alpha})`,
-    river_navigability: `rgba(54, 162, 235, ${alpha})`,
-    gdp: `rgba(255, 206, 86, ${alpha})`,
-    urban_scale: `rgba(75, 192, 192, ${alpha})`
-  }
-  return colors[key] || `rgba(75, 192, 192, ${alpha})`
+// 动态生成图表颜色
+const getChartColor = (index, alpha = 1) => {
+  const colorPalette = [
+    [75, 192, 192],    // 青色
+    [255, 99, 132],    // 红色
+    [153, 102, 255],   // 紫色
+    [255, 159, 64],    // 橙色
+    [54, 162, 235],    // 蓝色
+    [255, 206, 86],    // 黄色
+    [75, 192, 75],     // 绿色
+    [235, 54, 162],    // 粉色
+    [192, 75, 192],    // 品红
+    [162, 235, 54]     // 黄绿
+  ]
+  const color = colorPalette[index % colorPalette.length]
+  return `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha})`
 }
 
 onUnmounted(() => {

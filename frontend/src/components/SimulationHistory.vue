@@ -1,9 +1,9 @@
 <template>
   <div class="simulation-history">
     <div class="header">
-      <h2>模拟历史</h2>
+      <h2>{{ t('simulationHistory.title') }}</h2>
       <el-button @click="$emit('back-to-description')" type="text">
-        返回描述页面
+        {{ t('simulationHistory.backButton') }}
       </el-button>
     </div>
 
@@ -17,7 +17,7 @@
         >
           <el-card>
             <el-tabs>
-              <el-tab-pane label="运行日志" name="logs">
+              <el-tab-pane :label="t('simulationHistory.logsTab')" name="logs">
                 <div class="log-files">
                   <div v-for="log in groupedLogs[timestamp]" :key="log.path" class="log-file">
                     <el-button @click="viewLog(log.path)" text>
@@ -27,7 +27,7 @@
                 </div>
               </el-tab-pane>
               
-              <el-tab-pane label="结果图表" name="plots">
+              <el-tab-pane :label="t('simulationHistory.plotsTab')" name="plots">
                 <div class="plot-grid">
                   <div v-for="plot in groupedPlots[timestamp]" :key="plot.path" class="plot-item">
                     <div class="plot-title">{{ getPlotTitle(plot.name) }}</div>
@@ -45,14 +45,17 @@
       </el-timeline>
     </div>
 
-    <el-dialog v-model="logDialogVisible" title="日志内容" width="80%" class="log-dialog">
+    <el-dialog v-model="logDialogVisible" :title="t('simulationHistory.logDialogTitle')" width="80%" class="log-dialog">
       <pre class="log-content">{{ selectedLogContent }}</pre>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, inject } from 'vue'
+
+const useI18nFunc = inject('useI18n')
+const { t } = useI18nFunc()
 
 const props = defineProps({
   configType: {
@@ -119,22 +122,10 @@ const formatTimestamp = (timestamp) => {
 
 const getPlotTitle = (filename) => {
   const plotType = filename.split('_')[0]
-  const titleMap = {
-    'rebellions': '叛乱次数',
-    'unemployment': '失业率',
-    'population': '人口数量',
-    'government': '政府预算',
-    'rebellion': '叛乱强度',
-    'average': '平均满意度',
-    'tax': '税率',
-    'river': '河流通航性',
-    'gdp': 'GDP',
-    'urban': '城市规模',
-    'conversation': '对话量',
-    'knowledge': '知识问答准确率',
-    'incentive': '激励性选择'
-  }
-  return titleMap[plotType] || '结果图表'
+  const titleKey = `simulationHistory.plotTitles.${plotType}`
+  // 尝试获取翻译，如果不存在则使用默认值
+  const title = t(titleKey)
+  return title === titleKey ? t('simulationHistory.plotTitles.default') : title
 }
 
 const viewLog = async (logPath) => {
@@ -144,7 +135,7 @@ const viewLog = async (logPath) => {
     selectedLogContent.value = content
     logDialogVisible.value = true
   } catch (error) {
-    console.error('加载日志内容失败:', error)
+    console.error(t('simulationHistory.loadLogFailed') + ':', error)
   }
 }
 
@@ -154,7 +145,7 @@ const loadHistoryData = async () => {
     const data = await response.json()
     historyData.value = data
   } catch (error) {
-    console.error('加载历史数据失败:', error)
+    console.error(t('simulationHistory.loadFailed') + ':', error)
   }
 }
 

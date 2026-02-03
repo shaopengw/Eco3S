@@ -18,28 +18,60 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(__name__)
 
-CONFIG_PATHS = {
-    'default': 'config/default/simulation_config.yaml',
-    'TEOG': 'config/TEOG/simulation_config.yaml',
-    'info_propagation': 'config/info_propagation/simulation_config.yaml'
+# 已知模拟的专用入口映射，其他统一使用模板入口
+SPECIAL_ENTRYPOINTS = {
+    'default': 'entrypoints/main.py',
+    'TEOG': 'entrypoints/main_TEOG.py',
+    'info_propagation': 'entrypoints/main_info_propagation.py',
+    'asset_market_bubble_sim': 'entrypoints/main_asset_market_bubble_sim.py',
+    'climate_migration_sim': 'entrypoints/main_climate_migration_sim.py',
+    'customer_satisfaction_sim': 'entrypoints/main_customer_satisfaction_sim.py',
+    'financial_herd_behavior_sim': 'entrypoints/main_financial_herd_behavior_sim.py',
+    'price_discovery_simulation': 'entrypoints/main_price_discovery_simulation.py',
+    'pricing_model_simulation': 'entrypoints/main_pricing_model_simulation.py',
+    'schelling_segregation_model': 'entrypoints/main_schelling_segregation_model.py'
 }
 
-COMMANDS = {
-    'default': 'python entrypoints/main.py --config_path config/default/simulation_config.yaml',
-    'TEOG': 'python entrypoints/main_TEOG.py --config_path config/TEOG/simulation_config.yaml',
-    'info_propagation': 'python entrypoints/main_info_propagation.py --config_path config/info_propagation/simulation_config.yaml'
-}
+def get_config_path(config_type: str):
+    """返回配置文件的绝对路径，存在则返回路径，不存在返回None"""
+    rel_path = os.path.join('config', config_type, 'simulation_config.yaml')
+    path = os.path.join(BASE_DIR, '..', rel_path)
+    if os.path.exists(path):
+        return path
+    return None
+
+def get_description_path(config_type: str):
+    """返回描述文件的绝对路径，存在则返回路径，不存在返回None"""
+    rel_dir = os.path.join('config', config_type)
+    path = os.path.join(BASE_DIR, '..', rel_dir, 'description.md')
+    if os.path.exists(path):
+        return path
+    return None
+
+def get_command_for_simulation(config_type: str):
+    """根据模拟类型返回运行命令。已知模拟使用专用入口，其他使用模板入口。"""
+    entry_script = SPECIAL_ENTRYPOINTS.get(config_type, 'entrypoints/main_template.py')
+    rel_config_path = os.path.join('config', config_type, 'simulation_config.yaml')
+    command = f'python {entry_script} --config_path {rel_config_path}'
+    return command
 
 # 存储运行中的模拟进程信息
 running_simulations = {}
 
 def load_config(config_type):
-    path = os.path.join(BASE_DIR, '..', CONFIG_PATHS[config_type])
+    path = get_config_path(config_type)
+    if not path:
+        raise FileNotFoundError(f'配置文件不存在: config/{config_type}/simulation_config.yaml')
     with open(path, 'r', encoding='utf-8') as f:
         return yaml.safe_load(f)
 
 def save_config(config_type, config_data):
-    path = os.path.join(BASE_DIR, '..', CONFIG_PATHS[config_type])
+    path = get_config_path(config_type)
+    if not path:
+        # 若不存在则尝试创建目录
+        dir_path = os.path.join(BASE_DIR, '..', 'config', config_type)
+        os.makedirs(dir_path, exist_ok=True)
+        path = os.path.join(dir_path, 'simulation_config.yaml')
     with open(path, 'w', encoding='utf-8') as f:
         yaml.safe_dump(config_data, f, allow_unicode=True)
 
@@ -70,7 +102,7 @@ def run_process(command, process_id, config_type):
         
         # 创建线程读取stdout和stderr
         stdout_thread = threading.Thread(target=read_output, args=(process.stdout,))
-        stderr_thread = threading.Thread(target=read_output, args=(process.stderr, 'ERROR: '))
+        stderr_thread = threading.Thread(target=read_output, args=(process.stderr,))
         
         stdout_thread.daemon = True
         stderr_thread.daemon = True
@@ -100,9 +132,10 @@ def run_process(command, process_id, config_type):
                     # 获取所有子目录
                     test_dirs = [d for d in os.listdir(base_experiment_history_dir)
                                if os.path.isdir(os.path.join(base_experiment_history_dir, d)) and d != 'analysis_results']
-                    test_dirs.sort() # 按时间戳排序，最新的在最后
                     
                     if test_dirs:
+                        # 按目录创建时间排序，最新的在最后
+                        test_dirs.sort(key=lambda d: os.path.getctime(os.path.join(base_experiment_history_dir, d)))
                         latest_test_dir_name = test_dirs[-1] # 获取最新的子目录名称
                         latest_test_dir_path = os.path.join(base_experiment_history_dir, latest_test_dir_name)
                         plot_results_dir = latest_test_dir_path
@@ -137,25 +170,25 @@ def run_process(command, process_id, config_type):
 
 @app.route('/config/<config_type>', methods=['GET'])
 def get_config(config_type):
-    if config_type not in CONFIG_PATHS:
-        return jsonify({'error': 'Invalid config type'}), 404
+    if not get_config_path(config_type):
+        return jsonify({'error': 'Invalid config type or config not found'}), 404
     return jsonify(load_config(config_type))
 
 @app.route('/config/<config_type>', methods=['POST'])
 def update_config(config_type):
-    if config_type not in CONFIG_PATHS:
-        return jsonify({'error': 'Invalid config type'}), 404
-    
     config_data = request.json
-    save_config(config_type, config_data)
-    return jsonify({'message': 'Configuration updated successfully'})
+    try:
+        save_config(config_type, config_data)
+        return jsonify({'message': 'Configuration updated successfully'})
+    except Exception as e:
+        return jsonify({'error': f'Failed to save config: {str(e)}'}), 500
 
 @app.route('/run/<config_type>')
 def run_simulation(config_type):
-    if config_type not in COMMANDS:
-        return jsonify({'error': 'Invalid config type'}), 404
+    if not get_config_path(config_type):
+        return jsonify({'error': 'Invalid config type or config not found'}), 404
 
-    command = COMMANDS[config_type]
+    command = get_command_for_simulation(config_type)
     process_id = str(uuid.uuid4())
     
     # 初始化模拟信息
@@ -212,7 +245,9 @@ def simulation_status(process_id):
         if os.path.exists(base_history_dir):
             simulation_folders = [f for f in os.listdir(base_history_dir) if os.path.isdir(os.path.join(base_history_dir, f)) and f != 'analysis_results']
             if simulation_folders:
-                latest_folder = max(simulation_folders)
+                # 按目录创建时间排序，最新的在最后
+                simulation_folders.sort(key=lambda d: os.path.getctime(os.path.join(base_history_dir, d)))
+                latest_folder = simulation_folders[-1]
                 latest_folder_path = os.path.join(base_history_dir, latest_folder)
                 
                 start_time_str = simulation_info.get('start_time')
@@ -241,11 +276,25 @@ def simulation_status(process_id):
                         
                         if filename.endswith('.csv'):
                             df = pd.read_csv(file_path)
+                            
+                            # 支持多种时间列命名
+                            time_col = None
+                            for col_name in ['year', 'years', 'time', 'period', 'periods', 'step', 'steps', 'round', 'iteration', 'tick']:
+                                if col_name in df.columns:
+                                    time_col = col_name
+                                    break
+                            
+                            # 如果没找到时间列，使用第一列
+                            if time_col is None and len(df.columns) > 0:
+                                time_col = df.columns[0]
+                            
                             running_data = {
-                                'years': df['year'].tolist() if 'year' in df.columns else df['time'].tolist() if 'time' in df.columns else [],
+                                'years': df[time_col].tolist() if time_col else [],
                             }
+                            
+                            # 添加其他列数据
                             for col in df.columns:
-                                if col not in ['year', 'time']:
+                                if col != time_col:
                                     running_data[col] = df[col].tolist()
                         break
         else:
@@ -262,22 +311,15 @@ def simulation_status(process_id):
 
 @app.route('/description/<config_type>')
 def get_description(config_type):
-    if config_type not in CONFIG_PATHS:
-        return jsonify({'error': 'Invalid config type'}), 404
-    
-    description_path = os.path.join(
-        BASE_DIR,
-        '..',
-        os.path.dirname(CONFIG_PATHS[config_type]),
-        'description.md'
-    )
-    
+    desc_path = get_description_path(config_type)
+    if not desc_path:
+        return jsonify({'description': '暂无描述'})
     try:
-        with open(description_path, 'r', encoding='utf-8') as f:
+        with open(desc_path, 'r', encoding='utf-8') as f:
             description = f.read()
         return jsonify({'description': description})
-    except FileNotFoundError:
-        return jsonify({'description': '暂无描述'})
+    except Exception as e:
+        return jsonify({'error': f'读取描述失败: {str(e)}'}), 500
 
 @app.route('/history/<config_type>')
 def get_history(config_type):
@@ -380,9 +422,9 @@ def analyze_data():
                             if os.path.isdir(os.path.join(analysis_base_dir, d))]
             
             if timestamp_dirs:
-                # 按文件夹名称（时间戳）排序，获取最新的
-                timestamp_dirs.sort(reverse=True)
-                latest_dir = timestamp_dirs[0]
+                # 按目录创建时间排序，获取最新的
+                timestamp_dirs.sort(key=lambda d: os.path.getctime(os.path.join(analysis_base_dir, d)))
+                latest_dir = timestamp_dirs[-1]
                 analysis_dir = os.path.join(analysis_base_dir, latest_dir)
                 
                 # 获取该文件夹中的所有png文件
@@ -411,21 +453,29 @@ def analyze_data():
 ai_system_sessions = {}
 
 # 添加用户确认接口
-@app.route('/api/ai_system/confirm/<session_id>', methods=['POST'])
+@app.route('/ai_system/confirm/<session_id>', methods=['POST'])
 def confirm_action(session_id):
     """处理用户确认"""
-    if session_id not in ai_system_sessions:
-        return jsonify({'error': '会话不存在'}), 404
-    
-    data = request.json
-    session = ai_system_sessions[session_id]
-    
-    # 设置用户的确认响应
-    session['user_confirmation'] = data.get('confirmed', False)
-    session['user_input'] = data.get('input', '')
-    session['waiting_confirmation'] = False
-    
-    return jsonify({'message': '确认已接收'})
+    try:
+        if session_id not in ai_system_sessions:
+            return jsonify({'error': '会话不存在'}), 404
+        
+        data = request.json
+        session = ai_system_sessions[session_id]
+        
+        # 设置用户的确认响应
+        confirmed = data.get('confirmed', False)
+        session['user_confirmation'] = confirmed
+        session['user_input'] = data.get('input', '')
+        session['waiting_confirmation'] = False
+        
+        print(f"[确认] Session {session_id}: confirmed={confirmed}, input={data.get('input', '')}")
+        
+        return jsonify({'message': '确认已接收', 'confirmed': confirmed}), 200
+        
+    except Exception as e:
+        print(f"[错误] 处理确认请求失败: {str(e)}")
+        return jsonify({'error': f'处理确认失败: {str(e)}'}), 500
 
 @app.route('/ai_system/parse_requirement', methods=['POST'])
 def parse_requirement():
@@ -537,6 +587,7 @@ def run_ai_system_simulation():
     try:
         data = request.json
         session_id = data.get('session_id')
+        test_type = data.get('test_type', 'small')  # 'small' 或 'large'
         
         if not session_id or session_id not in ai_system_sessions:
             return jsonify({'error': '无效的会话ID'}), 400
@@ -544,6 +595,7 @@ def run_ai_system_simulation():
         session = ai_system_sessions[session_id]
         session['status'] = 'running_simulation'
         session['phase'] = 'simulation'
+        session['test_type'] = test_type
         
         # 在后台线程中运行模拟
         thread = threading.Thread(target=run_ai_system_full_simulation, args=(session_id,))
@@ -553,11 +605,331 @@ def run_ai_system_simulation():
         return jsonify({
             'session_id': session_id,
             'status': 'running_simulation',
-            'message': '开始运行模拟...'
+            'message': f'开始运行{"小规模" if test_type == "small" else "大规模"}测试...'
         })
         
     except Exception as e:
         return jsonify({'error': f'运行模拟失败: {str(e)}'}), 500
+
+@app.route('/ai_system/mechanism_overview', methods=['POST'])
+def get_mechanism_overview():
+    """获取机制概览（用于机制调整对话的开始）"""
+    try:
+        data = request.json
+        session_id = data.get('session_id')
+        
+        if not session_id or session_id not in ai_system_sessions:
+            return jsonify({'error': '无效的会话ID'}), 400
+        
+        session = ai_system_sessions[session_id]
+        project_master = session.get('project_master')
+        
+        if not project_master:
+            return jsonify({'error': '项目主管未初始化'}), 400
+        
+        # 获取编码结果
+        coding_results = session.get('results', {}).get('coding_results')
+        simulator_path = None
+        main_path = None
+        
+        if coding_results:
+            if coding_results.get('simulator_files'):
+                simulator_path = coding_results['simulator_files'][0]
+            if coding_results.get('main_files'):
+                main_path = coding_results['main_files'][0]
+        
+        # 创建或获取 MechanismInterpreterAgent
+        if not project_master.mechanism_interpreter:
+            from src.agents.mechanism_interpreter import MechanismInterpreterAgent
+            project_master.mechanism_interpreter = MechanismInterpreterAgent(
+                agent_id='mechanism_interpreter_001',
+                config_dir=project_master.current_config_dir,
+                simulator_path=simulator_path,
+                main_path=main_path
+            )
+        
+        # 运行异步任务获取概览
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        overview = loop.run_until_complete(
+            project_master.mechanism_interpreter.explain_mechanism()
+        )
+        
+        # 初始化对话状态
+        if 'mechanism_dialog' not in session:
+            session['mechanism_dialog'] = {
+                'history': [],
+                'adjustments': []
+            }
+        
+        return jsonify({
+            'overview': overview,
+            'message': '机制概览获取成功'
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'获取机制概览失败: {str(e)}'}), 500
+
+@app.route('/ai_system/mechanism_chat', methods=['POST'])
+def mechanism_chat():
+    """处理机制调整对话"""
+    try:
+        data = request.json
+        session_id = data.get('session_id')
+        message = data.get('message', '').strip()
+        
+        if not session_id or session_id not in ai_system_sessions:
+            return jsonify({'error': '无效的会话ID'}), 400
+        
+        if not message:
+            return jsonify({'error': '消息不能为空'}), 400
+        
+        session = ai_system_sessions[session_id]
+        project_master = session.get('project_master')
+        
+        if not project_master or not project_master.mechanism_interpreter:
+            return jsonify({'error': '机制解释器未初始化'}), 400
+        
+        # 获取对话状态
+        dialog_state = session.get('mechanism_dialog', {'history': [], 'adjustments': []})
+        
+        # 运行异步任务处理消息
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # 识别意图
+        intent_result = loop.run_until_complete(
+            project_master.mechanism_interpreter.recognize_intent(message)
+        )
+        
+        if not intent_result:
+            return jsonify({
+                'response': '抱歉，我没有理解您的意思。请尝试换个方式表达。',
+                'intent': 'unknown'
+            })
+        
+        intent = intent_result.get('intent')
+        response_text = ''
+        confirmed = False
+        adjustment_description = None
+        
+        if intent == 'question':
+            # 用户在提问
+            answer = loop.run_until_complete(
+                project_master.mechanism_interpreter.answer_question(
+                    message, 
+                    intent_result.get('required_files', [])
+                )
+            )
+            response_text = answer
+            
+        elif intent == 'adjustment':
+            # 用户想调整配置
+            description = intent_result.get('description', message)
+            response_text = f"我理解您的意思是: {description}\\n\\n这个需求已添加到调整列表中。"
+            confirmed = True
+            adjustment_description = description
+            
+            # 添加到调整列表
+            dialog_state['adjustments'].append(description)
+            
+        elif intent == 'view_adjustments':
+            # 用户想查看需求列表
+            adjustments = dialog_state['adjustments']
+            if adjustments:
+                response_text = "【当前需求列表】:\\n\\n" + "\\n".join([f"{i+1}. {req}" for i, req in enumerate(adjustments)])
+            else:
+                response_text = "暂无需求"
+        else:
+            response_text = "抱歉，我没有理解您的意图。请尝试换个方式表达。"
+        
+        # 更新对话历史
+        dialog_state['history'].append({'role': 'user', 'content': message})
+        dialog_state['history'].append({'role': 'assistant', 'content': response_text})
+        session['mechanism_dialog'] = dialog_state
+        
+        return jsonify({
+            'response': response_text,
+            'intent': intent,
+            'confirmed': confirmed,
+            'adjustment_description': adjustment_description
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'处理对话失败: {str(e)}'}), 500
+
+@app.route('/ai_system/run_mechanism_adjust', methods=['POST'])
+def run_mechanism_adjust():
+    """运行机制调整会话（已弃用，保留用于兼容）"""
+    try:
+        data = request.json
+        session_id = data.get('session_id')
+        
+        if not session_id or session_id not in ai_system_sessions:
+            return jsonify({'error': '无效的会话ID'}), 400
+        
+        session = ai_system_sessions[session_id]
+        session['status'] = 'mechanism_adjusting'
+        session['phase'] = 'mechanism_adjust'
+        
+        # 在后台线程中运行机制调整
+        thread = threading.Thread(target=run_ai_system_mechanism_adjust, args=(session_id,))
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'session_id': session_id,
+            'status': 'mechanism_adjusting',
+            'message': '开始机制解释与调整会话...'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'运行机制调整失败: {str(e)}'}), 500
+
+@app.route('/ai_system/apply_optimization', methods=['POST'])
+def apply_optimization():
+    """应用评估优化调整"""
+    try:
+        data = request.json
+        session_id = data.get('session_id')
+        
+        if not session_id or session_id not in ai_system_sessions:
+            return jsonify({'error': '无效的会话ID'}), 400
+        
+        session = ai_system_sessions[session_id]
+        
+        # 检查是否有诊断结果
+        evaluation_results = session.get('results', {}).get('evaluation_results', {})
+        diagnosis_path = evaluation_results.get('diagnosis_path')
+        
+        if not diagnosis_path:
+            return jsonify({'error': '没有找到诊断结果'}), 400
+        
+        session['status'] = 'applying_optimization'
+        
+        # 在后台线程中应用优化
+        thread = threading.Thread(target=run_ai_system_apply_optimization, args=(session_id,))
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'session_id': session_id,
+            'status': 'applying_optimization',
+            'message': '开始应用优化调整...'
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'应用优化失败: {str(e)}'}), 500
+
+@app.route('/ai_system/skip_optimization', methods=['POST'])
+def skip_optimization():
+    """跳过优化调整"""
+    try:
+        data = request.json
+        session_id = data.get('session_id')
+        
+        if not session_id or session_id not in ai_system_sessions:
+            return jsonify({'error': '无效的会话ID'}), 400
+        
+        session = ai_system_sessions[session_id]
+        output_queue = session['output_queue']
+        
+        # 记录跳过信息
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ℹ️  用户选择跳过优化调整')
+        
+        # 更新评估结果
+        if 'evaluation_results' in session.get('results', {}):
+            session['results']['evaluation_results']['waiting_user_confirmation'] = False
+            session['results']['evaluation_results']['modification_results'] = None  # 标记为跳过
+        
+        # 标记为完成
+        session['status'] = 'completed'
+        
+        output_queue.put(f'\n[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] {"="*60}')
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 🎉 全流程完成（已跳过优化）')
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] {"="*60}\n')
+        
+        return jsonify({
+            'session_id': session_id,
+            'status': 'completed',
+            'message': '已跳过优化调整'
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'应用优化失败: {str(e)}'}), 500
+
+@app.route('/ai_system/apply_adjustments', methods=['POST'])
+def apply_mechanism_adjustments():
+    """应用机制调整"""
+    try:
+        data = request.json
+        session_id = data.get('session_id')
+        adjustments = data.get('adjustments', '')
+        
+        if not session_id or session_id not in ai_system_sessions:
+            return jsonify({'error': '无效的会话ID'}), 400
+        
+        session = ai_system_sessions[session_id]
+        session['status'] = 'applying_adjustments'
+        session['adjustments_text'] = adjustments
+        
+        # 在后台线程中应用调整
+        thread = threading.Thread(target=run_ai_system_apply_adjustments, args=(session_id,))
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'session_id': session_id,
+            'status': 'applying_adjustments',
+            'message': '开始应用机制调整...'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'应用调整失败: {str(e)}'}), 500
+
+@app.route('/ai_system/save_design_doc', methods=['POST'])
+def save_design_doc():
+    """保存设计文档"""
+    try:
+        data = request.json
+        session_id = data.get('session_id')
+        simulation_name = data.get('simulation_name')
+        content = data.get('content')
+        
+        if not all([session_id, simulation_name, content]):
+            return jsonify({'error': '缺少必要参数'}), 400
+        
+        # 获取配置目录
+        project_root = os.path.join(BASE_DIR, '..')
+        config_dir = os.path.join(project_root, 'config', simulation_name)
+        
+        if not os.path.exists(config_dir):
+            return jsonify({'error': '配置目录不存在'}), 404
+        
+        # 保存设计文档
+        desc_path = os.path.join(config_dir, 'description.md')
+        with open(desc_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        return jsonify({
+            'status': 'success',
+            'message': '设计文档已保存',
+            'file_path': desc_path
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'保存设计文档失败: {str(e)}'}), 500
 
 @app.route('/ai_system/status/<session_id>')
 def get_ai_system_status(session_id):
@@ -672,7 +1044,8 @@ def run_ai_system_parse(session_id):
             agent_id='project_master_web',
             docs_dir=docs_dir,
             config_template_dir=config_template_dir,
-            web_mode=True  # 启用Web模式
+            web_mode=True,  # 启用Web模式
+            session=session  # 传递session对象
         )
         
         session['project_master'] = project_master
@@ -736,7 +1109,8 @@ def run_ai_system_design(session_id):
         
         design_results = loop.run_until_complete(
             project_master.run_design_phase(
-                session['results']['requirement_dict'],
+                session['requirement_text'],  # original_requirement
+                session['results']['requirement_dict'],  # requirement_dict
                 user_feedback=session.get('user_feedback')
             )
         )
@@ -828,6 +1202,8 @@ def run_ai_system_full_simulation(session_id):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
+        test_type = session.get('test_type', 'small')
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 测试类型: {"小规模测试" if test_type == "small" else "大规模测试"}')
         output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 正在执行模拟...')
         
         # 运行模拟
@@ -841,23 +1217,84 @@ def run_ai_system_full_simulation(session_id):
         output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 模拟执行完成，检查结果...')
         
         session['results']['simulation_results'] = simulation_results
+        session['results']['test_type'] = test_type
         
-        if simulation_results:
+        # 根据test_type判断是否是小规模测试完成
+        if simulation_results and test_type == 'small':
+            session['status'] = 'small_scale_completed'
+            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✅ 小规模测试运行成功！')
+            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 可选操作：')
+            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] - 进行机制调整以优化参数')
+            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] - 继续大规模测试')
+        elif simulation_results:
             output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✓ 模拟运行完成')
             
-            # 运行评估
-            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 开始评估结果...')
-            
-            evaluation_results = loop.run_until_complete(
-                project_master.run_evaluation_and_optimization_phase(True)
-            )
-            
-            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 评估完成，更新状态...')
-            
-            session['results']['evaluation_results'] = evaluation_results
-            session['status'] = 'completed'
-            
-            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✓ 全流程完成')
+            # 如果是大规模测试，运行评估
+            if test_type == 'large':
+                output_queue.put(f'\n[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] {"="*60}')
+                output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 📊 开始评估与优化阶段')
+                output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] {"="*60}\n')
+                session['phase'] = 'evaluation'
+                session['status'] = 'evaluating'
+                
+                # 运行评估（不自动修改文件）
+                evaluation_results = loop.run_until_complete(
+                    project_master.run_evaluation_and_optimization_phase(True)
+                )
+                
+                # 美化显示评估结果
+                if evaluation_results:
+                    output_queue.put(f'\n[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] {"="*60}')
+                    output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✅ 评估完成')
+                    output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] {"="*60}\n')
+                    
+                    # 显示评估报告摘要
+                    if 'evaluation_report' in evaluation_results:
+                        report = evaluation_results['evaluation_report']
+                        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 📋 评估报告摘要：')
+                        # 提取关键部分（前500字符）
+                        summary = report[:500] + '...' if len(report) > 500 else report
+                        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] {summary}\n')
+                    
+                    # 显示是否需要调整
+                    if evaluation_results.get('needs_adjustment'):
+                        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ⚠️  检测到需要调整配置')
+                        
+                        # 如果有诊断结果，显示
+                        if 'diagnosis_result' in evaluation_results:
+                            diagnosis = evaluation_results['diagnosis_result']
+                            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 📝 诊断建议：')
+                            if 'files_to_modify' in diagnosis:
+                                for file_info in diagnosis['files_to_modify'][:3]:  # 只显示前3个
+                                    output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}]   - {file_info.get("file_name", "未知文件")}: {file_info.get("reason", "")[:80]}...')
+                        
+                        # 如果等待用户确认
+                        if evaluation_results.get('waiting_user_confirmation'):
+                            output_queue.put(f'\n[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ⏸️  等待用户决定是否应用优化调整...')
+                            session['status'] = 'evaluation_waiting_confirm'
+                        else:
+                            # 已经应用了修改
+                            if 'modification_results' in evaluation_results:
+                                mods = evaluation_results['modification_results']
+                                if mods:
+                                    output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✓ 已自动修改 {len(mods)} 个文件')
+                                elif mods is None:
+                                    output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ℹ️  跳过了配置修改')
+                            session['status'] = 'completed'
+                    else:
+                        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✅ 结果符合预期，无需调整')
+                        session['status'] = 'completed'
+                
+                session['results']['evaluation_results'] = evaluation_results
+                
+                if session['status'] == 'completed':
+                    output_queue.put(f'\n[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] {"="*60}')
+                    output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 🎉 全流程完成')
+                    output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] {"="*60}\n')
+            else:
+                # 小规模测试也完成了模拟
+                session['status'] = 'simulation_completed'
+                output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✅ 小规模测试完成')
         else:
             session['status'] = 'simulation_failed'
             output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ❌ 模拟运行失败')
@@ -869,6 +1306,165 @@ def run_ai_system_full_simulation(session_id):
         output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ❌ {error_msg}')
         output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 错误堆栈:\n{stack_trace}')
         print(f'模拟运行异常: {error_msg}\n{stack_trace}')  # 同时输出到控制台
+    finally:
+        sys.stdout = old_stdout
+
+def run_ai_system_mechanism_adjust(session_id):
+    """后台运行机制调整会话"""
+    import asyncio
+    import traceback
+    
+    session = ai_system_sessions[session_id]
+    output_queue = session['output_queue']
+    project_master = session['project_master']
+    
+    # 捕获stdout
+    output_capture = OutputCapture(output_queue)
+    old_stdout = sys.stdout
+    sys.stdout = output_capture
+    
+    try:
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 开始机制解释与调整会话...')
+        
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # 运行机制解释会话
+        requirements_text = loop.run_until_complete(
+            project_master.run_mechanism_interpretation_session(
+                session['results'].get('coding_results')
+            )
+        )
+        
+        if requirements_text:
+            session['status'] = 'mechanism_adjust_completed'
+            session['results']['adjustment_requirements'] = requirements_text
+            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✅ 机制调整需求收集完成')
+            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 调整需求:\n{requirements_text}')
+        else:
+            session['status'] = 'mechanism_adjust_skipped'
+            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ℹ️ 未收集到调整需求')
+        
+    except Exception as e:
+        session['status'] = 'error'
+        error_msg = f'机制调整会话错误: {str(e)}'
+        stack_trace = traceback.format_exc()
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ❌ {error_msg}')
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 错误堆栈:\n{stack_trace}')
+        print(f'机制调整异常: {error_msg}\n{stack_trace}')
+    finally:
+        sys.stdout = old_stdout
+
+def run_ai_system_apply_adjustments(session_id):
+    """后台应用机制调整"""
+    import asyncio
+    import traceback
+    
+    session = ai_system_sessions[session_id]
+    output_queue = session['output_queue']
+    project_master = session['project_master']
+    
+    # 捕获stdout
+    output_capture = OutputCapture(output_queue)
+    old_stdout = sys.stdout
+    sys.stdout = output_capture
+    
+    try:
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 开始应用机制调整...')
+        
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        adjustments_text = session.get('adjustments_text', '')
+        
+        # 应用调整
+        success = loop.run_until_complete(
+            project_master.apply_mechanism_adjustments(adjustments_text)
+        )
+        
+        if success:
+            session['status'] = 'adjustments_applied'
+            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✅ 机制调整应用成功')
+            
+            # 记录调整历史
+            if 'mechanism_adjustments' not in session['results']:
+                session['results']['mechanism_adjustments'] = []
+            
+            session['results']['mechanism_adjustments'].append({
+                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                'description': adjustments_text[:100] + '...' if len(adjustments_text) > 100 else adjustments_text
+            })
+        else:
+            session['status'] = 'error'
+            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ❌ 机制调整应用失败')
+        
+    except Exception as e:
+        session['status'] = 'error'
+        error_msg = f'应用调整错误: {str(e)}'
+        stack_trace = traceback.format_exc()
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ❌ {error_msg}')
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 错误堆栈:\n{stack_trace}')
+        print(f'应用调整异常: {error_msg}\n{stack_trace}')
+    finally:
+        sys.stdout = old_stdout
+
+def run_ai_system_apply_optimization(session_id):
+    """后台应用评估优化调整"""
+    import asyncio
+    import traceback
+    
+    session = ai_system_sessions[session_id]
+    output_queue = session['output_queue']
+    project_master = session['project_master']
+    
+    # 捕获stdout
+    output_capture = OutputCapture(output_queue)
+    old_stdout = sys.stdout
+    sys.stdout = output_capture
+    
+    try:
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 开始应用优化调整...')
+        
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        evaluation_results = session.get('results', {}).get('evaluation_results', {})
+        diagnosis_path = evaluation_results.get('diagnosis_path')
+        
+        # 获取设计文档
+        design_doc = None
+        if 'design_results' in session.get('results', {}):
+            design_results = session['results']['design_results']
+            if 'description_content' in design_results:
+                design_doc = design_results['description_content']
+        
+        # 应用优化
+        result = loop.run_until_complete(
+            project_master.apply_optimization_adjustments(diagnosis_path, design_doc)
+        )
+        
+        if result.get('success'):
+            session['status'] = 'optimization_applied'
+            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✅ {result["message"]}')
+            
+            # 更新结果
+            session['results']['optimization_applied'] = {
+                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                'modification_results': result.get('modification_results', [])
+            }
+            
+            output_queue.put(f'\n[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 💡 建议：重新运行大规模测试以验证优化效果')
+        else:
+            session['status'] = 'error'
+            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ❌ {result["message"]}')
+        
+    except Exception as e:
+        session['status'] = 'error'
+        error_msg = f'应用优化错误: {str(e)}'
+        stack_trace = traceback.format_exc()
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ❌ {error_msg}')
+        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 错误堆栈:\n{stack_trace}')
+        print(f'应用优化异常: {error_msg}\n{stack_trace}')
     finally:
         sys.stdout = old_stdout
 
