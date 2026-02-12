@@ -1,122 +1,214 @@
 # Eco3S
 
-## 简介
+**Languages:** [English](README.md) | [中文](README_zh.md)
 
-Eco3S 是一个多智能体模拟系统，支持政府、居民和叛军等多种智能体之间的互动模拟，并提供可视化界面实时展示模拟过程。
+---
 
-## 快速开始
+## Introduction
 
-### 环境配置
+**Eco3S** (Complex **Eco**nomic **S**ocial **S**ystem **S**imulation) is a multi-agent simulation framework designed for economic research and policy analysis. It leverages Large Language Models (LLMs) to endow agents with sophisticated perception, reasoning, and decision-making capabilities, bridging gaps in traditional simulation methods regarding environmental interaction, counterfactual inference, and scenario generalization.
+
+### Key Highlights
+1.  **Delicate Environment Design**: Simulates dynamically evolving physical environments (climate, geography), heterogeneous information networks (HIN), and dual "individual-collective" decision-making modes.
+2.  **Counterfactual Mechanism**: Supports snapshot saving at any simulation step, rollback, and intervention modification (policies, environmental parameters) for rigorous causal effect evaluation.
+3.  **Auto-Simulation with Human Feedback**: Automatically transforms natural language requirements into experimental scenarios through an AI Agent committee (architect, programmer, analyst).
+4.  **Auto-Analysis**: Automatically parses simulation trajectories to generate statistical charts and causal interpretation reports.
+
+## Quick Start
+
+### Environment Setup
 
 ```bash
-# 创建虚拟环境
+# Create virtual environment
 conda create --name Eco3S python=3.10
 conda activate Eco3S
 
-# 安装依赖
+# Install dependencies
 pip install -r requirements.txt
 ```
 
+### Launch Visualization Interface
 
-### 启动可视化界面
+**Option 1: One-Click Start for Windows Users**
+```bash
+start_web.bat
+```
 
-1. **启动后端服务**
+**Option 2: Manual Start**
+1. Start backend service
 ```bash
 cd src
 python app.py
 ```
 
-2. **启动前端服务**（新终端）
+2. Start frontend service (new terminal)
 ```bash
 cd frontend
-npm install
-npm install chart.js vue-chartjs
+npm install  # First run only
+npm install chart.js vue-chartjs  # First run only
 npm run dev
 ```
 
-# Windows用户
-```bash
-start_web.bat
-```
-
-
-访问 http://localhost:5173 查看 Web 界面。
+Visit http://localhost:5173 to view the web interface.
 
 ---
 
-## 传统模拟场景
+## Usage
 
-### 模拟1：基础多智能体交互
+### I. Traditional Simulation Mode
+
+Eco3S includes multiple benchmark scenarios based on replications of top-tier economic/historical research:
+1.  **Canal Decay and Rebellion**: Replicates Cao & Chen (2022) research, exploring the impact of transportation infrastructure evolution (Grand Canal) on social stability.
+2.  **The Origins of Governance (TEOG)**: Based on Allen (2023) findings, simulates collective action and government emergence from climate/river changes.
+3.  **Information Propagation**: Replicates Banerjee et al. (2016) research on India's demonetization policy, testing different propagation strategies (seed nodes vs. broadcast).
+
+#### Available Scenarios
+
+**1. Canal Decay**
 ```bash
 python entrypoints/main.py --config_path config/default/simulation_config.yaml
 ```
 
-### 模拟2：TEOG 场景
+**2. TEOG Scenario**
 ```bash
 python entrypoints/main_TEOG.py --config_path config/TEOG/simulation_config.yaml
 ```
 
-### 模拟3：信息传播
+**3. Information Propagation**
 ```bash
 python entrypoints/main_info_propagation.py --config_path config/info_propagation/simulation_config.yaml
 ```
 
-## 数据分析
+### II. AI-Assisted Simulation Mode
 
-使用内置分析工具生成统计报告和可视化图表：
+Describe requirements in natural language, and the system automatically completes experimental design, code generation, simulation execution, and result optimization.
+
+#### Start System
 
 ```bash
-# 分析默认模拟结果
-python src/analyzer/simulation_analyzer.py --type default
-
-# 分析特定参数的结果
-python src/analyzer/simulation_analyzer.py --type default --p 200 --y 15
-
-# 直接指定文件进行分析（支持 json/csv，多文件用空格分隔）
-python src/analyzer/simulation_analyzer.py --type default --input_files history/default/20240101/running_data_1.json history/default/20240102/running_data_2.csv
-
-# 自定义输出目录（默认写入 history/<type>/analysis_results/<timestamp>）
-python src/analyzer/simulation_analyzer.py --type default --output_dir ./my_reports
+python run_ai_system.py
 ```
 
-**参数说明:**
-*   `--type`: **必填**。指定模拟类型，可选值包括 `default`, `TEOG`, `info_propagation`。
-*   `--p`: **可选**。用于过滤模拟结果文件夹的 `p` 初始化人口数量。
-*   `--y`: **可选**。用于过滤模拟结果文件夹的 `y` 总模拟步长。
-*   `--input_files`: **可选**。直接指定要分析的文件路径（绝对或相对），支持多个 json/csv 文件；提供后不会再遍历 history 目录。
-*   `--output_dir`: **可选**。指定分析结果保存的根目录，工具会在该目录下按时间戳创建子目录。
+#### Running Modes
 
-分析结果保存在 `history/<simulation_type>/analysis_results/` 目录。
+**Automatic Mode** (Recommended)
+- Fully automated from requirement input to final results
+- Auto-iterates optimization until meeting expected goals
+- Suitable for clear requirements
 
-## 项目结构
+**Interactive Mode**
+- Pauses after each key stage for user confirmation
+- Allows review of intermediate results (design documents, generated code, etc.)
+- Suitable for requirement exploration and gradual adjustments
+
+#### Workflow
+
+The system automatically completes simulation experiments through 5 stages:
+
+1. **Requirement Analysis**: Parses natural language requirements and extracts key information
+2. **System Design**: Generates design documents and module configurations
+3. **Code Generation**: Automatically generates simulator code, configuration files, and prompts
+4. **Run Simulation**: Executes simulation and automatically fixes runtime errors
+5. **Result Evaluation**: Analyzes results and auto-optimizes configurations until expectations are met
+
+#### Usage Example
 
 ```
-├── config/           # 所有配置文件
-│   ├── default/      # 模拟1配置文件
-│   ├── TEOG/         # 模拟2配置文件  
-│   ├── info_propagation/  # 模拟3配置文件
-│   └── template/     # 配置模板
-├── frontend/         # 前端代码
-├── src/              # 核心源代码
-│   ├── agents/       # 智能体模块
-│   ├── environment/  # 环境模块
-│   ├── simulation/   # 模拟器模块
-│   └── visualization/# 可视化模块
-├─ entrypoints/
-│    ├─ main.py       # 模拟1入口
-│    ├─ main_TEOG.py  # 模拟2入口
-│    └─ main_info_propagation.py  # 模拟3入口
-│    └─ ```
+Please enter your simulation experiment requirements:
+Research how governments balance finances and suppress rebellion through taxation and investment under extreme climate conditions.
+The simulation includes three roles: government, residents, and rebels, with extreme weather randomly occurring and damaging canals.
 ```
 
-## 核心功能
-
-- 🎯 多智能体模拟与交互
-- 📊 实时可视化展示
-- 🎮 多种模拟场景支持
-- ⚙️ 灵活的参数配置
-- 📈 数据分析和报告生成
+The system will automatically generate:
+- Configuration files: `config/<simulation_name>/`
+- Simulator code: `src/simulation/simulator_<simulation_name>.py`
+- Entry scripts: `entrypoints/main_<simulation_name>.py`
+- Experimental data: `history/<simulation_name>/`
 
 ---
 
-*确保已安装 Node.js 以运行可视化界面。*
+## Data Analysis
+
+Use built-in analysis tools to generate statistical reports and visualization charts:
+
+```bash
+# Analyze results of specified type
+python src/analyzer/simulation_analyzer.py --type default
+
+# Analyze results with specific parameters
+python src/analyzer/simulation_analyzer.py --type default --p 200 --y 15
+
+# Directly specify files for analysis
+python src/analyzer/simulation_analyzer.py --type default --input_files history/default/data1.json history/default/data2.csv
+
+# Custom output directory
+python src/analyzer/simulation_analyzer.py --type default --output_dir ./my_reports
+```
+
+**Parameter Description**
+- `--type`: Simulation type, options: `default`, `TEOG`, `info_propagation`
+- `--p`: Initial population size (optional)
+- `--y`: Total simulation steps (optional)
+- `--input_files`: Directly specify files to analyze (optional)
+- `--output_dir`: Custom output directory (optional)
+
+Analysis results are saved in `history/<type>/analysis_results/` directory.
+
+---
+
+## Project Structure
+
+```
+├── config/                  # Configuration files
+│   ├── default/             # Canal Decay scenario
+│   ├── TEOG/                # TEOG scenario
+│   ├── info_propagation/    # Information Propagation scenario
+│   ├── template/            # Configuration templates
+│   └── ...                  # Other scenarios
+├── entrypoints/             # Simulation entry scripts
+│   ├── main.py              # Canal Decay scenario
+│   ├── main_TEOG.py         # TEOG scenario
+│   ├── main_info_propagation.py  # Information Propagation scenario
+│   └── ...                  # Other scenarios
+├── src/                     # Core source code
+│   ├── agents/              # Agent modules
+│   ├── environment/         # Environment modules
+│   ├── simulation/          # Simulator modules
+│   ├── analyzer/            # Data analysis modules
+│   └── visualization/       # Visualization modules
+├── frontend/                # Web visualization interface
+├── history/                 # Simulation result data
+├── run_ai_system.py         # AI-assisted system entry
+└── start_web.bat            # Windows one-click start script
+```
+
+---
+
+## Core Features
+
+- 🤖 **AI-Assisted Experimental Design**: Natural language requirements automatically generate complete simulation experiments
+- 🎯 **Multi-Agent Simulation**: Multi-role interactions including government, residents, rebels, etc.
+- 🔄 **Auto-Optimization Loop**: Intelligent evaluation and automatic parameter adjustment
+- 📊 **Real-time Visualization**: Web interface displays simulation process in real-time
+- 📈 **Data Analysis**: Automatically generates statistical reports and visualization charts
+- ⚙️ **Flexible Configuration**: Supports custom simulation scenarios and parameters
+
+---
+
+## FAQ
+
+**Q: How to choose between Traditional Mode and AI-Assisted Mode?**  
+A: Use Traditional Mode for running existing scenarios or quick testing; use AI-Assisted Mode for creating new simulation experiments.
+
+**Q: How many times will AI auto-optimization run?**  
+A: Maximum 3 times by default. You can modify the `max_iterations` parameter in the `run_full_workflow` method of `project_master.py`.
+
+**Q: Can Interactive Mode return to a previous stage?**  
+A: Cross-stage returns are not supported in the current version, but you can provide feedback to regenerate within the current stage.
+
+**Q: Can I manually modify the generated code?**  
+A: Yes. The AI-generated files are standard Python code and YAML/JSON configuration files, supporting manual modification and extension.
+
+---
+
+*Note: Node.js installation is required to run the visualization interface.*
