@@ -11,7 +11,7 @@
 ### Key Highlights
 1.  **Delicate Environment Design**: Simulates dynamically evolving physical environments (climate, geography), heterogeneous information networks (HIN), and dual "individual-collective" decision-making modes.
 2.  **Counterfactual Mechanism**: Supports snapshot saving at any simulation step, rollback, and intervention modification (policies, environmental parameters) for rigorous causal effect evaluation.
-3.  **Auto-Simulation with Human Feedback**: Automatically transforms natural language requirements into experimental scenarios through an AI Agent committee (architect, programmer, analyst).
+3.  **Auto-Simulation with Human Feedback**: Automatically transforms natural language requirements into experimental scenarios through a LLM agent-based orchestration framework(ProjectMasterAgent, SimArchitectAgent, CodeArchitectAgent, and ResearchAnalystAgent).
 4.  **Auto-Analysis**: Automatically parses simulation trajectories to generate statistical charts and causal interpretation reports.
 
 ## Quick Start
@@ -59,7 +59,7 @@ Visit http://localhost:5173 to view the web interface.
 
 Eco3S includes multiple benchmark scenarios based on replications of top-tier economic/historical research:
 1.  **Canal Decay and Rebellion**: Replicates Cao & Chen (2022) research, exploring the impact of transportation infrastructure evolution (Grand Canal) on social stability.
-2.  **The Origins of Governance (TEOG)**: Based on Allen (2023) findings, simulates collective action and government emergence from climate/river changes.
+2.  **Origins of Governance (TEOG)**: Based on Allen (2023) findings, simulates collective action and government emergence from climate/river changes.
 3.  **Information Propagation**: Replicates Banerjee et al. (2016) research on India's demonetization policy, testing different propagation strategies (seed nodes vs. broadcast).
 
 #### Available Scenarios
@@ -103,13 +103,14 @@ python run_ai_system.py
 
 #### Workflow
 
-The system automatically completes simulation experiments through 5 stages:
+The system automatically completes simulation experiments through 6 stages:
 
-1. **Requirement Analysis**: Parses natural language requirements and extracts key information
-2. **System Design**: Generates design documents and module configurations
-3. **Code Generation**: Automatically generates simulator code, configuration files, and prompts
-4. **Run Simulation**: Executes simulation and automatically fixes runtime errors
-5. **Result Evaluation**: Analyzes results and auto-optimizes configurations until expectations are met
+1. **Requirement Input**: Captures natural language descriptions from users
+2. **Requirement Analysis**: Parses and formalizes simulation objectives and constraints
+3. **System Design**: Generates design documents and module configurations
+4. **Code Generation**: Automatically generates simulator code, configuration files, and prompts
+5. **Run Simulation**: Executes simulation and automatically fixes runtime errors
+6. **Result Evaluation**: Analyzes results and auto-optimizes configurations until expectations are met
 
 #### Usage Example
 
