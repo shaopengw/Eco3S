@@ -6,7 +6,9 @@
 
 ## Introduction
 
-**Eco3S** (Complex **Eco**nomic **S**ocial **S**ystem **S**imulation) is a multi-agent simulation framework designed for economic research and policy analysis. It leverages Large Language Models (LLMs) to endow agents with sophisticated perception, reasoning, and decision-making capabilities, bridging gaps in traditional simulation methods regarding environmental interaction, counterfactual inference, and scenario generalization.
+![Framework Overview](assets/framework.png)
+
+**Eco3S** (Complex **Eco**nomic **S**ocial **S**ystem **S**imulation) is a multi-agent simulation framework designed for economic research and policy analysis. It leverages Large Language Models (LLMs) to endow agents with sophisticated perception, reasoning, and decision-making capabilities, bridging gaps in traditional simulation methods regarding environmental interaction, counterfactual inference, and scenario generalization.Eco3S consists of three core modules: delicate agent/environment configuration, high-fidelity simulation, and automated multi-dimensional analysis.
 
 ### Key Highlights
 1.  **Delicate Environment Design**: Simulates dynamically evolving physical environments (climate, geography), heterogeneous information networks (HIN), and dual "individual-collective" decision-making modes.
