@@ -680,7 +680,6 @@ class ProjectMasterAgent(BaseAgent):
             'towns_data.json'
         ]
 
-        # TODO: 这里不应该是硬性的判断，应该是由大模型根据说明文件来判断，是否还需要其他模块，需要思考加在什么位置比较合适
         # 根据说明文件判断是否需要额外的配置文件
         description_lower = description_content.lower()
         if 'message' in description_lower or '信息传播' in description_content or '消息' in description_content:

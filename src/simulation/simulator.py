@@ -218,33 +218,6 @@ class Simulator:
                 hiring_results = self.towns.process_town_job_requests(town_job_requests)
             else:
                 self.logger.info("\n本轮无求职请求")
-            
-            # # 打印每个城镇的求职信息统计--测试用
-            # for town, requests in town_job_requests.items():
-            #     print(f"\n城镇 {town} 的求职信息:")
-            #     job_counts = {}
-            #     for req in requests:
-            #         job = req["desired_job"]
-            #         job_counts[job] = job_counts.get(job, 0) + 1
-            #     for job, count in job_counts.items():
-            #         print(f"- {job}: {count}人求职")
-            
-            # 打印城镇详细状态---测试用
-            # print("\n各城镇详细状态：")
-            # self.towns.print_towns_status()
-            # self.towns.print_towns()
-                
-            # for resident_name in list(self.residents.keys()):  #测试用-展示居民情况
-            #     resident = self.residents[resident_name]
-            #     resident.print_resident_status()
-            # self.get_rebels_statistics()
-
-            # 社交网络类————测试
-            # for resident_name in list(self.residents.keys()):
-            #     resident = self.residents[resident_name]
-            #     social_network = resident.get_social_network()
-            #     social_network.calculate_speech_probability(resident.resident_id, self.population.get_population())
-
 
             # 更新结果数据
             self.update_results()

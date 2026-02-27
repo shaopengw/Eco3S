@@ -246,8 +246,6 @@ class JobMarket:
                     else:
                         print(f"警告: 未找到ID为 {resident_id} 的居民对象，无法解雇。")
 
-        # print(f"已随机减少 {num_jobs} 个工作岗位")
-
     def adjust_canal_maintenance_jobs(self, change_rate, residents):
         """
         根据运河状态的变化率调整运河维护工的数量
