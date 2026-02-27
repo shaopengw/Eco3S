@@ -31,7 +31,7 @@ class CodeArchitectAgent(BaseAgent):
 		self.session = session  # Web模式的会话对象
 		self.logger = CustomLogger('code_architect').logger
 
-	def _wait_for_user_confirmation(self, step_name): #测试用
+	def _wait_for_user_confirmation(self, step_name):
 		"""等待用户确认是否继续"""
 		print(f"\n{'='*60}")
 		print(f"✓ {step_name} 已完成")
@@ -1669,7 +1669,7 @@ class CodeArchitectAgent(BaseAgent):
 		if os.path.exists(file_path):
 			self.logger.info(f"文件 {file_path} 实际存在，跳过处理。")
 			return False
-		#TODO: 这里可以加上用户判断
+		
 		# 判断文件类型并调用相应函数
 		description_md = ""
 		modules_config_yaml = ""
@@ -1751,7 +1751,7 @@ class CodeArchitectAgent(BaseAgent):
 			if not response:
 				self.logger.error("LLM未返回响应")
 				continue
-			# print(f"大模型回复：：{response}")
+			
 			# 尝试应用修复
 			if self._apply_runtime_fix(response, main_file_path, simulator_file_path):
 				self.logger.info(f"✓ 修复完成")

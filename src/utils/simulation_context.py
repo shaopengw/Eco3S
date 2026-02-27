@@ -28,7 +28,6 @@ class SimulationContext:
                 simulation_name = f"{timestamp}_p{population}_y{total_years}_pid{pid}"
             else:
                 simulation_name = f"{timestamp}_pid{pid}"
-            print(f"设置模拟名称为: {simulation_name}")
         cls._simulation_name = simulation_name
 
     @classmethod

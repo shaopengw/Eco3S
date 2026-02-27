@@ -196,6 +196,19 @@ Analysis results are saved in `history/<type>/analysis_results/` directory.
 
 ---
 
+## Supplementary Material
+
+For more in-depth technical details and extended experimental results, please refer to our **[Appendix.pdf](./Appendix.pdf)**.
+
+The appendix (24 pages) provides:
+- **Experimental Elaborations**: Comprehensive agent logic, environmental formulas, and full trajectories for all benchmark scenarios (Canal Decay, TEOG, Info Propagation).
+- **Auto-Simulation Framework**: Internal architecture of the AI agent committee (Master, Architect, etc.) and the iterative error-recovery mechanisms.
+- **Extended Case Studies**: Four additional AI-generated experiments, including Financial Herding, Asset Bubble, and Schelling Segregation models.
+- **Robustness & Performance Analysis**: Consistency evaluations across different LLMs (GPT-4, DeepSeek, Qwen) and system scaling benchmarks (up to 10,000 agents).
+- **Technical Validation**: Comparison with traditional System Dynamics (SD) models and alignment with empirical DID baselines.
+
+---
+
 ## FAQ
 
 **Q: How to choose between Traditional Mode and AI-Assisted Mode?**  
