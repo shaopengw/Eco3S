@@ -1,34 +1,42 @@
 from .simulator_imports import *
 
 class Simulator:
-    def __init__(self, map, time, government, government_officials, rebellion, rebels_agents, population, social_network, residents, towns, transport_economy, climate, config):
+    def __init__(
+        self,
+        container: DIContainer,
+        government_officials: List[IOrdinaryGovernmentAgent],
+        rebels_agents: List[IOrdinaryRebel],
+        residents: Dict[int, IResident],
+        config: Dict,
+        loaded_plugins: Dict = None,
+        influence_manager = None
+    ):
         """
         初始化模拟器类
-        :param map: 地图对象
-        :param time: 时间对象
-        :param government: 政府对象
+        :param container: 依赖注入容器
         :param government_officials: 政府官员列表
-        :param rebellion: 叛军对象
         :param rebels_agents: 叛军列表
-        :param population: 人口对象
-        :param social_network: 社会网络对象
-        :param residents: 居民列表
-        :param towns: 城镇对象
-        :param transport_economy: 运输经济对象
-        :param climate: 天气对象
+        :param residents: 居民字典
+        :param config: 配置字典
+        :param loaded_plugins: 已加载的插件字典（可选，优先使用）
+        :param influence_manager: 影响函数管理器（可选）
         """
-        self.map = map
-        self.time = time
-        self.government = government
-        self.government_officials = government_officials
-        self.rebellion = rebellion
-        self.rebels_agents = rebels_agents
-        self.population = population
-        self.social_network = social_network
-        self.residents = residents
-        self.towns = towns
-        self.transport_economy = transport_economy
-        self.climate = climate
+        # 从插件或容器中获取模块实例
+        self.map: IMap = self._resolve_instance('default_map', IMap, container, loaded_plugins)
+        self.time: ITime = self._resolve_instance('default_time', ITime, container, loaded_plugins)
+        self.population: IPopulation = self._resolve_instance('default_population', IPopulation, container, loaded_plugins)
+        self.social_network: ISocialNetwork = self._resolve_instance('default_social_network', ISocialNetwork, container, loaded_plugins)
+        self.towns: ITowns = self._resolve_instance('default_towns', ITowns, container, loaded_plugins)
+        self.transport_economy: Optional[ITransportEconomy] = self._resolve_instance('default_transport_economy', ITransportEconomy, container, loaded_plugins)
+        self.climate: IClimateSystem = self._resolve_instance('default_climate', IClimateSystem, container, loaded_plugins)
+        self.government: IGovernment = container.resolve(IGovernment)  # Government 暂不使用插件
+        self.rebellion: IRebellion = container.resolve(IRebellion)  # Rebellion 暂不使用插件
+        
+        # 接受作为参数传入的对象
+        self.government_officials: List[IOrdinaryGovernmentAgent] = government_officials
+        self.rebels_agents: List[IOrdinaryRebel] = rebels_agents
+        self.residents: Dict[int, IResident] = residents
+        self.config: Dict = config
         self.basic_living_cost = 8  # 每年基本生活所需值（单位：两）
         self.average_satisfaction = None  # 平均满意度
         self.gdp = 0  # 国内生产总值（单位：两）
@@ -54,6 +62,10 @@ class Simulator:
         # 初始化日志记录器
         self.logger = LogManager.get_logger('simulator', console_output=True)
         
+        # 初始化影响函数管理器
+        from src.influences import InfluenceManager
+        self.influence_manager = influence_manager or InfluenceManager(logger=self.logger)
+        
         # 保存初始数据
         self.gdp = self.calculate_gdp()  # 确保先计算初始GDP
         self.average_satisfaction = self.calculate_average_satisfaction()  # 计算初始满意度
@@ -72,6 +84,22 @@ class Simulator:
         
         self.start_time = None  # 用于记录模拟开始时间
         self.end_time = None    # 用于记录模拟结束时间
+
+    @staticmethod
+    def _resolve_instance(plugin_name: str, interface_type, container: DIContainer, loaded_plugins: Dict = None):
+        """
+        从插件或容器中获取实例
+        :param plugin_name: 插件名称
+        :param interface_type: 接口类型
+        :param container: 依赖注入容器
+        :param loaded_plugins: 已加载的插件字典
+        :return: 实例对象
+        """
+        # 优先从插件中获取
+        if loaded_plugins and plugin_name in loaded_plugins:
+            return loaded_plugins[plugin_name]
+        # 否则从容器中获取
+        return container.resolve(interface_type)
 
     async def run(self):
         """
@@ -92,21 +120,45 @@ class Simulator:
             self.logger.info(f"年份:{self.time.current_time}")
             current_year = self.time.current_time
             start_year = self.time.start_time
-            self.logger.info(f"天气影响因子：{self.climate.get_current_impact(current_year,start_year)}")
             
-            # 更新属性变量
+            # ==================== 阶段 1: 计算基础状态 ====================
+            # 先计算当前状态，用于构建 context
+            self.gdp = self.calculate_gdp()
+            self.average_satisfaction = self.calculate_average_satisfaction()
+            climate_impact = self.climate.get_current_impact(current_year, start_year)
+            
+            self.logger.info(f"天气影响因子：{climate_impact}")
+            
+            # ==================== 阶段 2-3: 应用影响函数（通过 InfluenceManager）====================
+            # 构建模拟器状态字典
+            simulator_state = {
+                'time': self.time,
+                'map': self.map,
+                'population': self.population,
+                'transport_economy': self.transport_economy,
+                'climate': self.climate,
+                'government': self.government,
+                'rebellion': self.rebellion,
+                'gdp': self.gdp,
+                'average_satisfaction': self.average_satisfaction,
+                'basic_living_cost': self.basic_living_cost,
+                'gdp_growth_rate': self._calculate_gdp_growth_rate(),
+                'rebellion_records': self.rebellion_records,
+            }
+            
+            # 通过 InfluenceManager 统一应用所有影响函数
+            global_context = self.influence_manager.apply_all_influences(simulator_state)
+            
+            # ==================== 阶段 4: 更新政府和叛军状态 ====================
             # 政府
-            self.gdp = self.calculate_gdp() # 更新GDP
-            self.tax_income = self.gdp * self.government.get_tax_rate() # 计算税收收入
+            self.tax_income = self.gdp * self.government.get_tax_rate()
             self.government.budget = round(self.government.budget + self.tax_income, 2) 
             self.government.military_strength = self.calculate_total_government_military()
             # 叛军
-            self.rebellion_income = self.rebellion.get_strength() * 6 # 假设叛军收入为6两/人
+            self.rebellion_income = self.rebellion.get_strength() * 6
             self.rebellion.resources = round(self.rebellion.resources + self.rebellion_income, 2)
             self.rebellion.strength = self.calculate_total_rebels()
-        
-            self.average_satisfaction = self.calculate_average_satisfaction() # 更新平均满意度
-            self.population.update_birth_rate(self.average_satisfaction) # 更新出生率
+            
             self.rebellion_records = 0
             self.logger.info(f"GDP：{self.gdp}，税收收入：{self.tax_income}，政府预算：{self.government.budget}")
             self.logger.info(f"河运价格：{self.transport_economy.river_price}，维护成本：{self.transport_economy.calculate_maintenance_cost(self.map.get_navigability())}")
@@ -135,7 +187,7 @@ class Simulator:
                 'ordinary_type': OrdinaryGovernmentAgent,
                 'leader_type': HighRankingGovernmentAgent,
             }
-            government_decision = await self.collect_group_decision('government', government_config)
+            # government_decision = await self.collect_group_decision('government', government_config)
             
             # 收集叛军决策
             rebellion_config = {
@@ -143,7 +195,7 @@ class Simulator:
                 'ordinary_type': OrdinaryRebel,
                 'leader_type': RebelLeader,
             }
-            rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
+            # rebellion_decision = await self.collect_group_decision('rebellion', rebellion_config)
             
             # 统一执行决策
             if government_decision:
@@ -163,6 +215,12 @@ class Simulator:
             for resident_name in list(self.residents.keys()):
                 resident = self.residents[resident_name]
                 tax_rate = self.government.get_tax_rate()
+                
+                # 应用居民健康影响函数（在居民决策和状态更新之前）
+                self.influence_manager.apply_resident_health_influences(
+                    resident, global_context, self.basic_living_cost
+                )
+                
                 # 基于LLM的决策--测试时建议暂时注释
                 if resident.job == "叛军":
                     tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
@@ -607,6 +665,23 @@ class Simulator:
         total_income = sum(resident.income for resident in self.residents.values() if resident.job != "叛军")
         gdp = total_income
         return gdp
+    
+    def _calculate_gdp_growth_rate(self):
+        """
+        计算 GDP 增长率
+        :return: GDP 增长率（浮点数，如 0.05 表示 5%）
+        """
+        if len(self.results["gdp"]) < 2:
+            return 0.0
+        
+        current_gdp = self.results["gdp"][-1]
+        previous_gdp = self.results["gdp"][-2]
+        
+        if previous_gdp == 0:
+            return 0.0 if current_gdp == 0 else 1.0
+        
+        growth_rate = (current_gdp - previous_gdp) / previous_gdp
+        return growth_rate
 
     def handle_rebellion(self, strength_investment, target_town=None):
         """

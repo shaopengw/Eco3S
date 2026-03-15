@@ -1,8 +1,15 @@
 from .shared_imports import *
 from ..utils.logger import LogManager
+from src.interfaces import (
+    IOrdinaryGovernmentAgent,
+    IHighRankingGovernmentAgent,
+    IGovernment,
+    IGovernmentSharedInformationPool,
+    IGovernmentInformationOfficer
+)
 load_dotenv()
 
-class OrdinaryGovernmentAgent(BaseAgent):
+class OrdinaryGovernmentAgent(BaseAgent, IOrdinaryGovernmentAgent):
     def __init__(self, agent_id, government, shared_pool):
         super().__init__(agent_id, group_type='government', window_size=3)
         self.government = government
@@ -137,7 +144,7 @@ class OrdinaryGovernmentAgent(BaseAgent):
             self.government_log.error(f"普通政府官员 {self.agent_id} 在做出决策时出错：{e}")
             return "无法做出决策"
 
-class HighRankingGovernmentAgent(BaseAgent):
+class HighRankingGovernmentAgent(BaseAgent, IHighRankingGovernmentAgent):
     def __init__(self, agent_id, government, shared_pool):
         """
         初始化高级政府官员类（决策者）
@@ -258,23 +265,71 @@ class HighRankingGovernmentAgent(BaseAgent):
         self.government_log.info(f"  当前时间：{self.time}年")
         self.government_log.info(f"  人物性格：{self.personality}")
 
-class Government:
-    def __init__(self, map, towns, military_strength, initial_budget, time, transport_economy, government_prompt_path):
+class Government(IGovernment):
+    def __init__(self, map, towns, military_strength, initial_budget, time, transport_economy, government_prompt_path, influence_registry=None):
         """
         初始化政府类
+        :param influence_registry: 影响函数注册表（可选）
         """
-        self.map = map
-        self.towns = towns
-        self.budget = initial_budget
-        self.military_strength = military_strength
+        self._map = map
+        self._towns = towns
+        self._budget = initial_budget
+        self._military_strength = military_strength
         self.time = time
-        self.tax_rate = 0.1  # 初始税率为 10%
+        self._tax_rate = 0.1  # 初始税率为 10%
         self.residents = {}  # 添加居民引用
-        self.transport_economy = transport_economy  # 运输经济模型引用
+        self._transport_economy = transport_economy  # 运输经济模型引用
+        self._influence_registry = influence_registry
         with open(government_prompt_path, 'r', encoding='utf-8') as file:
             self.prompts = yaml.safe_load(file)
 
         self.government_log = LogManager.get_logger("government")
+    
+    # 实现 IGovernment 接口的 property
+    @property
+    def map(self):
+        """地图对象"""
+        return self._map
+    
+    @property
+    def towns(self):
+        """城镇对象"""
+        return self._towns
+    
+    @property
+    def budget(self) -> float:
+        """当前预算"""
+        return self._budget
+    
+    @budget.setter
+    def budget(self, value: float):
+        """设置预算"""
+        self._budget = value
+    
+    @property
+    def military_strength(self) -> int:
+        """军事力量"""
+        return self._military_strength
+    
+    @military_strength.setter
+    def military_strength(self, value: int):
+        """设置军事力量"""
+        self._military_strength = value
+    
+    @property
+    def tax_rate(self) -> float:
+        """税率"""
+        return self._tax_rate
+    
+    @tax_rate.setter
+    def tax_rate(self, value: float):
+        """设置税率"""
+        self._tax_rate = value
+    
+    @property
+    def transport_economy(self):
+        """运输经济模型引用"""
+        return self._transport_economy
 
     def handle_public_budget(self, budget_allocation, salary, job_total_count,residents):
         """处理公共预算决策"""
@@ -386,6 +441,27 @@ class Government:
         :param adjustment: 税率调整值（浮点数，正数表示增加，负数表示减少）
         """
         old_rate = self.tax_rate
+        
+        # 构建上下文
+        result = {'new_tax_rate': self.tax_rate + adjustment}
+        context = {
+            'government': self,
+            'old_tax_rate': old_rate,
+            'adjustment': adjustment,
+            'result': result
+        }
+        
+        # 尝试使用影响函数系统
+        if self._influence_registry is not None:
+            influences = self._influence_registry.get_influences('tax_rate')
+            if influences:
+                # 使用影响函数计算新税率
+                self.apply_influences('tax_rate', context)
+                self.tax_rate = result['new_tax_rate']
+                self.government_log.info(f"政府执行决策 - 税率从 {old_rate*100:.1f}% 调整为 {self.tax_rate*100:.1f}%")
+                return self.tax_rate
+        
+        # 回退到默认逻辑（向后兼容）
         # 限制税率在 0% 到 50% 之间
         self.tax_rate = max(0.0, min(0.5, self.tax_rate + adjustment))
         self.government_log.info(f"政府执行决策 - 税率从 {old_rate*100:.1f}% 调整为 {self.tax_rate*100:.1f}%")
@@ -407,7 +483,37 @@ class Government:
         print(f"运河通航比率: {self.map.get_navigability()}（海运通航比率：{1-self.map.get_navigability()}）")
         print(f"当前税率: {self.tax_rate*100:.1f}%")
 
-class government_SharedInformationPool:
+    def apply_influences(self, target_name: str, context: Optional[Dict[str, Any]] = None) -> None:
+        """
+        应用所有注册的影响函数到指定目标
+        
+        :param target_name: 目标名称（如 'tax_rate'）
+        :param context: 上下文字典，包含影响函数所需的所有数据
+        """
+        if self._influence_registry is None:
+            return
+        
+        # 如果没有提供上下文，创建默认上下文
+        if context is None:
+            context = {}
+        
+        # 确保上下文中包含 government 对象本身
+        context['government'] = self
+        
+        # 获取所有影响该目标的影响函数
+        influences = self._influence_registry.get_influences(target_name)
+        
+        # 应用每个影响函数
+        for influence in influences:
+            try:
+                impact = influence.apply(self, context)
+                if impact is not None:
+                    # 可以记录影响或采取其他行动
+                    pass
+            except Exception as e:
+                self.government_log.error(f"应用影响函数失败 ({influence.source}->{target_name}:{influence.name}): {e}")
+
+class government_SharedInformationPool(IGovernmentSharedInformationPool):
     def __init__(self, max_discussions: int = 5):
         """
         初始化共享信息池
@@ -463,7 +569,7 @@ class government_SharedInformationPool:
             self.is_discussion_ended = False
 
 
-class InformationOfficer(BaseAgent):
+class InformationOfficer(BaseAgent, IGovernmentInformationOfficer):
     def __init__(self, agent_id, government, shared_pool):
         super().__init__(agent_id, group_type='government', window_size=0)
         self.shared_pool = shared_pool

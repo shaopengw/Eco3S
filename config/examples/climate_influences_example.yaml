@@ -1,0 +1,264 @@
+# ClimateSystem 模块影响函数配置
+# 用于增强和调整气候影响度计算
+
+influences:
+  # ==================== 气候影响度调整 ====================
+  
+  # 1. 极端气候事件放大器（可选）
+  - name: extreme_climate_amplifier
+    type: code
+    source: climate_data
+    target: climate_impact
+    params:
+      code: |
+        # 放大极端气候事件的影响
+        raw_impact = context['raw_impact']
+        result = context['result']
+        
+        # 如果影响度超过某个阈值，进一步放大
+        if raw_impact > 0.7:
+            # 极端事件的影响加倍
+            result['climate_impact'] = raw_impact * 1.5
+        elif raw_impact > 0.5:
+            # 中等强度事件适度放大
+            result['climate_impact'] = raw_impact * 1.2
+  
+  # 2. 累积效应（可选）
+  - name: cumulative_effect
+    type: code
+    source: historical
+    target: climate_impact
+    params:
+      code: |
+        # 考虑历史累积效应
+        climate_data = context['climate_data']
+        current_year = context['current_year']
+        result = context['result']
+        
+        # 计算过去3年的平均影响
+        if current_year >= 3:
+            recent_impacts = [abs(climate_data[i]) for i in range(current_year - 3, current_year)]
+            avg_recent = sum(recent_impacts) / len(recent_impacts)
+            
+            # 如果过去3年平均影响较高，当前影响进一步增加
+            if avg_recent > 0.5:
+                cumulative_bonus = (avg_recent - 0.5) * 0.3
+                result['climate_impact'] += cumulative_bonus
+  
+  # 3. 季节性调整（可选） - name: seasonal_adjustment
+    type: conditional
+    source: time
+    target: climate_impact
+    params:
+      conditions:
+        - condition: "context.get('season') == 'winter'"
+          action:
+            type: linear
+            mode: multiply
+            coefficient: 1.2
+            constant: 0
+            variable: climate_impact
+            target_attr: climate_impact
+            use_result_dict: true
+        - condition: "context.get('season') == 'summer'"
+          action:
+            type: linear
+            mode: multiply
+            coefficient: 1.1
+            constant: 0
+            variable: climate_impact
+            target_attr: climate_impact
+            use_result_dict: true
+  
+  # 4. 地理位置修正（可选）
+  - name: geographic_modifier
+    type: code
+    source: geography
+    target: climate_impact
+    params:
+      code: |
+        # 根据地理位置调整气候影响
+        result = context['result']
+        location_type = context.get('location_type', 'inland')
+        
+        # 沿海地区受气候影响更大
+        if location_type == 'coastal':
+            result['climate_impact'] *= 1.3
+        # 山区相对稳定
+        elif location_type == 'mountain':
+            result['climate_impact'] *= 0.8
+  
+  # 5. 气候变化趋势（可选）
+  - name: climate_change_trend
+    type: code
+    source: long_term_trend
+    target: climate_impact
+    params:
+      code: |
+        # 长期气候变化趋势影响
+        current_year = context['current_year']
+        result = context['result']
+        
+        # 模拟气候变暖：随时间推移，影响逐渐增强
+        trend_factor = 1 + (current_year * 0.005)  # 每年增加0.5%
+        result['climate_impact'] *= min(trend_factor, 1.5)  # 最多增强50%
+  
+  # 6. 极端事件随机触发（可选）
+  - name: extreme_event_random
+    type: code
+    source: random
+    target: climate_impact
+    params:
+      code: |
+        # 随机触发极端气候事件
+        import random
+        result = context['result']
+        
+        # 5%概率触发极端事件
+        if random.random() < 0.05:
+            # 极端事件使影响加倍
+            result['climate_impact'] *= 2
+            context['extreme_event_triggered'] = True
+  
+  # 7. 防灾减灾措施（可选）
+  - name: disaster_mitigation
+    type: code
+    source: infrastructure
+    target: climate_impact
+    params:
+      code: |
+        # 防灾基础设施降低气候影响
+        result = context['result']
+        mitigation_level = context.get('mitigation_level', 0)  # 0-100
+        
+        # 减灾水平每提高10点，影响降低5%
+        reduction = mitigation_level * 0.005
+        result['climate_impact'] *= (1 - reduction)
+  
+  # 8. 气候预警系统（可选）
+  - name: early_warning_system
+    type: threshold
+    source: technology
+    target: climate_impact
+    params:
+      threshold: 0.6
+      comparison: greater_than
+      effect:
+        type: code
+        code: |
+          # 预警系统激活，降低突发事件影响
+          result = context['result']
+          warning_effectiveness = context.get('warning_effectiveness', 0.7)
+          
+          # 预警系统可降低20-30%的影响
+          result['climate_impact'] *= (1 - warning_effectiveness * 0.3)
+  
+  # 9. 生态系统恢复力（可选）
+  - name: ecosystem_resilience
+    type: code
+    source: environment
+    target: climate_impact
+    params:
+      code: |
+        # 生态系统健康度影响气候影响
+        result = context['result']
+        ecosystem_health = context.get('ecosystem_health', 50)  # 0-100
+        
+        # 生态系统越健康，缓冲能力越强
+        if ecosystem_health > 70:
+            resilience_factor = 0.8 + (ecosystem_health - 70) * 0.005
+            result['climate_impact'] *= resilience_factor
+        elif ecosystem_health < 30:
+            # 生态系统脆弱，放大影响
+            vulnerability_factor = 1.2 + (30 - ecosystem_health) * 0.01
+            result['climate_impact'] *= vulnerability_factor
+  
+  # 10. 全球气候协作（可选）
+  - name: global_cooperation
+    type: threshold
+    source: policy
+    target: climate_impact
+    params:
+      threshold: 80
+      comparison: greater_than
+      effect:
+        type: linear
+        mode: multiply
+        coefficient: 0.85  # 国际合作降低15%影响
+        constant: 0
+        variable: climate_impact
+        target_attr: climate_impact
+        use_result_dict: true
+  
+  # 11. 气候适应性建设（可选）
+  - name: climate_adaptation
+    type: linear
+    source: adaptation
+    target: climate_impact
+    params:
+      mode: multiply
+      coefficient: -0.002  # 每1点适应度降低0.2%影响
+      constant: 1.0
+      variable: adaptation_index
+      target_attr: climate_impact
+      use_result_dict: true
+
+# ==================== 使用说明 ====================
+# 
+# 1. 基础功能：
+#    - ClimateSystem 默认从数据文件读取原始气候数据
+#    - 不配置影响函数时，返回原始数据的绝对值
+#
+# 2. 可选增强：
+#    - extreme_climate_amplifier: 放大极端事件影响
+#    - cumulative_effect: 考虑历史累积效应
+#    - seasonal_adjustment: 季节性调整
+#    - geographic_modifier: 地理位置修正
+#    - climate_change_trend: 气候变化长期趋势
+#    - extreme_event_random: 随机极端事件
+#    - disaster_mitigation: 防灾减灾措施
+#    - early_warning_system: 气候预警系统
+#    - ecosystem_resilience: 生态系统恢复力
+#    - global_cooperation: 全球气候协作
+#    - climate_adaptation: 气候适应性建设
+#
+# 3. 加载方式（在主程序中）：
+#    ```python
+#    from src.influences import InfluenceRegistry
+#    from src.environment.climate import ClimateSystem
+#    
+#    # 创建并加载影响函数
+#    registry = InfluenceRegistry()
+#    registry.load_from_yaml('config/climate_influences.yaml')
+#    
+#    # 创建气候系统时传入注册表
+#    climate = ClimateSystem(
+#        climate_data_path='data/climate.csv',
+#        influence_registry=registry
+#    )
+#    
+#    # 正常使用，影响函数会自动应用
+#    impact = climate.get_current_impact(current_year=2020, start_year=2000)
+#    print(f"Climate impact: {impact}")
+#    ```
+#
+# 4. 上下文数据要求：
+#    - season: 季节（可选，'spring'/'summer'/'autumn'/'winter'）
+#    - location_type: 地理位置类型（可选，'coastal'/'inland'/'mountain'）
+#    - mitigation_level: 减灾水平（可选，0-100）
+#    - warning_effectiveness: 预警系统有效性（可选，0-1）
+#    - ecosystem_health: 生态系统健康度（可选，0-100）
+#    - adaptation_index: 气候适应指数（可选，0-100）
+#    - 其他政策和基础设施相关参数
+#
+# 5. 使用场景：
+#    - 模拟气候变化对基础设施的影响
+#    - 评估防灾减灾措施的效果
+#    - 研究生态保护与气候韧性的关系
+#    - 测试不同气候政策的长期影响
+#
+# 6. 注意事项：
+#    - 原始气候数据来自CSV文件，影响函数在此基础上进行调整
+#    - 多个影响函数会顺序执行，注意它们之间的相互作用
+#    - 某些影响函数（如随机事件）可能增加不确定性
+#    - 建议根据实际场景选择合适的影响函数组合

@@ -19,10 +19,10 @@ data:
 simulation:
   # 基础时间配置
   start_year: 1  # 模拟开始时间点（交易期1）
-  total_years: 30
+  total_years: 2
   
   # 人口配置
-  initial_population: 200
+  initial_population: 5
   birth_rate: 0.05
   
   # 地图设置

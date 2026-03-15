@@ -12,21 +12,25 @@ if "sphinx" not in sys.modules:
     resident_log.addHandler(file_handler)
 
 class TEOGSimulator:
-    def __init__(self, map, time, government, government_officials, population, social_network, residents, towns, transport_economy, climate, config):
+    def __init__(self, container: DIContainer, government_officials: List[IOrdinaryGovernmentAgent], residents: Dict[int, IResident], config: Dict, loaded_plugins: Dict = None):
         """初始化模拟器类"""
         # 初始化日志记录器
         self.logger = LogManager.get_logger('simulator_TEOG', console_output=True)
         
-        self.map = map
-        self.time = time
-        self.government = government
+        # 从插件或容器中获取模块实例
+        self.map = self._resolve_instance('default_map', IMap, container, loaded_plugins)
+        self.time = self._resolve_instance('default_time', ITime, container, loaded_plugins)
+        self.population = self._resolve_instance('default_population', IPopulation, container, loaded_plugins)
+        self.social_network = self._resolve_instance('default_social_network', ISocialNetwork, container, loaded_plugins)
+        self.towns = self._resolve_instance('default_towns', ITowns, container, loaded_plugins)
+        self.transport_economy = self._resolve_instance('default_transport_economy', ITransportEconomy, container, loaded_plugins)
+        self.climate = self._resolve_instance('default_climate', IClimateSystem, container, loaded_plugins)
+        self.government = container.resolve(IGovernment)
+        
+        # 接受作为参数传入的对象
         self.government_officials = government_officials
-        self.population = population
-        self.social_network = social_network
         self.residents = residents
-        self.towns = towns
-        self.transport_economy = transport_economy #水利系统
-        self.climate = climate
+        self.config = config
         self.basic_living_cost = 8  # 每年基本生活所需值（单位：两）
         self.average_satisfaction = None  # 平均满意度（0-100）
         self.gdp = 0  # 国内生产总值（单位：两）
@@ -62,6 +66,13 @@ class TEOGSimulator:
         self.results["river_navigability"].append(self.map.get_navigability())
         self.results["gdp"].append(self.gdp)
         self.results["urban_scale"].append(self.get_urban_scale())
+
+    @staticmethod
+    def _resolve_instance(plugin_name: str, interface_type, container: DIContainer, loaded_plugins: Dict = None):
+        """从插件或容器中获取实例"""
+        if loaded_plugins and plugin_name in loaded_plugins:
+            return loaded_plugins[plugin_name]
+        return container.resolve(interface_type)
 
     async def run(self):
         """运行模拟"""

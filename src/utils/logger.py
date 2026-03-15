@@ -76,12 +76,17 @@ class LogManager:
         # 将完整日志处理器添加到当前logger
         logger.addHandler(cls._complete_log_handler)
         
-        # 可选：添加控制台处理器
+        # 可选：添加控制台处理器（注意：不要添加 complete_log_handler 的 console handler）
+        # 每个 logger 只添加一个 console handler
         if console_output:
-            console_handler = logging.StreamHandler()
-            console_handler.setLevel(console_level)
-            console_handler.setFormatter(formatter)
-            logger.addHandler(console_handler)
+            # 检查是否已经有 StreamHandler，避免重复添加
+            # 注意：FileHandler 继承自 StreamHandler，使用 type() 而不是 isinstance()
+            has_console_handler = any(type(h) == logging.StreamHandler for h in logger.handlers)
+            if not has_console_handler:
+                console_handler = logging.StreamHandler()
+                console_handler.setLevel(console_level)
+                console_handler.setFormatter(formatter)
+                logger.addHandler(console_handler)
         
         # 保存实例
         cls._instances[logger_name] = logger

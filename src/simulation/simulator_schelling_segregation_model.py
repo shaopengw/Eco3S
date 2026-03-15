@@ -2,27 +2,29 @@ from .simulator_imports import *
 
 class SchellingSegregationModelSimulator:
     
-    def __init__(self, **kwargs):
+    def __init__(self, container: DIContainer, residents: Dict[int, IResident], config: Dict, loaded_plugins: Dict = None):
 
         self.logger = LogManager.get_logger('simulator', console_output=True)
 
-        self.map = kwargs.get('map')
+        # 从插件或容器中获取模块实例
+        self.map = self._resolve_instance('default_map', IMap, container, loaded_plugins)
 
-        self.time = kwargs.get('time')
+        self.time = self._resolve_instance('default_time', ITime, container, loaded_plugins)
 
-        self.population = kwargs.get('population')
-
-    
-        self.social_network = kwargs.get('social_network')
+        self.population = self._resolve_instance('default_population', IPopulation, container, loaded_plugins)
 
     
-        self.residents = kwargs.get('residents')
+        self.social_network = self._resolve_instance('default_social_network', ISocialNetwork, container, loaded_plugins)
 
     
-        self.towns = kwargs.get('towns')
+        self.towns = self._resolve_instance('default_towns', ITowns, container, loaded_plugins)
 
     
-        self.config = kwargs.get('config')
+        # 接受作为参数传入的对象
+        self.residents = residents
+
+    
+        self.config = config
 
 
     
@@ -60,8 +62,13 @@ class SchellingSegregationModelSimulator:
     
         self.result_file = os.path.join(data_dir, f"running_data_{timestamp}_pid{pid}.csv")
     
-    def init_results(self):
-
+    @staticmethod
+    def _resolve_instance(plugin_name: str, interface_type, container: DIContainer, loaded_plugins: Dict = None):
+        """从插件或容器中获取实例"""
+        if loaded_plugins and plugin_name in loaded_plugins:
+            return loaded_plugins[plugin_name]
+        return container.resolve(interface_type)
+    
     
         return {
 

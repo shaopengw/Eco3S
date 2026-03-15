@@ -9,8 +9,9 @@ from datetime import datetime
 os.environ["OMP_NUM_THREADS"] = "1"
 from sklearn.cluster import KMeans
 import asyncio
+from src.interfaces import IHeterogeneousGraph, IHypergraph, ISocialNetwork
 
-class HeterogeneousGraph:
+class HeterogeneousGraph(IHeterogeneousGraph):
     """
     使用 networkx 构建异质图，支持多类型节点和边。
     """
@@ -84,7 +85,7 @@ class HeterogeneousGraph:
         
         plt.axis('off')
 
-class Hypergraph:
+class Hypergraph(IHypergraph):
     def __init__(self):
         """
         初始化一个空的超图。
@@ -188,16 +189,48 @@ class Hypergraph:
         plt.show()
 
 
-class SocialNetwork:
+class SocialNetwork(ISocialNetwork):
     """
     结合异质图和超图，构建社交网络。
     """ 
     def __init__(self):
-        self.hetero_graph = HeterogeneousGraph()
-        self.hyper_graph = Hypergraph()
-        self.residents = {}  # 添加residents字典
-        self.dialogue_count = 0  # 当前时间步的对话计数
-        self.MAX_DIALOGUES_PER_STEP = 20000  # 每个时间步最大对话量
+        self._hetero_graph = HeterogeneousGraph()
+        self._hyper_graph = Hypergraph()
+        self._residents = {}  # 添加residents字典
+        self._dialogue_count = 0  # 当前时间步的对话计数
+        self._max_dialogues_per_step = 20000  # 每个时间步最大对话量
+
+    @property
+    def hetero_graph(self) -> IHeterogeneousGraph:
+        return self._hetero_graph
+
+    @property
+    def hyper_graph(self) -> IHypergraph:
+        return self._hyper_graph
+
+    @property
+    def residents(self) -> dict:
+        return self._residents
+
+    @residents.setter
+    def residents(self, value: dict) -> None:
+        self._residents = value
+
+    @property
+    def dialogue_count(self) -> int:
+        return self._dialogue_count
+
+    @dialogue_count.setter
+    def dialogue_count(self, value: int) -> None:
+        self._dialogue_count = value
+
+    @property
+    def MAX_DIALOGUES_PER_STEP(self) -> int:
+        return self._max_dialogues_per_step
+
+    @MAX_DIALOGUES_PER_STEP.setter
+    def MAX_DIALOGUES_PER_STEP(self, value: int) -> None:
+        self._max_dialogues_per_step = value
 
     def add_resident(self, resident_id, node_type):
         """

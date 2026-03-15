@@ -632,7 +632,7 @@ class ProjectMasterAgent(BaseAgent):
         
         # === 步骤4.1: 完善数据可视化及保存代码 ===
         self.logger.info("步骤 4.1: 完善数据可视化及保存代码")
-        visualization_dir = "src\\visualization\\plot_results.py"
+        visualization_dir = os.path.join('src', 'visualization', 'plot_results.py')
 
         refined_visualization = await coder.refine_visualization_code(
             visualization_dir,

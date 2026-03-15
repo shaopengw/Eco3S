@@ -8,14 +8,17 @@ class PropagationStrategy(Enum):
     BROADCAST_WITH_COMMON_KNOWLEDGE = "BC_CK"
 
 class InfoPropagationSimulator:
-    def __init__(self, map, time, population, social_network, residents, towns, config):
+    def __init__(self, container: DIContainer, residents: Dict[int, IResident], config: Dict, loaded_plugins: Dict = None):
         """初始化信息传播模拟器"""
-        self.map = map
-        self.time = time
-        self.population = population
-        self.social_network = social_network
+        # 从插件或容器中获取模块实例
+        self.map = self._resolve_instance('default_map', IMap, container, loaded_plugins)
+        self.time = self._resolve_instance('default_time', ITime, container, loaded_plugins)
+        self.population = self._resolve_instance('default_population', IPopulation, container, loaded_plugins)
+        self.social_network = self._resolve_instance('default_social_network', ISocialNetwork, container, loaded_plugins)
+        self.towns = self._resolve_instance('default_towns', ITowns, container, loaded_plugins)
+        
+        # 接受作为参数传入的对象
         self.residents = residents
-        self.towns = towns
         self.config = config
         self.conversation_volume = 0
         
@@ -41,6 +44,13 @@ class InfoPropagationSimulator:
             }
             for strategy in PropagationStrategy
         }
+
+    @staticmethod
+    def _resolve_instance(plugin_name: str, interface_type, container: DIContainer, loaded_plugins: Dict = None):
+        """从插件或容器中获取实例"""
+        if loaded_plugins and plugin_name in loaded_plugins:
+            return loaded_plugins[plugin_name]
+        return container.resolve(interface_type)
 
     async def run(self):
         """运行实验"""

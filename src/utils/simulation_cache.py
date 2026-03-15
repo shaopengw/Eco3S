@@ -7,25 +7,8 @@ import yaml
 import time as time_module
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from src.agents.resident import Resident, ResidentGroup, ResidentSharedInformationPool
-from src.agents.government import (
-    Government, OrdinaryGovernmentAgent, HighRankingGovernmentAgent, InformationOfficer,
-    government_SharedInformationPool
-)
-from src.agents.rebels import Rebellion, OrdinaryRebel, RebelLeader, RebelsSharedInformationPool, InformationOfficer as RebelsInformationOfficer
-from src.agents.memory_manager import MemoryManager, MemoryRecord, BaseMessage
-from src.environment.social_network import SocialNetwork
-from src.environment.towns import Towns
-from src.environment.job_market import JobMarket
-from src.environment.population import Population
-
-from camel.configs import ChatGPTConfig
-from camel.memories import ScoreBasedContextCreator, MemoryRecord
-from camel.messages import BaseMessage
-from camel.models import ModelFactory
-from camel.utils import OpenAITokenCounter
-from src.agents.model_manager import ModelManager
-from camel.types import ModelType
+# 延迟导入，避免循环依赖
+# 这些类只在 save_cache 和 load_cache 方法中使用，不需要在模块级别导入
 
 T = TypeVar('T')
 
@@ -127,6 +110,9 @@ class SimulationCache:
         Returns:
             bool: 保存是否成功
         """
+        # 延迟导入，避免循环依赖
+        from camel.memories import MemoryRecord
+        
         try:
             # 确保目标目录存在
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -277,6 +263,28 @@ class SimulationCache:
         Returns:
             Optional[T]: 恢复的模拟器实例，如果加载失败则返回 None
         """
+        # 延迟导入，避免循环依赖
+        from src.agents.resident import Resident, ResidentGroup, ResidentSharedInformationPool
+        from src.agents.government import (
+            Government, OrdinaryGovernmentAgent, HighRankingGovernmentAgent, InformationOfficer,
+            government_SharedInformationPool
+        )
+        from src.agents.rebels import (
+            Rebellion, OrdinaryRebel, RebelLeader, RebelsSharedInformationPool, 
+            InformationOfficer as RebelsInformationOfficer
+        )
+        from src.agents.memory_manager import MemoryManager
+        from src.environment.social_network import SocialNetwork
+        from src.environment.towns import Towns
+        from src.environment.job_market import JobMarket
+        from camel.configs import ChatGPTConfig
+        from camel.memories import ScoreBasedContextCreator, MemoryRecord
+        from camel.messages import BaseMessage
+        from camel.models import ModelFactory
+        from camel.utils import OpenAITokenCounter
+        from src.agents.model_manager import ModelManager
+        from camel.types import ModelType
+        
         try:
             # 加载缓存文件
             with open(file_path, 'rb') as f:

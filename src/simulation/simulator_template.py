@@ -2,27 +2,32 @@ from .simulator_imports import *
 
 class YourSimulator:
     
-    def __init__(self, **kwargs):
+    def __init__(self, container: DIContainer, residents: Dict[int, IResident], config: Dict, 
+                 government_officials: List[IOrdinaryGovernmentAgent] = None,
+                 rebels_agents: List[IOrdinaryRebel] = None,
+                 loaded_plugins: Dict = None):
                 
         # 初始化日志记录器
         self.logger = LogManager.get_logger('simulator', console_output=True)
 
-        # === 核心对象（必需） ===
-        self.map = kwargs.get('map')
-        self.time = kwargs.get('time')
-        self.population = kwargs.get('population')
-        self.social_network = kwargs.get('social_network')
-        self.residents = kwargs.get('residents')
-        self.towns = kwargs.get('towns')
-        self.config = kwargs.get('config')
+        # === 从插件或容器获取核心对象 ===
+        self.map = self._resolve_instance('default_map', IMap, container, loaded_plugins)
+        self.time = self._resolve_instance('default_time', ITime, container, loaded_plugins)
+        self.population = self._resolve_instance('default_population', IPopulation, container, loaded_plugins)
+        self.social_network = self._resolve_instance('default_social_network', ISocialNetwork, container, loaded_plugins)
+        self.towns = self._resolve_instance('default_towns', ITowns, container, loaded_plugins)
         
-        # === 可选对象（根据实验需求选择，不需要的可以删除） ===
-        self.government = kwargs.get('government')
-        self.government_officials = kwargs.get('government_officials')
-        self.rebellion = kwargs.get('rebellion')
-        self.rebels_agents = kwargs.get('rebels_agents')
-        self.transport_economy = kwargs.get('transport_economy')
-        self.climate = kwargs.get('climate')
+        # === 从容器获取可选对象 ===
+        self.government = container.resolve(IGovernment)
+        self.rebellion = container.resolve(IRebellion)
+        self.transport_economy = self._resolve_instance('default_transport_economy', ITransportEconomy, container, loaded_plugins)
+        self.climate = self._resolve_instance('default_climate', IClimateSystem, container, loaded_plugins)
+        
+        # === 接受作为参数传入的对象 ===
+        self.residents = residents
+        self.config = config
+        self.government_officials = government_officials
+        self.rebels_agents = rebels_agents
         
         # === 经济参数 ===
         self.basic_living_cost = 8  # 年基本生活成本（单位：两）
@@ -51,6 +56,13 @@ class YourSimulator:
         SimulationContext.ensure_directories()
         self.result_file = os.path.join(data_dir, f"running_data_{timestamp}_pid{pid}.csv")
         # 如果保存为 JSON，使用: f"running_data_{timestamp}_pid{pid}.json"
+    
+    @staticmethod
+    def _resolve_instance(plugin_name: str, interface_type, container: DIContainer, loaded_plugins: Dict = None):
+        """从插件或容器中获取实例"""
+        if loaded_plugins and plugin_name in loaded_plugins:
+            return loaded_plugins[plugin_name]
+        return container.resolve(interface_type)
     
     def init_results(self):
         """初始化结果数据结构"""

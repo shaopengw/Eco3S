@@ -22,25 +22,45 @@ class ResidentSharedInformationPool:
             return self.shared_info.get(category, {})
         return self.shared_info
 
-class ResidentGroup(BaseAgent):
+class ResidentGroup(BaseAgent, IResidentGroup):
     """居民群组，用于管理同一城镇的居民"""
     def __init__(self, town_name):
         super().__init__(agent_id=f"group_{town_name}", group_type='resident_group', window_size=3)
-        self.town_name = town_name
-        self.residents = {}
-        self.social_network = None
+        self._town_name = town_name
+        self._residents = {}
+        self._social_network = None
+
+    @property
+    def town_name(self):
+        return self._town_name
+    
+    @property
+    def residents(self):
+        return self._residents
+    
+    @property
+    def social_network(self):
+        return self._social_network
+    
+    @social_network.setter
+    def social_network(self, value):
+        self._social_network = value
 
     def add_resident(self, resident):
         """添加居民到群组"""
-        self.residents[resident.resident_id] = resident
-        # 设置共享的 LLM 资源
-        resident.model_backend = self.model_backend
-        resident.token_counter = self.token_counter
-        resident.context_creator = self.context_creator
-        resident.model_type = self.model_type
+        self._residents[resident.resident_id] = resident
+        # 设置共享的 LLM 资源（如果群组有的话）
+        if self.model_backend is not None:
+            resident.model_backend = self.model_backend
+        if self.token_counter is not None:
+            resident.token_counter = self.token_counter
+        if self.context_creator is not None:
+            resident.context_creator = self.context_creator
+        if self.model_type is not None:
+            resident.model_type = self.model_type
         
         # 为每个居民创建独立的memory（但共享其他资源）
-        if resident.memory is None:
+        if resident.memory is None and self.model_type is not None:
             resident.memory = MemoryManager(
                 agent_id=resident.resident_id,
                 model_type=self.model_type,
@@ -54,21 +74,22 @@ class ResidentGroup(BaseAgent):
 
     def set_social_network(self, social_network):
         """设置群组的社交网络"""
-        self.social_network = social_network
+        self._social_network = social_network
 
     def remove_resident(self, resident_id):
         """从群组中移除居民"""
-        if resident_id in self.residents:
-            resident = self.residents[resident_id]
+        if resident_id in self._residents:
+            resident = self._residents[resident_id]
             resident.set_group(None)  # 清除居民的群组引用
-            del self.residents[resident_id]
+            del self._residents[resident_id]
 
-class Resident(BaseAgent):
-    def __init__(self, resident_id, job_market, shared_pool, map, prompts_resident, actions_config, window_size=3, lightweight=False):
+class Resident(BaseAgent, IResident):
+    def __init__(self, resident_id, job_market, shared_pool, map, prompts_resident, actions_config, window_size=3, lightweight=False, influence_registry=None):
         """初始化居民
         
         Args:
             lightweight: 如果为True，跳过BaseAgent的重量级初始化，稍后由ResidentGroup设置共享资源
+            influence_registry: 影响函数注册表（可选）
         """
         if not lightweight:
             super().__init__(agent_id=resident_id, group_type='resident', window_size=window_size)
@@ -85,29 +106,118 @@ class Resident(BaseAgent):
             self.memory = None
             self.model_type = None
             
-        self.resident_id = resident_id
+        self._resident_id = resident_id
         self.job_market = job_market
         self.shared_pool = shared_pool
         self.map = map
-        self.location = None
-        self.town = None  # 城镇属性
-        self.employed = False  # 是否就业
-        self.job = None  # 当前工作
-        self.income = 0  # 收入
-        self.satisfaction = 0  # 对政府的满意度（0到100）
-        self.health_index = 0 # 居民的健康状况（1到5）
-        self.lifespan = 0  # 居民的寿命
+        self._location = None
+        self._town = None  # 城镇属性
+        self._employed = False  # 是否就业
+        self._job = None  # 当前工作
+        self._income = 0  # 收入
+        self._satisfaction = 0  # 对政府的满意度（0到100）
+        self._health_index = 0 # 居民的健康状况（1到5）
+        self._lifespan = 0  # 居民的寿命
         self.towns_manager = None  # Towns实例的引用
-        self.group = None  # 所属群组的引用
-        self.personality = None
+        self._group = None  # 所属群组的引用
+        self._personality = None
         self.prompts_resident = prompts_resident
         self.actions_config = actions_config
+        self._influence_registry = influence_registry
 
         self.resident_log = LogManager.get_logger("resident")
 
+    @property
+    def resident_id(self):
+        return self._resident_id
+    
+    @resident_id.setter
+    def resident_id(self, value):
+        self._resident_id = value
+    
+    @property
+    def location(self):
+        return self._location
+    
+    @location.setter
+    def location(self, value):
+        self._location = value
+    
+    @property
+    def town(self):
+        return self._town
+    
+    @town.setter
+    def town(self, value):
+        self._town = value
+    
+    @property
+    def employed(self):
+        return self._employed
+    
+    @employed.setter
+    def employed(self, value):
+        self._employed = value
+    
+    @property
+    def job(self):
+        return self._job
+    
+    @job.setter
+    def job(self, value):
+        self._job = value
+    
+    @property
+    def income(self):
+        return self._income
+    
+    @income.setter
+    def income(self, value):
+        self._income = value
+    
+    @property
+    def satisfaction(self):
+        return self._satisfaction
+    
+    @satisfaction.setter
+    def satisfaction(self, value):
+        self._satisfaction = value
+    
+    @property
+    def health_index(self):
+        return self._health_index
+    
+    @health_index.setter
+    def health_index(self, value):
+        self._health_index = value
+    
+    @property
+    def lifespan(self):
+        return self._lifespan
+    
+    @lifespan.setter
+    def lifespan(self, value):
+        self._lifespan = value
+    
+    @property
+    def group(self):
+        return self._group
+    
+    @group.setter
+    def group(self, value):
+        self._group = value
+    
+    @property
+    def personality(self):
+        return self._personality
+    
+    @personality.setter
+    def personality(self, value):
+        self._personality = value
+
     def set_group(self, group):
         """设置居民所属的群组"""
-        self.group = group
+        self._group = group
 
     def get_social_network(self):
         """通过群组获取社交网络"""
@@ -295,6 +405,11 @@ class Resident(BaseAgent):
         prompt += desired_job_and_min_salary
         response = None
         try:
+            # 检查 model_backend 是否已初始化
+            if self.model_backend is None:
+                self.resident_log.warning(f"居民 {self.resident_id} 的 model_backend 未初始化，跳过LLM决策")
+                return None
+            
             self.update_system_message(basic_living_cost)
             response = await self.generate_llm_response(prompt)
             if not response:
@@ -676,6 +791,32 @@ class Resident(BaseAgent):
 
     def update_health_index(self, basic_living_cost):
         """根据收入和满意度等因素更新健康状况"""
+        # 构建上下文
+        result = {'health_change': 0.0}
+        context = {
+            'resident': self,
+            'basic_living_cost': basic_living_cost,
+            'income': self.income,
+            'satisfaction': self.satisfaction,
+            'job': self.job,
+            'health_index': self.health_index,
+            'result': result
+        }
+        
+        # 尝试使用影响函数系统
+        if self._influence_registry is not None:
+            influences = self._influence_registry.get_influences('health_index')
+            if influences:
+                # 使用影响函数计算健康变化
+                self.apply_influences('health_index', context)
+                
+                # 应用健康变化
+                self.health_index += result['health_change']
+                # 确保健康指数在0-10范围内
+                self.health_index = int(max(0, min(10, self.health_index)))
+                return
+        
+        # 回退到默认逻辑（向后兼容）
         # 叛军职业的额外健康影响
         if self.job == "叛军":
             self.health_index = max(0, self.health_index - 2)  # 叛军生活艰苦，健康快速下降
@@ -812,3 +953,33 @@ class Resident(BaseAgent):
         """
         if self.memory:
             await self.memory.clear()  # 清除所有记忆
+
+    def apply_influences(self, target_name: str, context: Optional[Dict[str, Any]] = None) -> None:
+        """
+        应用所有注册的影响函数到指定目标
+        
+        :param target_name: 目标名称（如 'health_index', 'satisfaction'）
+        :param context: 上下文字典，包含影响函数所需的所有数据
+        """
+        if self._influence_registry is None:
+            return
+        
+        # 如果没有提供上下文，创建默认上下文
+        if context is None:
+            context = {}
+        
+        # 确保上下文中包含 resident 对象本身
+        context['resident'] = self
+        
+        # 获取所有影响该目标的影响函数
+        influences = self._influence_registry.get_influences(target_name)
+        
+        # 应用每个影响函数
+        for influence in influences:
+            try:
+                impact = influence.apply(self, context)
+                if impact is not None:
+                    # 可以记录影响或采取其他行动
+                    pass
+            except Exception as e:
+                self.resident_log.error(f"应用影响函数失败 ({influence.source}->{target_name}:{influence.name}): {e}")

@@ -2,8 +2,9 @@ import random
 from collections import defaultdict
 import yaml
 from pathlib import Path
+from src.interfaces import IJobMarket
 
-class JobMarket:
+class JobMarket(IJobMarket):
     def __init__(self, town_type="非沿河", initial_jobs_count=100, config_path=None):
         """
         初始化就业市场类
@@ -11,28 +12,40 @@ class JobMarket:
         :param initial_jobs_count: 初始工作总数
         :param config_path: 职业配置文件路径，如果为None则使用默认路径
         """
-        self.town_type = town_type
+        self._town_type = town_type
         # 加载配置文件
         if config_path is None:
-            config_path = Path(__file__).parent.parent.parent / 'config' / 'jobs_config.yaml'
+            config_path = Path(__file__).parent.parent.parent / 'config' / 'default' / 'jobs_config.yaml'
         
         with open(config_path, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
         
         # 初始化jobs_info
-        self.jobs_info = {}
+        self._jobs_info = {}
         for job, info in config['jobs_info'].items():
-            self.jobs_info[job] = {
+            self._jobs_info[job] = {
                 "total": 0,
                 "employed": {},
                 "base_salary": info['base_salary']
             }
         
         # 保存职业比例配置
-        self.professions_ratio = config['professions_ratio']
+        self._professions_ratio = config['professions_ratio']
         
         # 根据城镇类型初始化工作数量
         self._initialize_jobs(initial_jobs_count)
+
+    @property
+    def town_type(self):
+        return self._town_type
+    
+    @property
+    def jobs_info(self):
+        return self._jobs_info
+    
+    @property
+    def professions_ratio(self):
+        return self._professions_ratio
     
     def _initialize_jobs(self, total_count):
         """

@@ -25,10 +25,11 @@ parser.add_argument(
 )
 
 # 主运行函数
-async def run_simulation(config: dict[str, Any]) -> None:
+async def run_simulation(config: dict[str, Any], config_path: str) -> None:
     """
     运行模拟
     :param config: 配置字典
+    :param config_path: 配置文件路径
     """
     print(f"开始读取缓存文件...")
 
@@ -94,7 +95,37 @@ async def run_simulation(config: dict[str, Any]) -> None:
     
     if simulator is None:
         print("开始初始化......")
-        # 初始化地图
+        
+        # 初始化插件系统
+        print("正在初始化插件系统...")
+        config_dir = os.path.dirname(config_path)
+        modules_config_path = os.path.join(config_dir, "modules_config.yaml")
+        plugin_registry, loaded_plugins = initialize_plugin_system(
+            config=config,
+            modules_config_path=modules_config_path,
+            logger=logging.getLogger('plugin_system')
+        )
+        
+        # 初始化影响函数注册中心
+        print("正在初始化影响函数系统...")
+        influence_registry = InfluenceRegistry(logger=logging.getLogger('influences'))
+        influences_config_path = os.path.join(config_dir, "influences.yaml")
+        
+        if os.path.exists(influences_config_path):
+            try:
+                with open(influences_config_path, 'r', encoding='utf-8') as f:
+                    influences_config = yaml.safe_load(f)
+                loaded_count = influence_registry.load_from_config(influences_config)
+                print(f"成功加载 {loaded_count} 个影响函数")
+            except Exception as e:
+                print(f"警告: 加载影响函数配置失败: {e}")
+                print("将继续使用默认行为运行模拟")
+        else:
+            print(f"未找到影响函数配置文件: {influences_config_path}")
+            print("将使用默认行为运行模拟")
+        
+        # 初始化 DIContainer (传递 influence_registry)
+        container = setup_container_for_simulation(modules_config_path, config, influence_registry)
 
         # # 角色生成-测试时注销
         # N = config["simulation"]["initial_population"]
@@ -103,29 +134,16 @@ async def run_simulation(config: dict[str, Any]) -> None:
         # save_resident_data(resident_data, output_path)
         # print(f"生成了{N} 名居民数据，并保存到 {output_path}")
 
-        # 初始化地图
-        map = Map(width=config["simulation"]["map_width"], height=config["simulation"]["map_height"], data_file=config["data"]["towns_data_path"])
+        # 从容器获取基础模块并初始化
+        map = container.resolve(IMap)
         map.initialize_map()
         
-        # 初始化时间
-        time = Time(start_time=config["simulation"]["start_year"], 
-                   total_steps=config["simulation"]["total_years"])
-
-        # 初始化人口
-        population = Population(
-            initial_population=config["simulation"]["initial_population"],
-            birth_rate=config["simulation"]["birth_rate"]
-        )
-
-        # 初始化运输经济系统
-        transport_economy = TransportEconomy(
-            transport_cost=1,
-            transport_task=population.get_population() / 4,
-            maintenance_cost_base=population.get_population() * 0.2,
-        )
+        time = container.resolve(ITime)
+        population = container.resolve(IPopulation)
+        transport_economy = container.resolve(ITransportEconomy)
 
         # 初始化居民
-        resident_info_path = config["data"]["resident_info_path"]  # 居民信息文件路径
+        resident_info_path = config["data"]["resident_info_path"]
         residents = await generate_canal_agents(
             resident_info_path=resident_info_path,
             map=map,
@@ -134,12 +152,12 @@ async def run_simulation(config: dict[str, Any]) -> None:
             resident_actions_path=config["data"]["resident_actions_path"],
         )
 
-        # 初始化城镇
-        towns = Towns(map=map,initial_population=config["simulation"]["initial_population"],job_market_config_path=config["data"]["jobs_config_path"])
+        # 从容器获取 towns 并初始化
+        towns = container.resolve(ITowns)
         towns.initialize_resident_groups(residents)
         
-        # 初始化社交网络
-        social_network = SocialNetwork()
+        # 从容器获取 social_network 并初始化
+        social_network = container.resolve(ISocialNetwork)
         social_network.initialize_network(residents, towns)
         
         # 为每个城镇的居民群组设置社交网络
@@ -170,7 +188,7 @@ async def run_simulation(config: dict[str, Any]) -> None:
                 total_rebels += rebels_count
                 total_military += military_count
 
-        # 初始化政府
+        # 手动创建 government（需要动态计算的 military_strength）
         government = Government(
             map=map,
             towns=towns,
@@ -179,48 +197,46 @@ async def run_simulation(config: dict[str, Any]) -> None:
             time=time,
             transport_economy=transport_economy,
             government_prompt_path=config["data"]["government_prompt_path"],
-
+            influence_registry=influence_registry,
         )
+        # 将 government 注册到容器中
+        container.register_instance(IGovernment, government)
 
         # 初始化政府官员
-        government_info_path = config["data"]["government_info_path"]  # 政府官员信息文件路径
+        government_info_path = config["data"]["government_info_path"]
         government_officials = await generate_government_agents(
             government_info_path=government_info_path,
             government=government,
         )
 
-        # 初始化叛军
+        # 手动创建 rebellion（需要动态计算的 strength 和 resources）
         rebellion = Rebellion(
             initial_strength=total_rebels,
             initial_resources=total_rebels * 10,
             towns=towns,
             rebels_prompt_path=config["data"]["rebels_prompt_path"],
         )
+        # 将 rebellion 注册到容器中
+        container.register_instance(IRebellion, rebellion)
 
         # 初始化叛军成员
-        rebellion_info_path = config["data"]["rebellion_info_path"]  # 叛军信息文件路径
+        rebellion_info_path = config["data"]["rebellion_info_path"]
         rebels_agents = await generate_rebels_agents(
             rebellion_info_path=rebellion_info_path,
             rebellion=rebellion,
         )
-        climate_info_path = config["data"]["climate_info_path"]  # 气候信息文件路径
-        climate = ClimateSystem(climate_info_path)  # 气候系统
+        
+        # 从容器获取 climate
+        climate = container.resolve(IClimateSystem)
 
-        # 初始化模拟器
+        # 使用容器创建模拟器
         simulator = Simulator(
-            map=map,
-            time=time,
-            government=government,
+            container=container,
             government_officials=government_officials,
-            rebellion=rebellion,
             rebels_agents=rebels_agents,
-            population=population,
-            social_network=social_network,
             residents=residents,
-            towns=towns,
-            transport_economy=transport_economy,
-            climate=climate,
             config=config,
+            loaded_plugins=loaded_plugins
         )
         
         print("初始化完成")
@@ -283,4 +299,4 @@ if __name__ == "__main__":
     SimulationContext.set_simulation_name(config["simulation"].get("simulation_name"), population, total_years)
 
     # 运行模拟
-    asyncio.run(run_simulation(config))
+    asyncio.run(run_simulation(config, args.config_path))

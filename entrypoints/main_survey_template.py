@@ -14,9 +14,19 @@ parser.add_argument(
     default="config/your_survey_experiment/simulation_config.yaml",
 )
 
-async def run_simulation(config):
+async def run_simulation(config, config_path):
     """运行问卷调查实验"""
     print("开始初始化实验环境...")
+    
+    # 初始化插件系统（可选）
+    print("正在初始化插件系统...")
+    config_dir = os.path.dirname(config_path)
+    modules_config_path = os.path.join(config_dir, "modules_config.yaml")
+    plugin_registry, loaded_plugins = initialize_plugin_system(
+        config=config,
+        modules_config_path=modules_config_path,
+        logger=logging.getLogger('plugin_system')
+    )
     
     # 初始化地图
     map = Map(
@@ -68,13 +78,10 @@ async def run_simulation(config):
     
     # 创建问卷调查实验模拟器
     simulator = SurveySimulator(
-        map=map,
-        time=time,
-        population=population,
-        social_network=social_network,
+        container=container,
         residents=residents,
-        towns=towns,
-        config=config
+        config=config,
+        loaded_plugins=loaded_plugins
     )
     print("初始化完成")
 

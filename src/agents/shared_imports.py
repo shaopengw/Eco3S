@@ -8,7 +8,7 @@ from camel.configs import AnthropicConfig
 from camel.agents import ChatAgent
 
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 import sys
 import logging
 import os
@@ -23,6 +23,7 @@ import time
 from .model_manager import ModelManager
 from .memory_manager import MemoryManager
 from .base_agent import BaseAgent
+from ..interfaces.iresident import IResident, IResidentGroup, IResidentSharedInformationPool
 from ..utils.logger import LogManager
 from ..utils.simulation_context import SimulationContext
 

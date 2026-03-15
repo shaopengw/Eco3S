@@ -1,0 +1,253 @@
+# Population 模块影响函数配置
+# 用于替代原有的硬编码出生率计算公式
+
+influences:
+  # ==================== 出生率计算 ====================
+  
+  # 1. 基础出生率（基于满意度）
+  - name: base_birth_rate_by_satisfaction
+    type: code
+    source: satisfaction
+    target: birth_rate
+    params:
+      target_attr: _birth_rate
+      code: |
+        # 根据居民满意度调整出生率
+        population = context['population']
+        satisfaction = context['satisfaction']
+        base_rate = context['current_birth_rate']
+        
+        if satisfaction >= 80:
+            # 满意度高时，出生率上升
+            increase = (satisfaction - 80) * 0.002
+            population._birth_rate = min(0.5, base_rate + increase)
+        elif satisfaction <= 50:
+            # 满意度低时，出生率下降
+            decrease = (50 - satisfaction) * 0.001
+            population._birth_rate = max(0.01, base_rate - decrease)
+        else:
+            # 满意度中等，保持基础出生率
+            population._birth_rate = base_rate
+  
+  # 2. 经济繁荣奖励（可选）
+  - name: economic_prosperity_bonus
+    type: threshold
+    source: economic_indicator
+    target: birth_rate
+    params:
+      threshold: 90
+      comparison: greater_than
+      effect:
+        type: linear
+        mode: add
+        coefficient: 0
+        constant: 0.05  # 经济繁荣时额外增加5%出生率
+        variable: _birth_rate
+        target_attr: _birth_rate
+  
+  # 3. 健康指数影响（可选）
+  - name: health_index_effect
+    type: linear
+    source: health
+    target: birth_rate
+    params:
+      mode: add
+      coefficient: 0.001  # 每1点健康指数增加0.1%出生率
+      constant: 0
+      variable: health_index
+      target_attr: _birth_rate
+  
+  # 4. 人口密度抑制（可选）
+  - name: population_density_suppression
+    type: code
+    source: density
+    target: birth_rate
+    params:
+      target_attr: _birth_rate
+      code: |
+        # 人口密度过高时抑制出生率
+        population = context['population']
+        population_size = context['population_size']
+        
+        # 假设容纳上限为10000人
+        capacity = context.get('capacity', 10000)
+        density_ratio = population_size / capacity
+        
+        if density_ratio > 0.8:  # 超过容量的80%
+            # 出生率降低，越接近容量降低越多
+            suppression = (density_ratio - 0.8) * 0.5  # 最多降低10%
+            population._birth_rate = max(0.01, population._birth_rate - suppression)
+  
+  # 5. 政策激励（可选）
+  - name: government_birth_policy
+    type: conditional
+    source: government_policy
+    target: birth_rate
+    params:
+      conditions:
+        - condition: "context.get('policy') == 'encourage_birth'"
+          action:
+            type: linear
+            mode: add
+            coefficient: 0
+            constant: 0.1  # 鼓励生育政策增加10%出生率
+            variable: _birth_rate
+            target_attr: _birth_rate
+        - condition: "context.get('policy') == 'restrict_birth'"
+          action:
+            type: linear
+            mode: multiply
+            coefficient: 0.5  # 限制生育政策减半
+            constant: 0
+            variable: _birth_rate
+            target_attr: _birth_rate
+  
+  # 6. 教育水平影响（可选）
+  - name: education_level_effect
+    type: code
+    source: education
+    target: birth_rate
+    params:
+      target_attr: _birth_rate
+      code: |
+        # 教育水平与出生率通常呈负相关
+        population = context['population']
+        education_level = context.get('education_level', 50)  # 0-100
+        
+        # 教育水平每高10点，出生率降低1%
+        education_factor = 1 - (education_level / 100) * 0.1
+        population._birth_rate *= max(0.5, education_factor)  # 最多降低50%
+  
+  # 7. 年龄结构影响（可选）
+  - name: age_structure_effect
+    type: code
+    source: demographics
+    target: birth_rate
+    params:
+      target_attr: _birth_rate
+      code: |
+        # 育龄人口比例影响出生率
+        population = context['population']
+        childbearing_age_ratio = context.get('childbearing_age_ratio', 0.3)  # 0-1
+        
+        # 育龄人口比例越高，出生率越高
+        if childbearing_age_ratio > 0.4:
+            bonus = (childbearing_age_ratio - 0.4) * 0.2
+            population._birth_rate += bonus
+        elif childbearing_age_ratio < 0.2:
+            penalty = (0.2 - childbearing_age_ratio) * 0.3
+            population._birth_rate = max(0.01, population._birth_rate - penalty)
+  
+  # 8. 环境质量影响（可选）
+  - name: environment_quality_effect
+    type: threshold
+    source: environment
+    target: birth_rate
+    params:
+      threshold: 0.3
+      comparison: less_than
+      effect:
+        type: linear
+        mode: multiply
+        coefficient: 0.8  # 环境恶劣时出生率降低20%
+        constant: 0
+        variable: _birth_rate
+        target_attr: _birth_rate
+  
+  # 9. 社会稳定性影响（可选）
+  - name: social_stability_effect
+    type: code
+    source: social
+    target: birth_rate
+    params:
+      target_attr: _birth_rate
+      code: |
+        # 社会动荡时出生率下降
+        population = context['population']
+        stability_index = context.get('stability_index', 100)  # 0-100
+        
+        if stability_index < 60:
+            # 社会不稳定，出生率降低
+            reduction = (60 - stability_index) * 0.001
+            population._birth_rate = max(0.01, population._birth_rate - reduction)
+  
+  # 10. 季节性波动（可选）
+  - name: seasonal_variation
+    type: conditional
+    source: time
+    target: birth_rate
+    params:
+      conditions:
+        - condition: "context.get('month', 1) in [1, 2, 3]"  # 春季
+          action:
+            type: linear
+            mode: multiply
+            coefficient: 1.1
+            constant: 0
+            variable: _birth_rate
+            target_attr: _birth_rate
+        - condition: "context.get('month', 1) in [10, 11, 12]"  # 冬季
+          action:
+            type: linear
+            mode: multiply
+            coefficient: 0.95
+            constant: 0
+            variable: _birth_rate
+            target_attr: _birth_rate
+
+# ==================== 使用说明 ====================
+# 
+# 1. 基础配置（必需）：
+#    - base_birth_rate_by_satisfaction: 根据满意度计算出生率
+#
+# 2. 可选增强：
+#    - economic_prosperity_bonus: 经济繁荣奖励
+#    - health_index_effect: 健康指数影响
+#    - population_density_suppression: 人口密度抑制
+#    - government_birth_policy: 政府生育政策
+#    - education_level_effect: 教育水平影响
+#    - age_structure_effect: 年龄结构影响
+#    - environment_quality_effect: 环境质量影响
+#    - social_stability_effect: 社会稳定性影响
+#    - seasonal_variation: 季节性波动
+#
+# 3. 加载方式（在主程序中）：
+#    ```python
+#    from src.influences import InfluenceRegistry
+#    from src.environment.population import Population
+#    
+#    # 创建并加载影响函数
+#    registry = InfluenceRegistry()
+#    registry.load_from_yaml('config/population_influences.yaml')
+#    
+#    # 创建人口对象时传入注册表
+#    population = Population(
+#        initial_population=1000,
+#        birth_rate=0.02,
+#        influence_registry=registry
+#    )
+#    
+#    # 正常使用，影响函数会自动应用
+#    population.update_birth_rate(satisfaction=75)
+#    print(f"Updated birth rate: {population.birth_rate}")
+#    ```
+#
+# 4. 上下文数据要求：
+#    - satisfaction: 居民满意度（0-100）
+#    - economic_indicator: 经济指标（可选，0-100）
+#    - health_index: 健康指数（可选，0-100）
+#    - capacity: 人口容量（可选，默认10000）
+#    - policy: 生育政策（可选，'encourage_birth' 或 'restrict_birth'）
+#    - education_level: 教育水平（可选，0-100）
+#    - childbearing_age_ratio: 育龄人口比例（可选，0-1）
+#    - environment_quality: 环境质量（可选，0-1）
+#    - stability_index: 社会稳定指数（可选，0-100）
+#    - month: 月份（可选，1-12）
+#
+# 5. 自定义影响函数：
+#    可以根据实际需求添加更多影响函数，例如：
+#    - 婚姻率影响
+#    - 房价影响
+#    - 就业率影响
+#    - 文化因素
+#    - 宗教信仰

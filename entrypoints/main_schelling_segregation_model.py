@@ -13,116 +13,51 @@ def parse_args(default_config_path):
     parser.add_argument("--resume_from_cache", action="store_true", help="从缓存恢复模拟")
     return parser.parse_args()
 
-async def run_simulation(config):
+async def run_simulation(config, config_path):
 
 
     try:
-
-
         resume_from_cache = config.get('resume_from_cache', False)
 
-
-        map = Map(
-
-
-            width=config["simulation"]["map_width"],
-
-
-            height=config["simulation"]["map_height"],
-
-
-            data_file=config.get("data", {}).get("towns_data_path", "")
-
-
+        # 初始化插件系统
+        print("正在初始化插件系统...")
+        config_dir = os.path.dirname(config_path)
+        modules_config_path = os.path.join(config_dir, "modules_config.yaml")
+        plugin_registry, loaded_plugins = initialize_plugin_system(
+            config=config,
+            modules_config_path=modules_config_path,
+            logger=logging.getLogger('plugin_system')
         )
 
+        # 初始化 DIContainer
+        container = setup_container_for_simulation(modules_config_path, config)
 
+        # 获取 map 实例并初始化
+        map = container.resolve(IMap)
         map.initialize_map()
 
-
-        time = Time(
-
-
-            start_time=config["simulation"].get("start_year", 2020),
-
-
-            total_steps=config["simulation"].get("total_years", 10)
-
-
-        )
-
-
-        population = Population(
-
-
-            initial_population=config["simulation"].get("initial_population", 1000),
-
-
-            birth_rate=config["simulation"].get("birth_rate", 0.01)
-
-
-        )
-
-
+        # 生成居民
         residents = await generate_canal_agents(
-
-
             resident_info_path=config.get("data", {}).get("resident_info_path", ""),
-
-
             map=map,
-
-
             initial_population=config["simulation"].get("initial_population", 1000),
-
-
             resident_prompt_path=config.get("data", {}).get("resident_prompt_path", ""),
-
-
             resident_actions_path=config.get("data", {}).get("resident_actions_path", ""),
-
-
             window_size=10
-
-
         )
 
-
-        towns = Towns(
-
-
-            map=map,
-
-
-            initial_population=config["simulation"].get("initial_population", 1000),
-
-
-            job_market_config_path=config.get("data", {}).get("jobs_config_path", "")
-
-
-        )
-
-
+        # 获取 towns 并初始化居民组
+        towns = container.resolve(ITowns)
         towns.initialize_resident_groups(residents)
 
-
-        social_network = SocialNetwork()
-
-
+        # 获取社交网络并初始化
+        social_network = container.resolve(ISocialNetwork)
         social_network.initialize_network(residents, towns)
 
-
         for town_name, town_data in towns.towns.items():
-
-
             resident_group = town_data.get('resident_group')
-
-
             if resident_group:
-
-
                 resident_group.set_social_network(social_network)
-
 
         # 为初始居民随机分配类型（A或B）
         import random
@@ -130,31 +65,12 @@ async def run_simulation(config):
             if not hasattr(resident, 'resident_type'):
                 resident.resident_type = random.choice(['A', 'B'])
 
-
+        # 使用容器创建模拟器
         simulator = SchellingSegregationModelSimulator(
-
-
-            map=map,
-
-
-            time=time,
-
-
-            population=population,
-
-
-            social_network=social_network,
-
-
+            container=container,
             residents=residents,
-
-
-            towns=towns,
-
-
             config=config,
-
-
+            loaded_plugins=loaded_plugins
         )
 
 
@@ -373,4 +289,4 @@ if __name__ == "__main__":
         SimulationContext.set_simulation_name(config["simulation"]["simulation_name"])
     
     # 运行模拟
-    asyncio.run(run_simulation(config))
+    asyncio.run(run_simulation(config, args.config_path))

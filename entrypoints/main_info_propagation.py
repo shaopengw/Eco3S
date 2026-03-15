@@ -14,29 +14,26 @@ parser.add_argument(
     default="config/info_propagation/simulation_config.yaml",
 )
 
-async def run_simulation(config):
+async def run_simulation(config, config_path):
     """运行信息传播实验"""
     print("开始初始化实验环境...")
     
-    # 初始化地图
-    map = Map(
-        width=config["simulation"]["map_width"],
-        height=config["simulation"]["map_height"],
-        data_file=config["data"]["towns_data_path"]
+    # 初始化插件系统
+    print("正在初始化插件系统...")
+    config_dir = os.path.dirname(config_path)
+    modules_config_path = os.path.join(config_dir, "modules_config.yaml")
+    plugin_registry, loaded_plugins = initialize_plugin_system(
+        config=config,
+        modules_config_path=modules_config_path,
+        logger=logging.getLogger('plugin_system')
     )
+    
+    # 初始化 DIContainer
+    container = setup_container_for_simulation(modules_config_path, config)
+    
+    # 获取 map 实例并初始化
+    map = container.resolve(IMap)
     map.initialize_map()
-    
-    # 初始化时间系统
-    time = Time(
-        start_time=config["simulation"]["start_year"],
-        total_steps=config["simulation"]["total_years"]
-    )
-    
-    # 初始化人口系统
-    population = Population(
-        initial_population=config["simulation"]["initial_population"],
-        birth_rate=config["simulation"]["birth_rate"]
-    )
     
     # 初始化居民
     residents = await generate_canal_agents(
@@ -48,16 +45,12 @@ async def run_simulation(config):
         window_size=10
     )
 
-    # 初始化城镇
-    towns = Towns(
-        map=map,
-        initial_population=config["simulation"]["initial_population"],
-        job_market_config_path=config["data"]["jobs_config_path"]
-    )
+    # 获取 towns 并初始化居民组
+    towns = container.resolve(ITowns)
     towns.initialize_resident_groups(residents)
         
-    # 初始化社交网络
-    social_network = SocialNetwork()
+    # 获取社交网络并初始化
+    social_network = container.resolve(ISocialNetwork)
     social_network.initialize_network(residents, towns)
         
     # 为每个城镇的居民群组设置社交网络
@@ -68,13 +61,10 @@ async def run_simulation(config):
     
     # 创建信息传播实验模拟器
     simulator = InfoPropagationSimulator(
-        map=map,
-        time=time,
-        population=population,
-        social_network=social_network,
+        container=container,
         residents=residents,
-        towns=towns,
-        config=config
+        config=config,
+        loaded_plugins=loaded_plugins
     )
     print("初始化完成")
 
@@ -230,4 +220,4 @@ if __name__ == "__main__":
     )
 
     # 运行实验
-    asyncio.run(run_simulation(config))
+    asyncio.run(run_simulation(config, args.config_path))

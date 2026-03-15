@@ -1,0 +1,446 @@
+# 影响函数配置示例
+# 
+# 该文件展示了如何配置不同类型的影响函数来建模模块间的相互作用。
+# 每个影响函数描述了一个模块(source)如何影响另一个模块(target)。
+
+influences:
+  # ==================== 常量影响类型 (constant) ====================
+  
+  # 直接设置目标属性为常量值
+  # 适用于：固定配置、基准值设置
+  - type: constant
+    source: government
+    target: population
+    name: base_tax_rate
+    description: 设置基准税率
+    params:
+      target_attr: tax_rate  # 要设置的目标属性
+      value: 0.15            # 常量值（15%税率）
+  
+  - type: constant
+    source: system
+    target: population
+    name: initial_satisfaction
+    description: 初始化居民满意度
+    params:
+      target_attr: base_satisfaction
+      value: 0.5
+  
+  # ==================== 线性影响类型 (linear) ====================
+  
+  # 线性计算：coefficient * variable + constant
+  # 适用于：线性关系建模、简单数学计算
+  
+  # 1. set 模式 - 直接设置值
+  - type: linear
+    source: climate
+    target: agriculture
+    name: rainfall_yield
+    description: 降雨量影响农业产出
+    params:
+      variable: climate.rainfall_mm  # 上下文变量路径
+      coefficient: 0.002             # 每毫米降雨增加0.002产出
+      constant: 0.5                   # 基础产出
+      target_attr: crop_yield         # 目标属性
+      mode: set                       # 直接设置
+  
+  # 2. add 模式 - 累加到现有值
+  - type: linear
+    source: climate
+    target: population
+    name: temperature_death_modifier
+    description: 温度影响死亡率
+    params:
+      variable: climate.temperature
+      coefficient: 0.01               # 每度增加0.01死亡率
+      constant: 0.0
+      target_attr: death_rate_modifier
+      mode: add                       # 累加模式
+  
+  # 3. multiply 模式 - 乘以现有值
+  - type: linear
+    source: economy
+    target: population
+    name: gdp_growth_multiplier
+    description: GDP增长影响人口增长倍率
+    params:
+      variable: economy.gdp_growth_rate
+      coefficient: 10.0               # 放大10倍
+      constant: 1.0                   # 基础倍率1.0
+      target_attr: growth_multiplier
+      mode: multiply                  # 乘法模式
+  
+  # 4. 只计算不设置 - 返回计算结果但不修改目标
+  - type: linear
+    source: transport
+    target: economy
+    name: connectivity_score
+    description: 计算连通性得分
+    params:
+      variable: transport.road_density
+      coefficient: 0.5
+      constant: 20.0
+      # 不指定 target_attr，只返回计算结果
+  
+  # ==================== 代码影响类型 (code) ====================
+  
+  # 执行Python代码片段（受限环境）
+  # 适用于：复杂逻辑、多因素综合计算
+  # 注意：出于安全考虑，通常不建议从外部配置加载代码影响
+  
+  # 1. 复杂满意度计算
+  - type: code
+    source: economy
+    target: towns
+    name: comprehensive_satisfaction
+    description: 综合计算城镇满意度
+    params:
+      code: |
+        # 多因素影响满意度
+        # 可以访问: target（目标对象）、context（完整上下文）、及所有上下文变量
+        
+        # GDP影响（归一化到0-1）
+        gdp_factor = min(1.0, economy.gdp / 10000)
+        
+        # 失业率负面影响
+        unemployment_penalty = economy.unemployment_rate * 0.5
+        
+        # 基础设施加成
+        infrastructure_bonus = 0.0
+        if hasattr(transport, 'quality_index'):
+            infrastructure_bonus = transport.quality_index * 0.001
+        
+        # 综合计算
+        result = max(0.0, min(1.0, gdp_factor - unemployment_penalty + infrastructure_bonus))
+      target_attr: satisfaction  # 设置到该属性
+      result_var: result         # 从该变量读取结果
+  
+  # 2. 条件触发逻辑
+  - type: code
+    source: climate
+    target: government
+    name: disaster_response
+    description: 极端天气触发政府响应
+    params:
+      code: |
+        # 根据温度和降雨判断是否需要响应
+        if climate.temperature > 40:
+            result = 'heat_emergency'
+        elif climate.temperature < -10:
+            result = 'cold_emergency'
+        elif climate.rainfall_mm > 200:
+            result = 'flood_warning'
+        else:
+            result = 'normal'
+      target_attr: emergency_status
+  
+  # 3. 数学密集计算
+  - type: code
+    source: population
+    target: resources
+    name: resource_demand_forecast
+    description: 预测资源需求
+    params:
+      code: |
+        # 使用数学函数预测需求
+        # math 模块已在命名空间中可用
+        
+        # 人口基础需求
+        base_demand = population.total_population * 0.01
+        
+        # 增长因子（指数模型）
+        if hasattr(population, 'growth_rate'):
+            growth_factor = math.exp(population.growth_rate * 0.1)
+        else:
+            growth_factor = 1.0
+        
+        # 季节调整
+        seasonal_adj = 1.0 + 0.2 * math.sin(time.day_of_year / 365 * 2 * math.pi)
+        
+        result = base_demand * growth_factor * seasonal_adj
+      target_attr: forecasted_demand
+  
+  # 4. 访问目标对象属性
+  - type: code
+    source: economy
+    target: towns
+    name: adaptive_tax_adjustment
+    description: 根据城镇当前状态自适应调整税收
+    params:
+      code: |
+        # 可以通过 target 访问目标对象
+        current_satisfaction = getattr(target, 'satisfaction', 0.5)
+        current_tax = getattr(target, 'tax_rate', 0.15)
+        
+        # 满意度低时降税，满意度高时可以适当增税
+        if current_satisfaction < 0.3:
+            result = max(0.05, current_tax - 0.02)  # 降税
+        elif current_satisfaction > 0.7:
+            result = min(0.25, current_tax + 0.01)  # 增税
+        else:
+            result = current_tax  # 保持不变
+      target_attr: adjusted_tax_rate
+  
+  # ==================== 气候对人口的影响 ====================
+  
+  # 1. 线性乘数影响：温度对死亡率的影响
+  # 温度每升高1度，死亡率增加0.01
+  - type: linear_multiplier
+    source: climate
+    target: population
+    name: temperature_death_rate
+    description: 高温导致死亡率上升
+    params:
+      multiplier: 0.01      # 乘数系数
+      source_key: temperature  # climate模块中的温度属性
+  
+  # 2. 阈值影响：极端天气事件
+  # 当温度超过40度时，触发灾害响应
+  - type: threshold
+    source: climate
+    target: population
+    name: extreme_heat_disaster
+    description: 极端高温触发灾害
+    params:
+      threshold: 40.0       # 阈值
+      compare_op: gt        # 比较操作符: gt(大于), gte(大于等于), lt(小于), lte(小于等于), eq(等于)
+      impact_value: disaster  # 触发时返回的值
+      source_key: temperature
+  
+  # 3. 条件影响：季节性疾病
+  # 只在冬季且气温低时增加疾病传播
+  - type: conditional
+    source: climate
+    target: population
+    name: winter_disease_spread
+    description: 冬季低温增加疾病传播
+    params:
+      conditions:
+        time.season: winter        # 季节必须是冬季
+        climate.temperature: cold  # 温度必须是寒冷的
+      impact_value: 1.5  # 疾病传播率乘数
+  
+  # ==================== 经济对城镇的影响 ====================
+  
+  # 4. 经济增长促进城镇发展
+  # GDP每增长1单位，城镇发展速度增加0.001
+  - type: linear_multiplier
+    source: economy
+    target: towns
+    name: gdp_growth_boost
+    description: 经济增长促进城镇发展
+    params:
+      multiplier: 0.001
+      source_key: gdp
+  
+  # 5. 失业率阈值影响
+  # 当失业率超过10%时，城镇满意度下降
+  - type: threshold
+    source: economy
+    target: towns
+    name: unemployment_crisis
+    description: 高失业率导致城镇危机
+    params:
+      threshold: 0.1
+      compare_op: gt
+      impact_value: -0.2  # 满意度下降20%
+      source_key: unemployment_rate
+  
+  # ==================== 交通对经济的影响 ====================
+  
+  # 6. 交通连通性促进贸易
+  # 连通性每提高1点，贸易额增加0.05
+  - type: linear_multiplier
+    source: transport
+    target: economy
+    name: connectivity_trade_boost
+    description: 交通连通性促进贸易
+    params:
+      multiplier: 0.05
+      source_key: connectivity_index
+  
+  # 7. 基础设施阈值
+  # 当道路质量指数超过80时，解锁高级物流
+  - type: threshold
+    source: transport
+    target: economy
+    name: infrastructure_unlock
+    description: 高质量基础设施解锁高级物流
+    params:
+      threshold: 80
+      compare_op: gte
+      impact_value: advanced_logistics
+      source_key: road_quality_index
+  
+  # ==================== 社交网络对信息传播的影响 ====================
+  
+  # 8. 网络密度影响信息传播速度
+  # 网络密度每增加1%，传播速度增加0.02
+  - type: linear_multiplier
+    source: social_network
+    target: information
+    name: network_density_spread
+    description: 社交网络密度影响信息传播
+    params:
+      multiplier: 0.02
+      source_key: density
+  
+  # 9. 意见领袖影响
+  # 当意见领袖数量超过阈值时，信息可信度提升
+  - type: threshold
+    source: social_network
+    target: information
+    name: opinion_leader_credibility
+    description: 足够的意见领袖提升信息可信度
+    params:
+      threshold: 100
+      compare_op: gte
+      impact_value: 1.3  # 可信度提升30%
+      source_key: opinion_leader_count
+  
+  # ==================== 政府政策的复杂影响 ====================
+  
+  # 10. 税收政策的条件影响
+  # 只在经济繁荣且政府支持度高时，高税率才不会引发不满
+  - type: conditional
+    source: government
+    target: population
+    name: tax_policy_acceptance
+    description: 特定条件下税收政策被接受
+    params:
+      conditions:
+        economy.gdp_growth_rate: high  # 经济高增长
+        government.approval_rating: high  # 政府高支持率
+      impact_value: normal  # 正常接受度
+  
+  # ==================== 时间对农业的影响 ====================
+  
+  # 11. 季节性农业生产
+  # 春夏两季提高农业产出
+  - type: conditional
+    source: time
+    target: agriculture
+    name: seasonal_production_boost
+    description: 春夏季节提高农业产出
+    params:
+      conditions:
+        time.season: [spring, summer]  # 季节是春季或夏季
+      impact_value: 1.5  # 产出提升50%
+  
+  # ==================== 人口对资源的影响 ====================
+  
+  # 12. 人口压力
+  # 人口每增加1000人，资源消耗增加1单位
+  - type: linear_multiplier
+    source: population
+    target: resources
+    name: population_consumption
+    description: 人口增长增加资源消耗
+    params:
+      multiplier: 0.001
+      source_key: total_population
+  
+  # 13. 人口密度阈值
+  # 当人口密度超过阈值时，资源短缺风险增加
+  - type: threshold
+    source: population
+    target: resources
+    name: overpopulation_risk
+    description: 人口过密导致资源短缺风险
+    params:
+      threshold: 1000  # 每平方公里1000人
+      compare_op: gt
+      impact_value: high_risk
+      source_key: population_density
+
+# ==================== 配置说明 ====================
+#
+# 每个影响函数包含以下字段：
+#
+# - type: 影响函数类型
+#   
+#   基础类型（builtin.py）：
+#   * constant: 常量影响 - 直接设置目标属性为常量值
+#   * linear: 线性影响 - coefficient * variable + constant
+#   * code: 代码影响 - 执行Python代码片段（受限环境）
+#   
+#   高级类型（builtin_influences.py）：
+#   * linear_multiplier: 线性乘数影响 (值 * 系数)
+#   * threshold: 阈值触发影响 (超过阈值触发)
+#   * conditional: 条件判断影响 (满足所有条件时触发)
+#   * lambda: 自定义函数影响 (仅代码中使用，不能从配置加载)
+#
+# - source: 影响来源模块名称 (如 climate, economy, transport 等)
+#
+# - target: 受影响的目标模块名称
+#
+# - name: 影响函数的唯一名称 (在 source-target 组合中唯一)
+#
+# - description: (可选) 影响函数的描述
+#
+# - params: 类型特定的参数
+#
+#   constant 参数:
+#     - target_attr: 要设置的目标属性名
+#     - value: 常量值（任意类型）
+#
+#   linear 参数:
+#     - variable: 上下文变量路径（支持点号分隔，如 'climate.temperature'）
+#     - coefficient: 系数（默认1.0）
+#     - constant: 常数项（默认0.0）
+#     - target_attr: (可选) 目标属性名，不指定则只返回计算结果
+#     - mode: (可选) 影响模式 - 'set'(默认,设置), 'add'(累加), 'multiply'(相乘)
+#
+#   code 参数:
+#     - code: Python代码字符串（多行字符串使用 | 或 >）
+#     - target_attr: (可选) 要设置的目标属性名
+#     - result_var: (可选) 结果变量名（默认'result'）
+#     注意：代码在受限环境中执行，可用内置函数有限，包括：
+#           abs, min, max, sum, round, pow, int, float, str, bool, len,
+#           list, dict, tuple, set, all, any, range, math 模块
+#           可访问变量：target（目标对象）、context（上下文）、所有上下文变量
+#
+#   linear_multiplier 参数:
+#     - multiplier: 乘数系数
+#     - source_key: 源模块中的属性名
+#
+#   threshold 参数:
+#     - threshold: 阈值
+#     - compare_op: 比较操作符 (gt/gte/lt/lte/eq)
+#     - impact_value: 触发时返回的值
+#     - source_key: 源模块中的属性名
+#
+#   conditional 参数:
+#     - conditions: 条件字典 {模块.属性: 预期值}
+#     - impact_value: 所有条件满足时返回的值
+#
+# ==================== 使用示例 ====================
+#
+# from src.influences import InfluenceRegistry
+# import yaml
+#
+# # 加载配置
+# with open('config/influences_example.yaml', 'r', encoding='utf-8') as f:
+#     config = yaml.safe_load(f)
+#
+# # 创建注册中心并加载影响函数
+# registry = InfluenceRegistry()
+# registry.load_from_config(config)
+#
+# # 在模拟器中使用
+# # 构建上下文
+# context = {
+#     'climate': climate,
+#     'economy': economy,
+#     'population': population,
+#     'transport': transport,
+#     'time': time,
+#     # ... 其他模块
+# }
+#
+# # 应用影响到特定目标模块
+# for influence in registry.get_influences('population'):
+#     impact = influence.apply(population, context)
+#     if impact is not None:
+#         # 处理影响结果
+#         print(f"影响 {influence.name}: {impact}")

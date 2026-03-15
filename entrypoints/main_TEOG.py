@@ -23,7 +23,7 @@ parser.add_argument(
     action="store_true",
     help="Save simulation state to cache file after completion.",
 )
-async def run_simulation(config):
+async def run_simulation(config, config_path):
     """运行模拟"""
     print(f"开始读取缓存文件...")
 
@@ -91,25 +91,25 @@ async def run_simulation(config):
     if simulator is None:
         print("开始初始化......")
     
-        # 初始化地图
-        map = Map(width=config["simulation"]["map_width"], height=config["simulation"]["map_height"], data_file=config["data"]["towns_data_path"])
+        # 初始化插件系统
+        print("正在初始化插件系统...")
+        config_dir = os.path.dirname(config_path)
+        modules_config_path = os.path.join(config_dir, "modules_config.yaml")
+        plugin_registry, loaded_plugins = initialize_plugin_system(
+            config=config,
+            modules_config_path=modules_config_path,
+            logger=logging.getLogger('plugin_system')
+        )
+        
+        # 初始化 DIContainer
+        container = setup_container_for_simulation(modules_config_path, config)
+
+        # 获取 map 实例并初始化
+        map = container.resolve(IMap)
         map.initialize_map()
         
-        
-        # 初始化时间系统
-        time = Time(
-            start_time=config["simulation"]["start_year"],
-            total_steps=config["simulation"]["total_years"]
-        )
-        
-        # 初始化人口系统
-        population = Population(
-            initial_population=config["simulation"]["initial_population"],
-            birth_rate=config["simulation"]["birth_rate"]
-        )
-        
-        # 初始化居民
-        resident_info_path = config["data"]["resident_info_path"]  # 居民信息文件路径
+        # 生成居民
+        resident_info_path = config["data"]["resident_info_path"]
         residents = await generate_canal_agents(
             resident_info_path=resident_info_path,
             map=map,
@@ -118,8 +118,8 @@ async def run_simulation(config):
             resident_actions_path=config["data"]["resident_actions_path"],
         )
 
-        # 初始化城镇
-        towns = Towns(map=map,initial_population=config["simulation"]["initial_population"]*20,job_market_config_path=config["data"]["jobs_config_path"])
+        # 获取 towns 并初始化居民组
+        towns = container.resolve(ITowns)
         towns.initialize_resident_groups(residents)
         
         # 计算城市居民数量
@@ -129,15 +129,17 @@ async def run_simulation(config):
             if job_market and "城市居民" in job_market.jobs_info:
                 city_resident_count += len(job_market.jobs_info["城市居民"]["employed"])
         
-        # 初始化运输经济系统（使用城市居民数量）
+        # 手动创建 transport_economy（需要动态计算的 transport_task）
         transport_economy = TransportEconomy(
             transport_cost=1,
             transport_task=city_resident_count / 4,
             maintenance_cost_base=city_resident_count * 0.2,
         )
+        # 将 transport_economy 注册到容器中
+        container.register_instance(ITransportEconomy, transport_economy)
             
-        # 初始化社交网络
-        social_network = SocialNetwork()
+        # 获取社交网络并初始化
+        social_network = container.resolve(ISocialNetwork)
         social_network.initialize_network(residents, towns)
             
         # 为每个城镇的居民群组设置社交网络
@@ -157,6 +159,8 @@ async def run_simulation(config):
             print(f"社交网络节点度分布可视化失败：{e}")
 
         # 初始化政府
+        # 手动创建 government（不需要 military_strength）
+        time = container.resolve(ITime)
         government = Government(
             map=map,
             towns=towns,
@@ -166,30 +170,23 @@ async def run_simulation(config):
             transport_economy=transport_economy,
             government_prompt_path=config["data"]["government_prompt_path"],
         )
+        # 将 government 注册到容器中
+        container.register_instance(IGovernment, government)
 
         # 初始化政府官员
-        government_info_path = config["data"]["government_info_path"]  # 政府官员信息文件路径
+        government_info_path = config["data"]["government_info_path"]
         government_officials = await generate_government_agents(
             government_info_path=government_info_path,
             government=government,
         )
 
-        climate_info_path = config["data"]["climate_info_path"]  # 气候信息文件路径
-        climate = ClimateSystem(climate_info_path)  # 气候系统
-
-        # 模拟器实例化
+        # 使用容器创建模拟器
         simulator = TEOGSimulator(
-            map=map,
-            time=time,
-            government=government,
+            container=container,
             government_officials=government_officials,
-            population=population,
-            social_network=social_network,
             residents=residents,
-            towns=towns,
-            transport_economy=transport_economy,
-            climate=climate,
             config=config,
+            loaded_plugins=loaded_plugins
             )
         print("初始化完成")
 
@@ -247,4 +244,4 @@ if __name__ == "__main__":
     SimulationContext.set_simulation_name(config["simulation"].get("simulation_name"), population, total_years)
 
     # 运行模拟
-    asyncio.run(run_simulation(config))
+    asyncio.run(run_simulation(config, args.config_path))

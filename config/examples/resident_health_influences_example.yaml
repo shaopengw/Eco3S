@@ -1,0 +1,213 @@
+# Resident 模块健康指数影响函数配置示例
+# 将 update_health_index 方法中的硬编码规则提取为可配置的影响函数
+
+influences:
+  # ==================== 职业影响 ====================
+  
+  # 1. 叛军职业健康惩罚
+  # 叛军生活艰苦，健康快速下降 -2
+  - name: rebel_job_health_penalty
+    type: code
+    source: job
+    target: health_index
+    params:
+      code: |
+        resident = context['resident']
+        job = context.get('job', '')
+        
+        if job == "叛军":
+            # 叛军职业每个时间步 -2 健康
+            context['result']['health_change'] += -2
+  
+  # ==================== 收入影响 ====================
+  
+  # 2. 无收入健康惩罚
+  # 无收入严重影响健康 -2
+  - name: no_income_health_penalty
+    type: threshold
+    source: income
+    target: health_index
+    params:
+      threshold: 0
+      comparison: less_than_or_equal
+      effect:
+        type: constant
+        value: -2
+        target_attr: health_change
+        use_result_dict: true
+        mode: add
+  
+  # 3. 低收入健康惩罚
+  # 收入不足基本生活成本，影响健康 -1
+  - name: low_income_health_penalty
+    type: code
+    source: income
+    target: health_index
+    params:
+      code: |
+        income = context.get('income', 0)
+        basic_living_cost = context.get('basic_living_cost', 0)
+        
+        # 只有在有收入但不足基本生活成本时才触发
+        if 0 < income < basic_living_cost:
+            context['result']['health_change'] += -1
+  
+  # 4. 高收入健康恢复
+  # 收入 >= 2倍基本生活成本，健康恢复
+  # 叛军 +0.5，其他职业 +1
+  - name: high_income_health_recovery
+    type: code
+    source: income
+    target: health_index
+    params:
+      code: |
+        income = context.get('income', 0)
+        basic_living_cost = context.get('basic_living_cost', 0)
+        job = context.get('job', '')
+        
+        if income >= basic_living_cost * 2:
+            if job == "叛军":
+                # 叛军恢复较少
+                context['result']['health_change'] += 0.5
+            else:
+                # 其他职业正常恢复
+                context['result']['health_change'] += 1
+  
+  # ==================== 满意度影响 ====================
+  
+  # 5. 低满意度健康惩罚
+  # 满意度 < 30，影响健康 -1
+  - name: low_satisfaction_health_penalty
+    type: threshold
+    source: satisfaction
+    target: health_index
+    params:
+      threshold: 30
+      comparison: less_than
+      effect:
+        type: constant
+        value: -1
+        target_attr: health_change
+        use_result_dict: true
+        mode: add
+  
+  # 6. 高满意度健康恢复
+  # 满意度 > 80，健康恢复
+  # 叛军 +0.5，其他职业 +1
+  - name: high_satisfaction_health_recovery
+    type: code
+    source: satisfaction
+    target: health_index
+    params:
+      code: |
+        satisfaction = context.get('satisfaction', 0)
+        job = context.get('job', '')
+        
+        if satisfaction > 80:
+            if job == "叛军":
+                # 叛军恢复较少
+                context['result']['health_change'] += 0.5
+            else:
+                # 其他职业正常恢复
+                context['result']['health_change'] += 1
+
+
+# ==================== 替代配置示例 ====================
+# 以下是一些可选的健康影响配置，展示如何通过影响函数系统实现不同的健康机制
+
+# 示例1：渐进式健康惩罚（根据收入不足程度）
+# influences:
+#   - name: progressive_income_health_penalty
+#     type: code
+#     source: income
+#     target: health_index
+#     params:
+#       code: |
+#         income = context.get('income', 0)
+#         basic_living_cost = context.get('basic_living_cost', 1000)
+#         
+#         if income <= 0:
+#             penalty = -3  # 无收入最严重
+#         elif income < basic_living_cost * 0.5:
+#             penalty = -2  # 收入极低
+#         elif income < basic_living_cost * 0.8:
+#             penalty = -1  # 收入较低
+#         elif income < basic_living_cost:
+#             penalty = -0.5  # 收入略低
+#         else:
+#             penalty = 0
+#         
+#         context['result']['health_change'] += penalty
+
+# 示例2：年龄因素（假设增加了年龄属性）
+# influences:
+#   - name: age_health_factor
+#     type: code
+#     source: age
+#     target: health_index
+#     params:
+#       code: |
+#         resident = context['resident']
+#         age = getattr(resident, 'age', 30)  # 假设有年龄属性
+#         
+#         # 年轻人恢复快，老年人恢复慢
+#         if age < 25:
+#             recovery_bonus = 0.2
+#         elif age > 60:
+#             recovery_penalty = -0.3
+#             context['result']['health_change'] += recovery_penalty
+
+# 示例3：季节性健康影响（需要 ClimateSystem 集成）
+# influences:
+#   - name: seasonal_health_effect
+#     type: code
+#     source: climate
+#     target: health_index
+#     params:
+#       code: |
+#         # 假设上下文中有季节信息
+#         season = context.get('season', 'spring')
+#         
+#         if season == 'winter':
+#             # 冬季健康下降
+#             context['result']['health_change'] += -0.5
+#         elif season == 'spring':
+#             # 春季健康恢复
+#             context['result']['health_change'] += 0.3
+
+# 示例4：社交网络支持（需要 SocialNetwork 集成）
+# influences:
+#   - name: social_support_health_bonus
+#     type: code
+#     source: social_network
+#     target: health_index
+#     params:
+#       code: |
+#         resident = context['resident']
+#         # 假设有获取朋友数量的方法
+#         social_network = context.get('social_network')
+#         if social_network:
+#             friends_count = len(social_network.get_neighbors(resident.resident_id))
+#             
+#             # 朋友越多，健康恢复越好
+#             if friends_count > 10:
+#                 context['result']['health_change'] += 0.5
+#             elif friends_count > 5:
+#                 context['result']['health_change'] += 0.2
+
+# 示例5：医疗政策影响（需要 Government 集成）
+# influences:
+#   - name: healthcare_policy_effect
+#     type: code
+#     source: government_policy
+#     target: health_index
+#     params:
+#       code: |
+#         # 假设政府有医疗投入属性
+#         healthcare_investment = context.get('healthcare_investment', 0)
+#         
+#         if healthcare_investment > 10000:
+#             # 高医疗投入，所有居民健康恢复加快
+#             context['result']['health_change'] += 0.5
+#         elif healthcare_investment > 5000:
+#             context['result']['health_change'] += 0.2

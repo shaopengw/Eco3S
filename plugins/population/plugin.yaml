@@ -1,0 +1,29 @@
+# 人口插件元数据
+name: default_population
+version: 1.0.0
+description: 默认人口系统插件
+author: AgentWorld Team
+enabled: true
+
+# 插件类信息
+plugin_class: DefaultPopulationPlugin
+module: population_plugin
+
+# 实现的接口
+interfaces:
+  - IPopulationPlugin
+  - IPopulation
+
+# 依赖项
+dependencies:
+  - default_map
+  - default_towns
+
+# 初始化参数
+init_params:
+  initial_population: 1000
+
+# 配置项
+config:
+  enable_demographics: true
+  enable_birth_death: false

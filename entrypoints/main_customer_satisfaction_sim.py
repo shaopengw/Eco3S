@@ -12,7 +12,7 @@ def parse_args(default_config_path):
     parser.add_argument("--resume_from_cache", action="store_true", help="从缓存恢复模拟")
     return parser.parse_args()
 
-async def run_simulation(config):
+async def run_simulation(config, config_path):
 
 
     """
@@ -41,163 +41,74 @@ async def run_simulation(config):
 
     resume_from_cache = config.get('resume_from_cache', False)
 
-
-    # 初始化环境对象
-
-
-    # 地图对象 - 设计文档显示地图宽度/高度未涉及，移除相关参数
-
-
-    map = Map(
-
-
-        width=config["simulation"].get("map_width", 100),
-
-
-        height=config["simulation"].get("map_height", 100),
-
-
-        data_file=config["data"].get("towns_data_path", "")
-
-
+    # 初始化插件系统
+    print("正在初始化插件系统...")
+    config_dir = os.path.dirname(config_path)
+    modules_config_path = os.path.join(config_dir, "modules_config.yaml")
+    plugin_registry, loaded_plugins = initialize_plugin_system(
+        config=config,
+        modules_config_path=modules_config_path,
+        logger=logging.getLogger('plugin_system')
     )
 
+    # 初始化 DIContainer
+    container = setup_container_for_simulation(modules_config_path, config)
 
-    map.initialize_map()  # 不可改动
+    # 获取 map 实例并初始化
+    map = container.resolve(IMap)
+    map.initialize_map()
 
-
-    # 时间对象 - 设计文档显示起始年份和总年数未涉及，提供默认值
-
-
-    time = Time(
-
-
-        start_time=config["simulation"].get("start_year", 2020),
-
-
-        total_steps=config["simulation"].get("total_years", 10)
-
-
-    )
-
-
-    # 人口对象 - 设计文档显示出生率未涉及，提供默认值
-
-
-    population = Population(
-
-
-        initial_population=config["simulation"].get("initial_population", 1000),
-
-
-        birth_rate=config["simulation"].get("birth_rate", 0.01)
-
-
-    )
-
-
-    # 居民对象
-
-
+    # 生成居民
     residents = await generate_canal_agents(
-
-
         resident_info_path=config["data"].get("resident_info_path", ""),
-
-
         map=map,
-
-
         initial_population=config["simulation"].get("initial_population", 1000),
-
-
         resident_prompt_path=config["data"].get("resident_prompt_path", ""),
-
-
         resident_actions_path=config["data"].get("resident_actions_path", ""),
-
-
         window_size=10
-
-
     )
 
-
-    # 城镇对象 - 设计文档显示城镇数量未涉及，但代码需要初始化
-
-
-    towns = Towns(
-
-
-        map=map,
-
-
-        initial_population=config["simulation"].get("initial_population", 1000),
-
-
-        job_market_config_path=config["data"].get("jobs_config_path", "")
-
-
-    )
-
-
-    # 重要：初始化居民组，不可删除
-
-
+    # 获取 towns 并初始化居民组
+    towns = container.resolve(ITowns)
     towns.initialize_resident_groups(residents)
 
-
-    # 社交网络对象
-
-
-    social_network = SocialNetwork()
-
-
+    # 获取社交网络并初始化
+    social_network = container.resolve(ISocialNetwork)
     social_network.initialize_network(residents, towns)
 
-
     for town_name, town_data in towns.towns.items():
-
-
         resident_group = town_data.get('resident_group')
-
-
         if resident_group:
-
-
             resident_group.set_social_network(social_network)
 
-
-    # 创建模拟器 - 根据Simulator的__init__参数，移除不需要的government和government_officials
-
-
-    from src.simulation.simulator_customer_satisfaction_sim import CustomerSatisfactionSimSimulator
-
-
-    simulator = CustomerSatisfactionSimSimulator(
-
-
+    # 手动创建 government
+    time = container.resolve(ITime)
+    government = Government(
         map=map,
-
-
-        time=time,
-
-
-        population=population,
-
-
-        social_network=social_network,
-
-
-        residents=residents,
-
-
         towns=towns,
+        military_strength=0,
+        initial_budget=0,
+        time=time,
+        transport_economy=None,
+        government_prompt_path=config["data"].get("government_prompt_path", ""),
+    )
+    #将 government 注册到容器中
+    container.register_instance(IGovernment, government)
 
+    # 初始化政府官员
+    government_officials = await generate_government_agents(
+        government_info_path=config["data"].get("government_info_path", ""),
+        government=government,
+    )
 
+    # 使用容器创建模拟器
+    from src.simulation.simulator_customer_satisfaction_sim import CustomerSatisfactionSimSimulator
+    simulator = CustomerSatisfactionSimSimulator(
+        container=container,
+        government_officials=government_officials,
+        residents=residents,
         config=config,
-
-
+        loaded_plugins=loaded_plugins
     )
 
 
@@ -322,4 +233,4 @@ if __name__ == "__main__":
         SimulationContext.set_simulation_name(config["simulation"]["simulation_name"])
     
     # 运行模拟
-    asyncio.run(run_simulation(config))
+    asyncio.run(run_simulation(config, args.config_path))

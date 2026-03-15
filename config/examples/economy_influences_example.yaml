@@ -1,0 +1,346 @@
+# 经济系统影响函数配置示例
+# 
+# 本配置展示如何使用影响函数系统计算运输成本、税收、GDP等经济指标
+# 替代硬编码的经济公式
+
+influences:
+  # ==================== 运输成本计算 ====================
+  
+  # 1. 基础距离成本
+  # 公式：cost = distance * 0.1
+  - type: linear
+    source: distance
+    target: transport_cost
+    name: base_distance_cost
+    description: 距离对运输成本的线性影响
+    params:
+      variable: distance
+      coefficient: 0.1      # 每单位距离成本0.1
+      constant: 0.0
+      target_attr: _temp_transport_cost
+      mode: add
+  
+  # 2. 货物大小影响
+  # 公式：cost += cargo_size * 0.05
+  - type: linear
+    source: cargo
+    target: transport_cost
+    name: cargo_size_cost
+    description: 货物大小对运输成本的影响
+    params:
+      variable: cargo_size
+      coefficient: 0.05     # 每单位货物增加0.05成本
+      constant: 0.0
+      target_attr: _temp_transport_cost
+      mode: add
+  
+  # 3. 地形崎岖度影响
+  # 崎岖的地形增加运输成本
+  - type: linear
+    source: terrain
+    target: transport_cost
+    name: terrain_difficulty_cost
+    description: 地形崎岖度增加运输成本
+    params:
+      variable: terrain_ruggedness
+      coefficient: 0.2      # 崎岖度每增加1，成本增加0.2
+      constant: 0.0
+      target_attr: _temp_transport_cost
+      mode: add
+  
+  # 4. 运河通航折扣
+  # 当运河可用时，降低运输成本
+  - type: code
+    source: canal
+    target: transport_cost
+    name: canal_transport_discount
+    description: 运河可用时降低运输成本
+    params:
+      code: |
+        # 检查运河通航能力
+        map_obj = context.get('map')
+        if map_obj and hasattr(map_obj, 'get_navigability'):
+            navigability = map_obj.get_navigability()
+            
+            # 只有通航能力超过0.3时才有折扣
+            if navigability > 0.3:
+                current_cost = getattr(target, '_temp_transport_cost', 0)
+                
+                # 折扣率：通航能力越高，折扣越大（最高40%）
+                discount_rate = min(0.4, navigability * 0.5)
+                
+                result = current_cost * (1 - discount_rate)
+            else:
+                result = None  # 通航能力太低，无折扣
+        else:
+            result = None
+      target_attr: _temp_transport_cost
+      result_var: result
+  
+  # 5. 季节性运输成本调整
+  # 冬季和雨季运输成本增加
+  - type: conditional
+    source: climate
+    target: transport_cost
+    name: seasonal_cost_increase
+    description: 恶劣天气增加运输成本
+    params:
+      conditions:
+        time.season: [winter, monsoon]
+      impact_value: 1.2  # 成本乘以1.2（增加20%）
+  
+  # ==================== 税收计算 ====================
+  
+  # 6. 基础税收
+  # 税收 = GDP * tax_rate
+  - type: code
+    source: economy
+    target: tax_revenue
+    name: basic_tax_calculation
+    description: 基于GDP和税率计算税收
+    params:
+      code: |
+        gdp = context.get('gdp', 0)
+        tax_rate = context.get('tax_rate', 0.15)
+        
+        result = gdp * tax_rate
+      target_attr: _temp_tax_revenue
+      result_var: result
+  
+  # 7. 贸易税收加成
+  # 活跃的贸易带来额外税收
+  - type: linear
+    source: trade
+    target: tax_revenue
+    name: trade_tax_bonus
+    description: 贸易额带来的额外税收
+    params:
+      variable: trade_volume
+      coefficient: 0.05     # 贸易额的5%作为额外税收
+      constant: 0.0
+      target_attr: _temp_tax_revenue
+      mode: add
+  
+  # 8. 高税率导致的逃税损失
+  # 税率过高时，实际税收会降低
+  - type: threshold
+    source: government
+    target: tax_revenue
+    name: tax_evasion_penalty
+    description: 高税率导致逃税，减少实际税收
+    params:
+      threshold: 0.3        # 税率超过30%
+      compare_op: gt
+      impact_value: 0.85    # 实际只能收到85%的税
+      source_key: tax_rate
+  
+  # ==================== GDP更新 ====================
+  
+  # 9. 基础生产增长
+  - type: linear
+    source: production
+    target: gdp
+    name: production_growth
+    description: 生产力增长推动GDP增长
+    params:
+      variable: production_capacity
+      coefficient: 0.02     # 生产能力每增加1，GDP增长0.02
+      constant: 0.0
+      target_attr: _temp_gdp_growth
+      mode: add
+  
+  # 10. 贸易促进GDP
+  - type: linear
+    source: trade
+    target: gdp
+    name: trade_contribution
+    description: 贸易对GDP的贡献
+    params:
+      variable: trade_volume
+      coefficient: 0.015    # 贸易额每增加1，GDP增长0.015
+      constant: 0.0
+      target_attr: _temp_gdp_growth
+      mode: add
+  
+  # 11. 人口对GDP的影响
+  # 更多人口带来更高的生产力，但也有边际递减效应
+  - type: code
+    source: population
+    target: gdp
+    name: population_productivity
+    description: 人口规模对GDP的影响（边际递减）
+    params:
+      code: |
+        population = context.get('total_population', 10000)
+        
+        # 使用对数函数模拟边际递减
+        # GDP增长 = log(population) * 0.1
+        result = math.log(max(1, population)) * 0.1
+      target_attr: _temp_gdp_growth
+      result_var: result
+  
+  # 12. 基础设施质量影响GDP
+  - type: code
+    source: infrastructure
+    target: gdp
+    name: infrastructure_effect
+    description: 基础设施质量促进经济效率
+    params:
+      code: |
+        # 获取运河通航能力作为基础设施指标
+        map_obj = context.get('map')
+        if map_obj and hasattr(map_obj, 'get_navigability'):
+            navigability = map_obj.get_navigability()
+            # 基础设施每提升0.1，GDP增长0.05
+            result = navigability * 0.5
+        else:
+            result = 0.0
+      target_attr: _temp_gdp_growth
+      result_var: result
+  
+  # ==================== 就业和工资 ====================
+  
+  # 13. 失业率计算
+  # 失业率 = (劳动力 - 就业岗位) / 劳动力
+  - type: code
+    source: labor
+    target: unemployment_rate
+    name: calculate_unemployment
+    description: 基于劳动力和岗位数计算失业率
+    params:
+      code: |
+        labor_force = context.get('labor_force', 5000)
+        jobs = context.get('available_jobs', 4500)
+        
+        if labor_force > 0:
+            unemployed = max(0, labor_force - jobs)
+            result = unemployed / labor_force
+        else:
+            result = 0.0
+        
+        # 限制在[0, 1]范围
+        result = max(0.0, min(1.0, result))
+      target_attr: unemployment_rate
+      result_var: result
+  
+  # 14. 工资水平调整
+  # 失业率低时工资上涨，失业率高时工资下降
+  - type: code
+    source: labor
+    target: wage_level
+    name: wage_adjustment
+    description: 根据劳动力市场供需调整工资
+    params:
+      code: |
+        unemployment = context.get('unemployment_rate', 0.05)
+        current_wage = context.get('current_wage', 100)
+        
+        # 自然失业率设为5%
+        natural_rate = 0.05
+        
+        # 失业率低于自然率，工资上涨
+        if unemployment < natural_rate:
+            adjustment = (natural_rate - unemployment) * 2.0
+            result = current_wage * (1 + adjustment)
+        # 失业率高于自然率，工资下降
+        else:
+            adjustment = (unemployment - natural_rate) * 1.0
+            result = current_wage * (1 - adjustment)
+        
+        # 确保工资不低于最低工资
+        result = max(50, result)
+      target_attr: wage_level
+      result_var: result
+  
+  # ==================== 投资和消费 ====================
+  
+  # 15. 投资率计算
+  # 经济繁荣时投资增加
+  - type: code
+    source: economy
+    target: investment_rate
+    name: investment_decision
+    description: 基于经济状况决定投资率
+    params:
+      code: |
+        gdp_growth = context.get('gdp_growth_rate', 0.03)
+        confidence = context.get('business_confidence', 0.7)
+        
+        # 基础投资率
+        base_rate = 0.2
+        
+        # GDP增长促进投资
+        growth_factor = max(0, gdp_growth * 5)
+        
+        # 信心指数影响投资
+        confidence_factor = (confidence - 0.5) * 0.2
+        
+        result = base_rate + growth_factor + confidence_factor
+        
+        # 限制在合理范围
+        result = max(0.05, min(0.4, result))
+      target_attr: investment_rate
+      result_var: result
+  
+  # 16. 消费水平
+  # 工资和就业影响消费
+  - type: code
+    source: population
+    target: consumption_level
+    name: household_consumption
+    description: 居民消费水平计算
+    params:
+      code: |
+        wage = context.get('wage_level', 100)
+        employment_rate = 1 - context.get('unemployment_rate', 0.05)
+        population = context.get('total_population', 10000)
+        
+        # 消费 = 工资 * 就业率 * 人口 * 消费倾向
+        consumption_propensity = 0.7
+        
+        result = wage * employment_rate * population * consumption_propensity
+      target_attr: total_consumption
+      result_var: result
+
+# ==================== 使用示例 ====================
+#
+# 在经济模块中使用这些影响函数：
+#
+# class Economy:
+#     def __init__(self, influence_registry=None):
+#         self._influence_registry = influence_registry
+#         self._temp_transport_cost = 0.0
+#         # ...
+#     
+#     def calculate_transport_cost(self, distance, cargo_size, terrain_ruggedness):
+#         context = {
+#             'economy': self,
+#             'distance': distance,
+#             'cargo_size': cargo_size,
+#             'terrain_ruggedness': terrain_ruggedness,
+#             'map': self.map,  # 传入地图对象以获取运河信息
+#             'time': self.time  # 传入时间对象以获取季节信息
+#         }
+#         
+#         # 初始化成本为0
+#         self._temp_transport_cost = 0.0
+#         
+#         # 应用所有影响函数
+#         self.apply_influences('transport_cost', context)
+#         
+#         return self._temp_transport_cost
+#     
+#     def update_gdp(self):
+#         context = {
+#             'economy': self,
+#             'production_capacity': self.production_capacity,
+#             'trade_volume': self.trade_volume,
+#             'total_population': self.population.total,
+#             'map': self.map
+#         }
+#         
+#         self._temp_gdp_growth = 0.0
+#         self.apply_influences('gdp', context)
+#         
+#         # 应用增长
+#         self.gdp = self.gdp * (1 + self._temp_gdp_growth)

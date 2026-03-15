@@ -1,14 +1,48 @@
-class Time:
+from src.interfaces import ITime
+
+class Time(ITime):
     def __init__(self, start_time, total_steps):
         """
         初始化时间类
         :param start_time: 模拟的起始时间
         :param total_steps: 模拟的总时间步数
         """
-        self.start_time = start_time
-        self.total_steps = total_steps
-        self.end_time = start_time + total_steps - 1
-        self.current_time = start_time
+        self._start_time = start_time
+        self._total_steps = total_steps
+        self._end_time = start_time + total_steps - 1
+        self._current_time = start_time
+    
+    # 实现 ITime 接口的 property
+    @property
+    def start_time(self) -> int:
+        """起始时间"""
+        return self._start_time
+    
+    @property
+    def total_steps(self) -> int:
+        """总时间步数"""
+        return self._total_steps
+    
+    @total_steps.setter
+    def total_steps(self, value: int):
+        """设置总时间步数"""
+        self._total_steps = value
+        self._end_time = self._start_time + value - 1
+    
+    @property
+    def end_time(self) -> int:
+        """结束时间"""
+        return self._end_time
+    
+    @property
+    def current_time(self) -> int:
+        """当前时间"""
+        return self._current_time
+    
+    @current_time.setter
+    def current_time(self, value: int):
+        """设置当前时间"""
+        self._current_time = value
 
     def step(self):
         """
