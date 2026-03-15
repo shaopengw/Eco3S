@@ -1,13 +1,20 @@
 from collections import defaultdict
-from typing import Dict
+from typing import Dict, Optional
 from src.agents.resident import ResidentGroup
 from src.environment.job_market import JobMarket
 import random
+from src.interfaces import ITowns, IMap
 
-class Towns:
-    def __init__(self, map, initial_population=10, job_market_config_path=None):
-        self.towns = defaultdict(self._create_town_dict)
+class Towns(ITowns):
+    def __init__(self, map: IMap, initial_population: int = 10, job_market_config_path: Optional[str] = None):
+        self._towns = defaultdict(self._create_town_dict)
         self.initialize_towns(map, initial_population, job_market_config_path)
+    
+    # 实现 ITowns 接口的 property
+    @property
+    def towns(self):
+        """城镇字典"""
+        return self._towns
 
     def _create_town_dict(self):
         """创建一个新的城镇字典结构"""
@@ -299,81 +306,102 @@ class Towns:
             else:
                 print(f"警告：城镇 {town_name} 没有就业市场")
 
+    def add_jobs(self, add_job_amount, job_name=None, town_type=None, use_random_assignment=True):
+        """
+        通用的岗位增加方法，支持多种场景
+        
+        :param add_job_amount: 需要增加的总岗位数量
+        :param job_name: 指定的工作岗位名称（可选）
+        :param town_type: 城镇类型过滤条件（可选；不指定则应用于所有城镇）
+        :param use_random_assignment: 是否使用随机岗位分配方式（默认True）
+            - True: 使用 job_market.add_random_jobs() 随机增加岗位
+            - False: 使用 job_market.add_job() 增加指定岗位（需要提供job_name）
+        
+        Examples:
+            # 在所有城镇随机增加100个岗位
+            add_jobs(100)
+            
+            # 在所有城镇增加100个"官员及士兵"岗位
+            add_jobs(100, job_name="官员及士兵")
+            
+            # 在特定类型城镇增加50个"河运工人"岗位（不使用随机分配）
+            add_jobs(50, job_name="河运工人", town_type="canal", use_random_assignment=False)
+        """
+        # 根据 town_type 参数筛选目标城镇
+        if town_type is None:
+            target_towns = list(self.towns.items())
+            filter_desc = "所有城镇"
+        else:
+            target_towns = [(town_name, town_data) for town_name, town_data in self.towns.items() 
+                           if town_data['info']['type'] == town_type]
+            filter_desc = f"{town_type} 类型城镇"
+        
+        total_towns = len(target_towns)
+        if total_towns == 0:
+            print(f"警告: 没有可用的{filter_desc}")
+            return
+        
+        job_desc = f" {job_name}" if job_name else ""
+        
+        # 如果岗位数小于城镇数，随机选取岗位数个城镇
+        if add_job_amount < total_towns:
+            selected_towns = random.sample(target_towns, add_job_amount)
+            jobs_per_town = 1
+            remaining_jobs = 0
+        else:
+            # 平均分配给所有符合条件的城镇
+            selected_towns = target_towns
+            jobs_per_town = add_job_amount // total_towns
+            remaining_jobs = add_job_amount - (jobs_per_town * total_towns)
+        
+        # 给每个城镇增加岗位
+        for i, (town_name, town_data) in enumerate(selected_towns):
+            job_market = town_data['job_market']
+            if not job_market:
+                print(f"警告: 城镇 {town_name} 没有就业市场")
+                continue
+            
+            # 计算当前城镇需要增加的岗位数
+            if add_job_amount < total_towns:
+                current_town_jobs = 1
+            else:
+                current_town_jobs = jobs_per_town + (remaining_jobs if i == 0 else 0)
+            
+            # 根据 use_random_assignment 参数选择不同的岗位增加方式
+            if use_random_assignment:
+                job_market.add_random_jobs(current_town_jobs, job_name)
+            else:
+                if job_name is None:
+                    print(f"警告: use_random_assignment=False 但未指定 job_name，将使用随机分配")
+                    job_market.add_random_jobs(current_town_jobs, None)
+                else:
+                    job_market.add_job(job_name, current_town_jobs)
+        
+        print(f"已在{filter_desc}中均匀增加总计 {add_job_amount} 个工作岗位{job_desc}")
+
     def add_jobs_across_towns(self, add_job_amount,specific_job=None):
         """
         将要增加的岗位均匀分布给所有城镇
+        
+        .. deprecated::
+            使用 add_jobs() 替代此方法
+        
         :param add_job_amount: 需要增加的总岗位数量
         :param specific_job: 指定的工作类型（可选）
         """
-        # 获取所有城镇数量
-        total_towns = len(self.towns)
-        if total_towns == 0:
-            print("警告: 没有可用的城镇")
-            return
-
-        # 如果岗位数小于城镇数，随机选取岗位数个城镇来增加工作岗位
-        if add_job_amount < total_towns:
-            selected_towns = random.sample(list(self.towns.items()), add_job_amount)
-        else:
-            # 平均分配岗位数量给所有城镇
-            jobs_per_town = int(add_job_amount / total_towns)
-            remaining_jobs = add_job_amount - (jobs_per_town * total_towns)
-            selected_towns = list(self.towns.items())
-
-        # 遍历所有选中的城镇并增加岗位
-        for i, (town_name, town_data) in enumerate(selected_towns):
-            if town_data['job_market']:
-                # 为第一个城镇添加剩余岗位
-                if add_job_amount < total_towns:
-                    current_town_jobs = 1
-                else:
-                    current_town_jobs = jobs_per_town + (remaining_jobs if i == 0 else 0)
-                town_data['job_market'].add_random_jobs(current_town_jobs, specific_job)
-            else:
-                print(f"警告: 城镇 {town_name} 没有就业市场")
-
-        print(f"已在所有城镇中均匀增加总计 {add_job_amount} 个工作岗位" + (f" {specific_job}" if specific_job else ""))
+        # 调用通用方法实现，保持向后兼容
+        self.add_jobs(add_job_amount, job_name=specific_job, town_type=None, use_random_assignment=True)
 
     def add_specific_job(self, add_job_amount, town_type, job_name):
         """
         在特定类型的城镇中随机增加指定数量的工作岗位，并指定工作岗位的名称
+        
+        .. deprecated::
+            使用 add_jobs() 替代此方法
+        
         :param add_job_amount: 需要增加的总岗位数量
         :param town_type: 城镇类型
         :param job_name: 指定的工作岗位名称
         """
-        # 获取所有指定类型的城镇
-        specific_towns = [(town_name, town_data) for town_name, town_data in self.towns.items() if town_data['info']['type'] == town_type]
-        jobs_per_town = 1
-        remaining_jobs = 0
-        # 获取指定类型的城镇数量
-        total_specific_towns = len(specific_towns)
-        if total_specific_towns == 0:
-            print(f"警告: 没有可用的 {town_type} 城镇")
-            return
-
-        # 如果岗位数小于城镇数，随机选取岗位数个城镇来增加工作岗位
-        if add_job_amount < total_specific_towns:
-            selected_towns = random.sample(specific_towns, add_job_amount)
-        else:
-            # 平均分配岗位数量给所有城镇
-            jobs_per_town = add_job_amount // total_specific_towns
-            remaining_jobs = add_job_amount - (jobs_per_town * total_specific_towns)
-            selected_towns = specific_towns
-
-        # 遍历所有选中的城镇并增加岗位
-        for i, (town_name, town_data) in enumerate(selected_towns):
-            job_market = town_data['job_market']
-            if job_market:
-                # 计算当前城镇需要增加的岗位数
-                if add_job_amount < total_specific_towns:
-                    current_town_jobs = 1
-                elif i == 0:
-                    current_town_jobs = jobs_per_town + remaining_jobs
-                else:
-                    current_town_jobs = jobs_per_town
-                
-                # 增加工作岗位
-                job_market.add_job(job_name, current_town_jobs)
-            else:
-                print(f"警告: 城镇 {town_name} 没有就业市场")
-        print(f"已在 {town_type} 城镇中均匀增加总计 {add_job_amount} 个工作岗位 {job_name}")
+        # 调用通用方法实现，保持向后兼容
+        self.add_jobs(add_job_amount, job_name=job_name, town_type=town_type, use_random_assignment=False)

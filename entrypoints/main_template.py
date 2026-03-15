@@ -1,6 +1,7 @@
 # main_template.py
 
 from shared_imports import *
+from src.simulation.simulator_template import YourSimulator
 
 # 注意函数名为set_simulation_type，而不是set_simulation_name
 SimulationContext.set_simulation_type("{模拟名称}")
@@ -12,7 +13,7 @@ def parse_args(default_config_path):
     parser.add_argument("--resume_from_cache", action="store_true", help="从缓存恢复模拟")
     return parser.parse_args()
 
-async def run_simulation(config):
+async def run_simulation(config, config_path):
     """
     实验主入口：初始化环境→运行模拟→保存结果
     
@@ -24,9 +25,19 @@ async def run_simulation(config):
     """
     resume_from_cache = config.get('resume_from_cache', False)
     
+    # 初始化插件系统（可选）
+    print("正在初始化插件系统...")
+    config_dir = os.path.dirname(config_path)
+    modules_config_path = os.path.join(config_dir, "modules_config.yaml")
+    plugin_registry, loaded_plugins = initialize_plugin_system(
+        config=config,
+        modules_config_path=modules_config_path,
+        logger=logging.getLogger('plugin_system')
+    )
+    
     #初始化环境对象（请填写所有必需参数，参考下方示例）
     # 地图对象
-    map = Map(
+    map: IMap = Map(
         width=config["simulation"]["map_width"],
         height=config["simulation"]["map_height"],
         data_file=config["data"].get("towns_data_path", "")
@@ -34,19 +45,19 @@ async def run_simulation(config):
     map.initialize_map() # 不可改动
 
     # 时间对象
-    time = Time(
+    time: ITime = Time(
         start_time=config["simulation"].get("start_year", 2020),
         total_steps=config["simulation"].get("total_years", 10)
     )
 
     # 人口对象
-    population = Population(
+    population: IPopulation = Population(
         initial_population=config["simulation"].get("initial_population", 1000),
         birth_rate=config["simulation"].get("birth_rate", 0.01)
     )
 
     # 运输经济对象（如有）
-    transport_economy = TransportEconomy(
+    transport_economy: ITransportEconomy = TransportEconomy(
         transport_cost=population.get_population() / 200,
         transport_task=population.get_population() / 2,
         maintenance_cost_base=population.get_population() * 0.4,
@@ -63,7 +74,7 @@ async def run_simulation(config):
     )
 
     # 城镇对象
-    towns = Towns(
+    towns: ITowns = Towns(
         map=map,
         initial_population=config["simulation"].get("initial_population", 1000),
         job_market_config_path=config["data"].get("jobs_config_path", "")
@@ -72,7 +83,7 @@ async def run_simulation(config):
     towns.initialize_resident_groups(residents)
 
     # 社交网络对象
-    social_network = SocialNetwork()
+    social_network: ISocialNetwork = SocialNetwork()
     social_network.initialize_network(residents, towns)
     for town_name, town_data in towns.towns.items():
         resident_group = town_data.get('resident_group')
@@ -80,7 +91,7 @@ async def run_simulation(config):
             resident_group.set_social_network(social_network)
 
     # 政府对象（如有）
-    government = Government(
+    government: IGovernment = Government(
         map=map,
         towns=towns,
         military_strength=0,
@@ -97,7 +108,7 @@ async def run_simulation(config):
     )
 
     # 叛军对象（如有）
-    rebellion = Rebellion(
+    rebellion: IRebellion = Rebellion(
         initial_strength=0,
         initial_resources=0,
         towns=towns,
@@ -112,23 +123,16 @@ async def run_simulation(config):
 
     # 气候系统对象（如有）
     climate_info_path = config["data"].get("climate_info_path", "")
-    climate = ClimateSystem(climate_info_path)
+    climate: IClimateSystem = ClimateSystem(climate_info_path)
 
-    # TODO: 创建模拟器（请确保所有必需参数都已传入）
-    simulator = Simulator(
-        map=map,
-        time=time,
-        government=government,
-        government_officials=government_officials,
-        rebellion=rebellion,
-        rebels_agents=rebels_agents,
-        population=population,
-        social_network=social_network,
+    # TODO: 创建模拟器（使用container和loaded_plugins）
+    simulator = YourSimulator(
+        container=container,
         residents=residents,
-        towns=towns,
-        transport_economy=transport_economy,
-        climate=climate,
         config=config,
+        government_officials=government_officials,
+        rebels_agents=rebels_agents,
+        loaded_plugins=loaded_plugins
     )
     
     try:

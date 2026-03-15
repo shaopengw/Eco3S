@@ -2,37 +2,39 @@ from .simulator_imports import *
 
 class CustomerSatisfactionSimSimulator:
     
-    def __init__(self, **kwargs):
+    def __init__(self, container: DIContainer, government_officials: List[IOrdinaryGovernmentAgent], residents: Dict[int, IResident], config: Dict, loaded_plugins: Dict = None):
 
     
             self.logger = LogManager.get_logger('simulator', console_output=True)
 
     
-            self.map = kwargs.get('map')
+            # 从插件或容器中获取模块实例
+            self.map = self._resolve_instance('default_map', IMap, container, loaded_plugins)
 
     
-            self.time = kwargs.get('time')
+            self.time = self._resolve_instance('default_time', ITime, container, loaded_plugins)
 
     
-            self.population = kwargs.get('population')
+            self.population = self._resolve_instance('default_population', IPopulation, container, loaded_plugins)
 
     
-            self.social_network = kwargs.get('social_network')
+            self.social_network = self._resolve_instance('default_social_network', ISocialNetwork, container, loaded_plugins)
 
     
-            self.residents = kwargs.get('residents')
+            self.towns = self._resolve_instance('default_towns', ITowns, container, loaded_plugins)
 
     
-            self.towns = kwargs.get('towns')
+            self.government = container.resolve(IGovernment)
 
     
-            self.config = kwargs.get('config')
+            # 接受作为参数传入的对象
+            self.government_officials = government_officials
 
     
-            self.government = kwargs.get('government')
+            self.residents = residents
 
     
-            self.government_officials = kwargs.get('government_officials')
+            self.config = config
 
     
             self.basic_living_cost = 8
@@ -84,7 +86,14 @@ class CustomerSatisfactionSimSimulator:
 
     
             self.result_file = os.path.join(data_dir, f"running_data_{timestamp}_pid{pid}.csv")
-    
+
+    @staticmethod
+    def _resolve_instance(plugin_name: str, interface_type, container: DIContainer, loaded_plugins: Dict = None):
+        """从插件或容器中获取实例"""
+        if loaded_plugins and plugin_name in loaded_plugins:
+            return loaded_plugins[plugin_name]
+        return container.resolve(interface_type)
+
     def init_results(self):
             # 仅在启用时包含经济类指标
             result = {

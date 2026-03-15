@@ -2,17 +2,20 @@ from .simulator_imports import *
 
 class AssetMarketBubbleSimSimulator:
     
-    def __init__(self, **kwargs):
+    def __init__(self, container: DIContainer, government_officials: List[IOrdinaryGovernmentAgent], residents: Dict[int, IResident], config: Dict, loaded_plugins: Dict = None):
             self.logger = LogManager.get_logger('simulator', console_output=True)
-            self.map = kwargs.get('map')
-            self.time = kwargs.get('time')
-            self.population = kwargs.get('population')
-            self.social_network = kwargs.get('social_network')
-            self.residents = kwargs.get('residents')
-            self.towns = kwargs.get('towns')
-            self.config = kwargs.get('config')
-            self.government = kwargs.get('government')
-            self.government_officials = kwargs.get('government_officials')
+            # 从插件或容器中获取模块实例
+            self.map = self._resolve_instance('default_map', IMap, container, loaded_plugins)
+            self.time = self._resolve_instance('default_time', ITime, container, loaded_plugins)
+            self.population = self._resolve_instance('default_population', IPopulation, container, loaded_plugins)
+            self.social_network = self._resolve_instance('default_social_network', ISocialNetwork, container, loaded_plugins)
+            self.towns = self._resolve_instance('default_towns', ITowns, container, loaded_plugins)
+            self.government = container.resolve(IGovernment)
+            
+            # 接受作为参数传入的对象
+            self.government_officials = government_officials
+            self.residents = residents
+            self.config = config
             self.basic_living_cost = 0
             self.gdp = 0
             self.tax_income = 0
@@ -68,6 +71,13 @@ class AssetMarketBubbleSimSimulator:
 
     
             self.result_file = os.path.join(data_dir, f"running_data_{timestamp}_pid{pid}.csv")
+    
+    @staticmethod
+    def _resolve_instance(plugin_name: str, interface_type, container: DIContainer, loaded_plugins: Dict = None):
+        """从插件或容器中获取实例"""
+        if loaded_plugins and plugin_name in loaded_plugins:
+            return loaded_plugins[plugin_name]
+        return container.resolve(interface_type)
     
     def init_results(self):
 

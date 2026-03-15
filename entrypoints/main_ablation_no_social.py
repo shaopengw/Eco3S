@@ -96,6 +96,16 @@ async def run_simulation(config: dict[str, Any]) -> None:
         print("开始初始化......")
         print("【消融实验模式：社交网络模块已禁用】")
 
+        # 初始化插件系统（可选）
+        print("正在初始化插件系统...")
+        config_dir = os.path.dirname(config_path)
+        modules_config_path = os.path.join(config_dir, "modules_config.yaml")
+        plugin_registry, loaded_plugins = initialize_plugin_system(
+            config=config,
+            modules_config_path=modules_config_path,
+            logger=logging.getLogger('plugin_system')
+        )
+
         # 初始化地图
         map = Map(width=config["simulation"]["map_width"], height=config["simulation"]["map_height"], data_file=config["data"]["towns_data_path"])
         map.initialize_map()

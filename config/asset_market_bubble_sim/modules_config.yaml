@@ -1,4 +1,57 @@
-# 模块配置
+# ========================================
+# 插件系统配置
+# ========================================
+# 启用以下插件（将使用插件系统而非直接实例化）
+active_plugins:
+  - plugin_name: "default_map"
+    config: {}
+  
+  - plugin_name: "default_time"
+    config: {}
+  
+  - plugin_name: "default_population"
+    config: {}
+  
+  - plugin_name: "default_towns"
+    config: {}
+  
+  - plugin_name: "default_social_network"
+    config: {}
+  
+  - plugin_name: "default_transport_economy"
+    config: {}
+  
+  - plugin_name: "default_climate"
+    config: {}
+  
+  - plugin_name: "default_job_market"
+    config: {}
+
+# ========================================
+# 模块实现映射（用于依赖注入容器）
+# ========================================
+# 格式: 接口名称: "完整类路径"
+# 容器将根据此配置动态导入并实例化模块
+module_implementations:
+  # 环境模块
+  IMap: "src.environment.map.Map"
+  ITime: "src.environment.time.Time"
+  IPopulation: "src.environment.population.Population"
+  ITowns: "src.environment.towns.Towns"
+  ISocialNetwork: "src.environment.social_network.SocialNetwork"
+  ITransportEconomy: "src.environment.transport_economy.TransportEconomy"
+  IClimateSystem: "src.environment.climate.ClimateSystem"
+  IJobMarket: "src.environment.job_market.JobMarket"
+  
+  # Agent 模块
+  IGovernment: "src.agents.government.Government"
+  IRebellion: "src.agents.rebels.Rebellion"
+  
+  # 注意：IResident 由生成器函数创建，不在此配置
+
+# ========================================
+# 模块选择配置
+# ========================================
 selected_modules:
   - module_name: "time"
     display_name: "时间系统"

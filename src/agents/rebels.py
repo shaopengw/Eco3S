@@ -1,8 +1,15 @@
 from .shared_imports import *
 from ..utils.logger import LogManager
+from src.interfaces import (
+    IOrdinaryRebel,
+    IRebelLeader,
+    IRebellion,
+    IRebelsSharedInformationPool,
+    IRebelInformationOfficer
+)
 load_dotenv()
 
-class OrdinaryRebel(BaseAgent):
+class OrdinaryRebel(BaseAgent, IOrdinaryRebel):
     def __init__(self, agent_id, rebellion, shared_pool):
         super().__init__(agent_id, group_type='rebellion', window_size=3)
         self.rebellion = rebellion
@@ -79,7 +86,7 @@ class OrdinaryRebel(BaseAgent):
                 towns_analysis.append(f"{town['town_name']}: 叛军{rebel_count}人，官兵{official_count}人。")
         return towns_analysis
 
-class RebelLeader(BaseAgent):
+class RebelLeader(BaseAgent, IRebelLeader):
     def __init__(self, agent_id, rebellion, shared_pool):
         super().__init__(agent_id, group_type='rebellion', window_size=3)
         self.rebellion = rebellion
@@ -146,7 +153,7 @@ class RebelLeader(BaseAgent):
         self.rebellion_log.info(f"  角色：{self.role}")
         self.rebellion_log.info(f"  人物性格：{self.personality}")
 
-class InformationOfficer(BaseAgent):
+class InformationOfficer(BaseAgent, IRebelInformationOfficer):
     def __init__(self, agent_id, rebellion, shared_pool):
         super().__init__(agent_id, group_type='rebellion', window_size=0)
         self.shared_pool = shared_pool
@@ -178,19 +185,45 @@ class InformationOfficer(BaseAgent):
             return "无法生成总结报告"
 
 # 所有决策的后果需要存储到记忆中，叛军可以从中学习。
-class Rebellion:
+class Rebellion(IRebellion):
     def __init__(self, initial_strength, initial_resources, towns, rebels_prompt_path):
         """
         初始化叛军类
         :param initial_strength: 初始力量
         :param initial_resources: 初始资源
         """
-        self.strength = initial_strength
-        self.resources = initial_resources
-        self.towns = towns
+        self._strength = initial_strength
+        self._resources = initial_resources
+        self._towns = towns
         with open(rebels_prompt_path, 'r', encoding='utf-8') as file:
             self.prompts = yaml.safe_load(file)
         self.rebellion_log = LogManager.get_logger("rebels")
+    
+    # 实现 IRebellion 接口的 property
+    @property
+    def strength(self) -> int:
+        """叛军力量"""
+        return self._strength
+    
+    @strength.setter
+    def strength(self, value: int):
+        """设置叛军力量"""
+        self._strength = value
+    
+    @property
+    def resources(self) -> float:
+        """叛军资源"""
+        return self._resources
+    
+    @resources.setter
+    def resources(self, value: float):
+        """设置叛军资源"""
+        self._resources = value
+    
+    @property
+    def towns(self):
+        """城镇对象"""
+        return self._towns
 
     def maintain_status(self):
         """
@@ -222,7 +255,7 @@ class Rebellion:
         print(f"叛军力量: {self.strength}")
         print(f"叛军资源: {self.resources}")
 
-class RebelsSharedInformationPool:
+class RebelsSharedInformationPool(IRebelsSharedInformationPool):
     def __init__(self, max_discussions: int = 5):
         """
         初始化共享信息池

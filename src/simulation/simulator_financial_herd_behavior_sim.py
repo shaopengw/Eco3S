@@ -2,16 +2,19 @@ from .simulator_imports import *
 
 class FinancialHerdBehaviorSimSimulator:
     
-    def __init__(self, **kwargs):
-        self.map = kwargs.get('map')
-        self.time = kwargs.get('time')
-        self.population = kwargs.get('population')
-        self.social_network = kwargs.get('social_network')
-        self.residents = kwargs.get('residents')
-        self.towns = kwargs.get('towns')
-        self.config = kwargs.get('config')
-        self.climate = kwargs.get('climate')
-        self.government = kwargs.get('government')
+    def __init__(self, container: DIContainer, residents: Dict[int, IResident], config: Dict, loaded_plugins: Dict = None):
+        # 从插件或容器中获取模块实例
+        self.map = self._resolve_instance('default_map', IMap, container, loaded_plugins)
+        self.time = self._resolve_instance('default_time', ITime, container, loaded_plugins)
+        self.population = self._resolve_instance('default_population', IPopulation, container, loaded_plugins)
+        self.social_network = self._resolve_instance('default_social_network', ISocialNetwork, container, loaded_plugins)
+        self.towns = self._resolve_instance('default_towns', ITowns, container, loaded_plugins)
+        self.climate = self._resolve_instance('default_climate', IClimateSystem, container, loaded_plugins)
+        self.government = container.resolve(IGovernment)
+        
+        # 接受作为参数传入的对象
+        self.residents = residents
+        self.config = config
 
         # 市场状态
         self.asset_price = 100.0
@@ -47,6 +50,13 @@ class FinancialHerdBehaviorSimSimulator:
             resident.asset_holdings = random.randint(0, 10)
             # 记录投资决策
             resident.last_action = None
+
+    @staticmethod
+    def _resolve_instance(plugin_name: str, interface_type, container: DIContainer, loaded_plugins: Dict = None):
+        """从插件或容器中获取实例"""
+        if loaded_plugins and plugin_name in loaded_plugins:
+            return loaded_plugins[plugin_name]
+        return container.resolve(interface_type)
 
     def init_results(self):
         return {

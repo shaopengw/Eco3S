@@ -1,0 +1,298 @@
+# 政府税率影响函数配置示例
+# 展示如何使用影响函数系统配置税率调整规则
+
+influences:
+  # ==================== 基础税率边界 ====================
+  
+  # 1. 税率下限（基础场景：0%）
+  - name: min_tax_rate_limit
+    type: code
+    source: tax_adjustment
+    target: tax_rate
+    description: 确保税率不低于最小值
+    params:
+      code: |
+        result = context['result']
+        new_tax_rate = result.get('new_tax_rate', 0.1)
+        
+        # 基础场景：最低税率 0%
+        min_rate = context.get('min_tax_rate', 0.0)
+        
+        if new_tax_rate < min_rate:
+            result['new_tax_rate'] = min_rate
+  
+  # 2. 税率上限（基础场景：50%）
+  - name: max_tax_rate_limit
+    type: code
+    source: tax_adjustment
+    target: tax_rate
+    description: 确保税率不超过最大值
+    params:
+      code: |
+        result = context['result']
+        new_tax_rate = result.get('new_tax_rate', 0.1)
+        
+        # 基础场景：最高税率 50%
+        max_rate = context.get('max_tax_rate', 0.5)
+        
+        if new_tax_rate > max_rate:
+            result['new_tax_rate'] = max_rate
+  
+  # ==================== 渐进调整规则 ====================
+  
+  # 3. 大幅度调整限制
+  - name: gradual_adjustment_limit
+    type: code
+    source: tax_adjustment
+    target: tax_rate
+    enabled: true
+    description: 限制单次税率调整幅度，避免剧烈变化
+    params:
+      code: |
+        old_tax_rate = context.get('old_tax_rate', 0.1)
+        adjustment = context.get('adjustment', 0.0)
+        result = context['result']
+        
+        # 单次最大调整幅度：10% (0.1)
+        max_adjustment = context.get('max_adjustment_per_step', 0.1)
+        
+        # 限制调整幅度
+        if abs(adjustment) > max_adjustment:
+            limited_adjustment = max_adjustment if adjustment > 0 else -max_adjustment
+            result['new_tax_rate'] = old_tax_rate + limited_adjustment
+  
+  # ==================== 场景扩展示例 ====================
+  
+  # 4. 战争时期税率上限提高
+  - name: wartime_tax_limit
+    type: conditional
+    source: war_status
+    target: tax_rate
+    enabled: false  # 默认禁用
+    description: 战争时期允许更高的税率上限
+    params:
+      conditions:
+        - condition: "context.get('is_wartime', False)"
+          action:
+            type: code
+            code: |
+              # 战争时期税率上限提高到 70%
+              result = context['result']
+              new_tax_rate = result.get('new_tax_rate', 0.1)
+              
+              wartime_max_rate = 0.7
+              if new_tax_rate > wartime_max_rate:
+                  result['new_tax_rate'] = wartime_max_rate
+  
+  # 5. 经济衰退时强制降税
+  - name: recession_tax_reduction
+    type: code
+    source: economic_status
+    target: tax_rate
+    enabled: false  # 默认禁用
+    description: 经济衰退时强制降低税率以刺激经济
+    params:
+      code: |
+        gdp_growth = context.get('gdp_growth_rate', 0.0)
+        
+        # GDP增长率低于-5%时视为严重衰退
+        if gdp_growth < -0.05:
+            result = context['result']
+            new_tax_rate = result.get('new_tax_rate', 0.1)
+            
+            # 强制降低到15%以下
+            if new_tax_rate > 0.15:
+                result['new_tax_rate'] = 0.15
+  
+  # 6. 民主制度下的税率限制
+  - name: democratic_tax_limit
+    type: code
+    source: political_system
+    target: tax_rate
+    enabled: false  # 默认禁用
+    description: 民主制度下税率受选民满意度约束
+    params:
+      code: |
+        political_system = context.get('political_system', 'autocracy')
+        
+        if political_system == 'democracy':
+            result = context['result']
+            new_tax_rate = result.get('new_tax_rate', 0.1)
+            satisfaction = context.get('average_satisfaction', 50)
+            
+            # 满意度越低，税率上限越低
+            if satisfaction < 30:
+                # 低满意度：税率上限 20%
+                if new_tax_rate > 0.2:
+                    result['new_tax_rate'] = 0.2
+            elif satisfaction < 50:
+                # 中等满意度：税率上限 35%
+                if new_tax_rate > 0.35:
+                    result['new_tax_rate'] = 0.35
+            # 高满意度时使用默认上限（50%）
+  
+  # 7. 古代专制政体高税率
+  - name: ancient_autocracy_high_tax
+    type: code
+    source: historical_period
+    target: tax_rate
+    enabled: false  # 默认禁用
+    description: 古代专制政体可以实施更高的税率
+    params:
+      code: |
+        historical_period = context.get('historical_period', 'modern')
+        political_system = context.get('political_system', 'autocracy')
+        
+        # 古代专制：税率可达 80%
+        if historical_period == 'ancient' and political_system == 'autocracy':
+            result = context['result']
+            new_tax_rate = result.get('new_tax_rate', 0.1)
+            
+            ancient_max_rate = 0.8
+            if new_tax_rate > ancient_max_rate:
+                result['new_tax_rate'] = ancient_max_rate
+  
+  # 8. 财政危机紧急税
+  - name: fiscal_crisis_emergency_tax
+    type: code
+    source: fiscal_status
+    target: tax_rate
+    enabled: false  # 默认禁用
+    description: 财政危机时允许临时提高税率
+    params:
+      code: |
+        budget = context.get('budget', 10000)
+        budget_threshold = context.get('crisis_budget_threshold', 1000)
+        
+        # 预算低于危机阈值
+        if budget < budget_threshold:
+            result = context['result']
+            new_tax_rate = result.get('new_tax_rate', 0.1)
+            
+            # 紧急税率：允许提高到 60%
+            emergency_max_rate = 0.6
+            if new_tax_rate > emergency_max_rate:
+                result['new_tax_rate'] = emergency_max_rate
+  
+  # 9. 累进税率系统（基于人口满意度）
+  - name: progressive_tax_by_satisfaction
+    type: code
+    source: satisfaction
+    target: tax_rate
+    enabled: false  # 默认禁用
+    description: 根据满意度动态调整税率范围
+    params:
+      code: |
+        satisfaction = context.get('average_satisfaction', 50)
+        result = context['result']
+        new_tax_rate = result.get('new_tax_rate', 0.1)
+        
+        # 满意度分层税率系统
+        if satisfaction >= 80:
+            # 高满意度：可以承受较高税率（最高60%）
+            max_rate = 0.6
+        elif satisfaction >= 60:
+            # 中高满意度：标准税率（最高50%）
+            max_rate = 0.5
+        elif satisfaction >= 40:
+            # 中等满意度：限制税率（最高40%）
+            max_rate = 0.4
+        elif satisfaction >= 20:
+            # 低满意度：必须降低税率（最高25%）
+            max_rate = 0.25
+        else:
+            # 极低满意度：紧急降税（最高15%）
+            max_rate = 0.15
+        
+        if new_tax_rate > max_rate:
+            result['new_tax_rate'] = max_rate
+  
+  # 10. 叛乱风险税率调整
+  - name: rebellion_risk_tax_adjustment
+    type: code
+    source: rebellion
+    target: tax_rate
+    enabled: false  # 默认禁用
+    description: 叛乱风险高时自动降低税率
+    params:
+      code: |
+        rebellion_strength = context.get('rebellion_strength', 0)
+        population = context.get('population', 1000)
+        
+        # 叛军占比超过5%视为高风险
+        rebellion_ratio = rebellion_strength / population if population > 0 else 0
+        
+        if rebellion_ratio > 0.05:
+            result = context['result']
+            new_tax_rate = result.get('new_tax_rate', 0.1)
+            
+            # 高叛乱风险：强制降税到20%以下
+            if new_tax_rate > 0.2:
+                result['new_tax_rate'] = 0.2
+
+
+# ==================== 使用说明 ====================
+# 
+# 1. 基础配置（默认启用）：
+#    - min_tax_rate_limit: 税率下限 (0%)
+#    - max_tax_rate_limit: 税率上限 (50%)
+#    - gradual_adjustment_limit: 单次最大调整幅度 (10%)
+#
+# 2. 场景扩展（默认禁用，可通过 enabled: true 启用）：
+#    - wartime_tax_limit: 战争时期税率上限 (70%)
+#    - recession_tax_reduction: 经济衰退强制降税 (15%)
+#    - democratic_tax_limit: 民主制度税率约束
+#    - ancient_autocracy_high_tax: 古代专制高税率 (80%)
+#    - fiscal_crisis_emergency_tax: 财政危机紧急税 (60%)
+#    - progressive_tax_by_satisfaction: 满意度累进税率
+#    - rebellion_risk_tax_adjustment: 叛乱风险税率调整
+#
+# 3. 税率调整流程：
+#    a) 计算新税率：old_rate + adjustment
+#    b) 应用所有启用的影响函数
+#    c) 最终税率存储在 context['result']['new_tax_rate']
+#
+# 4. 扩展场景建议：
+#    - 贸易繁荣时降低关税
+#    - 自然灾害后临时提高税率筹集救灾资金
+#    - 科技发展水平影响税收能力
+#    - 宗教影响对税率的限制
+#
+# 5. 使用示例：
+#
+#    ```python
+#    from src.influences import InfluenceRegistry
+#    
+#    # 加载配置
+#    registry = InfluenceRegistry()
+#    registry.load_from_yaml('config/examples/government_tax_influences_example.yaml')
+#    
+#    # 创建政府
+#    government = Government(
+#        map=map_obj,
+#        towns=towns,
+#        military_strength=100,
+#        initial_budget=10000,
+#        time=time_obj,
+#        transport_economy=transport_econ,
+#        government_prompt_path='config/default/government_prompts.yaml',
+#        influence_registry=registry
+#    )
+#    
+#    # 调整税率（将自动应用影响函数）
+#    government.adjust_tax_rate(0.15)  # 尝试增加15%税率
+#    ```
+#
+# 6. 高级场景组合示例：
+#
+#    ```yaml
+#    # 战争 + 财政危机场景
+#    - 启用 wartime_tax_limit (战争税率上限70%)
+#    - 启用 fiscal_crisis_emergency_tax (财政危机允许60%)
+#    - 结果：战争时期财政危机可以提高到60%
+#    
+#    # 民主 + 低满意度场景
+#    - 启用 democratic_tax_limit (民主制度约束)
+#    - 启用 progressive_tax_by_satisfaction (满意度累进税)
+#    - 结果：低满意度下税率被严格限制在15-25%
+#    ```

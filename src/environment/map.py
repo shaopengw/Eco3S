@@ -4,26 +4,100 @@ import json
 import math
 import random
 from colorama import Back
+from typing import Optional, Dict, Any
+from src.interfaces import IMap
 
-class Map:
-    def __init__(self, width, height, data_file='config/default/towns_data.json'):
+try:
+    from src.influences import InfluenceRegistry
+except ImportError:
+    InfluenceRegistry = None
+
+class Map(IMap):
+    def __init__(self, width, height, data_file='config/default/towns_data.json',
+                 influence_registry: Optional['InfluenceRegistry'] = None):
         """
         初始化地图
         :param width: 地图宽度
         :param height: 地图高度
         :param data_file: 城市数据文件路径
+        :param influence_registry: 影响函数注册中心（可选）
         """
-        self.width = width
-        self.height = height
-        self.grid = np.zeros((height, width))
-        self.river_grid = np.zeros((height, width))
-        self.navigability = 0.8  # 初始运河通航能力
-        self.town_graph = {}  # 城市图（邻接表形式）
-        self.town_dict = {}  # 存储城市信息
-        self.terrain_ruggedness = np.random.rand(height, width)
+        self._width = width
+        self._height = height
+        self._grid = np.zeros((height, width))
+        self._river_grid = np.zeros((height, width))
+        self._navigability = 0.8  # 初始运河通航能力
+        self._town_graph = {}  # 城市图（邻接表形式）
+        self._town_dict = {}  # 存储城市信息
+        self._terrain_ruggedness = np.random.rand(height, width)
+        self._influence_registry = influence_registry
         
         # 加载城市数据和地图边界
         self.load_town_data(data_file)
+        
+        # 初始化地图（填充 town_dict 和 town_graph）
+        self.initialize_map()
+    
+    # 实现 IMap 接口的 property
+    @property
+    def width(self) -> int:
+        """地图宽度"""
+        return self._width
+    
+    @property
+    def height(self) -> int:
+        """地图高度"""
+        return self._height
+    
+    @property
+    def grid(self) -> np.ndarray:
+        """地图网格"""
+        return self._grid
+    
+    @property
+    def river_grid(self) -> np.ndarray:
+        """运河网格"""
+        return self._river_grid
+    
+    @river_grid.setter
+    def river_grid(self, value: np.ndarray):
+        """设置运河网格"""
+        self._river_grid = value
+    
+    @property
+    def navigability(self) -> float:
+        """运河通航能力"""
+        return self._navigability
+    
+    @navigability.setter
+    def navigability(self, value: float):
+        """设置运河通航能力"""
+        self._navigability = value
+    
+    @property
+    def town_graph(self) -> dict:
+        """城市图（邻接表形式）"""
+        return self._town_graph
+    
+    @town_graph.setter
+    def town_graph(self, value: dict):
+        """设置城市图"""
+        self._town_graph = value
+    
+    @property
+    def town_dict(self) -> dict:
+        """城市信息字典"""
+        return self._town_dict
+    
+    @town_dict.setter
+    def town_dict(self, value: dict):
+        """设置城市信息字典"""
+        self._town_dict = value
+    
+    @property
+    def terrain_ruggedness(self) -> np.ndarray:
+        """地形崎岖度矩阵"""
+        return self._terrain_ruggedness
 
     def load_town_data(self, data_file):
         """
@@ -263,13 +337,66 @@ class Map:
         print(f"Map visualization saved to: {output_file}")
         plt.show()
 
+    def apply_influences(self, target_name: str, context: Optional[Dict[str, Any]] = None) -> None:
+        """
+        应用所有注册的影响函数到指定目标
+        
+        :param target_name: 目标名称（如 'canal', 'navigability'）
+        :param context: 上下文字典，包含影响函数所需的所有数据
+        """
+        if self._influence_registry is None:
+            return
+        
+        # 如果没有提供上下文，创建默认上下文
+        if context is None:
+            context = {}
+        
+        # 确保上下文中包含 map 对象本身
+        context['map'] = self
+        
+        # 获取所有影响该目标的影响函数
+        influences = self._influence_registry.get_influences(target_name)
+        
+        # 应用每个影响函数
+        for influence in influences:
+            try:
+                impact = influence.apply(self, context)
+                if impact is not None:
+                    # 可以记录影响或采取其他行动
+                    pass
+            except Exception as e:
+                print(f"应用影响函数失败 ({influence.source}->{target_name}:{influence.name}): {e}")
+
     def update_river_condition(self, maintenance_ratio):
         """
         根据政府维护决策更新运河状态。
         :param maintenance_ratio: 维护投入比例。
         """
         current_navigability = self.get_navigability()
-
+        
+        # 构建上下文
+        context = {
+            'map': self,
+            'maintenance_ratio': maintenance_ratio,
+            'current_navigability': current_navigability
+        }
+        
+        # 首先尝试应用影响函数
+        if self._influence_registry is not None:
+            influences = self._influence_registry.get_influences('canal')
+            if influences:
+                # 有配置的影响函数，应用它们
+                self.apply_influences('canal', context)
+                
+                # 更新运河网格的状态
+                self.river_grid[self.river_grid > 0] = self.navigability
+                
+                # 警告检查
+                if self.navigability < 0.2:
+                    print(Back.RED + f"运河已废弃，通航能力为 {self.navigability:.2f}" + Back.RESET)
+                return
+        
+        # 回退到默认公式（保持向后兼容）
         if maintenance_ratio >= 1:
             # 每增加一倍通航能力额外增加 0.1
             new_navigability = current_navigability + 0.1 * maintenance_ratio
@@ -287,21 +414,36 @@ class Map:
         if self.navigability < 0.2:
             print(Back.RED + f"运河已废弃，通航能力为 {self.navigability:.2f}" + Back.RESET)
 
-        
-        # 增加通航值低于0.2的警告
-        if self.navigability < 0.2:
-            print(Back.RED + f"运河已废弃，通航能力为 {self.navigability:.2f}" + Back.RESET)
-
     def decay_river_condition_naturally(self, climate_impact_factor=0):
         """
         每年根据自然衰减和气候影响自然更新运河状态。
         :param climate_impact_factor: 气候影响因子，范围[0,1]，表示气候对运河的负面影响。
         :return: 当前运河通航能力。
         """
-            
-        # 自然衰减和气候影响
-        natural_decay_rate = 0.1
         old_navigability = self.navigability
+        
+        # 构建上下文
+        context = {
+            'map': self,
+            'climate_impact_factor': climate_impact_factor,
+            'current_navigability': old_navigability
+        }
+        
+        # 首先尝试应用影响函数
+        if self._influence_registry is not None:
+            influences = self._influence_registry.get_influences('canal_decay')
+            if influences:
+                # 有配置的影响函数，应用它们
+                self.apply_influences('canal_decay', context)
+                
+                # 更新运河网格的状态
+                self.river_grid[self.river_grid > 0] = self.navigability
+                
+                print(f"运河自然衰减: {old_navigability:.2f} -> {self.navigability:.2f}")
+                return self.navigability
+        
+        # 回退到默认公式（保持向后兼容）
+        natural_decay_rate = 0.1
         self.navigability = max(0, self.navigability * (1 - natural_decay_rate) - climate_impact_factor * 0.6)
 
         # 更新运河网格的状态

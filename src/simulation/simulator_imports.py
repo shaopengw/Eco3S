@@ -21,6 +21,36 @@ import networkx as nx
 from colorama import Back
 import numpy as np
 
+# 导入接口类型（用于类型注解）
+from src.interfaces import (
+    # Environment interfaces
+    IMap,
+    IClimateSystem,
+    IJobMarket,
+    IPopulation,
+    ISocialNetwork,
+    ITime,
+    ITowns,
+    ITransportEconomy,
+    # Government interfaces
+    IOrdinaryGovernmentAgent,
+    IHighRankingGovernmentAgent,
+    IGovernment,
+    IGovernmentSharedInformationPool,
+    IGovernmentInformationOfficer,
+    # Rebellion interfaces
+    IOrdinaryRebel,
+    IRebelLeader,
+    IRebellion,
+    IRebelsSharedInformationPool,
+    IRebelInformationOfficer,
+    # Resident interfaces
+    IResidentSharedInformationPool,
+    IResidentGroup,
+    IResident
+)
+
+# 导入具体实现类（仅用于实例化）
 from src.agents.government import (
     OrdinaryGovernmentAgent,
     HighRankingGovernmentAgent,
@@ -39,5 +69,5 @@ from src.environment.time import Time
 
 from src.utils.simulation_context import SimulationContext
 from src.utils.logger import LogManager
-
+from src.utils.di_container import DIContainer
 
