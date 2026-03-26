@@ -1,5 +1,6 @@
 from .shared_imports import *
 from ..utils.logger import LogManager
+from .agent_group import AgentGroup
 from src.interfaces import (
     IOrdinaryGovernmentAgent,
     IHighRankingGovernmentAgent,
@@ -9,11 +10,16 @@ from src.interfaces import (
 )
 load_dotenv()
 
-class OrdinaryGovernmentAgent(BaseAgent, IOrdinaryGovernmentAgent):
+_MAINTAIN_EMPLOYMENT_RATE = 0.05
+
+
+def _calc_maintain_employment_cost(salary: float) -> float:
+    return salary * _MAINTAIN_EMPLOYMENT_RATE
+
+class OrdinaryGovernmentAgent(AgentGroup.DiscussionMemberAgentBase, IOrdinaryGovernmentAgent):
     def __init__(self, agent_id, government, shared_pool):
-        super().__init__(agent_id, group_type='government', window_size=3)
+        super().__init__(agent_id, group_type='government', shared_pool=shared_pool, window_size=3)
         self.government = government
-        self.shared_pool = shared_pool
         self.time = 0  # 当前时间（年）
         self.map = government.map
         self.function = None
@@ -21,6 +27,12 @@ class OrdinaryGovernmentAgent(BaseAgent, IOrdinaryGovernmentAgent):
         self.personality = None
         self.system_message = None
         self.government_log = self.government.government_log
+
+    def get_memory_role_name(self) -> str:
+        return "普通政府官员"
+
+    def get_logger(self):
+        return self.government_log
 
     def update_system_message(self):
         """
@@ -49,52 +61,18 @@ class OrdinaryGovernmentAgent(BaseAgent, IOrdinaryGovernmentAgent):
                 tax_rate=self.government.get_tax_rate()*100,
                 maintain_employment_cost=maintain_employment_cost)
 
-    async def generate_opinion(self, salary):
-        """
-        生成一句关于政治决策的意见
-        :return: 生成的意见内容
-        """
-        maintain_employment_cost = salary * 0.05
-        # 构建提示信息
-        prompt = self.government.prompts['generate_opinion_prompt'].format(
-            current_situation_prompt=self.get_current_situation_prompt(maintain_employment_cost))
-        
-        self.update_system_message()
-        opinion = await self.generate_llm_response(prompt)
-        if opinion:
-            await self.memory.write_record(
-                role_name="普通政府官员",
-                content=f"我的意见：{opinion}",
-                is_user=False,
-                store_in_shared=False  # 不存入共享记忆
-                )
-            await self.shared_pool.add_discussion(opinion)
-            self.government_log.info(f"普通政府官员 {self.agent_id} 生成的意见：{opinion}")
-            return opinion
-        return "无法生成意见"
+    def build_generate_opinion_prompt(self, salary):
+        maintain_employment_cost = _calc_maintain_employment_cost(salary)
+        return self.government.prompts['generate_opinion_prompt'].format(
+            current_situation_prompt=self.get_current_situation_prompt(maintain_employment_cost)
+        )
 
-    async def generate_and_share_opinion(self, salary):
-        """
-        从共享信息池中获取信息并发表看法，将看法放入共享信息池
-        """
-        maintain_employment_cost = salary * 0.05
-        # 获取最新讨论内容
-        all_discussion = await self.shared_pool.get_all_discussions()
-        if all_discussion:
-            prompt = self.government.prompts['generate_and_share_opinion_prompt'].format(
-                all_discussion=all_discussion, current_situation_prompt=self.get_current_situation_prompt(maintain_employment_cost))
-
-            try:
-                self.update_system_message()
-                opinion = await self.generate_llm_response(prompt)
-                if opinion:
-                    await self.shared_pool.add_discussion(opinion)
-                    self.government_log.info(f"普通官员 {self.agent_id} 回应了讨论：{opinion}")
-            except Exception as e:
-                self.government_log.error(f"普通官员 {self.agent_id} 在生成回应时出错：{e}")
-        else:
-            # 如果共享信息池为空，调用generate_opinion函数
-            await self.generate_opinion(salary)
+    def build_generate_and_share_opinion_prompt(self, all_discussions, salary):
+        maintain_employment_cost = _calc_maintain_employment_cost(salary)
+        return self.government.prompts['generate_and_share_opinion_prompt'].format(
+            all_discussion=all_discussions,
+            current_situation_prompt=self.get_current_situation_prompt(maintain_employment_cost),
+        )
 
     async def make_decision(self, summary, salary):
         """
@@ -104,7 +82,7 @@ class OrdinaryGovernmentAgent(BaseAgent, IOrdinaryGovernmentAgent):
         :return: 决策结果
         """
         current_budget = self.government.get_budget()
-        maintain_employment_cost = salary * 0.05
+        maintain_employment_cost = _calc_maintain_employment_cost(salary)
 
         # 检查是否有运输经济模块
         if self.government.transport_economy:
@@ -144,21 +122,23 @@ class OrdinaryGovernmentAgent(BaseAgent, IOrdinaryGovernmentAgent):
             self.government_log.error(f"普通政府官员 {self.agent_id} 在做出决策时出错：{e}")
             return "无法做出决策"
 
-class HighRankingGovernmentAgent(BaseAgent, IHighRankingGovernmentAgent):
+class HighRankingGovernmentAgent(AgentGroup.DiscussionLeaderAgentBase, IHighRankingGovernmentAgent):
     def __init__(self, agent_id, government, shared_pool):
         """
         初始化高级政府官员类（决策者）
         :param agent_id: 政府官员的唯一标识符
         :param government: 政府对象，用于获取政府状态
         """
-        super().__init__(agent_id, group_type='government', window_size=3)
+        super().__init__(agent_id, group_type='government', shared_pool=shared_pool, window_size=3)
         self.government = government
-        self.shared_pool = shared_pool
         self.time = 0  # 当前时间（年）
         self.map = government.map
         self.system_message = None
         self.personality = None  # 人物性格
         self.government_log = self.government.government_log
+
+    def get_logger(self):
+        return self.government_log
     
     def update_system_message(self):
         """
@@ -174,7 +154,7 @@ class HighRankingGovernmentAgent(BaseAgent, IHighRankingGovernmentAgent):
         :return: 高级官员的总结发言
         """
         current_budget = self.government.get_budget()
-        maintain_employment_cost = salary * 0.05
+        maintain_employment_cost = _calc_maintain_employment_cost(salary)
         
         # 检查是否有运输经济模块
         if self.government.transport_economy:
@@ -207,55 +187,45 @@ class HighRankingGovernmentAgent(BaseAgent, IHighRankingGovernmentAgent):
             self.government_log.error(f"高级政府官员 {self.agent_id} 在总结讨论时出错：{e}")
             return summary  # 如果出错，返回原始总结
 
-    async def make_decision(self, summary, salary):
-        """
-        根据普通政府官员的讨论作出决策
-        :return: 决策结果
-        """
-        # 政府决策为多个动作的组合。
+    def build_make_decision_prompt(self, summary, salary):
         current_budget = self.government.get_budget()
+        maintain_employment_cost = _calc_maintain_employment_cost(salary)
 
-        # 获取维持当前就业所需的资金
-        maintain_employment_cost = salary * 0.05
-
-        # 检查是否有运输经济模块
         if self.government.transport_economy:
-            # 获取运输经济相关参数
             river_price = self.government.transport_economy.river_price
             sea_price = self.government.transport_economy.sea_price
             transport_task = self.government.transport_economy.transport_task
-            maintenance_cost = self.government.transport_economy.calculate_maintenance_cost(self.government.map.get_navigability())
-            
-            # 计算各项支出的成本基准
-            transport_cost_river = river_price * transport_task  # 全部河运成本
-            transport_cost_sea = sea_price * transport_task      # 全部海运成本
+            maintenance_cost = self.government.transport_economy.calculate_maintenance_cost(
+                self.government.map.get_navigability()
+            )
 
-            prompt = self.government.prompts['make_decision_prompt'].format(
-                current_budget=current_budget, military_strength=self.government.get_military_strength(),
-                tax_rate=self.government.get_tax_rate()*100, transport_task=transport_task, river_price=river_price,
-                sea_price=sea_price, maintenance_cost_base=maintenance_cost, maintain_employment_cost=maintain_employment_cost,
-                transport_cost_river=transport_cost_river, transport_cost_sea=transport_cost_sea, summary=summary)
-        else:
-            # 没有运输经济模块时，使用简化版本
-            prompt = self.government.prompts.get('make_decision_prompt_simple',
-                "当前预算：{current_budget}，军事力量：{military_strength}，税率：{tax_rate}%，维持就业成本：{maintain_employment_cost}。\n讨论总结：{summary}\n请做出决策。").format(
-                current_budget=current_budget, 
+            transport_cost_river = river_price * transport_task
+            transport_cost_sea = sea_price * transport_task
+
+            return self.government.prompts['make_decision_prompt'].format(
+                current_budget=current_budget,
                 military_strength=self.government.get_military_strength(),
-                tax_rate=self.government.get_tax_rate()*100, 
-                maintain_employment_cost=maintain_employment_cost, 
-                summary=summary)
-        try:
-            self.update_system_message()
-            decision = await self.generate_llm_response(prompt)
+                tax_rate=self.government.get_tax_rate() * 100,
+                transport_task=transport_task,
+                river_price=river_price,
+                sea_price=sea_price,
+                maintenance_cost_base=maintenance_cost,
+                maintain_employment_cost=maintain_employment_cost,
+                transport_cost_river=transport_cost_river,
+                transport_cost_sea=transport_cost_sea,
+                summary=summary,
+            )
 
-            if decision:
-                self.government_log.info(f"高级政府官员 {self.agent_id} 的决策：{decision}")
-                # 清空共享信息池
-                await self.shared_pool.clear_discussions()
-                return decision
-        except Exception as e:
-            self.government_log.error(f"高级政府官员 {self.agent_id} 在做出决策时出错：{e}")
-            return "无法做出决策"
+        return self.government.prompts.get(
+            'make_decision_prompt_simple',
+            "当前预算：{current_budget}，军事力量：{military_strength}，税率：{tax_rate}%，维持就业成本：{maintain_employment_cost}。\n讨论总结：{summary}\n请做出决策。",
+        ).format(
+            current_budget=current_budget,
+            military_strength=self.government.get_military_strength(),
+            tax_rate=self.government.get_tax_rate() * 100,
+            maintain_employment_cost=maintain_employment_cost,
+            summary=summary,
+        )
 
     def print_agent_status(self):
         """
@@ -265,12 +235,13 @@ class HighRankingGovernmentAgent(BaseAgent, IHighRankingGovernmentAgent):
         self.government_log.info(f"  当前时间：{self.time}年")
         self.government_log.info(f"  人物性格：{self.personality}")
 
-class Government(IGovernment):
+class Government(AgentGroup, IGovernment):
     def __init__(self, map, towns, military_strength, initial_budget, time, transport_economy, government_prompt_path, influence_registry=None):
         """
         初始化政府类
         :param influence_registry: 影响函数注册表（可选）
         """
+        AgentGroup.__init__(self, prompts_path=government_prompt_path, logger_name="government", group_type="government")
         self._map = map
         self._towns = towns
         self._budget = initial_budget
@@ -280,10 +251,7 @@ class Government(IGovernment):
         self.residents = {}  # 添加居民引用
         self._transport_economy = transport_economy  # 运输经济模型引用
         self._influence_registry = influence_registry
-        with open(government_prompt_path, 'r', encoding='utf-8') as file:
-            self.prompts = yaml.safe_load(file)
-
-        self.government_log = LogManager.get_logger("government")
+        self.government_log = self.group_log
     
     # 实现 IGovernment 接口的 property
     @property
@@ -334,7 +302,7 @@ class Government(IGovernment):
     def handle_public_budget(self, budget_allocation, salary, job_total_count,residents):
         """处理公共预算决策"""
         # 获取维持当前就业所需的资金
-        maintain_employment_cost = salary * 0.05
+        maintain_employment_cost = _calc_maintain_employment_cost(salary)
         if budget_allocation == 0:
             self.government_log.info(f"政府执行决策 - 公共预算决策：不分配公共预算。")
             return
@@ -513,89 +481,20 @@ class Government(IGovernment):
             except Exception as e:
                 self.government_log.error(f"应用影响函数失败 ({influence.source}->{target_name}:{influence.name}): {e}")
 
-class government_SharedInformationPool(IGovernmentSharedInformationPool):
+class government_SharedInformationPool(AgentGroup.SharedInformationPoolBase, IGovernmentSharedInformationPool):
     def __init__(self, max_discussions: int = 5):
-        """
-        初始化共享信息池
-        :param max_discussions: 最大讨论数量
-        """
-        self.discussions = []  # 存储所有讨论内容
-        self.max_discussions = max_discussions  # 最大讨论数量
-        self.is_discussion_ended = False  # 讨论是否结束
-        self.lock = asyncio.Lock()  # 用于异步操作的锁
-
-    async def add_discussion(self, discussion) -> bool:
-        """
-        添加讨论内容到共享信息池
-        :param discussion: 讨论内容
-        :return: 是否成功添加（如果讨论已结束则返回False）
-        """
-        async with self.lock:
-            if self.is_discussion_ended:
-                return False
-            self.discussions.append(discussion)
-            if len(self.discussions) >= self.max_discussions:
-                self.is_discussion_ended = True
-            return True
-
-    async def get_latest_discussion(self):
-        """
-        获取最新的讨论内容
-        :return: 最新的讨论内容
-        """
-        async with self.lock:
-            if self.discussions:
-                latest_discussion = self.discussions[-1]
-                return latest_discussion
-            else:
-                return None
-
-    async def get_all_discussions(self):
-        """
-        获取所有讨论内容
-        :return: 所有讨论内容的列表
-        """
-        async with self.lock:
-            if self.discussions:
-                return self.discussions
-            else:
-                return []
-    async def clear_discussions(self):
-        """
-        清空所有讨论内容
-        """
-        async with self.lock:
-            self.discussions.clear()
-            self.is_discussion_ended = False
+        super().__init__(max_discussions=max_discussions)
 
 
-class InformationOfficer(BaseAgent, IGovernmentInformationOfficer):
+class InformationOfficer(AgentGroup.DiscussionInformationOfficerBase, IGovernmentInformationOfficer):
     def __init__(self, agent_id, government, shared_pool):
-        super().__init__(agent_id, group_type='government', window_size=0)
-        self.shared_pool = shared_pool
+        super().__init__(
+            agent_id=agent_id,
+            group_type='government',
+            shared_pool=shared_pool,
+            prompts=government.prompts,
+            logger=government.government_log,
+            window_size=0,
+        )
         self.memory = None
-        self.prompts = government.prompts
-        self.government_log = government.government_log
 
-
-    async def summarize_discussions(self) -> str:
-        """
-        整理和总结所有讨论内容
-        :return: 总结后的报告
-        """
-        discussions = await self.shared_pool.get_all_discussions()
-        if not discussions:
-            return "暂无讨论内容"
-        
-        prompt = self.prompts['summarize_discussions_prompt'].format(
-            num_discussions=len(discussions), discussions="\n".join([f"{i+1}. {d}" for i, d in enumerate(discussions)]))
-
-        try:
-            summary = await self.generate_llm_response(prompt)
-            if summary:
-                self.government_log.info(f"信息整理官 {self.agent_id} 生成总结报告：{summary}")
-                return summary
-            return "无法生成总结报告"
-        except Exception as e:
-            self.government_log.error(f"信息整理官 {self.agent_id} 在生成总结报告时出错：{e}")
-            return "无法生成总结报告"

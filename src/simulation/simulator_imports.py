@@ -20,6 +20,7 @@ import yaml
 import networkx as nx
 from colorama import Back
 import numpy as np
+from typing import Any
 
 # 导入接口类型（用于类型注解）
 from src.interfaces import (
@@ -71,3 +72,5 @@ from src.utils.simulation_context import SimulationContext
 from src.utils.logger import LogManager
 from src.utils.di_container import DIContainer
 
+from .plugin_access import require_module
+from src.influences import InfluenceManager

@@ -8,14 +8,15 @@ class PropagationStrategy(Enum):
     BROADCAST_WITH_COMMON_KNOWLEDGE = "BC_CK"
 
 class InfoPropagationSimulator:
-    def __init__(self, container: DIContainer, residents: Dict[int, IResident], config: Dict, loaded_plugins: Dict = None):
+    def __init__(self, plugin_registry: Any, residents: Dict[int, IResident], config: Dict, influence_manager=None):
         """初始化信息传播模拟器"""
-        # 从插件或容器中获取模块实例
-        self.map = self._resolve_instance('default_map', IMap, container, loaded_plugins)
-        self.time = self._resolve_instance('default_time', ITime, container, loaded_plugins)
-        self.population = self._resolve_instance('default_population', IPopulation, container, loaded_plugins)
-        self.social_network = self._resolve_instance('default_social_network', ISocialNetwork, container, loaded_plugins)
-        self.towns = self._resolve_instance('default_towns', ITowns, container, loaded_plugins)
+        self.plugin_registry = plugin_registry
+
+        self.map = require_module(self.plugin_registry, 'map')
+        self.time = require_module(self.plugin_registry, 'time')
+        self.population = require_module(self.plugin_registry, 'population')
+        self.social_network = require_module(self.plugin_registry, 'social_network')
+        self.towns = require_module(self.plugin_registry, 'towns')
         
         # 接受作为参数传入的对象
         self.residents = residents
@@ -24,6 +25,8 @@ class InfoPropagationSimulator:
         
         # 初始化日志记录器
         self.logger = LogManager.get_logger('simulator_info_propagation', console_output=True)
+
+        self.influence_manager = influence_manager or InfluenceManager(logger=self.logger)
         
         # 实验相关参数
         self.current_strategy = None
@@ -44,13 +47,6 @@ class InfoPropagationSimulator:
             }
             for strategy in PropagationStrategy
         }
-
-    @staticmethod
-    def _resolve_instance(plugin_name: str, interface_type, container: DIContainer, loaded_plugins: Dict = None):
-        """从插件或容器中获取实例"""
-        if loaded_plugins and plugin_name in loaded_plugins:
-            return loaded_plugins[plugin_name]
-        return container.resolve(interface_type)
 
     async def run(self):
         """运行实验"""
@@ -91,6 +87,17 @@ class InfoPropagationSimulator:
         # 重置或确保时间状态正确
         if hasattr(self.time, 'set_current_time'):
             self.time.set_current_time(year)  # 设置当前时间
+
+        # 应用影响函数
+        simulator_state = {
+            'time': self.time,
+            'map': self.map,
+            'population': self.population,
+            'towns': self.towns,
+            'social_network': self.social_network,
+            'residents': self.residents,
+        }
+        self.influence_manager.apply_all_influences(simulator_state)
         
         # 1. 执行信息传播策略
         await self.execute_propagation_strategy(year)
@@ -428,8 +435,6 @@ class InfoPropagationSimulator:
     
     def save_results(self, filename=None):
         """保存实验结果到JSON文件"""
-        from src.utils.simulation_context import SimulationContext
-        
         # 使用 SimulationContext 获取数据目录
         data_dir = SimulationContext.get_data_dir()
         

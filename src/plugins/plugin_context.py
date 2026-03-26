@@ -7,6 +7,7 @@
 from typing import Dict, Any, Optional
 import logging
 from dataclasses import dataclass, field
+from .base_plugin import BasePlugin
 
 
 @dataclass

@@ -11,6 +11,7 @@ from src.influences import (
     ConstantInfluence,
     LinearInfluence,
     CodeInfluence,
+    ExprInfluence,
     InfluenceRegistry
 )
 
@@ -338,6 +339,55 @@ result = undefined_variable * 2
     return True
 
 
+def test_expr_influence():
+    """测试 ExprInfluence：inputs + expr + 回写行为。"""
+    print("\n" + "=" * 60)
+    print("测试 ExprInfluence")
+    print("=" * 60)
+
+    target = MockModule(river_price=0.0, transport_cost=10.0, maintenance_cost_base=2.0)
+    context = {
+        'navigability': 0.8,
+        'result': {},
+    }
+
+    inf = ExprInfluence(
+        source='map',
+        target='river_price',
+        name='river_price_expr',
+        inputs={
+            'navigability': {'path': 'context.navigability', 'default': 0.8, 'coerce': 'float'},
+            'transport_cost': {'path': 'target.transport_cost', 'default': 0.0, 'coerce': 'float'},
+        },
+        expr='max(round(transport_cost * (2 - navigability), 2), transport_cost)',
+        target_attr='river_price',
+    )
+
+    result = inf.apply(target, context)
+    assert abs(result - 12.0) < 1e-6
+    assert abs(target.river_price - 12.0) < 1e-6
+
+    inf2 = ExprInfluence(
+        source='map',
+        target='maintenance_cost',
+        name='maintenance_cost_expr',
+        inputs={
+            'navigability': 'context.navigability',
+            'exponent': {'value': 3, 'coerce': 'float'},
+            'maintenance_cost_base': {'path': 'target.maintenance_cost_base', 'default': 0.0, 'coerce': 'float'},
+        },
+        expr='maintenance_cost_base * ((2 - navigability) ** exponent)',
+        result_key='maintenance_cost',
+    )
+
+    result2 = inf2.apply(target, context)
+    assert 'maintenance_cost' in context['result']
+    assert abs(context['result']['maintenance_cost'] - result2) < 1e-9
+
+    print("\n✓ ExprInfluence 测试通过")
+    return True
+
+
 def test_registry_integration():
     """测试与注册中心的集成"""
     print("\n" + "=" * 60)
@@ -381,6 +431,21 @@ def test_registry_integration():
                     'code': 'result = min(1.0, gdp / 10000)',
                     'target_attr': 'satisfaction'
                 }
+            },
+            {
+                'type': 'expr',
+                'source': {
+                    'module': 'economy',
+                    'inputs': {
+                        'gdp': {'path': 'context.gdp', 'default': 0.0, 'coerce': 'float'}
+                    }
+                },
+                'target': 'population',
+                'name': 'gdp_factor',
+                'params': {
+                    'expr': 'gdp / 10000',
+                    'target_attr': 'gdp_factor'
+                }
             }
         ]
     }
@@ -389,7 +454,7 @@ def test_registry_integration():
     loaded = registry.load_from_config(config)
     print(f"   成功加载 {loaded} 个影响函数")
     
-    assert loaded == 3
+    assert loaded == 4
     
     # 验证影响函数
     print("\n验证加载的影响函数:")
@@ -408,15 +473,21 @@ def test_registry_integration():
     assert code_inf is not None
     assert isinstance(code_inf, CodeInfluence)
     print(f"   ✓ CodeInfluence: {code_inf}")
+
+    expr_inf = registry.get_influence_by_name('economy', 'population', 'gdp_factor')
+    assert expr_inf is not None
+    assert isinstance(expr_inf, ExprInfluence)
+    print(f"   ✓ ExprInfluence: {expr_inf}")
     
     # 测试应用
     print("\n测试应用影响:")
     
-    population = MockModule(tax_rate=0.0, death_modifier=0.0)
+    population = MockModule(tax_rate=0.0, death_modifier=0.0, gdp_factor=0.0)
     climate = MockModule(temperature=30)
     context = {
         'climate': climate,
-        'population': population
+        'population': population,
+        'gdp': 8000,
     }
     
     # 应用所有影响到 population
@@ -430,6 +501,7 @@ def test_registry_integration():
     
     assert population.tax_rate == 0.15
     assert abs(population.death_modifier - 0.30) < 0.001
+    assert abs(population.gdp_factor - 0.8) < 0.001
     
     print("\n✓ 注册中心集成测试通过")
     return True
@@ -440,6 +512,7 @@ if __name__ == "__main__":
         test_constant_influence()
         test_linear_influence()
         test_code_influence()
+        test_expr_influence()
         test_registry_integration()
         
         print("\n" + "=" * 60)

@@ -78,9 +78,9 @@ class MechanismInterpreterAgent(BaseAgent):
                         catalog_text += f"- {filename}: {desc}\n"
                     catalog_text += "\n"
                 
-                if 'api_docs_description' in data:
-                    catalog_text += "**API文档 (模块功能说明)**\n"
-                    for filename, desc in data['api_docs_description'].items():
+                if 'interfaces_files_description' in data:
+                    catalog_text += "**接口文件 (src/interfaces, 模块接口定义)**\n"
+                    for filename, desc in data['interfaces_files_description'].items():
                         catalog_text += f"- {filename}: {desc}\n"
                     catalog_text += "\n"
                 
@@ -205,17 +205,32 @@ class MechanismInterpreterAgent(BaseAgent):
                 except Exception as e:
                     self.logger.error(f"读取文件失败 {filename}: {e}")
             else:
-                # 尝试在docs/api目录中查找API文档
-                api_path = os.path.join(os.path.dirname(self.config_dir), 'docs', 'api', filename)
-                if os.path.exists(api_path):
+                # 尝试在src/interfaces目录中查找接口文件
+                project_root = os.path.dirname(os.path.dirname(os.path.abspath(self.config_dir)))
+                interfaces_dir = os.path.join(project_root, 'src', 'interfaces')
+
+                stem = os.path.splitext(filename)[0]
+                alias_map = {
+                    'rebellion': 'rebels',
+                    'rebel': 'rebels',
+                }
+                stem = alias_map.get(stem, stem)
+
+                if stem.startswith('i'):
+                    interface_filename = f"{stem}.py"
+                else:
+                    interface_filename = f"i{stem}.py"
+
+                interface_path = os.path.join(interfaces_dir, interface_filename)
+                if os.path.exists(interface_path):
                     try:
-                        with open(api_path, 'r', encoding='utf-8') as f:
+                        with open(interface_path, 'r', encoding='utf-8') as f:
                             content = f.read()
                             configs[filename] = content
                             self.cached_configs[filename] = content
-                            self.logger.info(f"读取API文档: {filename}")
+                            self.logger.info(f"读取接口文件: {interface_filename} (requested_as={filename})")
                     except Exception as e:
-                        self.logger.error(f"读取API文档失败 {filename}: {e}")
+                        self.logger.error(f"读取接口文件失败 {interface_filename}: {e}")
         
         return configs
     

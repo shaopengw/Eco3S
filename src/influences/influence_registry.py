@@ -60,7 +60,8 @@ class InfluenceRegistry:
         self._by_source: Dict[str, List[IInfluenceFunction]] = defaultdict(list)
         self._by_name: Dict[str, IInfluenceFunction] = {}
         self._factories: Dict[str, Callable] = {}
-        
+
+        self.execution_order: List[tuple[str, str]] = []
         self.logger = logger or logging.getLogger(__name__)
         
         # 注册内置的影响函数工厂
@@ -243,6 +244,12 @@ class InfluenceRegistry:
             }
             registry.load_from_config(config)
         """
+        if not isinstance(config, dict):
+            raise ValueError("Influence config must be a dict")
+
+        # 可选：从配置中读取执行顺序
+        self.execution_order = self._parse_execution_order(config.get('execution_order'))
+
         if 'influences' not in config:
             self.logger.warning("Config does not contain 'influences' key")
             return 0
@@ -267,6 +274,39 @@ class InfluenceRegistry:
             f"Loaded {loaded_count}/{len(influences_config)} influences from config"
         )
         return loaded_count
+
+    def _parse_execution_order(self, raw: Any) -> List[tuple[str, str]]:
+        """解析 influences.yaml 中的 execution_order。
+
+        支持两种写法：
+        - [{'module': 'map', 'target': 'canal_decay'}, ...]
+        - [['map', 'canal_decay'], ...]
+        """
+
+        if raw is None:
+            return []
+
+        if not isinstance(raw, list):
+            raise ValueError("execution_order must be a list")
+
+        parsed: List[tuple[str, str]] = []
+        for item in raw:
+            if isinstance(item, dict):
+                module_name = item.get('module')
+                target_name = item.get('target')
+            elif isinstance(item, (list, tuple)) and len(item) == 2:
+                module_name, target_name = item[0], item[1]
+            else:
+                raise ValueError(
+                    "execution_order item must be {'module': ..., 'target': ...} or [module, target]"
+                )
+
+            if not module_name or not target_name:
+                raise ValueError("execution_order item missing module/target")
+
+            parsed.append((str(module_name), str(target_name)))
+
+        return parsed
     
     def _load_single_influence(self, config: dict) -> None:
         """
@@ -278,6 +318,30 @@ class InfluenceRegistry:
         Raises:
             ValueError: 如果配置缺少必需字段或类型不支持
         """
+        # 扩展：允许 source 用对象承载 inputs/variables 等声明式取值信息
+        source_spec = config.get('source')
+        if isinstance(source_spec, dict):
+            source_module = source_spec.get('module')
+            if not source_module:
+                raise ValueError("Influence config source.module is required when source is a dict")
+
+            config['source'] = str(source_module)
+
+            source_inputs = source_spec.get('inputs')
+            source_variables = source_spec.get('variables')
+
+            if source_inputs is not None or source_variables is not None:
+                params = config.setdefault('params', {})
+                if source_inputs is not None:
+                    merged_inputs = dict(source_inputs or {})
+                    # params.inputs 优先级更高
+                    merged_inputs.update(dict(params.get('inputs') or {}))
+                    params['inputs'] = merged_inputs
+                if source_variables is not None:
+                    merged_vars = dict(source_variables or {})
+                    merged_vars.update(dict(params.get('variables') or {}))
+                    params['variables'] = merged_vars
+
         # 验证必需字段
         required_fields = ['type', 'source', 'target', 'name']
         missing_fields = [f for f in required_fields if f not in config]
@@ -314,7 +378,8 @@ class InfluenceRegistry:
         from .builtin import (
             create_constant_influence,
             create_linear_influence,
-            create_code_influence
+            create_code_influence,
+            create_expr_influence
         )
         
         # 注册 builtin_influences 中的工厂
@@ -327,6 +392,7 @@ class InfluenceRegistry:
         self.register_factory('constant', create_constant_influence)
         self.register_factory('linear', create_linear_influence)
         self.register_factory('code', create_code_influence)
+        self.register_factory('expr', create_expr_influence)
     
     def list_targets(self) -> List[str]:
         """获取所有有影响函数的目标模块列表"""

@@ -335,6 +335,63 @@ class ISocialNetwork(ABC):
         pass
 
     @abstractmethod
+    async def communicate_resident_to_resident(
+        self,
+        sender_id: int,
+        receiver_id: int,
+        message: str,
+    ) -> Optional[Any]:
+        """指定居民与指定居民一对一沟通。
+
+        Args:
+            sender_id: 发送方居民ID
+            receiver_id: 接收方居民ID
+            message: 消息内容
+
+        Returns:
+            Optional[Any]: 接收方可选的回应（实现通常沿用 Resident.receive_information 返回结构）
+
+        Note:
+            - 需要遵守 dialogue_count/MAX_DIALOGUES_PER_STEP 的对话量限制
+            - 若接收方不存在或已达对话上限，返回 None
+        """
+        pass
+
+    @abstractmethod
+    async def communicate_resident_to_residents(
+        self,
+        sender_id: int,
+        receiver_ids: List[int],
+        message: str,
+    ) -> Dict[int, Optional[Any]]:
+        """指定居民一对多沟通。
+
+        Returns:
+            Dict[int, Optional[Any]]: 每个接收方对应的可选回应；不可达/不存在/被限流的为 None
+        """
+        pass
+
+    @abstractmethod
+    async def communicate_user_to_resident(
+        self,
+        user_id: str,
+        resident_id: int,
+        message: str,
+    ) -> Optional[Any]:
+        """用户与指定居民沟通。"""
+        pass
+
+    @abstractmethod
+    async def communicate_user_to_residents(
+        self,
+        user_id: str,
+        resident_ids: List[int],
+        message: str,
+    ) -> Dict[int, Optional[Any]]:
+        """用户与指定居民列表沟通。"""
+        pass
+
+    @abstractmethod
     def get_resident_groups(self, resident_id: int, group_type: str) -> List[str]:
         """
         获取居民所属的特定类型群组

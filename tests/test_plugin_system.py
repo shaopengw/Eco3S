@@ -59,7 +59,7 @@ def test_plugin_discovery():
     
     # 测试加载插件
     print("\n5. 测试加载插件:")
-    if 'default_map' in registry._plugins:
+    if 'map' in registry._plugins:
         try:
             # 创建 EventBus
             event_bus = EventBus()
@@ -70,19 +70,19 @@ def test_plugin_discovery():
                 event_bus=event_bus,
                 registry=registry
             )
-            plugin = registry.load_plugin('default_map', context, width=100, height=100)
+            plugin = registry.load_plugin('map', context, width=100, height=100)
             print(f"   [OK] 成功加载插件: {plugin.__class__.__name__}")
             print(f"   [OK] 插件已初始化: width={plugin.width}, height={plugin.height}")
             
             # 卸载插件
-            registry.unload_plugin('default_map')
+            registry.unload_plugin('map')
             print(f"   [OK] 插件已卸载")
         except Exception as e:
             print(f"   [FAIL] 加载插件失败: {e}")
             import traceback
             traceback.print_exc()
     else:
-        print("   [WARN] default_map 插件未注册，跳过加载测试")
+        print("   [WARN] map 插件未注册，跳过加载测试")
     
     print("\n" + "=" * 60)
     print("测试完成")

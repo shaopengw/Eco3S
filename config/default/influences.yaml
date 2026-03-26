@@ -1,391 +1,358 @@
-# Default 项目影响函数配置
-# 
-# 本文件定义了各模块之间的真实影响关系，而非仅仅是限制和约束。
-# 
-# 核心设计理念：
-#   - 影响函数应该体现模块间的因果关系（如：气候 -> 人口，通航能力 -> 运输成本）
-#   - 限制和约束应该尽量由模块内部逻辑处理，影响函数专注于跨模块交互
-#   - 参数可调整，以便进行不同场景的实验
-#
-# 当前定义的跨模块影响：
-#   1. Climate -> Map: 极端气候破坏运河通航能力
-#   2. Climate -> Population: 极端气候增加死亡率
-#   3. Map -> TransportEconomy: 通航能力影响运输价格和维护成本
-#   4. Satisfaction -> Population: 居民满意度影响出生率
-#   5. Job/Income/Satisfaction -> Resident: 多因素影响居民健康
-#   6. Government Tax -> Satisfaction: 税率影响居民满意度（待实现）
-#
-# 使用建议：
-#   - 启用核心影响函数以体验真实的系统动态
-#   - 调整参数以模拟不同的历史或假设场景
-#   - 通过禁用特定影响进行对照实验
+# Default 项目影响函数配置 
+# 本文件定义了各模块之间的真实影响关系。
+
+# 影响函数执行顺序（模块名 + target_name）
+# - InfluenceManager 会按此顺序触发：simulator_state[module].apply_influences(target, context)
+execution_order:
+  - module: map
+    target: canal_decay
+  - module: transport_economy
+    target: river_price
+  - module: transport_economy
+    target: maintenance_cost
+  - module: population
+    target: birth_rate
+  - module: government
+    target: government_budget
+  - module: rebellion
+    target: resources
+
+  # ==================== Residents: 年度状态更新（自动随 source 变化生效） ====================
+  - module: residents
+    target: health_index
+  - module: residents
+    target: lifespan
+  - module: residents
+    target: death
 
 influences:
-  # ==================== 1. Climate -> Map: 气候影响运河通航能力 ====================
-  
-  # 极端气候破坏运河
-  # 当气候影响度较高时，运河通航能力会下降
-  - name: climate_damage_to_canal
-    type: code
-    source: climate
-    target: canal_condition
-    description: 极端气候事件破坏运河，降低通航能力
+  #Map: 气候影响 -> 运河通航能力衰减
+  - name: climate_impact_to_navigability
+    type: expr
+    source:
+      module: climate
+      inputs:
+        current_navigability:
+          path: context.current_navigability
+          fallback_paths:
+            - target.navigability
+          default: 0.8
+          coerce: float
+        climate_impact_factor:
+          path: context.climate_impact_factor
+          default: 0.0
+          coerce: float
+        natural_decay_rate:
+          value: 0.1
+    target: canal_decay
+    description: 运河通航能力按默认公式自然衰减，并受气候影响
     params:
-      code: |
-        # 获取气候影响度（0-1之间，越大表示气候越极端）
-        climate_impact = context.get('climate_impact', 0)
-        result = context['result']
-        
-        # 当气候影响度超过阈值时，额外降低通航能力
-        if climate_impact > 0.7:
-            # 极端气候：额外降低 5%
-            damage = 0.05
-        elif climate_impact > 0.5:
-            # 较强气候影响：额外降低 2%
-            damage = 0.02
-        elif climate_impact > 0.3:
-            # 一般气候影响：额外降低 1%
-            damage = 0.01
-        else:
-            # 气候正常：无额外影响
-            damage = 0
-        
-        # 将损坏累加到结果中
-        result['canal_damage'] = result.get('canal_damage', 0) + damage
-  
-  # ==================== 2. Climate -> Population: 气候影响人口死亡率 ====================
-  
-  # 极端气候增加死亡
-  # 高温、洪涝、干旱等极端气候会导致额外死亡
-  - name: climate_death_rate
-    type: code
-    source: climate
-    target: birth_rate
-    description: 极端气候增加人口死亡率，间接降低净增长率
-    params:
-      code: |
-        # 获取气候影响度
-        climate_impact = context.get('climate_impact', 0)
-        population = context.get('population')
-        
-        # 根据气候影响度计算额外死亡率
-        if climate_impact > 0.8:
-            # 极端灾害：额外死亡率 3%
-            extra_death = 0.03
-        elif climate_impact > 0.6:
-            # 严重气候影响：额外死亡率 1.5%
-            extra_death = 0.015
-        elif climate_impact > 0.4:
-            # 中等气候影响：额外死亡率 0.5%
-            extra_death = 0.005
-        else:
-            # 轻微或无影响
-            extra_death = 0
-        
-        # 通过降低出生率来模拟额外死亡的净效果
-        if hasattr(population, '_birth_rate'):
-            population._birth_rate = max(0.001, population._birth_rate - extra_death)
-  
-  # ==================== 3. Map -> TransportEconomy: 通航能力影响运输经济 ====================
-  
-  # 3.1 通航能力影响河运价格
-  # 通航能力越低，运输越困难，价格越高
-  - name: navigability_affects_river_price
-    type: code
-    source: map
+      expr: max(0, current_navigability * (1 - natural_decay_rate) - climate_impact_factor * 0.6)
+      target_attr: navigability
+
+  #TransportEconomy: 通航能力 -> 河运价格
+  - name: navigability_to_river_price
+    type: expr
+    source:
+      module: map
+      inputs:
+        navigability:
+          path: context.navigability
+          default: 0.8
+          coerce: float
+        transport_cost:
+          path: context.transport_cost
+          fallback_paths:
+            - target.transport_cost
+          default: 0.0
+          coerce: float
     target: river_price
-    description: 运河通航能力直接影响河运价格（通航能力低 -> 价格高）
+    description: river_price = max(round(transport_cost * (2 - navigability),2), transport_cost)
     params:
-      code: |
-        # 获取通航能力（0-1之间）和基础运输成本
-        navigability = context.get('navigability', 0.8)
-        transport_cost = context.get('transport_cost', 10.0)
-        transport_economy = context.get('transport_economy')
-        
-        # 价格计算公式：transport_cost * (2 - navigability)
-        # 通航能力 1.0 -> 价格 = transport_cost
-        # 通航能力 0.5 -> 价格 = 1.5 * transport_cost
-        # 通航能力 0.0 -> 价格 = 2 * transport_cost
-        river_price = round(transport_cost * (2 - navigability), 2)
-        
-        # 确保不低于基础价格
-        if transport_economy:
-            transport_economy._river_price = max(river_price, transport_cost)
-  
-  # 3.2 通航能力影响维护成本
-  # 通航能力越低，需要更多维护投入，成本指数增长
-  - name: navigability_affects_maintenance_cost
-    type: code
-    source: map
+      expr: max(round(transport_cost * (2 - navigability), 2), transport_cost)
+      target_attr: river_price
+
+  #TransportEconomy: 通航能力 -> 运河维护成本
+  - name: navigability_to_maintenance_cost
+    type: expr
+    source:
+      module: map
+      inputs:
+        navigability:
+          path: context.navigability
+          default: 0.8
+          coerce: float
+        exponent:
+          path: context.exponent
+          default: 3
+          coerce: float
+        maintenance_cost_base:
+          path: context.maintenance_cost_base
+          fallback_paths:
+            - target.maintenance_cost_base
+          default: 0.0
+          coerce: float
     target: maintenance_cost
-    description: 运河状况差时，维护成本指数增长
+    description: maintenance_cost = base * ((2 - navigability) ** exponent)
     params:
-      code: |
-        # 获取通航能力和基础维护成本
-        navigability = context.get('navigability', 0.8)
-        maintenance_cost_base = context.get('maintenance_cost_base', 100.0)
-        result = context['result']
-        
-        # 维护成本指数增长公式：base * ((2 - navigability) ^ 3)
-        # 通航能力 1.0 -> 成本 = base (正常)
-        # 通航能力 0.5 -> 成本 = 3.375 * base
-        # 通航能力 0.0 -> 成本 = 8 * base
-        exponent = 3
-        cost = maintenance_cost_base * ((2 - navigability) ** exponent)
-        result['maintenance_cost'] = round(cost, 2)
-  
+      expr: maintenance_cost_base * ((2 - navigability) ** exponent)
+      result_key: maintenance_cost
 
-  
-  # ==================== 4. Satisfaction -> Population: 满意度影响出生率 ====================
-  
-  # 居民满意度影响生育意愿
-  # 满意度高 -> 出生率上升；满意度低 -> 出生率下降
-  - name: satisfaction_affects_birth_rate
-    type: code
-    source: satisfaction
-    target: birth_rate
-    description: 居民满意度影响生育意愿，从而影响出生率
+  #Government: GDP+税率 -> 预算（税收收入）
+  - name: gdp_tax_rate_to_budget
+    type: expr
+    source:
+      module: economy
+      inputs:
+        gdp:
+          path: context.gdp
+          default: 0.0
+          coerce: float
+        tax_rate:
+          path: context.tax_rate
+          fallback_paths:
+            - target.tax_rate
+          default: 0.0
+          coerce: float
+        old_budget:
+          path: target.budget
+          default: 0.0
+          coerce: float
+    target: government_budget
+    description: 政府预算每年增加税收收入（tax_income = gdp * tax_rate）
     params:
-      code: |
-        # 获取平均满意度（0-100）和人口对象
-        satisfaction = context.get('satisfaction', 50)
-        population = context.get('population')
-        current_birth_rate = context.get('current_birth_rate', 0.02)
-        
-        # 只有当 population 对象存在时才处理
-        if population:
-            # 根据满意度调整出生率
-            if satisfaction >= 80:
-                # 高满意度：出生率增加
-                increase = (satisfaction - 80) * 0.001  # 每超出1点增加0.1%
-                new_rate = min(0.10, current_birth_rate + increase)
-            elif satisfaction <= 30:
-                # 低满意度：出生率下降
-                decrease = (30 - satisfaction) * 0.0005  # 每低于1点减少0.05%
-                new_rate = max(0.001, current_birth_rate - decrease)
-            else:
-                # 中等满意度：保持基础出生率
-                new_rate = current_birth_rate
-            
-            population._birth_rate = new_rate
-  
-  # ==================== 5. Climate -> ClimateSystem: 气候影响度计算增强 ====================
-  
-  # 5.1 极端气候事件放大器
-  # 对于特别极端的气候事件，放大其影响
-  - name: extreme_climate_amplifier
-    type: code
-    source: climate_data
-    target: climate_impact
-    description: 放大极端气候事件的影响力
-    params:
-      code: |
-        # 获取原始气候影响度
-        raw_impact = context.get('raw_impact', 0)
-        result = context['result']
-        
-        # 对极端事件进行放大
-        if raw_impact > 0.7:
-            # 极端事件：影响 × 1.5
-            result['climate_impact'] = raw_impact * 1.5
-        elif raw_impact > 0.5:
-            # 中等强度事件：影响 × 1.2
-            result['climate_impact'] = raw_impact * 1.2
-        # 否则使用原始值（已在 result 中）
-  
-  # ==================== 6. Job/Income/Satisfaction -> Resident: 多因素影响居民健康 ====================
-  
-  # 6.1 职业影响健康
-  # 叛军职业生活艰苦，健康快速下降
-  - name: rebel_job_health_penalty
-    type: code
-    source: job
-    target: health_index
-    description: 叛军职业对健康有负面影响
-    params:
-      code: |
-        job = context.get('job', '')
-        result = context['result']
-        
-        if job == "叛军":
-            # 叛军职业每个时间步 -2 健康
-            result['health_change'] = result.get('health_change', 0) - 2
-  
-  # 6.2 无收入健康惩罚
-  # 没有收入严重影响健康
-  - name: no_income_health_penalty
-    type: threshold
-    source: income
-    target: health_index
-    description: 无收入导致健康快速下降
-    params:
-      threshold: 0
-      comparison: less_than_or_equal
-      effect:
-        type: constant
-        value: -2
-        target_attr: health_change
-        use_result_dict: true
-        mode: add
-  
-  # 6.3 低收入健康惩罚
-  # 收入不足基本生活成本，影响健康
-  - name: low_income_health_penalty
-    type: code
-    source: income
-    target: health_index
-    description: 收入不足基本生活成本时健康下降
-    params:
-      code: |
-        income = context.get('income', 0)
-        basic_living_cost = context.get('basic_living_cost', 50)
-        result = context['result']
-        
-        # 只有在有收入但不足基本生活成本时才触发
-        if 0 < income < basic_living_cost:
-            result['health_change'] = result.get('health_change', 0) - 1
-  
-  # 6.4 高收入健康恢复
-  # 收入充足时健康恢复
-  - name: high_income_health_recovery
-    type: code
-    source: income
-    target: health_index
-    description: 收入充足时健康逐步恢复
-    params:
-      code: |
-        income = context.get('income', 0)
-        basic_living_cost = context.get('basic_living_cost', 50)
-        job = context.get('job', '')
-        result = context['result']
-        
-        # 收入达到基本生活成本的2倍时，健康恢复
-        if income >= basic_living_cost * 2:
-            if job == "叛军":
-                # 叛军即使收入高，恢复也较慢
-                result['health_change'] = result.get('health_change', 0) + 0.5
-            else:
-                # 其他职业正常恢复
-                result['health_change'] = result.get('health_change', 0) + 1
-  
-  # 6.5 低满意度健康惩罚
-  # 满意度过低影响身心健康
-  - name: low_satisfaction_health_penalty
-    type: threshold
-    source: satisfaction
-    target: health_index
-    description: 满意度过低影响健康
-    params:
-      threshold: 30
-      comparison: less_than
-      effect:
-        type: constant
-        value: -1
-        target_attr: health_change
-        use_result_dict: true
-        mode: add
-  
-  # 6.6 高满意度健康恢复
-  # 满意度高时身心愉悦，健康恢复
-  - name: high_satisfaction_health_recovery
-    type: code
-    source: satisfaction
-    target: health_index
-    description: 满意度高时健康恢复
-    params:
-      code: |
-        satisfaction = context.get('satisfaction', 50)
-        job = context.get('job', '')
-        result = context['result']
-        
-        # 满意度 > 80 时健康恢复
-        if satisfaction > 80:
-            if job == "叛军":
-                # 叛军恢复较慢
-                result['health_change'] = result.get('health_change', 0) + 0.5
-            else:
-                # 其他职业正常恢复
-                result['health_change'] = result.get('health_change', 0) + 1
-  
-  # ==================== 7. Government -> Population: 税率影响（待扩展） ====================
-  
-  # 注：税率影响满意度，满意度再影响出生率
-  # 这是一个间接影响链，当前通过 satisfaction_affects_birth_rate 实现
-  # 未来可以添加更直接的税率影响，例如：
-  #
-  # - name: high_tax_reduces_satisfaction
-  #   type: code
-  #   source: government
-  #   target: satisfaction
-  #   params:
-  #     code: |
-  #       tax_rate = context.get('tax_rate', 0.15)
-  #       # ... 根据税率调整满意度的逻辑
-  
-  # ==================== 安全限制（最小化，仅保留关键约束） ====================
-  
-  # 这些限制确保数值不会超出合理范围，但应尽量少用
-  # 主要依靠模块内部逻辑和影响函数的合理设计来保证数值合理性
-  
-  # 运河通航能力基本限制
-  - name: min_navigability_limit
-    type: constant
-    source: system
-    target: canal_condition
-    description: 确保通航能力不低于0
-    params:
-      target_attr: min_navigability
-      value: 0.0
-  
-  - name: max_navigability_limit
-    type: constant
-    source: system
-    target: canal_condition
-    description: 确保通航能力不超过1.0
-    params:
-      target_attr: max_navigability
-      value: 1.0
-  
-  # 出生率基本限制
-  - name: min_birth_rate_limit
-    type: constant
-    source: system
-    target: birth_rate
-    description: 确保出生率不为负
-    params:
-      target_attr: min_rate
-      value: 0.0
-  
-  - name: max_birth_rate_limit
-    type: constant
-    source: system
-    target: birth_rate
-    description: 确保出生率不超过历史极限
-    params:
-      target_attr: max_rate
-      value: 0.15
+      expr: round(old_budget + gdp * tax_rate, 2)
+      target_attr: budget
+      context_updates:
+        tax_income: gdp * tax_rate
 
-# ==================== 配置说明 ====================
-#
-# 跨模块影响关系图：
-#
-#   Climate ──┬──> Map (通航能力) ──┬──> TransportEconomy (价格/成本)
-#             │                     │
-#             └──> Population       └──> Government (收入)
-#                  (死亡率)              
-#
-#   Satisfaction ──> Population (出生率)
-#
-#   Job + Income + Satisfaction ──> Resident (健康)
-#
-# 参数调整建议：
-#   - climate_damage_to_canal: 调整 damage 值改变气候对运河的破坏程度
-#   - climate_death_rate: 调整 extra_death 值改变气候灾害的致命性
-#   - navigability_affects_river_price: 修改公式中的系数改变价格敏感度
-#   - satisfaction_affects_birth_rate: 调整 increase/decrease 系数改变满意度影响强度
-#
-# 实验建议：
-#   1. 对照实验：禁用所有影响函数，观察系统基础行为
-#   2. 单影响实验：每次只启用一类影响，分析其独立效果
-#   3. 综合实验：启用所有影响，观察复杂系统涌现行为
-#   4. 参数扫描：系统性地调整参数，寻找临界点和相变
+  #Government: 就业市场 -> 军力
+  - name: job_market_to_military_strength
+    type: code
+    source: towns
+    target: military_strength
+    description: 军力 = 所有城镇“官员及士兵”已就业人数之和
+    params:
+      code: |
+        towns_obj = context.get('towns')
+        total = 0
+        if towns_obj and hasattr(towns_obj, 'towns'):
+            for _, town_data in towns_obj.towns.items():
+                job_market = None
+                if hasattr(town_data, 'get'):
+                    job_market = town_data.get('job_market')
+                else:
+                    job_market = getattr(town_data, 'job_market', None)
+                if not job_market:
+                    continue
+                jobs_info = getattr(job_market, 'jobs_info', {}) or {}
+                bucket = jobs_info.get('官员及士兵') or {}
+                employed = bucket.get('employed') or []
+                total += len(employed)
+        target.military_strength = int(total)
+        context['military_strength'] = int(total)
+        result = int(total)
+
+  #Rebellion: 就业市场 -> 叛军人数
+  - name: job_market_to_rebellion_strength
+    type: code
+    source: towns
+    target: strength
+    description: 叛军力量 = 所有城镇“叛军”已就业人数之和
+    params:
+      code: |
+        towns_obj = context.get('towns')
+        total = 0
+        if towns_obj and hasattr(towns_obj, 'towns'):
+            for _, town_data in towns_obj.towns.items():
+                job_market = None
+                if hasattr(town_data, 'get'):
+                    job_market = town_data.get('job_market')
+                else:
+                    job_market = getattr(town_data, 'job_market', None)
+                if not job_market:
+                    continue
+                jobs_info = getattr(job_market, 'jobs_info', {}) or {}
+                bucket = jobs_info.get('叛军') or {}
+                employed = bucket.get('employed') or []
+                total += len(employed)
+        target.strength = int(total)
+        context['rebellion_strength'] = int(total)
+        result = int(total)
+
+  #Rebellion: 力量 -> 资源收入
+  - name: strength_to_resources
+    type: expr
+    source:
+      module: rebellion
+      inputs:
+        strength:
+          path: target.strength
+          default: 0
+          coerce: int
+        old_resources:
+          path: target.resources
+          default: 0.0
+          coerce: float
+        income_per_strength:
+          value: 6
+    target: resources
+    description: 叛军资源每年增加：income = strength * 6
+    params:
+      expr: round(old_resources + strength * income_per_strength, 2)
+      target_attr: resources
+      context_updates:
+        rebellion_income: strength * income_per_strength
+
+  #Population: 满意度 -> 出生率
+  - name: satisfaction_to_birth_rate
+    type: expr
+    source:
+      module: satisfaction
+      inputs:
+        satisfaction:
+          path: context.satisfaction
+          default: 0
+          coerce: float
+        base_rate:
+          path: context.current_birth_rate
+          fallback_paths:
+            - target.birth_rate
+          default: 0.01
+          coerce: float
+    target: birth_rate
+    description: 满意度影响出生率（与 Population.update_birth_rate 的默认分段逻辑完全一致）
+    params:
+      expr: min(0.5, base_rate + (satisfaction - 80) * 0.002) if satisfaction >= 80 else (max(0.01, base_rate - (50 - satisfaction) * 0.001) if satisfaction <= 50 else base_rate)
+      target_attr: birth_rate
+
+  #Resident: 职业 -> 健康指数
+  - name: job_to_health_index
+    type: code
+    source: resident
+    target: health_index
+    description: 职业 -> 健康：叛军额外健康下降
+    params:
+      code: |
+        health = getattr(target, 'health_index', 0) or 0
+        job = getattr(target, 'job', None)
+        if job == '叛军':
+          target.health_index = max(0, health - 2)
+
+  #Resident: 收入 -> 健康指数
+  - name: income_to_health_index
+    type: code
+    source: resident
+    target: health_index
+    description: 收入（个体）+ 基本生活成本（全局） -> 健康
+    params:
+      code: |
+        health = getattr(target, 'health_index', 0) or 0
+        job = getattr(target, 'job', None)
+        income = getattr(target, 'income', 0) or 0
+        basic_living_cost = context.get('basic_living_cost', 0) or 0
+
+        new = health
+        if income <= 0:
+            new = max(0, new - 2)
+        elif income < basic_living_cost:
+            new = max(0, new - 1)
+        elif income >= basic_living_cost * 2:
+            if job == '叛军':
+                new = min(10, new + 0.5)
+            else:
+                new = min(10, new + 1)
+
+        target.health_index = new
+
+  #Resident: 满意度 -> 健康指数
+  - name: satisfaction_to_health_index
+    type: code
+    source: resident
+    target: health_index
+    description: 满意度（个体） -> 健康
+    params:
+      code: |
+        health = getattr(target, 'health_index', 0) or 0
+        job = getattr(target, 'job', None)
+        satisfaction = getattr(target, 'satisfaction', 0) or 0
+
+        new = health
+        if satisfaction < 30:
+            new = max(0, new - 1)
+        elif satisfaction > 80:
+            if job == '叛军':
+                new = min(10, new + 0.5)
+            else:
+                new = min(10, new + 1)
+
+        target.health_index = new
+
+  #Resident: 健康指数 -> 健康指数（收敛/类型）
+  - name: health_index_to_health_index_clamped
+    type: expr
+    source:
+      module: resident
+      inputs:
+        health:
+          path: target.health_index
+          default: 0.0
+          coerce: float
+    target: health_index
+    description: 健康指数收敛到 [0,10] 且转为 int
+    params:
+      expr: int(max(0, min(10, health)))
+      target_attr: health_index
+
+  #Resident: 健康指数 -> 寿命递减（每时间步）
+  - name: health_index_to_lifespan
+    type: expr
+    source:
+      module: time
+      inputs:
+        health_index:
+          path: target.health_index
+          default: 0
+          coerce: int
+        lifespan:
+          path: target.lifespan
+          default: 0
+          coerce: int
+    target: lifespan
+    description: 每个时间步根据健康衰减寿命（health<=1: -5，否则 -1）
+    params:
+      expr: lifespan - (5 if health_index <= 1 else 1)
+      target_attr: lifespan
+
+  #Resident: 寿命 -> 死亡清理
+  - name: lifespan_to_death
+    type: code
+    source: resident
+    target: death
+    description: 若寿命<=0：调用 handle_death 并从 residents dict 移除，同时同步 population.death()
+    params:
+      code: |
+        lifespan = int(getattr(target, 'lifespan', 0) or 0)
+        if lifespan > 0:
+            result = False
+        else:
+            if hasattr(target, 'handle_death'):
+                target.handle_death()
+
+            residents_dict = context.get('residents')
+            rid = getattr(target, 'resident_id', None)
+            try:
+                if residents_dict is not None and rid in residents_dict:
+                    del residents_dict[rid]
+            except Exception:
+                pass
+
+            pop = context.get('population')
+            if pop is not None and hasattr(pop, 'death'):
+                pop.death()
+
+            res = context.get('result')
+            if hasattr(res, 'get') and hasattr(res, '__setitem__'):
+                res['resident_deaths'] = int(res.get('resident_deaths', 0) or 0) + 1
+
+            result = True

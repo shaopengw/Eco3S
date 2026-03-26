@@ -1,11 +1,16 @@
+from __future__ import annotations
+
 import json
 import asyncio
 import random
-from typing import Dict, Optional
+from typing import Dict, Optional, Any, TYPE_CHECKING
 import yaml
 from src.agents.resident import Resident, ResidentSharedInformationPool
 from src.environment.map import Map
 from src.generator.resident_generate import generate_resident_data, save_resident_data
+
+if TYPE_CHECKING:
+    from src.influences import InfluenceRegistry
 
 async def generate_canal_agents(
     resident_info_path: str,  # 居民信息文件的路径
@@ -16,7 +21,8 @@ async def generate_canal_agents(
     resident_id_mapping: Optional[Dict[int, int]] = None,  # 居民 ID 与 Agent ID 的映射关系，默认为空
     resident_prompt_path: Optional[str] = None,  # 居民提示语文件路径，默认为空
     resident_actions_path: Optional[str] = None,  # 居民行为配置文件路径，默认为空
-    window_size: int = 3
+    window_size: int = 3,
+    influence_registry: Optional[InfluenceRegistry] = None,
 ) -> Dict[int, Resident]:
     """
     生成并返回运河居民的居民图。
@@ -64,7 +70,8 @@ async def generate_canal_agents(
             prompts_resident=prompts_resident,
             actions_config=actions_config,
             window_size=window_size,
-            lightweight=True  # 关键：使用轻量级初始化
+            lightweight=True,  # 关键：使用轻量级初始化
+            influence_registry=influence_registry,
         )
         
         # 设置居民的初始属性
@@ -150,7 +157,15 @@ def assign_resident_location(resident_data, map):
 
     return location, town_name
 
-async def generate_new_residents(count, map, residents, social_network, resident_prompt_path, resident_actions_path):
+async def generate_new_residents(
+    count,
+    map,
+    residents,
+    social_network,
+    resident_prompt_path,
+    resident_actions_path,
+    influence_registry: Optional[InfluenceRegistry] = None,
+):
     """生成新居民并初始化"""
     # 生成居民数据
     resident_data = generate_resident_data(count)
@@ -163,6 +178,7 @@ async def generate_new_residents(count, map, residents, social_network, resident
         map=map,
         resident_prompt_path=resident_prompt_path,
         resident_actions_path=resident_actions_path,
+        influence_registry=influence_registry,
     )
 
     # 分配新ID

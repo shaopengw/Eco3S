@@ -16,83 +16,45 @@ parser.add_argument(
 
 async def run_simulation(config, config_path):
     """运行信息传播实验"""
-    print("开始初始化实验环境...")
-    
-    # 初始化插件系统
-    print("正在初始化插件系统...")
-    config_dir = os.path.dirname(config_path)
-    modules_config_path = os.path.join(config_dir, "modules_config.yaml")
-    plugin_registry, loaded_plugins = initialize_plugin_system(
-        config=config,
-        modules_config_path=modules_config_path,
-        logger=logging.getLogger('plugin_system')
-    )
-    
-    # 初始化 DIContainer
-    container = setup_container_for_simulation(modules_config_path, config)
-    
-    # 获取 map 实例并初始化
-    map = container.resolve(IMap)
-    map.initialize_map()
-    
-    # 初始化居民
-    residents = await generate_canal_agents(
-        resident_info_path=config["data"]["resident_info_path"],
-        map=map,
-        initial_population=config["simulation"]["initial_population"],
-        resident_prompt_path=config["data"]["resident_prompt_path"],
-        resident_actions_path=config["data"]["resident_actions_path"],
-        window_size=10
-    )
+    async def build_new_simulator(config: dict, config_path: str):
+        print("开始初始化实验环境...")
 
-    # 获取 towns 并初始化居民组
-    towns = container.resolve(ITowns)
-    towns.initialize_resident_groups(residents)
-        
-    # 获取社交网络并初始化
-    social_network = container.resolve(ISocialNetwork)
-    social_network.initialize_network(residents, towns)
-        
-    # 为每个城镇的居民群组设置社交网络
-    for town_name, town_data in towns.towns.items():
-        resident_group = town_data.get('resident_group')
-        if resident_group:
-            resident_group.set_social_network(social_network)
-    
-    # 创建信息传播实验模拟器
-    simulator = InfoPropagationSimulator(
-        container=container,
-        residents=residents,
-        config=config,
-        loaded_plugins=loaded_plugins
-    )
-    print("初始化完成")
+        simulator = await build_info_propagation_simulator_via_di(
+            config=config,
+            config_path=config_path,
+            simulator_class=InfoPropagationSimulator,
+            residents_kwargs={
+                "initial_population": (config.get("simulation") or {}).get("initial_population"),
+                "resident_info_path": (config.get("data") or {}).get("resident_info_path"),
+                "resident_prompt_path": (config.get("data") or {}).get("resident_prompt_path"),
+                "resident_actions_path": (config.get("data") or {}).get("resident_actions_path"),
+                "window_size": 10,
+            },
+            logger=logging.getLogger("entrypoint_runner"),
+        )
 
-    # 运行实验
-    print("开始运行实验...")
-    try:
-        await simulator.run()
-        
-        # 可视化实验结果
-        from src.utils.simulation_context import SimulationContext
-        
-        # 使用 SimulationContext 获取图表目录
+        print("初始化完成")
+        return simulator
+
+    def after_run(simulator: Any) -> None:
         plot_dir = SimulationContext.get_plots_dir()
-        
-        # 确保图表目录存在
         SimulationContext.ensure_directories()
-        
         plot_info_propagation_results(
             results=simulator.experiment_results,
             output_dir=plot_dir
         )
         simulator.save_results()
         print("实验完成，结果已保存")
-        
-        
-    except Exception as e:
-        logging.error(f"实验运行过程中发生错误: {e}")
-        raise
+
+    print("开始运行实验...")
+    await run_with_cache(
+        config=config,
+        config_path=config_path,
+        cache_dir="./backups",
+        simulator_class=InfoPropagationSimulator,
+        build_new_simulator=build_new_simulator,
+        after_run=after_run,
+    )
 
 def plot_info_propagation_results(results, output_dir):
     """绘制信息传播实验结果"""

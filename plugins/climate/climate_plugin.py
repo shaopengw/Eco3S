@@ -1,9 +1,8 @@
-"""
-气候插件实现 - 包装器模式
-"""
-from typing import Dict, Any, List
+"""气候插件实现 - 包装器模式"""
+
+from typing import Dict, Any, Optional
 from src.plugins import IClimatePlugin, PluginContext
-from src.interfaces import IClimateSystem
+from src.influences import InfluenceRegistry
 from src.environment.climate import ClimateSystem
 
 
@@ -12,7 +11,11 @@ class DefaultClimatePlugin(IClimatePlugin):
     默认气候插件 - 包装现有 ClimateSystem 类
     """
     
-    def __init__(self, climate_data_path: str = 'experiment_dataset/climate_data/climate.csv'):
+    def __init__(
+        self,
+        climate_data_path: str = 'experiment_dataset/climate_data/climate.csv',
+        influence_registry: Optional[InfluenceRegistry] = None,
+    ):
         """
         初始化气候插件
         
@@ -23,6 +26,7 @@ class DefaultClimatePlugin(IClimatePlugin):
         
         # 保存参数
         self._climate_data_path_param = climate_data_path
+        self._influence_registry_param = influence_registry
         self._climate = None
     
     def init(self, context: PluginContext) -> None:
@@ -32,7 +36,11 @@ class DefaultClimatePlugin(IClimatePlugin):
         self.config = context.config
         
         # 创建原始 ClimateSystem 实例
-        self._climate = ClimateSystem(climate_data_path=self._climate_data_path_param)
+        self._climate = ClimateSystem(
+            climate_data_path=self._climate_data_path_param,
+            influence_registry=self._influence_registry_param,
+        )
+        self._service = self._climate
     
     # ===== BasePlugin 生命周期方法 =====
     
@@ -57,20 +65,8 @@ class DefaultClimatePlugin(IClimatePlugin):
             "version": "1.0.0",
             "description": "默认气候系统插件（包装 ClimateSystem 类）",
             "author": "AgentWorld Team",
-            "dependencies": ["default_map", "default_time"]
+            "dependencies": ["map", "time"]
         }
-    
-    # ===== IClimateSystem 接口属性 - 代理到内部 ClimateSystem 实例 =====
-    
-    @property
-    def climate_data(self) -> List[float]:
-        return self._climate.climate_data
-    
-    @property
-    def climate_impact_threshold(self) -> float:
-        return self._climate.climate_impact_threshold
-    
-    # ===== IClimateSystem 接口方法 - 代理到内部 ClimateSystem 实例 =====
     
     def get_current_impact(self, current_year: int = None, start_year: int = None) -> float:
         """获取当前年份的气候影响度"""
@@ -84,22 +80,6 @@ class DefaultClimatePlugin(IClimatePlugin):
             })
         
         return impact
-    
-    def is_extreme_event(self, impact: float) -> bool:
-        """判断是否为极端气候事件"""
-        return self._climate.is_extreme_event(impact)
-    
-    def get_climate_description(self, impact: float) -> str:
-        """获取气候描述"""
-        return self._climate.get_climate_description(impact)
-    
-    def _load_climate_data(self, path: str) -> List[float]:
-        """加载气候数据"""
-        return self._climate._load_climate_data(path)
-    
-    def apply_influences(self, target_name: str, context: Dict[str, Any]) -> None:
-        """应用影响函数"""
-        self._climate.apply_influences(target_name, context)
     
     # ===== 内部方法 =====
     

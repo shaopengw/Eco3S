@@ -1,0 +1,112 @@
+## influences.yaml 写作格式模板
+## 顶层可选键：execution_order, influences
+## 所有字符串区分大小写；建议只用小写+下划线。
+## influence 唯一键："{source}->{target}:{name}"（重复会报错）。
+## 注意：source 既可以是字符串，也可以是对象：
+##   source: {module: <source_module>, inputs?: {...}, variables?: {...}}
+## 加载时会把 source.module 作为真实 source 字符串，同时把 source.inputs/source.variables 合并进 params。
+## 注意：此处 target 表示 apply_influences(target_name, ctx) 的 target_name（不是“目标模块名”）。
+## 支持 type：constant | linear | code | expr | linear_multiplier | threshold | conditional
+## 不支持从 YAML 加载：lambda。
+
+
+## execution_order: List[Step]
+## Step 允许两种等价写法：
+## - {module: <module_name>, target: <target_name>}
+## - [<module_name>, <target_name>]
+execution_order:
+  - module: map
+    target: example_target
+  - [transport_economy, example_target]
+
+## influences: List[Influence]
+## Influence 必填键：type, source, target, name
+## Influence 可选键：description, params
+## Influence.params 由 type 决定：
+## - constant.params: {target_attr: str, value: any}
+## - linear.params: {variable: str, coefficient?: float=1.0, constant?: float=0.0, target_attr?: str|null, mode?: "set"|"add"|"multiply"="set"}
+## - code.params: {code: str, target_attr?: str|null, result_var?: str="result", inputs?: Dict[str,InputSpec], variables?: Dict[str,any]}
+## - expr.params: {expr: str, target_attr?: str|null, inputs?: Dict[str,InputSpec], result_key?: str|null, result_container?: str="result", context_updates?: Dict[str,str]}
+## - linear_multiplier.params: {multiplier?: float=1.0, source_key?: str="value"}
+## - threshold.params: {threshold: number, impact_value?: any=True, source_key?: str="value", compare_op?: "gt"|"gte"|"lt"|"lte"|"eq"="gt"}
+## - conditional.params: {conditions: Dict[str, any], impact_value?: any=True}
+
+## InputSpec（inputs 的值）支持两种写法：
+## - "context.some_key" / "target.attr" / "module.attr"（module 指 context[module]）
+## - {path: str, fallback_paths?: [str], default?: any, required?: bool=false, coerce?: "int"|"float"|"str"|"bool", value?: any}
+influences:
+  - type: constant
+    source: any_source
+    target: any_target
+    name: any_name
+    params:
+      target_attr: any_attr
+      value: 0
+
+  - type: linear
+    source: any_source
+    target: any_target
+    name: any_name
+    params:
+      variable: any.path
+      coefficient: 1.0
+      constant: 0.0
+      target_attr: null
+      mode: set
+
+  - type: code
+    source: any_source
+    target: any_target
+    name: any_name
+    params:
+      code: |
+        result = None
+      target_attr: null
+      result_var: result
+
+  - type: expr
+    source:
+      module: any_source
+      inputs:
+        x:
+          path: context.x
+          default: 0
+          coerce: float
+        y:
+          path: target.y
+          default: 1
+          coerce: float
+    target: any_target
+    name: any_name
+    params:
+      expr: max(0, x + y)
+      target_attr: some_attr
+      context_updates:
+        some_key: $result
+
+  - type: linear_multiplier
+    source: any_source
+    target: any_target
+    name: any_name
+    params:
+      source_key: value
+      multiplier: 1.0
+
+  - type: threshold
+    source: any_source
+    target: any_target
+    name: any_name
+    params:
+      source_key: value
+      threshold: 0
+      compare_op: gt
+      impact_value: true
+
+  - type: conditional
+    source: any_source
+    target: any_target
+    name: any_name
+    params:
+      conditions:
+        module.attr: expected
+      impact_value: true

@@ -8,17 +8,19 @@ class SurveySimulator:
     适用场景：信息传播、舆论调查、知识传播效果评估、社交网络影响力分析
     """
     
-    def __init__(self, container: DIContainer, residents: Dict[int, IResident], config: Dict, loaded_plugins: Dict = None):
-        # === 从插件或容器获取核心对象 ===
-        self.map = self._resolve_instance('default_map', IMap, container, loaded_plugins)
-        self.time = self._resolve_instance('default_time', ITime, container, loaded_plugins)
-        self.population = self._resolve_instance('default_population', IPopulation, container, loaded_plugins)
-        self.social_network = self._resolve_instance('default_social_network', ISocialNetwork, container, loaded_plugins)
-        self.towns = self._resolve_instance('default_towns', ITowns, container, loaded_plugins)
+    def __init__(self, plugin_registry: Any, residents: Dict[int, IResident], config: Dict, influence_manager: Any = None):
+        self.plugin_registry = plugin_registry
+
+        self.map = require_module(self.plugin_registry, 'map')
+        self.time = require_module(self.plugin_registry, 'time')
+        self.population = require_module(self.plugin_registry, 'population')
+        self.social_network = require_module(self.plugin_registry, 'social_network')
+        self.towns = require_module(self.plugin_registry, 'towns')
         
         # === 接受作为参数传入的对象 ===
         self.residents = residents
         self.config = config
+        self.influence_manager = influence_manager
         
         # === 实验相关参数 ===
         self.conversation_volume = 0  # 对话量计数器
@@ -35,13 +37,6 @@ class SurveySimulator:
         data_dir = SimulationContext.get_data_dir()
         SimulationContext.ensure_directories()
         self.result_file = os.path.join(data_dir, f"running_data_{timestamp}.json")
-
-    @staticmethod
-    def _resolve_instance(plugin_name: str, interface_type, container: DIContainer, loaded_plugins: Dict = None):
-        """从插件或容器中获取实例"""
-        if loaded_plugins and plugin_name in loaded_plugins:
-            return loaded_plugins[plugin_name]
-        return container.resolve(interface_type)
 
     def init_results(self):
         """
@@ -87,6 +82,21 @@ class SurveySimulator:
         """
         print(f"时间步 {year}")
         self.conversation_volume = 0  # 重置对话计数器
+
+        # 可选：应用影响函数（若配置存在 influences.yaml 且被注入）
+        if self.influence_manager is not None and hasattr(self.influence_manager, 'apply_all_influences'):
+            simulator_state = {
+                'time': self.time,
+                'map': self.map,
+                'population': self.population,
+                'towns': self.towns,
+                'social_network': self.social_network,
+                'residents': self.residents,
+            }
+            try:
+                self.influence_manager.apply_all_influences(simulator_state)
+            except Exception:
+                pass
         
         # 1. 执行信息传播策略
         await self.execute_propagation_strategy(year)

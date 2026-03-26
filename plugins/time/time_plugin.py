@@ -3,7 +3,6 @@
 """
 from typing import Dict, Any
 from src.plugins import ITimePlugin, PluginContext
-from src.interfaces import ITime
 from src.environment.time import Time
 
 
@@ -40,6 +39,7 @@ class DefaultTimePlugin(ITimePlugin):
         
         # 创建原始 Time 实例
         self._time = Time(start_time=start_time, total_steps=total_steps)
+        self._service = self._time
     
     # ===== BasePlugin 生命周期方法 =====
     
@@ -67,34 +67,6 @@ class DefaultTimePlugin(ITimePlugin):
             "dependencies": []
         }
     
-    # ===== ITime 接口属性 - 代理到内部 Time 实例 =====
-    
-    @property
-    def start_time(self) -> int:
-        return self._time.start_time
-    
-    @property
-    def total_steps(self) -> int:
-        return self._time.total_steps
-    
-    @total_steps.setter
-    def total_steps(self, value: int):
-        self._time.total_steps = value
-    
-    @property
-    def end_time(self) -> int:
-        return self._time.end_time
-    
-    @property
-    def current_time(self) -> int:
-        return self._time.current_time
-    
-    @current_time.setter
-    def current_time(self, value: int):
-        self._time.current_time = value
-    
-    # ===== ITime 接口方法 - 代理到内部 Time 实例 =====
-    
     def step(self) -> None:
         """推进一个时间步"""
         old_time = self._time.current_time
@@ -105,22 +77,6 @@ class DefaultTimePlugin(ITimePlugin):
             'old_time': old_time,
             'new_time': self._time.current_time
         })
-    
-    def is_end(self) -> bool:
-        """检查是否到达模拟结束时间"""
-        return self._time.is_end()
-    
-    def get_elapsed_time_steps(self) -> int:
-        """获取已经过的时间步数"""
-        return self._time.get_elapsed_time_steps()
-    
-    def reset(self) -> None:
-        """重置时间"""
-        self._time.reset()
-    
-    def update_total_steps(self, new_total_steps: int) -> None:
-        """更新总时间步数"""
-        self._time.update_total_steps(new_total_steps)
     
     # ===== 内部方法 =====
     

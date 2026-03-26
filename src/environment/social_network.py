@@ -4,7 +4,7 @@ import hypernetx as hnx
 import networkx as nx
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import List
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 os.environ["OMP_NUM_THREADS"] = "1"
 from sklearn.cluster import KMeans
@@ -249,6 +249,84 @@ class SocialNetwork(ISocialNetwork):
         添加居民群体到超图中。
         """
         self.hyper_graph.add_hyperedge(group_id, members)
+
+    async def communicate_resident_to_resident(
+        self,
+        sender_id: int,
+        receiver_id: int,
+        message: str,
+    ) -> Optional[Any]:
+        """指定居民与指定居民一对一沟通。
+
+        约定：底层复用 resident.receive_information(message) 的返回值。
+        """
+        if self.dialogue_count >= self.MAX_DIALOGUES_PER_STEP:
+            return None
+
+        receiver = self.residents.get(receiver_id)
+        if receiver is None:
+            return None
+
+        self.dialogue_count += 1
+        responses = await asyncio.gather(receiver.receive_information(message), return_exceptions=True)
+        response = responses[0]
+        if isinstance(response, Exception):
+            return None
+        return response
+
+    async def communicate_resident_to_residents(
+        self,
+        sender_id: int,
+        receiver_ids: List[int],
+        message: str,
+    ) -> Dict[int, Optional[Any]]:
+        """指定居民一对多沟通。"""
+        results: Dict[int, Optional[Any]] = {rid: None for rid in receiver_ids}
+        if not receiver_ids:
+            return results
+
+        remaining = self.MAX_DIALOGUES_PER_STEP - self.dialogue_count
+        if remaining <= 0:
+            return results
+
+        tasks = []
+        task_receiver_ids: List[int] = []
+        for rid in receiver_ids:
+            if len(tasks) >= remaining:
+                break
+            receiver = self.residents.get(rid)
+            if receiver is None:
+                continue
+            tasks.append(receiver.receive_information(message))
+            task_receiver_ids.append(rid)
+
+        if not tasks:
+            return results
+
+        self.dialogue_count += len(tasks)
+        responses = await asyncio.gather(*tasks, return_exceptions=True)
+        for rid, resp in zip(task_receiver_ids, responses):
+            results[rid] = None if isinstance(resp, Exception) else resp
+        return results
+
+    async def communicate_user_to_resident(
+        self,
+        user_id: str,
+        resident_id: int,
+        message: str,
+    ) -> Optional[Any]:
+        """用户与指定居民沟通。"""
+        # sender_id 对 resident.receive_information 来说通常不重要，保留参数用于上层扩展。
+        return await self.communicate_resident_to_resident(sender_id=-1, receiver_id=resident_id, message=message)
+
+    async def communicate_user_to_residents(
+        self,
+        user_id: str,
+        resident_ids: List[int],
+        message: str,
+    ) -> Dict[int, Optional[Any]]:
+        """用户与指定居民列表沟通。"""
+        return await self.communicate_resident_to_residents(sender_id=-1, receiver_ids=resident_ids, message=message)
 
     async def spread_information(self, resident_id: int, message: str, relation_type: str, current_depth: int = 1, max_depth: int = 3):
         """

@@ -1,11 +1,13 @@
-"""
+"""src.utils.di_container
+
 依赖注入容器 (Dependency Injection Container)
 
-提供接口与实现类的注册、自动依赖解析和实例管理功能。
+- 只负责“构造期注入 + 生命周期管理（单例/瞬态/工厂/实例）”。
+- 模块选择/插件发现与加载由插件系统负责，不再由 DI 从 YAML 注册模块实现。
 """
 
 import inspect
-from typing import Type, TypeVar, Dict, Any, Optional, Callable, Set
+from typing import Type, TypeVar, Dict, Any, Optional, Callable, Set, get_type_hints, get_origin, get_args
 from enum import Enum
 
 
@@ -44,7 +46,7 @@ class DIContainer:
         container.register_instance(ILogger, logger_instance)
         
         # 解析实例（会自动注入依赖）
-        map_instance = container.resolve(IMap)
+        map_instance = container.get(IMap)
     """
     
     def __init__(self):
@@ -132,16 +134,13 @@ class DIContainer:
         self._bindings[interface] = (type(instance), Lifecycle.SINGLETON)
         return self
     
-    def resolve(self, interface: Type[T]) -> T:
-        """
-        解析并获取接口的实例
-        
-        Args:
-            interface: 接口类型
-            
-        Returns:
-            实例对象
-            
+    def get(self, interface: Type[T]) -> T:
+        """获取接口的实例。
+
+        - 支持单例与瞬态
+        - 支持工厂函数/实例注册
+        - 自动解析构造函数依赖（基于类型注解）
+
         Raises:
             ValueError: 接口未注册或存在循环依赖
         """
@@ -149,11 +148,14 @@ class DIContainer:
         if interface in self._singletons:
             return self._singletons[interface]
         
+        def _type_name(t: Any) -> str:
+            return getattr(t, '__name__', str(t))
+
         # 检查循环依赖
         if interface in self._resolving_stack:
-            stack_names = [t.__name__ for t in self._resolving_stack]
+            stack_names = [_type_name(t) for t in self._resolving_stack]
             raise ValueError(
-                f"检测到循环依赖: {' -> '.join(stack_names)} -> {interface.__name__}"
+                f"检测到循环依赖: {' -> '.join(stack_names)} -> {_type_name(interface)}"
             )
         
         # 检查工厂函数
@@ -165,7 +167,7 @@ class DIContainer:
         
         # 检查接口是否已注册
         if interface not in self._bindings:
-            raise ValueError(f"接口 {interface.__name__} 未注册")
+            raise ValueError(f"接口 {_type_name(interface)} 未注册")
         
         implementation, lifecycle = self._bindings[interface]
         
@@ -184,6 +186,87 @@ class DIContainer:
         finally:
             # 解析完成，从栈中移除
             self._resolving_stack.discard(interface)
+
+    def create(self, implementation: Type[T], **explicit_kwargs: Any) -> T:
+        """创建任意实现类实例，并自动注入缺失依赖。
+
+        与 `get()` 的区别：
+        - `get()` 需要先注册 interface->implementation
+        - `create()` 直接对指定实现类构造实例
+
+        `explicit_kwargs` 会覆盖自动注入的同名参数。
+        """
+        init_signature = inspect.signature(implementation.__init__)
+
+        # 尝试解析 forward references / __future__.annotations 产生的字符串注解
+        # 若解析失败则回退为原始 annotation。
+        try:
+            resolved_hints: Dict[str, Any] = get_type_hints(implementation.__init__)
+        except Exception:
+            resolved_hints = {}
+
+        def _normalize_hint(hint: Any) -> Any:
+            """将 Optional/Annotated 等 typing hint 规约为可 resolve 的具体类型。"""
+            if hint is None:
+                return None
+            origin = get_origin(hint)
+            if origin is None:
+                return hint
+            # Optional[T] 等价于 Union[T, NoneType]
+            if origin is getattr(__import__('typing'), 'Union'):
+                args = [a for a in get_args(hint) if a is not type(None)]  # noqa: E721
+                return args[0] if args else hint
+            # Annotated[T, ...] -> T
+            if str(origin) == 'typing.Annotated':
+                args = get_args(hint)
+                return args[0] if args else hint
+            return hint
+
+        kwargs: Dict[str, Any] = {}
+        for param_name, param in init_signature.parameters.items():
+            if param_name == 'self':
+                continue
+
+            # 调用方显式提供的参数优先
+            if param_name in explicit_kwargs:
+                kwargs[param_name] = explicit_kwargs[param_name]
+                continue
+
+            # 基于类型注解自动注入
+            raw_hint = resolved_hints.get(param_name, param.annotation)
+            if raw_hint != inspect.Parameter.empty:
+                param_type = _normalize_hint(raw_hint)
+                # 字符串注解 / Any 等无法可靠注入的类型，直接跳过（若有默认值则使用默认值）
+                if isinstance(param_type, str) or param_type is Any:
+                    if param.default != inspect.Parameter.empty:
+                        continue
+                    raise ValueError(
+                        f"参数 '{param_name}' 在类 {implementation.__name__} 中类型注解无法解析且无默认值"
+                    )
+                try:
+                    kwargs[param_name] = self.get(param_type)
+                    continue
+                except ValueError:
+                    if param.default != inspect.Parameter.empty:
+                        continue
+                    raise ValueError(
+                        f"无法解析参数 '{param_name}' (类型: {getattr(param_type, '__name__', str(param_type))}) "
+                        f"在类 {implementation.__name__} 的构造函数中"
+                    )
+
+            # 没有类型注解
+            if param.default != inspect.Parameter.empty:
+                continue
+            raise ValueError(
+                f"参数 '{param_name}' 在类 {implementation.__name__} 中缺少类型注解且无默认值"
+            )
+
+        # 允许额外的显式参数（实现类构造函数如果不接收会自然抛错）
+        for k, v in explicit_kwargs.items():
+            if k not in kwargs:
+                kwargs[k] = v
+
+        return implementation(**kwargs)
     
     def _create_instance(self, implementation: Type[T]) -> T:
         """
@@ -195,41 +278,8 @@ class DIContainer:
         Returns:
             创建的实例
         """
-        # 获取构造函数签名
-        init_signature = inspect.signature(implementation.__init__)
-        
-        # 解析构造函数参数
-        kwargs = {}
-        for param_name, param in init_signature.parameters.items():
-            # 跳过 self 参数
-            if param_name == 'self':
-                continue
-            
-            # 获取参数类型注解
-            if param.annotation != inspect.Parameter.empty:
-                param_type = param.annotation
-                
-                # 尝试解析依赖
-                try:
-                    kwargs[param_name] = self.resolve(param_type)
-                except ValueError:
-                    # 如果依赖无法解析，检查是否有默认值
-                    if param.default == inspect.Parameter.empty:
-                        # 无默认值且无法解析，抛出异常
-                        raise ValueError(
-                            f"无法解析参数 '{param_name}' (类型: {param_type.__name__}) "
-                            f"在类 {implementation.__name__} 的构造函数中"
-                        )
-                    # 有默认值，跳过此参数
-            else:
-                # 没有类型注解
-                if param.default == inspect.Parameter.empty:
-                    raise ValueError(
-                        f"参数 '{param_name}' 在类 {implementation.__name__} 中缺少类型注解且无默认值"
-                    )
-        
-        # 创建实例
-        return implementation(**kwargs)
+        # 统一走 create()，以支持 forward refs / __future__.annotations
+        return self.create(implementation)
     
     def is_registered(self, interface: Type) -> bool:
         """
@@ -329,218 +379,4 @@ def reset_global_container():
     """重置全局容器"""
     global _global_container
     _global_container = None
-
-
-# ========================================
-# 配置文件加载功能
-# ========================================
-
-def load_module_from_path(module_path: str) -> Type:
-    """
-    从字符串路径动态导入类
-    
-    Args:
-        module_path: 完整的模块路径，如 "src.environment.map.Map"
-        
-    Returns:
-        导入的类
-        
-    Raises:
-        ImportError: 模块导入失败
-        AttributeError: 类不存在
-        
-    Example:
-        Map = load_module_from_path("src.environment.map.Map")
-    """
-    try:
-        # 分离模块路径和类名
-        # 例如: "src.environment.map.Map" -> "src.environment.map" 和 "Map"
-        parts = module_path.rsplit('.', 1)
-        if len(parts) != 2:
-            raise ValueError(f"无效的模块路径格式: {module_path}")
-        
-        module_name, class_name = parts
-        
-        # 动态导入模块
-        import importlib
-        module = importlib.import_module(module_name)
-        
-        # 获取类
-        cls = getattr(module, class_name)
-        return cls
-    except ImportError as e:
-        raise ImportError(f"无法导入模块 {module_name}: {e}")
-    except AttributeError as e:
-        raise AttributeError(f"模块 {module_name} 中不存在类 {class_name}: {e}")
-
-
-def load_implementations_from_config(
-    config: Dict[str, Any],
-    lifecycle: Lifecycle = Lifecycle.SINGLETON
-) -> Dict[Type, Type]:
-    """
-    从配置字典加载模块实现映射
-    
-    Args:
-        config: 配置字典，包含 module_implementations 部分
-        lifecycle: 默认生命周期
-        
-    Returns:
-        {接口类: 实现类} 的映射字典
-        
-    Example:
-        config = {
-            'module_implementations': {
-                'IMap': 'src.environment.map.Map',
-                'ITime': 'src.environment.time.Time',
-            }
-        }
-        implementations = load_implementations_from_config(config)
-    """
-    if 'module_implementations' not in config:
-        return {}
-    
-    implementations = {}
-    module_implementations = config['module_implementations']
-    
-    # 首先导入所有接口
-    try:
-        from src import interfaces
-        import importlib
-        importlib.reload(interfaces)
-    except ImportError:
-        raise ImportError("无法导入 src.interfaces 模块，请确保接口模块存在")
-    
-    for interface_name, implementation_path in module_implementations.items():
-        try:
-            # 从 interfaces 模块获取接口类
-            interface = getattr(interfaces, interface_name)
-            
-            # 动态导入实现类
-            implementation = load_module_from_path(implementation_path)
-            
-            implementations[interface] = implementation
-        except AttributeError:
-            print(f"警告: 接口 {interface_name} 在 src.interfaces 中不存在，跳过")
-        except (ImportError, ValueError) as e:
-            print(f"警告: 无法加载实现类 {implementation_path}: {e}")
-    
-    return implementations
-
-
-def load_implementations_from_yaml(
-    yaml_path: str,
-    lifecycle: Lifecycle = Lifecycle.SINGLETON
-) -> Dict[Type, Type]:
-    """
-    从 YAML 配置文件加载模块实现映射
-    
-    Args:
-        yaml_path: YAML 配置文件路径
-        lifecycle: 默认生命周期
-        
-    Returns:
-        {接口类: 实现类} 的映射字典
-        
-    Example:
-        implementations = load_implementations_from_yaml("config/template/modules_config.yaml")
-    """
-    try:
-        import yaml
-    except ImportError:
-        raise ImportError("需要安装 PyYAML: pip install pyyaml")
-    
-    try:
-        with open(yaml_path, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f)
-    except FileNotFoundError:
-        raise FileNotFoundError(f"配置文件不存在: {yaml_path}")
-    except yaml.YAMLError as e:
-        raise ValueError(f"YAML 解析错误: {e}")
-    
-    return load_implementations_from_config(config, lifecycle)
-
-
-def register_from_config(
-    container: DIContainer,
-    config: Dict[str, Any],
-    lifecycle: Lifecycle = Lifecycle.SINGLETON
-) -> DIContainer:
-    """
-    从配置字典注册模块到容器
-    
-    Args:
-        container: DIContainer 实例
-        config: 配置字典
-        lifecycle: 默认生命周期
-        
-    Returns:
-        container: 支持链式调用
-        
-    Example:
-        container = DIContainer()
-        register_from_config(container, config)
-    """
-    implementations = load_implementations_from_config(config, lifecycle)
-    
-    for interface, implementation in implementations.items():
-        container.register(interface, implementation, lifecycle)
-    
-    return container
-
-
-def register_from_yaml(
-    container: DIContainer,
-    yaml_path: str,
-    lifecycle: Lifecycle = Lifecycle.SINGLETON
-) -> DIContainer:
-    """
-    从 YAML 配置文件注册模块到容器
-    
-    Args:
-        container: DIContainer 实例
-        yaml_path: YAML 配置文件路径
-        lifecycle: 默认生命周期
-        
-    Returns:
-        container: 支持链式调用
-        
-    Example:
-        container = DIContainer()
-        register_from_yaml(container, "config/template/modules_config.yaml")
-        
-        # 然后可以解析依赖
-        map_instance = container.resolve(IMap)
-    """
-    implementations = load_implementations_from_yaml(yaml_path, lifecycle)
-    
-    for interface, implementation in implementations.items():
-        container.register(interface, implementation, lifecycle)
-    
-    print(f"从配置文件 {yaml_path} 注册了 {len(implementations)} 个模块")
-    
-    return container
-
-
-def create_container_from_yaml(
-    yaml_path: str,
-    lifecycle: Lifecycle = Lifecycle.SINGLETON
-) -> DIContainer:
-    """
-    从 YAML 配置文件创建并配置容器（便捷方法）
-    
-    Args:
-        yaml_path: YAML 配置文件路径
-        lifecycle: 默认生命周期
-        
-    Returns:
-        配置好的 DIContainer 实例
-        
-    Example:
-        container = create_container_from_yaml("config/template/modules_config.yaml")
-        map_instance = container.resolve(IMap)
-    """
-    container = DIContainer()
-    register_from_yaml(container, yaml_path, lifecycle)
-    return container
 

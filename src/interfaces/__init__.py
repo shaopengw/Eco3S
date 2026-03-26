@@ -14,6 +14,7 @@ from .itowns import ITowns
 from .itransport_economy import ITransportEconomy
 
 # Agent interfaces
+from .iagent_group import IAgentGroup
 from .igovernment import (
     IOrdinaryGovernmentAgent,
     IHighRankingGovernmentAgent,
@@ -46,6 +47,9 @@ __all__ = [
     'ITime',
     'ITowns',
     'ITransportEconomy',
+
+    # Generic group interface
+    'IAgentGroup',
     # Government interfaces
     'IOrdinaryGovernmentAgent',
     'IHighRankingGovernmentAgent',

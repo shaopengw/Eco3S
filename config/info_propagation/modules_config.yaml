@@ -1,0 +1,11 @@
+# 模块选择配置（info_propagation）
+
+selected_modules:
+  time: time
+  map: map
+  population: population
+  towns: towns
+  social_network: social_network
+
+  # Agent系统插件
+  residents: residents

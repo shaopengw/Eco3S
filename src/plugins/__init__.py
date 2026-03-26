@@ -20,6 +20,11 @@ from .plugin_interfaces import (
     IJobMarketPlugin,
     IGovernmentPlugin,
     IRebellionPlugin,
+    IAgentGroupPlugin,
+    IResidentAgentsPlugin,
+    IResidentsPlugin,
+    IGovernmentOfficialsPlugin,
+    IRebelsAgentsPlugin,
     PLUGIN_INTERFACE_MAP,
 )
 
@@ -49,5 +54,10 @@ __all__ = [
     'IJobMarketPlugin',
     'IGovernmentPlugin',
     'IRebellionPlugin',
+    'IAgentGroupPlugin',
+    'IResidentAgentsPlugin',
+    'IResidentsPlugin',
+    'IGovernmentOfficialsPlugin',
+    'IRebelsAgentsPlugin',
     'PLUGIN_INTERFACE_MAP',
 ]

@@ -16,96 +16,68 @@ parser.add_argument(
 
 async def run_simulation(config, config_path):
     """运行问卷调查实验"""
-    print("开始初始化实验环境...")
-    
-    # 初始化插件系统（可选）
-    print("正在初始化插件系统...")
-    config_dir = os.path.dirname(config_path)
-    modules_config_path = os.path.join(config_dir, "modules_config.yaml")
-    plugin_registry, loaded_plugins = initialize_plugin_system(
-        config=config,
-        modules_config_path=modules_config_path,
-        logger=logging.getLogger('plugin_system')
-    )
-    
-    # 初始化地图
-    map = Map(
-        width=config["simulation"]["map_width"],
-        height=config["simulation"]["map_height"],
-        data_file=config["data"]["towns_data_path"]
-    )
-    map.initialize_map()
-    
-    # 初始化时间系统
-    time = Time(
-        start_time=config["simulation"]["start_year"],
-        total_steps=config["simulation"]["total_years"]
-    )
-    
-    # 初始化人口系统
-    population = Population(
-        initial_population=config["simulation"]["initial_population"],
-        birth_rate=config["simulation"]["birth_rate"]
-    )
-    
-    # 初始化居民
-    residents = await generate_canal_agents(
-        resident_info_path=config["data"]["resident_info_path"],
-        map=map,
-        initial_population=config["simulation"]["initial_population"],
-        resident_prompt_path=config["data"]["resident_prompt_path"],
-        resident_actions_path=config["data"]["resident_actions_path"],
-        window_size=10
-    )
+    async def build_new_simulator(config: dict, config_path: str):
+        print("开始初始化实验环境...")
 
-    # 初始化城镇
-    towns = Towns(
-        map=map,
-        initial_population=config["simulation"]["initial_population"],
-        job_market_config_path=config["data"]["jobs_config_path"]
-    )
-    towns.initialize_resident_groups(residents)
-        
-    # 初始化社交网络
-    social_network = SocialNetwork()
-    social_network.initialize_network(residents, towns)
-        
-    # 为每个城镇的居民群组设置社交网络
-    for town_name, town_data in towns.towns.items():
-        resident_group = town_data.get('resident_group')
-        if resident_group:
-            resident_group.set_social_network(social_network)
-    
-    # 创建问卷调查实验模拟器
-    simulator = SurveySimulator(
-        container=container,
-        residents=residents,
-        config=config,
-        loaded_plugins=loaded_plugins
-    )
-    print("初始化完成")
+        config_dir = os.path.dirname(config_path)
+        modules_config_path = os.path.join(config_dir, "modules_config.yaml")
 
-    # 运行实验
-    print("开始运行实验...")
-    try:
-        await simulator.run()
-        
-        # TODO: 根据实验需求添加可视化
-        # 示例：绘制实验结果图表
+        influence_registry = load_influence_registry_from_dir(config_dir, logger=logging.getLogger('influences'))
+        container = setup_container_for_simulation(influence_registry=influence_registry)
+
+        print("正在初始化插件系统...")
+        plugin_registry = initialize_plugin_system(
+            config=config,
+            modules_config_path=modules_config_path,
+            container=container,
+            logger=logging.getLogger('plugin_system')
+        )
+
+        init_result = await orchestrate_basic_runtime_init(
+            plugin_registry=plugin_registry,
+            config=config,
+            residents_kwargs={
+                "initial_population": config["simulation"]["initial_population"],
+                "resident_info_path": config["data"]["resident_info_path"],
+                "resident_prompt_path": config["data"]["resident_prompt_path"],
+                "resident_actions_path": config["data"]["resident_actions_path"],
+                "window_size": 10,
+            },
+        )
+        residents = init_result.residents
+
+        # 影响函数编排器：若 config_dir 下存在 influences.yaml，会通过 DI 注入的 InfluenceRegistry 提供 execution_order
+        influence_manager = InfluenceManager(logger=logging.getLogger('influences'))
+
+        simulator = SurveySimulator(
+            plugin_registry=plugin_registry,
+            residents=residents,
+            config=config,
+            influence_manager=influence_manager,
+        )
+        print("初始化完成")
+        return simulator
+
+    def after_run(simulator: Any) -> None:
         plot_dir = SimulationContext.get_plots_dir()
         SimulationContext.ensure_directories()
-        
+        # TODO: 根据实验需求添加可视化
         # plot_survey_results(
         #     results=simulator.experiment_results,
         #     output_dir=plot_dir
         # )
-        
         simulator.save_results()
         print("实验完成，结果已保存")
-        
-    except Exception as e:
-        logging.error(f"实验运行过程中发生错误: {e}")
-        raise
+
+    print("开始运行实验...")
+    await run_with_cache(
+        config=config,
+        config_path=config_path,
+        cache_dir="./backups",
+        simulator_class=SurveySimulator,
+        build_new_simulator=build_new_simulator,
+        after_run=after_run,
+    )
 
 # TODO: 根据实验需求实现可视化函数
 def plot_survey_results(results, output_dir):
@@ -221,4 +193,4 @@ if __name__ == "__main__":
     SimulationContext.set_simulation_name(config["simulation"].get("simulation_name"))
 
     # 运行实验
-    asyncio.run(run_simulation(config))
+    asyncio.run(run_simulation(config, args.config_path))

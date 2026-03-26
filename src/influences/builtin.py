@@ -36,7 +36,7 @@
     )
 """
 
-from typing import Any, Optional, Dict
+from typing import Any, Optional, Dict, Mapping
 import operator
 import math
 from .iinfluence import IInfluenceFunction
@@ -326,6 +326,10 @@ result = max(0.0, base - unemployment_penalty)
         'str': str,
         'bool': bool,
         'len': len,
+        # 反射/属性访问（配置里常用，风险较低）
+        'getattr': getattr,
+        'setattr': setattr,
+        'hasattr': hasattr,
         # 容器
         'list': list,
         'dict': dict,
@@ -335,10 +339,16 @@ result = max(0.0, base - unemployment_penalty)
         'all': all,
         'any': any,
         'range': range,
+        'isinstance': isinstance,
         # 常量
         'True': True,
         'False': False,
         'None': None,
+        # 常用异常类型
+        'Exception': Exception,
+        'ValueError': ValueError,
+        'TypeError': TypeError,
+        'KeyError': KeyError,
         # 数学模块
         'math': math,
     }
@@ -351,6 +361,8 @@ result = max(0.0, base - unemployment_penalty)
         code: str,
         target_attr: Optional[str] = None,
         result_var: str = 'result',
+        variables: Optional[Dict[str, Any]] = None,
+        inputs: Optional[Dict[str, Any]] = None,
         description: str = ""
     ):
         """
@@ -375,6 +387,8 @@ result = max(0.0, base - unemployment_penalty)
         self.code = code
         self.target_attr = target_attr
         self.result_var = result_var
+        self.variables: Dict[str, Any] = dict(variables or {})
+        self.inputs = inputs or {}
         
         # 验证代码语法
         try:
@@ -403,6 +417,14 @@ result = max(0.0, base - unemployment_penalty)
         for key, value in context.items():
             if not key.startswith('_'):  # 跳过私有变量
                 namespace[key] = value
+
+        # 额外注入的常量/变量（优先级高于 context）
+        if self.variables:
+            namespace.update(self.variables)
+
+        # 声明式 inputs：把常用取值逻辑从 code 中抽离
+        if self.inputs:
+            namespace.update(_resolve_inputs(self.inputs, target_obj=target_obj, context=context))
         
         return namespace
     
@@ -444,6 +466,195 @@ result = max(0.0, base - unemployment_penalty)
     def __repr__(self) -> str:
         code_preview = self.code.replace('\n', ' ')[:50]
         return f"CodeInfluence({self.source}->{self.target}:{self.name}, code='{code_preview}...')"
+
+
+_MISSING = object()
+
+
+def _resolve_path(root: Any, path_parts: list[str]) -> Any:
+    cur = root
+    for part in path_parts:
+        if cur is None:
+            return _MISSING
+        if isinstance(cur, dict):
+            if part in cur:
+                cur = cur[part]
+            else:
+                return _MISSING
+        else:
+            if hasattr(cur, part):
+                cur = getattr(cur, part)
+            else:
+                return _MISSING
+    return cur
+
+
+def _resolve_value_from_path(path: str, *, target_obj: Any, context: dict) -> Any:
+    if not path or not isinstance(path, str):
+        return _MISSING
+
+    parts = [p for p in path.split('.') if p]
+    if not parts:
+        return _MISSING
+
+    head, tail = parts[0], parts[1:]
+    if head == 'target':
+        return _resolve_path(target_obj, tail)
+    if head == 'context':
+        return _resolve_path(context, tail)
+
+    # 其他情况：认为 head 是 context 里的模块名（如 map / towns / economy）
+    if head not in context:
+        return _MISSING
+    return _resolve_path(context.get(head), tail)
+
+
+def _coerce_value(value: Any, coerce: Optional[str]) -> Any:
+    if coerce is None:
+        return value
+    if coerce == 'int':
+        return int(value)
+    if coerce == 'float':
+        return float(value)
+    if coerce == 'str':
+        return str(value)
+    if coerce == 'bool':
+        return bool(value)
+    raise ValueError(f"Unknown coerce: {coerce}")
+
+
+def _resolve_inputs(inputs: Mapping[str, Any], *, target_obj: Any, context: dict) -> Dict[str, Any]:
+    """把 inputs 声明解析成可直接用于 eval/exec 的局部变量。
+
+    支持两种写法：
+    - inputs: {x: "context.some_key", y: "target.attr"}
+    - inputs: {x: {path: "context.some_key", fallback_paths: [...], default: 1.0, coerce: "float"}}
+
+    path 语法：
+    - context.xxx（从 context 字典取值，支持多级）
+    - target.xxx（从 target 对象取属性，支持多级）
+    - module.xxx（从 context[module] 取属性/键，支持多级）
+    """
+
+    resolved: Dict[str, Any] = {}
+    for var_name, spec in (inputs or {}).items():
+        if isinstance(spec, str):
+            spec_obj: Dict[str, Any] = {'path': spec}
+        elif isinstance(spec, dict):
+            spec_obj = dict(spec)
+        else:
+            raise ValueError(f"inputs.{var_name} must be str or dict")
+
+        if 'value' in spec_obj:
+            value = spec_obj.get('value')
+        else:
+            paths: list[str] = []
+            if spec_obj.get('path'):
+                paths.append(str(spec_obj['path']))
+            for p in spec_obj.get('fallback_paths', []) or []:
+                paths.append(str(p))
+
+            value = _MISSING
+            for p in paths:
+                cand = _resolve_value_from_path(p, target_obj=target_obj, context=context)
+                if cand is _MISSING or cand is None:
+                    continue
+                value = cand
+                break
+
+            if value is _MISSING:
+                value = spec_obj.get('default', _MISSING)
+
+        if value is _MISSING and spec_obj.get('required'):
+            raise ValueError(f"Missing required input: {var_name}")
+
+        if value is _MISSING:
+            # 不 required 且没 default：注入 None，避免 NameError
+            value = None
+
+        value = _coerce_value(value, spec_obj.get('coerce'))
+        resolved[str(var_name)] = value
+
+    return resolved
+
+
+class ExprInfluence(IInfluenceFunction):
+    """表达式影响函数：用 inputs 声明取值，用 expr 表达式计算结果。
+
+    目标：让 influences.yaml 里尽量只保留“逻辑关系/公式”，而非大量样板取值代码。
+    """
+
+    SAFE_BUILTINS = CodeInfluence.SAFE_BUILTINS
+
+    def __init__(
+        self,
+        source: str,
+        target: str,
+        name: str,
+        expr: str,
+        target_attr: Optional[str] = None,
+        inputs: Optional[Dict[str, Any]] = None,
+        result_key: Optional[str] = None,
+        result_container: str = 'result',
+        context_updates: Optional[Dict[str, str]] = None,
+        description: str = "",
+    ):
+        super().__init__(source, target, name, description or f"表达式影响: {expr}")
+        self.expr = expr
+        self.target_attr = target_attr
+        self.inputs = inputs or {}
+        self.result_key = result_key
+        self.result_container = result_container
+        self.context_updates = context_updates or {}
+
+        # 语法校验
+        try:
+            compile(expr, '<expr>', 'eval')
+        except SyntaxError as e:
+            raise ValueError(f"表达式语法错误: {e}")
+
+    def apply(self, target_obj: Any, context: dict) -> Any:
+        namespace: Dict[str, Any] = {
+            '__builtins__': self.SAFE_BUILTINS,
+            'target': target_obj,
+            'context': context,
+        }
+
+        # 扁平化注入 context
+        for key, value in (context or {}).items():
+            if not str(key).startswith('_'):
+                namespace[key] = value
+
+        # 注入 inputs
+        if self.inputs:
+            namespace.update(_resolve_inputs(self.inputs, target_obj=target_obj, context=context))
+
+        try:
+            result = eval(self.expr, namespace, namespace)
+
+            # 写回 target
+            if self.target_attr is not None:
+                setattr(target_obj, self.target_attr, result)
+
+            # 写回 context['result'][key]
+            if self.result_key:
+                container = context.get(self.result_container)
+                if not isinstance(container, dict):
+                    container = {}
+                    context[self.result_container] = container
+                container[self.result_key] = result
+
+            # 额外写回 context（例如记录中间量）
+            for k, v_expr in (self.context_updates or {}).items():
+                if v_expr == '$result':
+                    context[k] = result
+                else:
+                    context[k] = eval(v_expr, namespace, namespace)
+
+            return result
+        except Exception as e:
+            print(f"表达式影响执行失败 ({self.source}->{self.target}:{self.name}): {e}")
+            return None
 
 
 # 工厂函数，用于从配置创建影响函数
@@ -533,5 +744,24 @@ def create_code_influence(config: dict) -> CodeInfluence:
         code=params['code'],
         target_attr=params.get('target_attr'),
         result_var=params.get('result_var', 'result'),
+        variables=params.get('variables'),
+        inputs=params.get('inputs'),
         description=config.get('description', '')
+    )
+
+
+def create_expr_influence(config: dict) -> ExprInfluence:
+    """从配置创建表达式影响函数。"""
+    params = config.get('params', {})
+    return ExprInfluence(
+        source=config['source'],
+        target=config['target'],
+        name=config['name'],
+        expr=params['expr'],
+        target_attr=params.get('target_attr'),
+        inputs=params.get('inputs'),
+        result_key=params.get('result_key'),
+        result_container=params.get('result_container', 'result'),
+        context_updates=params.get('context_updates'),
+        description=config.get('description', ''),
     )
