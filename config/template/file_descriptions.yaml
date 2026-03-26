@@ -18,7 +18,18 @@ prompt_files_description:
 documentation_files_description:
   "description.md": "完整的模拟实验说明文档，包括实验背景、目标、机制设计、运行流程等全面信息"
 
-# API文档详情 - 模块功能说明
-api_docs_description:
-  "time.md，map.md，population.md，resident.md，towns.md，job_market.md，transport_economy.md，social_network.md，government.md，rebels.md，climate.md": "各模块的API文档，详细说明各模块的功能、方法和使用说明"
+# 接口文件 - 模块接口定义（源码）
+#TODO：这里不要改写死，需要后期修改
+interfaces_files_description:
+  "itime.py": "时间模块接口定义（源码），用于了解可用方法与数据结构"
+  "imap.py": "地图模块接口定义（源码），用于了解可用方法与数据结构"
+  "ipopulation.py": "人口模块接口定义（源码），用于了解可用方法与数据结构"
+  "iresident.py": "居民模块接口定义（源码），用于了解可用方法与数据结构"
+  "itowns.py": "城镇模块接口定义（源码），用于了解可用方法与数据结构"
+  "ijob_market.py": "就业市场模块接口定义（源码），用于了解可用方法与数据结构"
+  "itransport_economy.py": "运输经济模块接口定义（源码），用于了解可用方法与数据结构"
+  "isocial_network.py": "社交网络模块接口定义（源码），用于了解可用方法与数据结构"
+  "igovernment.py": "政府模块接口定义（源码），用于了解可用方法与数据结构"
+  "irebels.py": "叛军模块接口定义（源码），用于了解可用方法与数据结构"
+  "iclimate.py": "气候模块接口定义（源码），用于了解可用方法与数据结构"
 

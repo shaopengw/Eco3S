@@ -427,21 +427,16 @@ class ProjectMasterAgent(BaseAgent):
                     should_generate_modules_config = False
         
         if should_generate_modules_config:
-            config_context = {
-                'parsed_req': parsed_req,
-                'description_md': description_md
-            }
-            
-            if previous_version and user_feedback:
-                config_context['previous_config'] = previous_version.get('config_files', [])
-                config_context['user_feedback'] = user_feedback
-            
-            config_files = await designer.generate_config_files(
-                config_context.get('parsed_req'),
-                config_context.get('description_md'),
-                config_context.get('previous_config'),
-                config_context.get('user_feedback')
+            # 通过“选择模块”步骤直接生成 modules_config.yaml
+            previous_modules = None
+            if user_feedback:
+                previous_modules = self._read_modules_config(full_config=False)
+            _ = await designer.select_modules(
+                parsed_req,
+                previous_modules=previous_modules,
+                user_feedback=user_feedback
             )
+            config_files = [modules_config_path] if os.path.exists(modules_config_path) else []
             self.logger.info(f"配置文件已生成: {config_files}")
         else:
             config_files = [modules_config_path] if os.path.exists(modules_config_path) else []
@@ -512,6 +507,7 @@ class ProjectMasterAgent(BaseAgent):
             main_file_path,
             os.path.join(self.current_config_dir, 'simulation_config.yaml'),
             os.path.join(self.current_config_dir, 'jobs_config.yaml'),
+            os.path.join(self.current_config_dir, 'influences.yaml'),
             os.path.join(self.current_config_dir, 'resident_actions.yaml'),
             os.path.join(self.current_config_dir, 'towns_data.json'),
         ]
@@ -556,9 +552,23 @@ class ProjectMasterAgent(BaseAgent):
             
             context_suffix += f"=== 用户反馈 ===\n{user_feedback}\n"
         
+        description_with_context = design_results['description_md'] + context_suffix
+        # === 步骤0: 若 modules_config.yaml 声明了 new_modules，则先生成新模块插件并自动接线 ===
+        try:
+            modules_config_full_yaml = self._read_modules_config(full_config=True)
+            created_plugins = await coder.ensure_new_modules_before_simulator(
+                description_md=description_with_context,
+                modules_config_yaml_full=modules_config_full_yaml,
+            )
+            if created_plugins:
+                self.logger.info(f"已创建 {created_plugins} 插件")
+        except Exception as e:
+            # 不阻断主流程：即使新模块生成失败，仍尝试继续生成 simulator
+            self.logger.warning(f"处理 new_modules 失败（将继续生成 simulator）: {e}")
+        
         # === 步骤1: 生成simulator代码框架 ===
         self.logger.info("步骤 1: 生成simulator代码框架")
-        description_with_context = design_results['description_md'] + context_suffix
+        # description_with_context = design_results['description_md'] + context_suffix
         
         simulator_files, skipped = await coder.generate_simulator_code(
             description_with_context,
@@ -645,11 +655,39 @@ class ProjectMasterAgent(BaseAgent):
             self.logger.info("数据可视化及保存代码已完善")
         else:
             self.logger.warning("数据可视化及保存代码完善失败，保持原文件")
+
+        
+        # === 步骤4.2: 生成影响函数配置并接入运行链路 ===
+        # 说明：influences.yaml 驱动 InfluenceRegistry/InfluenceManager 的执行顺序与影响关系。
+        self.logger.info("步骤 4.2: 生成影响函数 (influences.yaml)")
+        influences_config_path = None
+        try:
+            influences_config_path = await coder.generate_config_file(
+                'influences.yaml',
+                description_with_context,
+                modules_config_yaml,
+                previous_configs=None,
+            )
+            if influences_config_path:
+                self.logger.info(f"  ✓ influences.yaml 已生成: {influences_config_path}")
+            else:
+                self.logger.warning("  ✗ influences.yaml 生成失败（将以默认无影响函数配置运行）")
+        except Exception as e:
+            self.logger.warning(f"  ✗ influences.yaml 生成异常（将以默认无影响函数配置运行）: {e}")
         
         # === 步骤5: 生成配置文件（按顺序，每次一个） ===
         self.logger.info("步骤 5: 生成配置文件")
         config_files = []
         previous_configs = {}
+
+        # 将 influences.yaml 纳入后续配置生成的上下文与产物列表
+        if influences_config_path and os.path.exists(influences_config_path):
+            try:
+                config_files.append(influences_config_path)
+                with open(influences_config_path, 'r', encoding='utf-8') as f:
+                    previous_configs['influences.yaml'] = f.read()
+            except Exception:
+                pass
         
         # 读取说明文件 (description.md)
         description_file_path = os.path.join(self.current_config_dir, 'description.md')
@@ -725,33 +763,37 @@ class ProjectMasterAgent(BaseAgent):
         
         if os.path.exists(modules_config_path):
             with open(modules_config_path, 'r', encoding='utf-8') as f:
-                modules_config = yaml.safe_load(f)
-            
-            # 遍历 selected_modules，检查哪些模块是 required: true 并且有对应的提示词文件
-            if 'selected_modules' in modules_config:
-                for module in modules_config['selected_modules']:
-                    module_name = module.get('module_name', '')
-                    required = module.get('required', False)
-                    config_files_str = module.get('config_files', '')
-                    
-                    # 如果模块被选中且有配置文件
-                    if required and config_files_str:
-                        # 解析配置文件列表（可能是逗号分隔的字符串）
-                        config_file_list = [f.strip() for f in config_files_str.split(',')]
-                        
-                        # 检查是否包含提示词文件
-                        for config_file in config_file_list:
-                            if config_file.endswith('_prompts.yaml'):
-                                # 映射模块名到提示词文件
-                                prompt_file_mapping[module_name] = config_file
-                                self.logger.info(f"  模块 {module_name} (required=true) -> {config_file}")
+                modules_config = yaml.safe_load(f) or {}
+
+            selected_modules = (modules_config or {}).get('selected_modules')
+
+            # selected_modules 为 dict[module_name -> plugin_name]
+            if isinstance(selected_modules, dict):
+                if 'government' in selected_modules:
+                    prompt_file_mapping['government'] = 'government_prompts.yaml'
+                if 'rebellion' in selected_modules or 'rebels' in selected_modules:
+                    prompt_file_mapping['rebellion'] = 'rebels_prompts.yaml'
+                if 'residents' in selected_modules or 'resident' in selected_modules:
+                    prompt_file_mapping['residents'] = 'residents_prompts.yaml'
+
+                for module_name, prompt_file in prompt_file_mapping.items():
+                    self.logger.info(f"  模块 {module_name} -> {prompt_file}")
+            else:
+                self.logger.warning(
+                    f"modules_config.yaml 的 selected_modules 必须为 dict[module->plugin]，实际类型: {type(selected_modules)}；将使用默认提示词映射"
+                )
+                prompt_file_mapping = {
+                    'government': 'government_prompts.yaml',
+                    'rebellion': 'rebels_prompts.yaml',
+                    'residents': 'residents_prompts.yaml'
+                }
         else:
             self.logger.warning(f"未找到 modules_config.yaml: {modules_config_path}")
             # 使用默认映射
             prompt_file_mapping = {
                 'government': 'government_prompts.yaml',
-                'rebels': 'rebels_prompts.yaml',
-                'resident': 'residents_prompts.yaml'
+                'rebellion': 'rebels_prompts.yaml',
+                'residents': 'residents_prompts.yaml'
             }
         
         # 如果有上一版本的提示词，加入上下文
@@ -1377,9 +1419,12 @@ class ProjectMasterAgent(BaseAgent):
                     modules_config = yaml.safe_load(f)
                     if 'selected_modules' in modules_config:
                         print(f"\n✓ 选择的模块:")
-                        for module in modules_config['selected_modules']:
-                            if module.get('required', False):
-                                print(f"  - {module.get('display_name', module.get('module_name', ''))}")
+                        selected_modules = modules_config.get('selected_modules')
+                        if isinstance(selected_modules, dict):
+                            for module_name in selected_modules.keys():
+                                print(f"  - {module_name}")
+                        else:
+                            print("  (modules_config.yaml 的 selected_modules 不是 dict[module->plugin]，无法展示模块列表)")
             
             # 显示设计文档内容（前500字符）
             if design_results.get('description_md'):

@@ -3,6 +3,7 @@
 from src.utils.custom_logger import CustomLogger
 
 from .shared_imports import *
+import re
 
 class SimArchitectAgent(BaseAgent):
 	"""
@@ -15,6 +16,7 @@ class SimArchitectAgent(BaseAgent):
 		self.config_dir = config_dir
 		self.logger = CustomLogger('sim_architect').logger
 		self.simulation_type = simulation_type
+		self.last_module_selection = None
 		
 		# 加载提示词配置
 		prompts_path = os.path.join(os.path.dirname(__file__), 'sim_architect_prompts.yaml')
@@ -23,55 +25,213 @@ class SimArchitectAgent(BaseAgent):
 		
 		self.system_message = self.prompts['system_message']
 
+	def _load_plugins_config(self):
+		"""读取并解析 config/plugins.yaml，返回 dict；失败则返回空结构。"""
+		plugins_path = os.path.join(os.path.dirname(os.path.abspath(self.config_dir)), 'plugins.yaml')
+		try:
+			with open(plugins_path, 'r', encoding='utf-8') as f:
+				return yaml.safe_load(f) or {}
+		except Exception as e:
+			self.logger.warning(f"读取插件配置失败: {plugins_path}, {e}")
+			return {}
+
+	def _plugins_catalog_text(self, max_plugins=None):
+		"""将 plugins.yaml 转成适合提示词的简洁清单文本（name/description/dependencies）。"""
+		cfg = self._load_plugins_config()
+		plugins = (cfg or {}).get('plugins', []) or []
+		if max_plugins is not None:
+			plugins = plugins[:max_plugins]
+		lines = [
+			"可用插件清单（来自 config/plugins.yaml）：",
+		]
+		for p in plugins:
+			name = p.get('name', '')
+			meta = p.get('metadata', {}) or {}
+			desc = meta.get('description', '')
+			lines.append(f"-name: {name},description: {desc}")
+		return "\n".join(lines)
+
+	def _extract_yaml_text(self, response: str) -> str:
+		"""尽可能从 LLM 输出中提取 YAML 纯文本。
+
+		常见情况：模型会输出 ```yaml ... ``` 或 ```yaml:modules_config.yaml ... ``` 代码块。
+		这里做容错提取，避免因为格式不严谨触发兜底空配置。
+		"""
+		if not response or not isinstance(response, str):
+			return ""
+
+		text = response.strip()
+		if not text:
+			return ""
+
+		# 优先匹配带文件名的代码块：```yaml:modules_config.yaml ...```
+		m = re.search(r"```(?:yaml|yml)(?::[^\n]+)?\s*\n([\s\S]*?)\n```", text, re.IGNORECASE)
+		if m:
+			return m.group(1).strip()
+
+		# 其次匹配通用代码块：``` ... ```
+		m = re.search(r"```\s*\n([\s\S]*?)\n```", text)
+		if m:
+			return m.group(1).strip()
+
+		return text
+
+	def _enabled_plugin_names(self) -> set:
+		cfg = self._load_plugins_config()
+		plugins = (cfg or {}).get('plugins', []) or []
+		enabled = set()
+		for p in plugins:
+			try:
+				if p.get('enabled', True):
+					enabled.add(p.get('name'))
+			except Exception:
+				continue
+		return enabled
+
+	def _ensure_modules_config_from_template(self) -> str:
+		"""确保 output_dir 下存在 modules_config.yaml。"""
+		dst_path = os.path.join(self.output_dir, 'modules_config.yaml')
+		if os.path.exists(dst_path):
+			return dst_path
+
+		src_path = os.path.join(self.config_dir, 'modules_config.yaml')
+		try:
+			os.makedirs(self.output_dir, exist_ok=True)
+			shutil.copyfile(src_path, dst_path)
+			self.logger.info(f"已从模板复制 modules_config.yaml: {dst_path}")
+		except Exception as e:
+			self.logger.warning(f"复制模板 modules_config.yaml 失败: {e}；将写入最小空结构")
+			with open(dst_path, 'w', encoding='utf-8') as f:
+				f.write("selected_modules: {}\nnew_modules: []\n")
+		return dst_path
+
+	def _parse_json_object(self, text: str) -> Dict[str, Any]:
+		"""从 LLM 输出中提取并解析 JSON 对象（容错去掉代码块）。"""
+		if not text or not isinstance(text, str):
+			raise ValueError("LLM 返回空响应或非字符串")
+		raw = text.strip()
+		if raw.startswith('```'):
+			lines = raw.splitlines()
+			# 去掉首尾 fence
+			if len(lines) >= 3 and lines[-1].strip().startswith('```'):
+				raw = "\n".join(lines[1:-1]).strip()
+		obj = json.loads(raw)
+		if not isinstance(obj, dict):
+			raise ValueError("LLM 输出不是 JSON 对象")
+		return obj
+
+	def _merge_modules_config_incremental(self, *, config_path: str, delta: Dict[str, Any]) -> Dict[str, Any]:
+		"""把 delta 合并进 modules_config.yaml，不覆盖、不删除。"""
+		with open(config_path, 'r', encoding='utf-8') as f:
+			base = yaml.safe_load(f) or {}
+		if not isinstance(base, dict):
+			base = {}
+
+		base_selected = base.get('selected_modules')
+		if not isinstance(base_selected, dict):
+			base_selected = {}
+			base['selected_modules'] = base_selected
+
+		base_new = base.get('new_modules')
+		if not isinstance(base_new, list):
+			base_new = []
+			base['new_modules'] = base_new
+
+		delta_selected = delta.get('selected_modules')
+		if delta_selected is None:
+			delta_selected = {}
+		if not isinstance(delta_selected, dict):
+			raise ValueError("selected_modules 必须为 dict")
+
+		delta_new = delta.get('new_modules')
+		if delta_new is None:
+			delta_new = []
+		if not isinstance(delta_new, list):
+			raise ValueError("new_modules 必须为 list")
+
+		# 合并 selected_modules（不覆盖已有键）
+		for module_name, plugin_name in delta_selected.items():
+			if not isinstance(module_name, str) or not module_name.strip():
+				continue
+			if not isinstance(plugin_name, str) or not plugin_name.strip():
+				continue
+			if module_name in base_selected:
+				continue
+			base_selected[module_name] = plugin_name
+
+		# 合并 new_modules（按 name 去重，不覆盖已有项）
+		existing_new_names = set()
+		for item in base_new:
+			if isinstance(item, dict) and isinstance(item.get('name'), str):
+				existing_new_names.add(item['name'])
+		for item in delta_new:
+			if not isinstance(item, dict):
+				continue
+			name = item.get('name')
+			if not isinstance(name, str) or not name.strip():
+				continue
+			if name in existing_new_names:
+				continue
+			base_new.append(item)
+			existing_new_names.add(name)
+
+		with open(config_path, 'w', encoding='utf-8') as f:
+			f.write(yaml.dump(base, allow_unicode=True, sort_keys=False).strip() + "\n")
+		return base
+
 	async def select_modules(self, requirement_dict, previous_modules=None, user_feedback=None):
 		"""
-		调用大模型，根据需求和 system_capabilities.md，选择所需模块。
+		调用大模型，根据需求与插件清单（config/plugins.yaml）生成 modules_config.yaml 文件内容。
 		
 		Args:
 			requirement_dict: 解析后的需求字典
-			previous_modules: 上一版本选择的模块列表（可选）
+			previous_modules: 上一版本 modules_config.yaml（或其片段），用于参考（可选）
 			user_feedback: 用户反馈（可选）
 		"""
-		with open(os.path.join(self.docs_dir, 'system_capabilities.md'), 'r', encoding='utf-8') as f:
-			sys_cap = f.read()
+		plugins_catalog = self._plugins_catalog_text()
+
+		# 复制模板到项目目录（首次创建），后续只做增量合并
+		modules_config_path = self._ensure_modules_config_from_template()
 		
-		# 安全获取 key_elements，如果不存在则使用空列表
-		key_elements = requirement_dict.get('key_elements', [])
-		objectives = requirement_dict.get('objectives', [])
+		key_requirements = requirement_dict.get('key_requirements', [])
+		description = requirement_dict.get('description', [])
 		
 		# 构建基础提示词
 		if previous_modules and user_feedback:
 			# 有反馈的情况
 			prompt = self.prompts['select_modules_with_feedback_prompt'].format(
-				system_capabilities=sys_cap,
-				objectives=objectives,
-				key_elements=key_elements,
-				previous_modules=json.dumps(previous_modules, ensure_ascii=False),
+				plugins_catalog=plugins_catalog,
+				description=description,
+				key_requirements=key_requirements,
+				previous_modules=str(previous_modules),
 				user_feedback=user_feedback
 			)
 		else:
 			# 没有反馈的情况
 			prompt = self.prompts['select_modules_prompt'].format(
-				system_capabilities=sys_cap,
-				objectives=objectives,
-				key_elements=key_elements
+				plugins_catalog=plugins_catalog,
+				description=description,
+				key_requirements=key_requirements
 			)
 		
 		# 添加输出格式说明
 		prompt += "\n" + self.prompts['select_modules_output_format']
 		response = await self.generate_llm_response(prompt)
-		import json
 		try:
-			if not response:
-				raise ValueError("LLM 返回空响应")
-			modules = json.loads(response)
-			if not isinstance(modules, list):
-				self.logger.warning(f"模块列表格式错误，期望列表但得到: {type(modules)}")
-				modules = []
+			delta = self._parse_json_object(response)
+			# 只允许增量合并：不覆盖、不删除
+			merged = self._merge_modules_config_incremental(config_path=modules_config_path, delta=delta)
+			self.logger.info(f"modules_config.yaml 已增量更新: {modules_config_path}")
+			self.last_module_selection = merged
+			return list((merged.get('selected_modules') or {}).keys())
 		except Exception as e:
-			self.logger.warning(f"选择模块失败: {e}，返回空列表")
-			modules = []
-		return modules
+			self.logger.warning(f"模块增量选择失败（将保留现有 modules_config.yaml，不做覆盖/删除）: {e}")
+			try:
+				with open(modules_config_path, 'r', encoding='utf-8') as f:
+					existing = yaml.safe_load(f) or {}
+				return list(((existing or {}).get('selected_modules') or {}).keys())
+			except Exception:
+				return []
 
 	async def generate_description_md(self, original_requirement, requirement_dict, previous_description=None, user_feedback=None):
 		"""
@@ -142,6 +302,8 @@ class SimArchitectAgent(BaseAgent):
 		if os.path.exists(template_path):
 			with open(template_path, 'r', encoding='utf-8') as f:
 				modules_config_template = f.read()
+
+		plugins_catalog = self._plugins_catalog_text()
 		
 		# 构建提示词
 		if previous_config and user_feedback:
@@ -158,6 +320,7 @@ class SimArchitectAgent(BaseAgent):
 			prompt = self.prompts['generate_config_with_feedback_prompt'].format(
 				description_md=description_md,
 				experiment_template=modules_config_template,
+				plugins_catalog=plugins_catalog,
 				previous_config=previous_config_content,
 				user_feedback=user_feedback
 			)
@@ -165,7 +328,8 @@ class SimArchitectAgent(BaseAgent):
 			# 没有反馈的情况
 			prompt = self.prompts['generate_config_prompt'].format(
 				description_md=description_md,
-				experiment_template=modules_config_template
+				experiment_template=modules_config_template,
+				plugins_catalog=plugins_catalog
 			)
 		
 		# 添加要求说明

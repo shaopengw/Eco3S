@@ -1,0 +1,13 @@
+# 模块选择配置（TEOG）
+selected_modules:
+  time: time
+  map: map
+  population: population
+  towns: towns
+  social_network: social_network
+  transport_economy: transport_economy
+  climate: climate
+
+  # Agent系统插件
+  residents: residents
+  government: government

@@ -1,27 +1,34 @@
-"""
-插件接口 (Plugin Interfaces)
+"""插件接口 (Plugin Interfaces)
 
-为每个业务模块定义插件接口，继承 BasePlugin 和对应的业务接口。
-这样可以确保插件既满足插件生命周期要求，又满足业务接口要求。
+插件接口用于定义“插件生命周期 + service 暴露”约定。
+
+插件包装业务实现对象（service），通过 ServicePlugin 自动转发，
+从而避免为每个新增业务方法重复写插件代理。
 """
 
 from abc import ABC
+from typing import Any, Dict, TYPE_CHECKING
+
 from .base_plugin import BasePlugin
-from src.interfaces import (
-    IMap,
-    ITime,
-    IPopulation,
-    ITowns,
-    ISocialNetwork,
-    ITransportEconomy,
-    IClimateSystem,
-    IJobMarket,
-    IGovernment,
-    IRebellion,
-)
+from .service_plugin import ServicePlugin
+
+if TYPE_CHECKING:
+    from src.interfaces import (
+        IAgentGroup,
+        IMap,
+        ITime,
+        IPopulation,
+        ITowns,
+        ISocialNetwork,
+        ITransportEconomy,
+        IClimateSystem,
+        IJobMarket,
+        IGovernment,
+        IRebellion,
+    )
 
 
-class IMapPlugin(BasePlugin, IMap, ABC):
+class IMapPlugin(ServicePlugin, ABC):
     """
     地图模块插件接口
     
@@ -67,10 +74,12 @@ class IMapPlugin(BasePlugin, IMap, ABC):
             # ... 其他 IMap 方法
         ```
     """
-    pass
+    @property
+    def service(self) -> "IMap":  # type: ignore[name-defined]
+        return super().service
 
 
-class ITimePlugin(BasePlugin, ITime, ABC):
+class ITimePlugin(ServicePlugin, ABC):
     """
     时间模块插件接口
     
@@ -78,10 +87,12 @@ class ITimePlugin(BasePlugin, ITime, ABC):
     - BasePlugin 的生命周期方法
     - ITime 的业务方法（step, is_end, get_current_time 等）
     """
-    pass
+    @property
+    def service(self) -> "ITime":  # type: ignore[name-defined]
+        return super().service
 
 
-class IPopulationPlugin(BasePlugin, IPopulation, ABC):
+class IPopulationPlugin(ServicePlugin, ABC):
     """
     人口模块插件接口
     
@@ -89,10 +100,12 @@ class IPopulationPlugin(BasePlugin, IPopulation, ABC):
     - BasePlugin 的生命周期方法
     - IPopulation 的业务方法（birth, death, get_population 等）
     """
-    pass
+    @property
+    def service(self) -> "IPopulation":  # type: ignore[name-defined]
+        return super().service
 
 
-class ITownsPlugin(BasePlugin, ITowns, ABC):
+class ITownsPlugin(ServicePlugin, ABC):
     """
     城镇模块插件接口
     
@@ -100,10 +113,12 @@ class ITownsPlugin(BasePlugin, ITowns, ABC):
     - BasePlugin 的生命周期方法
     - ITowns 的业务方法（initialize_towns, initialize_resident_groups 等）
     """
-    pass
+    @property
+    def service(self) -> "ITowns":  # type: ignore[name-defined]
+        return super().service
 
 
-class ISocialNetworkPlugin(BasePlugin, ISocialNetwork, ABC):
+class ISocialNetworkPlugin(ServicePlugin, ABC):
     """
     社交网络模块插件接口
     
@@ -111,10 +126,12 @@ class ISocialNetworkPlugin(BasePlugin, ISocialNetwork, ABC):
     - BasePlugin 的生命周期方法
     - ISocialNetwork 的业务方法（initialize_network, add_new_residents 等）
     """
-    pass
+    @property
+    def service(self) -> "ISocialNetwork":  # type: ignore[name-defined]
+        return super().service
 
 
-class ITransportEconomyPlugin(BasePlugin, ITransportEconomy, ABC):
+class ITransportEconomyPlugin(ServicePlugin, ABC):
     """
     交通经济模块插件接口
     
@@ -122,10 +139,12 @@ class ITransportEconomyPlugin(BasePlugin, ITransportEconomy, ABC):
     - BasePlugin 的生命周期方法
     - ITransportEconomy 的业务方法（calculate_river_price, calculate_maintenance_cost 等）
     """
-    pass
+    @property
+    def service(self) -> "ITransportEconomy":  # type: ignore[name-defined]
+        return super().service
 
 
-class IClimatePlugin(BasePlugin, IClimateSystem, ABC):
+class IClimatePlugin(ServicePlugin, ABC):
     """
     气候系统模块插件接口
     
@@ -133,10 +152,12 @@ class IClimatePlugin(BasePlugin, IClimateSystem, ABC):
     - BasePlugin 的生命周期方法
     - IClimateSystem 的业务方法（get_current_impact, _load_climate_data 等）
     """
-    pass
+    @property
+    def service(self) -> "IClimateSystem":  # type: ignore[name-defined]
+        return super().service
 
 
-class IJobMarketPlugin(BasePlugin, IJobMarket, ABC):
+class IJobMarketPlugin(ServicePlugin, ABC):
     """
     就业市场模块插件接口
     
@@ -144,10 +165,25 @@ class IJobMarketPlugin(BasePlugin, IJobMarket, ABC):
     - BasePlugin 的生命周期方法
     - IJobMarket 的业务方法（hire, fire, adjust_jobs_count 等）
     """
-    pass
+    @property
+    def service(self) -> "IJobMarket":  # type: ignore[name-defined]
+        return super().service
 
 
-class IGovernmentPlugin(BasePlugin, IGovernment, ABC):
+class IAgentGroupPlugin(ServicePlugin, ABC):
+    """群体系统插件接口。
+
+    插件必须同时实现：
+    - BasePlugin 的生命周期方法
+    - IAgentGroup 的群体级能力（如 orchestrate_group_decision）
+    """
+
+    @property
+    def service(self) -> "IAgentGroup":  # type: ignore[name-defined]
+        return super().service
+
+
+class IGovernmentPlugin(IAgentGroupPlugin, ABC):
     """
     政府模块插件接口
     
@@ -155,10 +191,12 @@ class IGovernmentPlugin(BasePlugin, IGovernment, ABC):
     - BasePlugin 的生命周期方法
     - IGovernment 的业务方法（handle_public_budget, maintain_canal, adjust_tax_rate 等）
     """
-    pass
+    @property
+    def service(self) -> "IGovernment":  # type: ignore[name-defined]
+        return super().service
 
 
-class IRebellionPlugin(BasePlugin, IRebellion, ABC):
+class IRebellionPlugin(IAgentGroupPlugin, ABC):
     """
     叛军模块插件接口
     
@@ -166,11 +204,57 @@ class IRebellionPlugin(BasePlugin, IRebellion, ABC):
     - BasePlugin 的生命周期方法
     - IRebellion 的业务方法（maintain_status, get_strength, get_resources 等）
     """
-    pass
+    @property
+    def service(self) -> "IRebellion":  # type: ignore[name-defined]
+        return super().service
+
+
+class IResidentAgentsPlugin(BasePlugin, ABC):
+    """居民 agent 生成器插件接口。
+
+    约定：实现方提供异步 `generate(...)` 方法，返回居民字典。
+    """
+
+    async def generate(self, **kwargs) -> Dict[int, Any]:
+        raise NotImplementedError
+
+
+class IResidentsPlugin(BasePlugin, ABC):
+    """居民系统插件接口。
+
+    约定：
+    - 插件实例可通过 `plugin_registry.get_plugin('residents')` 获取。
+    - 插件内部缓存生成结果，提供一次性异步初始化方法 ensure_initialized()/init_residents()。
+    """
+
+    @property
+    def residents(self) -> Dict[int, Any]:
+        raise NotImplementedError
+
+    async def ensure_initialized(self, **kwargs) -> Dict[int, Any]:
+        raise NotImplementedError
+
+    async def init_residents(self, **kwargs) -> Dict[int, Any]:
+        return await self.ensure_initialized(**kwargs)
+
+
+class IGovernmentOfficialsPlugin(BasePlugin, ABC):
+    """政府官员 agent 生成器插件接口。"""
+
+    async def generate(self, **kwargs) -> Dict[int, Any]:
+        raise NotImplementedError
+
+
+class IRebelsAgentsPlugin(BasePlugin, ABC):
+    """叛军成员 agent 生成器插件接口。"""
+
+    async def generate(self, **kwargs) -> Dict[int, Any]:
+        raise NotImplementedError
 
 
 # 插件接口映射（方便查询）
 PLUGIN_INTERFACE_MAP = {
+    'IAgentGroup': IAgentGroupPlugin,
     'IMap': IMapPlugin,
     'ITime': ITimePlugin,
     'IPopulation': IPopulationPlugin,
@@ -181,4 +265,8 @@ PLUGIN_INTERFACE_MAP = {
     'IJobMarket': IJobMarketPlugin,
     'IGovernment': IGovernmentPlugin,
     'IRebellion': IRebellionPlugin,
+    'IResidentAgentsPlugin': IResidentAgentsPlugin,
+    'IResidentsPlugin': IResidentsPlugin,
+    'IGovernmentOfficialsPlugin': IGovernmentOfficialsPlugin,
+    'IRebelsAgentsPlugin': IRebelsAgentsPlugin,
 }

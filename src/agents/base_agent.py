@@ -100,7 +100,7 @@ class BaseAgent:
             })
         messages.extend(prompt_messages)
 
-        # print("-------总提示信息-----------",messages)
+        print("-------总提示信息-----------",messages)
 
         attempts = 0
         while attempts < self.max_retry_attempts:

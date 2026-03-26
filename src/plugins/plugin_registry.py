@@ -1,10 +1,9 @@
-"""
-插件注册表 (PluginRegistry)
+"""插件注册表 (PluginRegistry)
 
 实现插件的注册、发现、加载和查询功能。
-支持两种插件发现机制：
-1. 基于配置文件清单 (config/plugins.yaml)
-2. 基于目录扫描 (plugins/ 下的子目录)
+
+约定（极简模式）：
+- 插件只从仓库根目录 `plugins/*/plugin.yaml` 发现与注册。
 """
 
 import os
@@ -56,12 +55,11 @@ class PluginMetadata:
 
 class PluginRegistry:
     """
-    增强版插件注册表
+    插件注册表
     
-    提供插件的完整管理功能：
+    提供插件的管理功能：
     - 注册插件类和元数据
-    - 从配置文件发现插件
-    - 从目录扫描发现插件
+    - 从 plugins/*/plugin.yaml 发现插件
     - 加载插件实例
     - 按接口类型查询插件
     
@@ -92,6 +90,26 @@ class PluginRegistry:
         self._plugins: Dict[str, PluginMetadata] = {}  # 已注册的插件
         self._logger = logger
         self._discovered_paths: Set[str] = set()  # 已扫描的路径
+        # modules_config.yaml 中的 selected_modules: {module_name: plugin_name}
+        # 允许主引擎通过模块名查询插件实例：registry.get_plugin('map')
+        self._module_bindings: Dict[str, str] = {}
+
+    def bind_modules(self, selected_modules: Dict[str, str]) -> None:
+        """绑定模块名到插件名。
+
+        Args:
+            selected_modules: 形如 {"map": "map", "time": "time"}
+        """
+        if not isinstance(selected_modules, dict):
+            return
+        bindings: Dict[str, str] = {}
+        for module_name, plugin_name in selected_modules.items():
+            if not isinstance(module_name, str) or not module_name.strip():
+                continue
+            if not isinstance(plugin_name, str) or not plugin_name.strip():
+                continue
+            bindings[module_name.strip()] = plugin_name.strip()
+        self._module_bindings = bindings
     
     # ========================================
     # 核心注册方法
@@ -147,14 +165,39 @@ class PluginRegistry:
         
         # 获取元数据
         if metadata is None:
-            # 尝试从类实例获取元数据
-            try:
-                temp_instance = plugin_class()
-                temp_instance.init(PluginContext())
-                metadata = temp_instance.get_metadata()
-            except Exception as e:
-                self._log_warning(
-                    f"Failed to auto-extract metadata from {plugin_class.__name__}: {e}"
+            # 仅当构造函数可无参调用时，才尝试实例化提取 metadata。
+            # 发现/注册阶段通常没有 DI 容器或其他依赖可用；强行实例化会导致缺参告警。
+            def _can_instantiate_without_args(cls: Type[Any]) -> bool:
+                try:
+                    sig = inspect.signature(cls.__init__)
+                except Exception:
+                    return False
+
+                params = list(sig.parameters.values())
+                # 跳过 self
+                if params and params[0].name == 'self':
+                    params = params[1:]
+                for p in params:
+                    if p.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+                        continue
+                    if p.default is inspect._empty:
+                        return False
+                return True
+
+            if _can_instantiate_without_args(plugin_class):
+                try:
+                    temp_instance = plugin_class()
+                    temp_instance.init(PluginContext())
+                    metadata = temp_instance.get_metadata()
+                except Exception as e:
+                    self._log_warning(
+                        f"Failed to auto-extract metadata from {plugin_class.__name__}: {e}"
+                    )
+
+            if metadata is None:
+                # 无法自动提取：使用最小元数据占位，避免在注册阶段产生噪音告警。
+                self._log_debug(
+                    f"Skip auto-extract metadata for {plugin_class.__name__}: constructor requires arguments"
                 )
                 metadata = {
                     "name": name,
@@ -184,7 +227,7 @@ class PluginRegistry:
     
     def discover(self, paths: Optional[List[str]] = None) -> int:
         """
-        发现插件（支持配置文件和目录扫描）
+        发现插件（仅目录扫描 plugin.yaml）
         
         Args:
             paths: 要扫描的目录路径列表（如果为 None，使用默认路径）
@@ -193,9 +236,8 @@ class PluginRegistry:
             int: 发现的插件数量
             
         Note:
-            - 首先尝试从 config/plugins.yaml 加载
-            - 然后扫描指定的目录
-            - 默认扫描路径: ['plugins/', 'src/plugins/']
+            - 仅扫描指定目录下的子目录 plugin.yaml
+            - 默认扫描路径: ['plugins/']
             
         Example:
             ```python
@@ -207,14 +249,10 @@ class PluginRegistry:
             ```
         """
         discovered_count = 0
-        
-        # 1. 从配置文件发现
-        config_count = self._discover_from_config()
-        discovered_count += config_count
-        
-        # 2. 从目录扫描发现
+
+        # 从目录扫描发现
         if paths is None:
-            paths = ['plugins/', 'src/plugins/']
+            paths = ['plugins/']
         
         for path in paths:
             scan_count = self._discover_from_directory(path)
@@ -223,88 +261,12 @@ class PluginRegistry:
         self._log_info(f"Discovery completed: {discovered_count} plugins found")
         return discovered_count
     
-    def _discover_from_config(self, config_path: str = "config/plugins.yaml") -> int:
-        """
-        从配置文件发现插件
-        
-        Args:
-            config_path: 配置文件路径
-            
-        Returns:
-            int: 发现的插件数量
-            
-        配置文件格式:
-            ```yaml
-            plugins:
-              - name: custom_map
-                module: plugins.custom_map.CustomMapPlugin
-                enabled: true
-                metadata:
-                  version: "1.0.0"
-                  description: "Custom map plugin"
-              
-              - name: advanced_time
-                module: plugins.time.AdvancedTimePlugin
-                enabled: true
-            ```
-        """
-        if not os.path.exists(config_path):
-            self._log_debug(f"Config file not found: {config_path}")
-            return 0
-        
-        try:
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = yaml.safe_load(f)
-            
-            if not config or 'plugins' not in config:
-                self._log_warning(f"No plugins section in {config_path}")
-                return 0
-            
-            count = 0
-            for plugin_config in config['plugins']:
-                # 跳过禁用的插件
-                if not plugin_config.get('enabled', True):
-                    continue
-                
-                try:
-                    name = plugin_config['name']
-                    module_path = plugin_config['module']
-                    
-                    # 加载插件类
-                    plugin_class = self._load_plugin_class(module_path)
-                    
-                    # 合并元数据
-                    metadata = plugin_config.get('metadata', {})
-                    metadata['name'] = name
-                    
-                    # 注册
-                    self.register(
-                        plugin_class=plugin_class,
-                        metadata=metadata,
-                        name=name,
-                        source=f"config:{config_path}"
-                    )
-                    count += 1
-                    
-                except Exception as e:
-                    self._log_error(
-                        f"Failed to load plugin from config: {plugin_config.get('name', 'unknown')}: {e}"
-                    )
-            
-            self._log_info(f"Discovered {count} plugins from config: {config_path}")
-            return count
-            
-        except Exception as e:
-            self._log_error(f"Failed to read config file {config_path}: {e}")
-            return 0
-    
     def _discover_from_directory(self, directory: str) -> int:
         """
         从目录扫描发现插件
         
-        支持两种发现方式：
-        1. plugin.yaml - 优先查找子目录中的 plugin.yaml 元数据文件
-        2. Python 文件扫描 - 扫描所有 Python 文件，查找 BasePlugin 子类
+        发现方式：
+        - plugin.yaml：查找子目录中的 plugin.yaml 元数据文件
         
         Args:
             directory: 要扫描的目录路径
@@ -342,57 +304,16 @@ class PluginRegistry:
             sys.path.insert(0, parent_path)
         
         try:
-            # 方式1: 优先扫描子目录中的 plugin.yaml
             for subdir in path_obj.iterdir():
                 if subdir.is_dir() and not subdir.name.startswith('_'):
                     yaml_file = subdir / 'plugin.yaml'
                     if yaml_file.exists():
                         yaml_count = self._discover_from_plugin_yaml(yaml_file, subdir)
                         count += yaml_count
-            
-            # 方式2: 回退到 Python 文件扫描（跳过已有 plugin.yaml 的目录）
-            for py_file in path_obj.rglob("*.py"):
-                if py_file.name.startswith('_'):
-                    continue
-                
-                # 检查该文件所在目录是否已通过 plugin.yaml 注册
-                plugin_yaml = py_file.parent / 'plugin.yaml'
-                if plugin_yaml.exists():
-                    continue  # 跳过，已通过 plugin.yaml 处理
-                
-                try:
-                    # 构建模块路径
-                    relative_path = py_file.relative_to(path_obj.parent)
-                    module_path = str(relative_path.with_suffix('')).replace(os.sep, '.')
-                    
-                    # 导入模块
-                    module = importlib.import_module(module_path)
-                    
-                    # 查找 BasePlugin 的子类
-                    for name, obj in inspect.getmembers(module, inspect.isclass):
-                        if (obj != BasePlugin and 
-                            issubclass(obj, BasePlugin) and 
-                            obj.__module__ == module.__name__):
-                            
-                            # 检查是否已注册
-                            plugin_name = name
-                            if plugin_name in self._plugins:
-                                continue
-                            
-                            # 注册插件
-                            self.register(
-                                plugin_class=obj,
-                                name=plugin_name,
-                                source=f"scan:{py_file}"
-                            )
-                            count += 1
-                            
-                except Exception as e:
-                    self._log_warning(f"Failed to scan file {py_file}: {e}")
-            
+
             self._log_info(f"Discovered {count} plugins from directory: {directory}")
             return count
-            
+
         except Exception as e:
             self._log_error(f"Failed to scan directory {directory}: {e}")
             return 0
@@ -481,40 +402,6 @@ class PluginRegistry:
             self._log_error(f"Failed to process {yaml_file}: {e}")
             return 0
     
-    def _load_plugin_class(self, module_path: str) -> Type[BasePlugin]:
-        """
-        从模块路径加载插件类
-        
-        Args:
-            module_path: 完整的模块路径（如 "plugins.custom_map.CustomMapPlugin"）
-            
-        Returns:
-            Type[BasePlugin]: 插件类
-            
-        Raises:
-            ImportError: 如果模块或类无法导入
-        """
-        parts = module_path.rsplit('.', 1)
-        if len(parts) != 2:
-            raise ImportError(f"Invalid module path: {module_path}")
-        
-        module_name, class_name = parts
-        
-        # 导入模块
-        module = importlib.import_module(module_name)
-        
-        # 获取类
-        if not hasattr(module, class_name):
-            raise ImportError(f"Class {class_name} not found in module {module_name}")
-        
-        plugin_class = getattr(module, class_name)
-        
-        # 验证类
-        if not issubclass(plugin_class, BasePlugin):
-            raise TypeError(f"{class_name} is not a subclass of BasePlugin")
-        
-        return plugin_class
-    
     # ========================================
     # 插件加载方法
     # ========================================
@@ -523,6 +410,7 @@ class PluginRegistry:
         self,
         name: str,
         context: PluginContext,
+        container: Optional[Any] = None,
         **init_kwargs
     ) -> BasePlugin:
         """
@@ -565,8 +453,19 @@ class PluginRegistry:
             return metadata.instance
         
         try:
-            # 创建实例
-            plugin = metadata.plugin_class(**init_kwargs)
+            # 创建实例：先用配置文件里的 init_params，再用调用方参数覆盖
+            init_params = {}
+            try:
+                init_params = dict(metadata.metadata.get('init_params', {}) or {})
+            except Exception:
+                init_params = {}
+            init_params.update(init_kwargs)
+
+            # 优先使用 DI 容器创建实例（支持自动注入依赖），否则直接构造
+            if container is not None and hasattr(container, 'create'):
+                plugin = container.create(metadata.plugin_class, **init_params)
+            else:
+                plugin = metadata.plugin_class(**init_params)
             
             # 初始化
             plugin.init(context)
@@ -633,6 +532,10 @@ class PluginRegistry:
         Returns:
             Optional[BasePlugin]: 插件实例，如果未加载返回 None
         """
+        # 允许通过模块名查询
+        if name in self._module_bindings:
+            name = self._module_bindings[name]
+
         if name not in self._plugins:
             return None
         

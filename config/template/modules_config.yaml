@@ -1,214 +1,25 @@
-# 模拟系统模块配置文件
-# 说明: required=true表示使用该模块, false表示不使用
-# 编码时会根据required=true的模块自动加载对应的API文档
-
-# ========================================
-# 插件系统配置
-# ========================================
-# 启用以下插件（将使用插件系统而非直接实例化）
-active_plugins:
-  - plugin_name: "default_map"
-    config: {}
-  
-  - plugin_name: "default_time"
-    config: {}
-  
-  - plugin_name: "default_population"
-    config: {}
-  
-  - plugin_name: "default_towns"
-    config: {}
-  
-  - plugin_name: "default_social_network"
-    config: {}
-  
-  - plugin_name: "default_transport_economy"
-    config: {}
-  
-  - plugin_name: "default_climate"
-    config: {}
-  
-  - plugin_name: "default_job_market"
-    config: {}
-
-# ========================================
-# 模块实现映射（用于依赖注入容器）
-# ========================================
-# 格式: 接口名称: "完整类路径"
-# 容器将根据此配置动态导入并实例化模块
-module_implementations:
-  # 环境模块
-  IMap: "src.environment.map.Map"
-  ITime: "src.environment.time.Time"
-  IPopulation: "src.environment.population.Population"
-  ITowns: "src.environment.towns.Towns"
-  ISocialNetwork: "src.environment.social_network.SocialNetwork"
-  ITransportEconomy: "src.environment.transport_economy.TransportEconomy"
-  IClimateSystem: "src.environment.climate.ClimateSystem"
-  IJobMarket: "src.environment.job_market.JobMarket"
-  
-  # Agent 模块
-  IGovernment: "src.agents.government.Government"
-  IRebellion: "src.agents.rebels.Rebellion"
-  
-  # 注意：IResident 由生成器函数创建，不在此配置
-
-# 模块配置
+## modules_config.yaml 写作格式模板
+## 顶层仅允许键：selected_modules / new_modules
+##
+## selected_modules: Dict[module_name:str, plugin_name:str]
+## - module_name: 非空字符串；建议小写+下划线；作为“模块标识/绑定名”。
+## - plugin_name: 非空字符串；必须是现有插件名称。
+##
+## new_modules: List[Dict]
+## - name: 新模块/插件名（建议小写+下划线）。
+## - inherits_from: 若可继承则填“现有插件名”，否则填 null。
+## - notes: 需要扩展/覆盖的关键点（尽量简短）。
+##
+## 说明：运行时插件加载目前只会使用 selected_modules；new_modules 用于设计阶段记录“需要新增插件”的信息。
 selected_modules:
-  # 必选模块
-  - module_name: "time"
-    display_name: "时间系统"
-    api_doc: "time.md"
-    required: true
-      
-  - module_name: "map"
-    display_name: "地图系统"
-    api_doc: "map.md"
-    required: true
-      
-  - module_name: "population"
-    display_name: "人口系统"
-    api_doc: "population.md"
-    required: true
-      
-  - module_name: "resident"
-    display_name: "居民系统"
-    api_doc: "resident.md"
-    config_files: "resident_actions.yaml, residents_prompts.yaml"
-    required: true
-      
-  - module_name: "towns"
-    display_name: "城镇系统"
-    api_doc: "towns.md"
-    onfig_files: "towns_data.json"
-    required: true
-  
-  # 可选模块
-  - module_name: "job_market"
-    display_name: "就业市场"
-    api_doc: "job_market.md"
-    config_files: "jobs_config.yaml"
-    required: true
-      
-  - module_name: "transport_economy"
-    display_name: "运输经济系统"
-    api_doc: "transport_economy.md"
-    required: false
-  
-  - module_name: "social_network"
-    display_name: "社交网络"
-    api_doc: "social_network.md"
-    required: true
-      
-  - module_name: "government"
-    display_name: "政府系统"
-    api_doc: "government.md"
-    config_files: "government_prompts.yaml"
-    required: true
-      
-  - module_name: "rebels"
-    display_name: "叛军系统"
-    api_doc: "rebels.md"
-    config_files: "rebels_prompts.yaml"
-    required: true
-  
-  - module_name: "climate"
-    display_name: "气候系统"
-    api_doc: "climate.md"
-    required: true
+  # 核心插件（必有）：SimArchitect 只能“增加”，禁止删除/覆盖这些条目
+  time: time
+  map: map
+  population: population
+  towns: towns
+  social_network: social_network
+  residents: residents
 
-# 实验基础配置
-simulation:
-  name: "template_experiment"
-  description: "模板实验配置，用于快速创建新实验"
-  total_years: 10
-  initial_population: 1000
-  random_seed: 42
+# 默认不新增插件
+new_modules: []
 
-# 模块参数配置
-module_parameters:
-  # 居民系统参数
-  resident:
-    basic_living_cost: 1000
-    initial_satisfaction: 0.7
-    health_index_range: [0.3, 1.0]
-    lifespan_range: [60, 90]
-    
-  # 就业市场参数
-  job_market:
-    job_types: ["农民", "工人", "商人"]
-    base_salary:
-      农民: 2000
-      工人: 3000
-      商人: 4000
-    unemployment_rate: 0.05
-    
-  # 社交网络参数
-  social_network:
-    network_density: 0.3
-    information_spread_rate: 0.5
-    max_connections: 10
-    
-  # 城镇系统参数
-  towns:
-    count: 5
-    types: ["沿河", "非沿河"]
-    initial_resources: 100000
-    
-  # 地图系统参数
-  map:
-    width: 100
-    height: 100
-    max_connection_distance: 20  # 城市网络最大连接距离
-    location_sigma: 2.0  # 随机位置生成的标准差
-    navigability: 0.8 #运河通航能力
-    
-  # 以下为未启用模块的参数(需要时取消注释并设置required=true)
-  
-  # 运输经济系统参数
-  # transport_economy:
-  #   transport_cost: 100  # 基础运输成本
-  #   transport_task: 500  # 年度运输任务量（吨）
-  #   maintenance_cost_base: 100  # 基础维护成本
-  #   maintenance_exponent: 3  # 维护成本计算指数
-  #   initial_navigability: 1.0  # 初始通航能力 (0-1)
-  #   natural_decay_rate: 0.05  # 自然衰减率
-  
-  # 政府系统参数
-  # government:
-  #   initial_budget: 1000000
-  #   initial_military_strength: 100
-  #   tax_rate_range: [0.1, 0.3]
-  
-  # 叛军系统参数
-  # rebels:
-  #   initial_strength: 50
-  #   initial_resources: 10000
-  #   recruitment_rate: 0.01
-  
-  # 气候系统参数
-  # climate:
-  #   change_rate: 0.1
-  #   disaster_probability: 0.05
-
-# 数据收集配置
-data_collection:
-  enabled: true
-  metrics:
-    - population
-    - average_satisfaction
-    - employment_rate
-  frequency: "yearly"
-  output_format: "csv"
-
-# 分析与可视化配置
-analysis:
-  enabled: false
-  methods:
-    - "time_series"
-    - "statistical_summary"
-  visualization:
-    - type: "line_plot"
-      metrics: ["population", "average_satisfaction"]
-    - type: "bar_chart"
-      metrics: ["employment_rate"]

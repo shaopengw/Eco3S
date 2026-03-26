@@ -3,7 +3,6 @@
 """
 from typing import Dict, Any
 from src.plugins import IJobMarketPlugin, PluginContext
-from src.interfaces import IJobMarket
 from src.environment.job_market import JobMarket
 
 
@@ -43,6 +42,7 @@ class DefaultJobMarketPlugin(IJobMarketPlugin):
             initial_jobs_count=self._initial_jobs_count_param,
             config_path=self._config_path_param
         )
+        self._service = self._job_market
     
     # ===== BasePlugin 生命周期方法 =====
     
@@ -67,24 +67,8 @@ class DefaultJobMarketPlugin(IJobMarketPlugin):
             "version": "1.0.0",
             "description": "默认就业市场插件（包装 JobMarket 类）",
             "author": "AgentWorld Team",
-            "dependencies": ["default_population", "default_towns"]
+            "dependencies": ["population", "towns"]
         }
-    
-    # ===== IJobMarket 接口属性 - 代理到内部 JobMarket 实例 =====
-    
-    @property
-    def town_type(self):
-        return self._job_market.town_type
-    
-    @property
-    def jobs_info(self):
-        return self._job_market.jobs_info
-    
-    @property
-    def professions_ratio(self):
-        return self._job_market.professions_ratio
-    
-    # ===== IJobMarket 接口方法 - 代理到内部 JobMarket 实例 =====
     
     def hire(self, resident_id: str, job_type: str) -> bool:
         """雇佣居民"""
@@ -110,98 +94,6 @@ class DefaultJobMarketPlugin(IJobMarketPlugin):
             })
         
         return result
-    
-    def get_available_jobs(self) -> Dict[str, int]:
-        """获取可用工作"""
-        return self._job_market.get_available_jobs()
-    
-    def get_unemployment_rate(self) -> float:
-        """获取失业率"""
-        return self._job_market.get_unemployment_rate()
-    
-    def update_job_market(self, economic_condition: float) -> None:
-        """更新就业市场"""
-        self._job_market.update_job_market(economic_condition)
-    
-    def get_job_salary(self, job_type: str) -> float:
-        """获取职业工资"""
-        return self._job_market.get_job_salary(job_type)
-    
-    def add_jobs(self, job_type: str, count: int) -> None:
-        """增加工作岗位"""
-        self._job_market.add_jobs(job_type, count)
-    
-    def remove_jobs(self, job_type: str, count: int) -> None:
-        """移除工作岗位"""
-        self._job_market.remove_jobs(job_type, count)
-    
-    def _initialize_jobs(self, total_count):
-        """初始化工作岗位"""
-        return self._job_market._initialize_jobs(total_count)
-    
-    def add_job(self, job, num=1):
-        """添加工作"""
-        return self._job_market.add_job(job, num)
-    
-    def remove_job(self, job):
-        """移除工作"""
-        return self._job_market.remove_job(job)
-    
-    def assign_specific_job(self, resident, job_type, actual_salary=None):
-        """分配特定工作"""
-        return self._job_market.assign_specific_job(resident, job_type, actual_salary)
-    
-    def assign_specific_job_withoutcheck(self, resident, job_type, actual_salary=None):
-        """分配特定工作（不检查）"""
-        return self._job_market.assign_specific_job_withoutcheck(resident, job_type, actual_salary)
-    
-    def assign_job(self, resident):
-        """分配工作"""
-        return self._job_market.assign_job(resident)
-    
-    def get_employed_residents(self):
-        """获取已雇佣居民"""
-        return self._job_market.get_employed_residents()
-    
-    def print_job_market_status(self):
-        """打印就业市场状态"""
-        return self._job_market.print_job_market_status()
-    
-    def remove_resident(self, resident_id, job_type=None):
-        """移除居民"""
-        return self._job_market.remove_resident(resident_id, job_type)
-    
-    def get_job_statistics(self, job_type):
-        """获取工作统计"""
-        return self._job_market.get_job_statistics(job_type)
-    
-    def remove_random_jobs(self, num_jobs, residents):
-        """随机移除工作"""
-        return self._job_market.remove_random_jobs(num_jobs, residents)
-    
-    def adjust_canal_maintenance_jobs(self, change_rate, residents):
-        """调整运河维护工作"""
-        return self._job_market.adjust_canal_maintenance_jobs(change_rate, residents)
-    
-    def get_vacant_jobs(self):
-        """获取空缺工作"""
-        return self._job_market.get_vacant_jobs()
-    
-    def process_job_applications(self, job_requests):
-        """处理工作申请"""
-        return self._job_market.process_job_applications(job_requests)
-    
-    def get_rebel_total_salary(self):
-        """获取叛军总工资"""
-        return self._job_market.get_rebel_total_salary()
-    
-    def get_other_total_salary(self):
-        """获取其他工作总工资"""
-        return self._job_market.get_other_total_salary()
-    
-    def add_random_jobs(self, num_jobs, specific_job=None):
-        """随机添加工作"""
-        return self._job_market.add_random_jobs(num_jobs, specific_job)
     
     # ===== 内部方法 =====
     

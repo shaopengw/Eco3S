@@ -31,6 +31,82 @@ class CodeArchitectAgent(BaseAgent):
 		self.session = session  # Web模式的会话对象
 		self.logger = CustomLogger('code_architect').logger
 
+	def _interfaces_dir(self) -> str:
+		project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+		return os.path.join(project_root, 'src', 'interfaces')
+
+	def _candidate_interface_stems(self, module_name: str) -> List[str]:
+		name = (module_name or '').strip().lower()
+		if not name:
+			return []
+		aliases = {
+			'rebellion': 'rebels',
+			'rebels': 'rebels',
+			'residents': 'resident',
+			'social': 'social_network',
+			'job': 'job_market',
+			'transport': 'transport_economy',
+			'economy': 'transport_economy',
+		}
+		stems = [name]
+		if name in aliases:
+			stems.append(aliases[name])
+		# 再加一个“去掉 module_ 前缀/后缀”的宽松版本
+		stems.append(name.replace('-', '_'))
+		# 去重保持顺序
+		seen = set()
+		ordered: List[str] = []
+		for s in stems:
+			if s and s not in seen:
+				seen.add(s)
+				ordered.append(s)
+		return ordered
+
+	def _find_interface_files(self, module_name: str) -> List[str]:
+		interfaces_dir = self._interfaces_dir()
+		if not os.path.isdir(interfaces_dir):
+			return []
+
+		stems = self._candidate_interface_stems(module_name)
+		# 优先精确匹配 i<stem>.py
+		for stem in stems:
+			candidate = os.path.join(interfaces_dir, f"i{stem}.py")
+			if os.path.exists(candidate):
+				return [candidate]
+
+		# 否则做一次文件名包含匹配（例如 rebellion -> irebels.py）
+		try:
+			files = [f for f in os.listdir(interfaces_dir) if f.endswith('.py') and f.startswith('i')]
+		except Exception:
+			return []
+
+		needles = [s.replace('_', '') for s in stems]
+		matched: List[str] = []
+		for fname in files:
+			base = fname.lower().replace('_', '')
+			if any(n and n in base for n in needles):
+				matched.append(os.path.join(interfaces_dir, fname))
+		return matched[:3]
+
+	def _read_interface_docs_for_modules(self, module_names: List[str], max_chars_per_file: int = 2000) -> str:
+		"""读取 src/interfaces 下与模块名匹配的接口源码，作为“接口说明”。"""
+		parts: List[str] = []
+		seen_files: set[str] = set()
+		for name in module_names or []:
+			for path in self._find_interface_files(name):
+				if path in seen_files:
+					continue
+				seen_files.add(path)
+				try:
+					with open(path, 'r', encoding='utf-8') as f:
+						content = f.read()
+					if max_chars_per_file and len(content) > max_chars_per_file:
+						content = content[:max_chars_per_file] + "\n...(已截断)"
+					parts.append(f"\n## {os.path.basename(path)}\n{content}\n")
+				except Exception as e:
+					self.logger.warning(f"读取接口文件失败: {path}, {e}")
+		return "".join(parts).strip() if parts else "（未找到相关接口文件）"
+
 	def _wait_for_user_confirmation(self, step_name):
 		"""等待用户确认是否继续"""
 		print(f"\n{'='*60}")
@@ -57,6 +133,206 @@ class CodeArchitectAgent(BaseAgent):
 			self.logger.info("用户选择退出")
 			raise KeyboardInterrupt("用户选择退出流程")
 		self.logger.info(f"用户确认继续，开始下一步...")
+
+	async def _llm_customize_new_plugin(
+		self,
+		*,
+		plugin_name: str,
+		inherits_from: Optional[str],
+		notes: str,
+		description_md: str,
+		plugin_py_path: str,
+	) -> bool:
+		"""让 LLM 基于 notes 对新插件 python 文件做一次“整文件生成”。
+		失败时返回 False，并保留现有可运行代码（不抛异常）。
+		"""
+		prompt_tmpl = (self.prompts or {}).get("customize_new_plugin_prompt")
+		if not prompt_tmpl:
+			self.logger.info(f"跳过 LLM 微调：未找到 customize_new_plugin_prompt")
+			return False
+		if not notes or not notes.strip():
+			self.logger.info(f"跳过 LLM 微调：notes 为空 (plugin={plugin_name})")
+			return False
+		try:
+			with open(plugin_py_path, "r", encoding="utf-8") as f:
+				current_code = f.read()
+		except Exception:
+			self.logger.info(f"跳过 LLM 微调：读取插件代码失败 (plugin={plugin_name})")
+			return False
+
+		base_code = ""
+		if inherits_from:
+			try:
+				base_manifest = self._read_plugin_manifest(inherits_from)
+				base_module = str(base_manifest.get("module") or f"{inherits_from}_plugin").strip()
+				base_py = os.path.join(self._plugin_dir(inherits_from), f"{base_module}.py")
+				if os.path.exists(base_py):
+					with open(base_py, "r", encoding="utf-8") as f:
+						base_code = f.read()
+			except Exception:
+				base_code = ""
+
+		# 控制 token：截断上下文
+		def _truncate(text: str, max_chars: int) -> str:
+			text = text or ""
+			return text if len(text) <= max_chars else (text[:max_chars] + "\n...(truncated)")
+
+		prompt = prompt_tmpl.format(
+			plugin_name=plugin_name,
+			inherits_from=inherits_from or "null",
+			notes=notes.strip(),
+			description_md=_truncate(description_md, 2000),
+			current_code=_truncate(current_code, 2600),
+			base_code=_truncate(base_code, 2600),
+		)
+
+		self.logger.info(f"开始 LLM 微调新插件代码: plugin={plugin_name}, inherits_from={inherits_from or 'null'}")
+		resp = await self.generate_llm_response(prompt)
+		if not resp:
+			self.logger.warning(f"LLM 微调无响应: plugin={plugin_name}")
+			return False
+		# 只接受 python code block
+		m = re.search(r"```python\s*([\s\S]*?)```", resp, re.IGNORECASE)
+		if not m:
+			m = re.search(r"```\s*([\s\S]*?)```", resp)
+		if not m:
+			self.logger.warning(f"LLM 微调输出缺少代码块: plugin={plugin_name}")
+			return False
+		new_code = m.group(1).strip()
+		if "class" not in new_code:
+			self.logger.warning(f"LLM 微调输出疑似无效（缺少 class）: plugin={plugin_name}")
+			return False
+		try:
+			with open(plugin_py_path, "w", encoding="utf-8") as f:
+				f.write(new_code + "\n")
+			self.logger.info(f"LLM 微调写入成功: {plugin_py_path}")
+			return True
+		except Exception:
+			self.logger.warning(f"LLM 微调写入失败: plugin={plugin_name}")
+			return False
+
+	async def ensure_new_modules_before_simulator(self, *, description_md: str, modules_config_yaml_full: str) -> List[str]:
+		"""在生成 simulator 之前处理 modules_config.yaml 的 new_modules。
+
+		行为：
+		- 若 new_modules 为空：什么也不做。
+		- 若存在：为每个 new module 创建插件目录（优先继承复制），更新 config/plugins.yaml 启用，
+		  并修改当前项目 config_dir 下 modules_config.yaml 的 selected_modules 绑定，使其运行时生效。
+		- 可选：若 new module 提供 notes，则调用一次 LLM 微调插件 python 代码（失败不阻断）。
+
+		返回：本次创建/处理的插件名列表。
+		"""
+		from src.utils import new_module_scaffolder as nms
+
+		created: List[str] = []
+		failed: List[tuple[str, Optional[str]]] = []
+		modules_config_path = os.path.join(self.config_dir, "modules_config.yaml")
+		project_root = nms.project_root_from(self.config_dir)
+
+		specs = nms.parse_new_modules(modules_config_yaml_full)
+		if not specs:
+			return created
+
+		prompt_tmpl = (self.prompts or {}).get("customize_new_plugin_prompt")
+		self.logger.info(
+			f"检测到 new_modules={len(specs)}；LLM微调={'启用' if bool(prompt_tmpl) else '禁用(缺少prompt)'}"
+		)
+
+		for spec in specs:
+			plugin_name = spec.name
+			base_name = spec.inherits_from
+			notes_str = spec.notes or ""
+
+			# 1) 生成/复制插件（确定性）
+			try:
+				if nms.plugin_exists(project_root, plugin_name):
+					manifest = nms.read_yaml_file(nms.plugin_manifest_path(project_root, plugin_name))
+				else:
+					if base_name and nms.plugin_exists(project_root, base_name):
+						manifest = nms.copy_plugin_as_new(
+							project_root=project_root,
+							new_name=plugin_name,
+							base_name=base_name,
+							notes=notes_str,
+						)
+					else:
+						manifest = nms.create_minimal_plugin_from_template(
+							project_root=project_root,
+							new_name=plugin_name,
+							notes=notes_str,
+						)
+			except Exception as e:
+				self.logger.error(f"创建新模块插件失败: {plugin_name}, {e}")
+				failed.append((plugin_name, base_name))
+				continue
+
+			# 2) 自动接线（确定性）
+			try:
+				nms.enable_plugin_in_global_plugins_yaml(project_root=project_root, plugin_name=plugin_name, manifest=manifest)
+			except Exception as e:
+				self.logger.warning(f"更新 config/plugins.yaml 失败（可能导致插件无法加载）: {e}")
+			try:
+				nms.patch_modules_config_binding(
+					modules_config_path=modules_config_path,
+					new_plugin_name=plugin_name,
+					inherits_from=base_name,
+				)
+			except Exception as e:
+				self.logger.warning(f"更新 modules_config.yaml 绑定失败: {e}")
+
+			# 3) 可选：LLM 微调（只在 notes 非空时）
+			try:
+				plugin_py_path = nms.plugin_module_py_path(project_root, plugin_name, manifest)
+				if notes_str and notes_str.strip():
+					self.logger.info(f"new_modules notes 非空，准备调用 LLM 微调: plugin={plugin_name}")
+					_ = await self._llm_customize_new_plugin(
+						plugin_name=plugin_name,
+						inherits_from=base_name,
+						notes=notes_str,
+						description_md=description_md,
+						plugin_py_path=plugin_py_path,
+					)
+				else:
+					self.logger.info(f"跳过 LLM 微调：notes 为空 (plugin={plugin_name})")
+			except Exception as e:
+				self.logger.warning(f"LLM 微调新插件失败（已保留可运行骨架）: {e}")
+
+			created.append(plugin_name)
+
+		# 4) 收尾：全部成功则清空 new_modules；存在失败则回滚 selected_modules 中对失败插件的引用
+		try:
+			cfg = nms.read_yaml_file(modules_config_path) or {}
+			if not isinstance(cfg, dict):
+				cfg = {}
+			selected = cfg.get("selected_modules")
+			if not isinstance(selected, dict):
+				selected = {}
+				cfg["selected_modules"] = selected
+
+			if failed:
+				failed_names = [n for n, _ in failed]
+				for plugin_name, base_name in failed:
+					# 删除/回滚所有“指向失败插件”的绑定
+					keys_pointing = [k for k, v in list(selected.items()) if v == plugin_name]
+					for k in keys_pointing:
+						if base_name and k == base_name:
+							selected[k] = base_name
+						else:
+							selected.pop(k, None)
+					# 保险：若存在同名 key 也删掉
+					if plugin_name in selected and selected.get(plugin_name) == plugin_name:
+						selected.pop(plugin_name, None)
+
+				nms.write_yaml_file(modules_config_path, cfg)
+				self.logger.info(f"new_modules 存在创建失败项，已从 selected_modules 移除/回滚: {', '.join(failed_names)}")
+			else:
+				cfg["new_modules"] = []
+				nms.write_yaml_file(modules_config_path, cfg)
+				self.logger.info("new_modules 均创建成功，已清空 new_modules")
+		except Exception as e:
+			self.logger.warning(f"收尾更新 modules_config.yaml 失败: {e}")
+
+		return created
 	
 	def _check_file_exists_and_ask(self, file_path, file_description):
 		"""检查文件是否存在，如果存在则询问是否重新生成
@@ -313,7 +589,7 @@ class CodeArchitectAgent(BaseAgent):
 		步骤2：基于模块配置完善simulator文件（循环重试版本）
 		分为三个子步骤，每个步骤都有重试机制：
 		2.1 创建工作列表 - 从modules_config.yaml提取选定的模块（最多5次重试）
-		2.2 逐个完善模块 - 根据每个模块的API文档完善相关代码（每个模块最多5次重试）
+		2.2 逐个完善模块 - 根据每个模块的接口文件完善相关代码（每个模块最多5次重试）
 		2.3 总体检查与修复 - 检查问题并自动修复（最多2次重试）
 		"""
 		self.logger.info("=== 步骤2: 开始基于模块配置完善simulator ===")
@@ -362,12 +638,11 @@ class CodeArchitectAgent(BaseAgent):
 		self.logger.info(f"📋 模块工作列表（共 {len(todo_list)} 个模块）:")
 		for idx, item in enumerate(todo_list, 1):
 			self.logger.info(f"  {idx}. {item['module_name']} - {item.get('display_name', '')}")
-			self.logger.info(f"     API文档: {item.get('api_doc', '')}")
 			self.logger.info(f"     说明: {item.get('description', '')}")
 		self.logger.info(f"{'='*60}\n")
 		
 		# ============ 步骤2.2: 逐个完善模块（每个模块循环重试） ============
-		self.logger.info("步骤2.2: 逐个根据API文档完善模块...")
+		self.logger.info("步骤2.2: 逐个根据接口文件完善模块...")
 		for idx, todo_item in enumerate(todo_list, 1):
 			module_name = todo_item['module_name']
 			self.logger.info(f"\n处理模块 [{idx}/{len(todo_list)}]: {module_name}")
@@ -468,35 +743,25 @@ class CodeArchitectAgent(BaseAgent):
 
 	async def _complete_simulator_function(self, simulator_file_path, todo_item, description_md):
 		"""
-		步骤2.2: 根据模块API文档完善simulator代码（增量修改版）
+		步骤2.2: 根据模块接口文件完善simulator代码（增量修改版）
 		只修改需要改动的方法，而不是替换整个文件
 		"""
 		module_name = todo_item['module_name']
 		module_display_name = todo_item.get('display_name', module_name)
-		api_doc_file = todo_item.get('api_doc', '')
+		# 接口文件由系统根据 module_name 从 src/interfaces/ 自动检索
 		
 		# 读取当前simulator代码
 		with open(simulator_file_path, 'r', encoding='utf-8') as f:
 			simulator_content = f.read()
 		
-		# 读取API文档
-		api_docs = ""
-		if api_doc_file:
-			api_path = os.path.join(self.docs_dir, 'api', api_doc_file)
-			if os.path.exists(api_path):
-				with open(api_path, 'r', encoding='utf-8') as f:
-					api_docs = f.read()
-				self.logger.info(f"读取API文档: {api_doc_file}")
-			else:
-				self.logger.warning(f"API文档不存在: {api_path}")
-				return False
-		else:
-			self.logger.warning(f"未指定API文档")
-			return False
+		# 读取接口文件（src/interfaces）
+		interface_docs = self._read_interface_docs_for_modules([module_name])
+		if not interface_docs or interface_docs.strip() == "（未找到相关接口文件）":
+			self.logger.warning(f"未找到模块 {module_name} 的接口文件，将继续尝试基于现有代码与设计文档修复")
 		
 		prompt = self.prompts['refine_simulator_with_module_prompt'].format(
 			simulator_content=simulator_content,
-			api_docs=api_docs,
+			interface_docs=interface_docs,
 			description_md=description_md
 		)
 
@@ -994,46 +1259,7 @@ class CodeArchitectAgent(BaseAgent):
 			self.logger.warning("无法应用修复内容")
 			return ["无法应用修复内容"]
 
-	def _read_api_docs_for_modules(self, module_names):
-		"""
-		根据模块名列表读取API文档
-		"""
-		module_to_file = {
-			'time': 'time.md',
-			'map': 'map.md',
-			'population': 'population.md',
-			'resident': 'resident.md',
-			'residents': 'resident.md',
-			'government': 'government.md',
-			'rebellion': 'rebels.md',
-			'rebels': 'rebels.md',
-			'social': 'social_network.md',
-			'social_network': 'social_network.md',
-			'job': 'job_market.md',
-			'job_market': 'job_market.md',
-			'climate': 'climate.md',
-			'transport': 'transport_economy.md',
-			'economy': 'transport_economy.md',
-			'towns': 'towns.md',
-		}
-		
-		api_docs_str = ""
-		api_dir = os.path.join(self.docs_dir, 'api')
-		
-		for module_name in module_names:
-			module_key = module_name.lower().strip()
-			api_file = module_to_file.get(module_key)
-			
-			if api_file:
-				api_path = os.path.join(api_dir, api_file)
-				if os.path.exists(api_path):
-					with open(api_path, 'r', encoding='utf-8') as f:
-						content = f.read()
-						if len(content) > 2000:
-							content = content[:2000] + "\n...(已截断)"
-						api_docs_str += f"\n## {api_file}\n{content}\n"
-		
-		return api_docs_str if api_docs_str else "（未找到相关API文档）"
+
 
 	async def refine_visualization_code(self, visualization_dir, simulator_file_path, main_file_path, description_md):
 		"""
@@ -1181,8 +1407,8 @@ class CodeArchitectAgent(BaseAgent):
 		else:
 			self.logger.warning(f"模板文件不存在: {template_path}")
 		
-		# 读取API文档（根据配置类型选择相关文档）
-		api_docs = self._read_relevant_api_docs(config_filename)
+		# 读取接口文件（根据配置类型选择相关模块接口）
+		interface_docs = self._read_relevant_api_docs(config_filename)
 		
 		file_format = 'YAML' if config_filename.endswith('.yaml') else 'JSON'
 		prompt = self.prompts['generate_config_file_prompt'].format(
@@ -1190,13 +1416,21 @@ class CodeArchitectAgent(BaseAgent):
 			description_md=description_md,
 			modules=modules_config_yaml,
 			template_content=template_content,
-			api_docs=api_docs,
+			interface_docs=interface_docs,
 			file_format=file_format
 		)
 		
 		# 特殊处理 simulation_config.yaml，强制设置小规模测试参数
 		if config_filename == 'simulation_config.yaml':
 			prompt += "\n\n重要提示：对于此初始配置，您必须将初始人口设置为 5，将模拟总时间（或时间步）设置为 1。这是为了进行小规模原型测试。"
+
+		# 特殊处理 influences.yaml：要求严格遵循模板结构，且与已选模块对齐
+		if config_filename == 'influences.yaml':
+			prompt += (
+				"\n\n重要提示：influences.yaml 必须输出 YAML，包含 execution_order 与 influences（可为空列表）；"
+				"execution_order 仅使用 selected_modules 中的 module；"
+				"每条 influence 至少含 name/type/source/target/params。"
+			)
 		
 		response = await self.generate_llm_response(prompt)
 		if not response:
@@ -1397,104 +1631,27 @@ class CodeArchitectAgent(BaseAgent):
 				self.logger.debug(f"LLM响应预览: {response[:500]}")
 				return []
 
-	def _read_api_docs_by_modules(self, modules):
-		"""
-		根据涉及的模块读取相关API文档
-		
-		Args:
-			modules: 模块信息（字典或字符串）
-		
-		Returns:
-			str: 格式化的API文档字符串
-		"""
-		# 将modules转为字符串（用于检索）
-		modules_str = str(modules).lower()
-		
-		# 模块到API文档的映射
-		module_to_api = {
-			'time': 'time.md',
-			'map': 'map.md',
-			'population': 'population.md',
-			'resident': 'resident.md',
-			'government': 'government.md',
-			'rebellion': 'rebels.md',
-			'rebels': 'rebels.md',
-			'social': 'social_network.md',
-			'job': 'job_market.md',
-			'climate': 'climate.md',
-			'transport': 'transport_economy.md',
-			'towns': 'towns.md',
-		}
-		
-		# 确定需要读取哪些API文档
-		relevant_apis = set()
-		
-		# 基础模块（总是需要）
-		relevant_apis.update(['time.md', 'map.md', 'population.md', 'resident.md', 'towns.md'])
-		
-		# 根据modules中的关键词添加相关API
-		for keyword, api_file in module_to_api.items():
-			if keyword in modules_str:
-				relevant_apis.add(api_file)
-		
-		# 读取API文档
-		api_docs_str = ""
-		api_dir = os.path.join(self.docs_dir, 'api')
-		
-		for api_file in sorted(relevant_apis):
-			api_path = os.path.join(api_dir, api_file)
-			if os.path.exists(api_path):
-				with open(api_path, 'r', encoding='utf-8') as f:
-					content = f.read()
-					# 只读取前2000字符（如果文档太长）
-					if len(content) > 2000:
-						content = content[:2000] + "\n...(文档已截断，完整内容请查看原文件)"
-					api_docs_str += f"\n## {api_file}\n{content}\n"
-		
-		if not api_docs_str:
-			api_docs_str = "（未找到相关API文档）"
-		
-		return api_docs_str
 
 	def _read_relevant_api_docs(self, config_filename):
-		"""
-		根据配置文件名读取相关的API文档
+		"""根据配置文件名读取相关接口文件（src/interfaces）。
 		
 		Args:
 			config_filename: 配置文件名
 		
 		Returns:
-			str: 格式化的API文档字符串（精简版）
+			str: 格式化的接口文件内容字符串（精简版）
 		"""
-		# 映射配置文件到相关API文档
-		config_to_api = {
-			'simulation_config.yaml': ['time.md', 'map.md', 'population.md'],
-			'jobs_config.yaml': ['job_market.md', 'resident.md'],
-			'resident_actions.yaml': ['resident.md', 'social_network.md'],
-			'towns_data.json': ['towns.md', 'map.md'],
-			'government_prompts.yaml': ['government.md'],
-			'rebels_prompts.yaml': ['rebels.md'],
-			'residents_prompts.yaml': ['resident.md', 'social_network.md'],
+		config_to_modules = {
+			'simulation_config.yaml': ['time', 'map', 'population'],
+			'jobs_config.yaml': ['job_market', 'resident'],
+			'resident_actions.yaml': ['resident', 'social_network'],
+			'towns_data.json': ['towns', 'map'],
+			'government_prompts.yaml': ['government'],
+			'rebels_prompts.yaml': ['rebels'],
+			'residents_prompts.yaml': ['resident', 'social_network'],
 		}
-		
-		api_docs_str = ""
-		api_dir = os.path.join(self.docs_dir, 'api')
-		relevant_docs = config_to_api.get(config_filename, [])
-		
-		for doc_name in relevant_docs:
-			doc_path = os.path.join(api_dir, doc_name)
-			if os.path.exists(doc_path):
-				with open(doc_path, 'r', encoding='utf-8') as f:
-					content = f.read()
-					# 只读取关键部分（前1500字符）
-					if len(content) > 1500:
-						content = content[:1500] + "\n...(已截断)"
-					api_docs_str += f"\n## {doc_name}\n{content}\n"
-		
-		if not api_docs_str:
-			api_docs_str = "（未找到相关API文档）"
-		
-		return api_docs_str
+		relevant_modules = config_to_modules.get(config_filename, [])
+		return self._read_interface_docs_for_modules(relevant_modules, max_chars_per_file=1500)
 
 	async def _diagnose_failure(self, step_name, file_path, error_info, attempt_count):
 		"""
@@ -1540,33 +1697,52 @@ class CodeArchitectAgent(BaseAgent):
 	async def _extract_module_api_docs_from_error(self, error_traceback):
 		"""
 		从错误堆栈中提取相关模块和配置文件
-		使用LLM智能分析错误信息，判断需要哪些API文档和配置文件
+		使用LLM智能分析错误信息，判断需要哪些接口文件和配置文件
 		
 		Args:
 			error_traceback: 错误堆栈信息
 		
 		Returns:
 			tuple: (api_docs_str, config_files_dict)
-				- api_docs_str: API文档内容字符串
+				- api_docs_str: 接口文件内容字符串
 				- config_files_dict: 配置文件内容字典 {文件名: 内容}
 		"""
-		# 模块到API文档的映射
-		module_to_file = {
-			'Climate': 'climate.md',
-			'Time': 'time.md',
-			'Map': 'map.md',
-			'Population': 'population.md',
-			'Resident': 'resident.md',
-			'Government': 'government.md',
-			'Rebels': 'rebels.md',
-			'SocialNetwork': 'social_network.md',
-			'Job_market': 'job_market.md',
-			'TransportEconomy': 'transport_economy.md',
-			'Towns': 'towns.md',
-		}
-		
-		# 构建模块映射说明
-		module_mapping_str = "\n".join([f"- {module}: {file}" for module, file in module_to_file.items()])
+		def _camel_to_snake(name: str) -> str:
+			if not name:
+				return ""
+			# e.g. SocialNetwork -> social_network
+			s1 = re.sub(r'(.)([A-Z][a-z]+)', r'\1_\2', name)
+			return re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
+		def _normalize_module_token(token: str) -> str:
+			"""将 token（可能是文件名/模块名/CamelCase/旧md名）归一化为 module_name（如 map, social_network）。"""
+			base = (token or "").strip()
+			if not base:
+				return ""
+			# 去扩展名
+			base = re.sub(r'\.(py|md|txt|yaml|yml)$', '', base, flags=re.IGNORECASE)
+			# 去 i 前缀（接口文件常见）
+			if base.startswith('i') and len(base) > 1 and base[1].isalpha() and base[1].islower():
+				base = base[1:]
+			# CamelCase -> snake_case
+			if re.match(r'^[A-Z][A-Za-z0-9]*$', base):
+				base = _camel_to_snake(base)
+			return base.strip().lower()
+
+		# 扫描 src/interfaces，动态生成“模块->接口文件”索引
+		interfaces_dir = self._interfaces_dir()
+		available_iface_files: List[str] = []
+		if os.path.isdir(interfaces_dir):
+			try:
+				available_iface_files = sorted(
+					[f for f in os.listdir(interfaces_dir) if f.startswith('i') and f.endswith('.py')]
+				)
+			except Exception:
+				available_iface_files = []
+
+		module_mapping_str = "\n".join(
+			[f"- {f[1:-3]}: {f}" for f in available_iface_files]
+		) or "（未找到接口文件）"
 		
 		# 读取配置文件和提示词文件列表
 		config_files_list = ""
@@ -1604,35 +1780,40 @@ class CodeArchitectAgent(BaseAgent):
 					result = json.loads(json_match.group(0))
 					relevant_api_files = result.get('api_docs', [])
 					relevant_config_files = result.get('config_files', [])
-					self.logger.info(f"✓ LLM分析识别到 {len(relevant_api_files)} 个API文档: {relevant_api_files}")
+					self.logger.info(f"✓ LLM分析识别到 {len(relevant_api_files)} 个接口文件: {relevant_api_files}")
 					self.logger.info(f"✓ LLM分析识别到 {len(relevant_config_files)} 个配置文件: {relevant_config_files}")
 				except json.JSONDecodeError as e:
 					self.logger.warning(f"解析LLM返回的JSON失败: {e}")
 		else:
 			self.logger.warning("LLM返回空响应，使用兜底方案")
 		
-		# 兜底方案：如果LLM分析失败，使用正则匹配
+		# 兜底方案：如果LLM分析失败，使用正则匹配（从类名推断模块名）
 		if not relevant_api_files:
 			module_pattern = r"'(\w+)'\s+object\s+has\s+no\s+attribute"
 			matches = re.findall(module_pattern, error_traceback)
-			relevant_api_files = [module_to_file.get(m) for m in matches if module_to_file.get(m)]
+			relevant_api_files = [_normalize_module_token(m) for m in matches if _normalize_module_token(m)]
 			if relevant_api_files:
-				self.logger.info(f"✓ 正则匹配识别到 {len(relevant_api_files)} 个API文档: {relevant_api_files}")
+				self.logger.info(f"✓ 正则匹配识别到 {len(relevant_api_files)} 个接口文件: {relevant_api_files}")
 		
-		# 读取相关模块的API文档
+		# 读取相关模块的接口文件（按需在 interfaces 目录中动态查找）
 		api_docs_str = ""
-		api_dir = os.path.join(self.docs_dir, 'api')
-		
-		for api_file in set(relevant_api_files):  # 去重
-			if api_file:
-				api_path = os.path.join(api_dir, api_file)
-				if os.path.exists(api_path):
-					with open(api_path, 'r', encoding='utf-8') as f:
+		loaded_files: set[str] = set()
+		for token in set(relevant_api_files):  # 去重
+			module_name = _normalize_module_token(token)
+			if not module_name:
+				continue
+			for iface_path in self._find_interface_files(module_name):
+				iface_file = os.path.basename(iface_path)
+				if iface_file in loaded_files:
+					continue
+				loaded_files.add(iface_file)
+				try:
+					with open(iface_path, 'r', encoding='utf-8') as f:
 						content = f.read()
-						# 提取模块名
-						module_name = api_file.replace('.md', '').replace('_', ' ').title()
-						api_docs_str += f"\n## {module_name} 模块API文档 ({api_file})\n{content}\n"
-					self.logger.info(f"✓ 已加载 {api_file} 模块的API文档")
+					api_docs_str += f"\n## {module_name} 模块接口 ({iface_file})\n{content}\n"
+					self.logger.info(f"✓ 已加载接口文件: {iface_file} (module={module_name})")
+				except Exception as e:
+					self.logger.warning(f"读取接口文件失败 {iface_file}: {e}")
 		
 		# 读取相关的配置文件
 		config_files_dict = {}
@@ -1721,8 +1902,8 @@ class CodeArchitectAgent(BaseAgent):
 		with open(simulator_file_path, 'r', encoding='utf-8') as f:
 			simulator_content = f.read()
 		
-		# 从错误堆栈中提取相关模块的API文档和配置文件（使用LLM智能分析）
-		module_api_docs, config_files_dict = await self._extract_module_api_docs_from_error(error_traceback)
+		# 从错误堆栈中提取相关模块的接口文件和配置文件（使用LLM智能分析）
+		module_interface_docs, config_files_dict = await self._extract_module_api_docs_from_error(error_traceback)
 
 		# config_files_str为所有相关配置文件的具体内容
 		config_files_str = ""
@@ -1743,7 +1924,7 @@ class CodeArchitectAgent(BaseAgent):
 				main_content=main_content,
 				simulator_file_path=simulator_file_path,
 				simulator_content=simulator_content,
-				module_api_docs=module_api_docs,
+				module_interface_docs=module_interface_docs,
 				config_files_str=config_files_str
 			)
 			

@@ -12,20 +12,21 @@ if "sphinx" not in sys.modules:
     resident_log.addHandler(file_handler)
 
 class TEOGSimulator:
-    def __init__(self, container: DIContainer, government_officials: List[IOrdinaryGovernmentAgent], residents: Dict[int, IResident], config: Dict, loaded_plugins: Dict = None):
+    def __init__(self, plugin_registry: Any, government_officials: List[IOrdinaryGovernmentAgent], residents: Dict[int, IResident], config: Dict):
         """初始化模拟器类"""
         # 初始化日志记录器
         self.logger = LogManager.get_logger('simulator_TEOG', console_output=True)
-        
-        # 从插件或容器中获取模块实例
-        self.map = self._resolve_instance('default_map', IMap, container, loaded_plugins)
-        self.time = self._resolve_instance('default_time', ITime, container, loaded_plugins)
-        self.population = self._resolve_instance('default_population', IPopulation, container, loaded_plugins)
-        self.social_network = self._resolve_instance('default_social_network', ISocialNetwork, container, loaded_plugins)
-        self.towns = self._resolve_instance('default_towns', ITowns, container, loaded_plugins)
-        self.transport_economy = self._resolve_instance('default_transport_economy', ITransportEconomy, container, loaded_plugins)
-        self.climate = self._resolve_instance('default_climate', IClimateSystem, container, loaded_plugins)
-        self.government = container.resolve(IGovernment)
+
+        self.plugin_registry = plugin_registry
+
+        self.map = require_module(self.plugin_registry, 'map')
+        self.time = require_module(self.plugin_registry, 'time')
+        self.population = require_module(self.plugin_registry, 'population')
+        self.government = require_module(self.plugin_registry, 'government')
+        self.social_network = require_module(self.plugin_registry, 'social_network')
+        self.towns = require_module(self.plugin_registry, 'towns')
+        self.transport_economy = require_module(self.plugin_registry, 'transport_economy')
+        self.climate = require_module(self.plugin_registry, 'climate')
         
         # 接受作为参数传入的对象
         self.government_officials = government_officials
@@ -34,6 +35,7 @@ class TEOGSimulator:
         self.basic_living_cost = 8  # 每年基本生活所需值（单位：两）
         self.average_satisfaction = None  # 平均满意度（0-100）
         self.gdp = 0  # 国内生产总值（单位：两）
+        self.influence_manager = InfluenceManager(logger=self.logger)
         self.initialize_salaries()
         self.config = config
         
@@ -67,13 +69,6 @@ class TEOGSimulator:
         self.results["gdp"].append(self.gdp)
         self.results["urban_scale"].append(self.get_urban_scale())
 
-    @staticmethod
-    def _resolve_instance(plugin_name: str, interface_type, container: DIContainer, loaded_plugins: Dict = None):
-        """从插件或容器中获取实例"""
-        if loaded_plugins and plugin_name in loaded_plugins:
-            return loaded_plugins[plugin_name]
-        return container.resolve(interface_type)
-
     async def run(self):
         """运行模拟"""
         self.start_time = datetime.now()  # 记录模拟开始时间
@@ -89,24 +84,47 @@ class TEOGSimulator:
             # 打印当前时间步信息
             print(Back.GREEN + f"年份:{self.time.current_time}" + Back.RESET)
             self.logger.info(f"年份:{self.time.current_time}")
-            # 更新属性变量
-            # 更新运河状态和居民收入
-            climate_impact_factor = self.climate.get_current_impact(self.time.current_time, self.time.start_time)
+            current_year = self.time.current_time
+            start_year = self.time.start_time
+
+            # ==================== 计算基础状态（用于构建 context） ====================
+            self.gdp = self.calculate_gdp()
+            self.average_satisfaction = self.calculate_average_satisfaction()
+            climate_impact_factor = self.climate.get_current_impact(current_year, start_year)
             self.logger.info(f"天气影响因子：{climate_impact_factor}")
 
-            self.map.decay_river_condition_naturally(climate_impact_factor)
-            river_navigability = self.map.get_navigability() 
-            await self.update_resident_income(climate_impact_factor, river_navigability)
+            # ==================== 应用影响函数（按 influences.yaml 编排） ====================
+            simulator_state = {
+                'time': self.time,
+                'map': self.map,
+                'population': self.population,
+                'transport_economy': self.transport_economy,
+                'climate': self.climate,
+                'towns': self.towns,
+                'government': self.government,
+                'residents': self.residents,
+                'gdp': self.gdp,
+                'average_satisfaction': self.average_satisfaction,
+                'basic_living_cost': self.basic_living_cost,
+                # 供 canal_decay 读取
+                'climate_impact_factor': climate_impact_factor,
+                'current_navigability': self.map.get_navigability(),
+                # 供 river_price/maintenance_cost 读取（canal_decay 会写回 context['navigability']）
+                'navigability': self.map.get_navigability(),
+                'transport_cost': getattr(self.transport_economy, 'transport_cost', 0.0),
+                'maintenance_cost_base': getattr(self.transport_economy, 'maintenance_cost_base', 0.0),
+                # 供 government_budget 读取
+                'tax_rate': self.government.get_tax_rate(),
+            }
 
-            # 政府
-            self.gdp = self.calculate_gdp() # 更新GDP
-            self.tax_income = self.gdp * self.government.get_tax_rate() # 计算税收收入
-            self.government.budget = round(self.government.budget + self.tax_income, 2) 
-            
-            # 居民
-            self.average_satisfaction = self.calculate_average_satisfaction() # 更新平均满意度
-            self.population.update_birth_rate(self.average_satisfaction) # 更新出生率
-            self.logger.info(f"GDP：{self.gdp}，税收收入：{self.tax_income}，政府预算：{self.government.budget}，政府规模：{self.get_urban_scale()}")
+            global_context = self.influence_manager.apply_all_influences(simulator_state)
+
+            tax_income = global_context.get('tax_income', 0.0)
+            maintenance_cost = (global_context.get('result') or {}).get('maintenance_cost')
+            self.logger.info(
+                f"GDP：{self.gdp}，税收收入：{tax_income}，政府预算：{self.government.get_budget()}，"
+                f"政府规模：{self.get_urban_scale()}，河运价格：{getattr(self.transport_economy, 'river_price', None)}，维护成本：{maintenance_cost}"
+            )
             
             # 居民出生（每年）
             new_count = int(self.population.birth_rate * self.population.get_population())
@@ -130,7 +148,7 @@ class TEOGSimulator:
                 'ordinary_type': OrdinaryGovernmentAgent,
                 'leader_type': HighRankingGovernmentAgent,
             }
-            government_decision = await self.collect_group_decision(government_config)
+            # government_decision = await self.collect_group_decision(government_config)
             
             if government_decision:
                 self.execute_government_decision(government_decision)
@@ -173,6 +191,11 @@ class TEOGSimulator:
         for town_name, town_data in self.towns.towns.items():
             job_market = town_data.get('job_market')
             if job_market:
+                if "城市居民" not in getattr(job_market, 'jobs_info', {}):
+                    self.logger.warning(
+                        f"居民工资初始化跳过：{town_name} 的 jobs_info 缺少 '城市居民'（当前职业={list(getattr(job_market, 'jobs_info', {}).keys())}）"
+                    )
+                    continue
                 original_salary_city = job_market.jobs_info["城市居民"]["base_salary"]
                 new_salary = original_salary_city
                 if job_market.town_type == "非沿河":
@@ -194,80 +217,22 @@ class TEOGSimulator:
         """
         self.logger.info("开始收集政府决策")
 
-        # 获取群体决策配置
-        try:
-            with open('config/TEOG/simulation_config.yaml', 'r', encoding='utf-8') as f:
-                sim_config = yaml.safe_load(f)
-                group_decision_config = sim_config['simulation'].get('group_decision', {})
-                group_decision_enabled = group_decision_config.get('enabled', True)
-                configured_max_rounds = group_decision_config.get('max_rounds', 2)
-        except Exception as e:
-            self.logger.info(f"读取群体决策配置失败，使用默认值：{e}", level='warning')
-            group_decision_enabled = True
-            configured_max_rounds = max_rounds
-
         # 计算决策参数
         government_salary = self.calculate_total_salaries()
         group_param = government_salary
 
-        # 获取领导者
-        leaders = [member for member in config['agents'].values()
-                  if isinstance(member, config['leader_type'])]
-        if not leaders:
+        if not hasattr(self.government, 'orchestrate_group_decision'):
             return None
 
-        # 如果不启用群体决策，直接由领导者决策
-        if not group_decision_enabled:
-            leader = leaders[0]
-            decision = await leader.make_decision(
-                summary="直接决策模式，无群体讨论。",
-                towns_stats=group_param
-            )
-            return decision
-
-        # 启用群体决策模式
-        ordinary_members = [
-            member for member in config['agents'].values()
-            if isinstance(member, config['ordinary_type'])
-            and not isinstance(member, InformationOfficer)
-        ]
-
-        if not ordinary_members:
-            return None
-
-        shared_pool = list(config['agents'].values())[0].shared_pool
-        await shared_pool.clear_discussions()
-
-        # 第一轮：所有成员异步发表初始意见
-        first_round_tasks = [
-            member.generate_opinion(group_param)
-            for member in random.sample(ordinary_members, len(ordinary_members))
-        ]
-        await asyncio.gather(*first_round_tasks)
-
-        # 后续轮次：基于之前的讨论内容发表见解
-        for round_num in range(2, configured_max_rounds + 1):
-            self.logger.info(f"第{round_num}轮决策")
-            round_tasks = [
-                member.generate_and_share_opinion(group_param)
-                for member in random.sample(ordinary_members, len(ordinary_members))
-            ]
-            await asyncio.gather(*round_tasks)
-
-        # 获取信息整理员
-        info_officers = [
-            member for member in config['agents'].values()
-            if isinstance(member, InformationOfficer)
-        ]
-
-        # 处理讨论结果
-        if info_officers and leaders:
-            discussion_summary = await info_officers[0].summarize_discussions()
-            if discussion_summary:
-                decision = await leaders[0].make_decision(discussion_summary, group_param)
-                return decision
-
-        return None
+        return await self.government.orchestrate_group_decision(
+            agents=config['agents'],
+            group_param=group_param,
+            group_type='government',
+            ordinary_type=config['ordinary_type'],
+            leader_type=config['leader_type'],
+            info_officer_types=(InformationOfficer,),
+            max_rounds=max_rounds,
+        )
 
     def execute_government_decision(self, decision):
         """执行政府决策"""
@@ -374,12 +339,6 @@ class TEOGSimulator:
         resident_decisions = []
         
         for resident_id, resident in list(self.residents.items()):
-            # 更新居民寿命（每年）
-            if resident.update_resident_status(self.basic_living_cost):
-                del self.residents[resident_id]
-                self.population.death()
-                continue
-            
             # 职业检查：如果居民职业为None，在就业市场中分配"农民"职业
             if resident.job is None:
                 # 获取居民所在城镇的就业市场
@@ -393,8 +352,9 @@ class TEOGSimulator:
             # 收集居民行为决策
             tax_rate = self.government.get_tax_rate()
             climate_impact_factor = self.climate.get_current_impact(self.time.current_time, self.time.start_time)
-            task = resident.decide_action_by_llm(tax_rate=tax_rate, basic_living_cost=self.basic_living_cost, climate_impact=climate_impact_factor)
-            tasks.append(task)
+            # task = resident.decide_action_by_llm(tax_rate=tax_rate, basic_living_cost=self.basic_living_cost, climate_impact=climate_impact_factor)
+            # tasks.append(task)
+            tasks.append(asyncio.sleep(0, result=("3", "工作中")))
             resident_decisions.append(resident)  # 保存对应的居民对象
 
         # 并发执行所有居民的行为并收集结果
@@ -488,70 +448,6 @@ class TEOGSimulator:
         total_income = sum(resident.income for resident in self.residents.values() if resident.job != "农民")
         gdp = total_income
         return gdp
-    
-    async def update_resident_income(self, climate_impact, river_navigability=0):
-        """
-        更新所有居民的收入，包括居民和就业市场中的相应职业。
-        :param climate_impact: 气候影响因子
-        :param river_navigability: 运河通航能力因子 (仅对城市居民有影响)
-        """
-        self.logger.info(f"收入更新：综合影响因子: (运河影响{river_navigability},天气影响{climate_impact}) ")
-        
-        # 初始化工资记录
-        income_records = {
-            '沿河农民': None,
-            '非沿河农民': None,
-            '沿河城市居民': None,
-            '非沿河城市居民': None
-        }
-
-        for resident in self.residents.values():
-            town_name = resident.town
-            town_data = self.towns.towns.get(town_name)
-
-            if not (town_data and 'job_market' in town_data):
-                self.logger.warning(f"警告：无法找到居民 {resident.resident_id} 所在城镇 {town_name} 的就业市场信息。")
-                continue
-
-            job_market = town_data['job_market']
-            job_type = resident.job
-
-            if job_type not in job_market.jobs_info:
-                self.logger.warning(f"警告：城镇 {town_name} 的就业市场中没有 '{job_type}' 职业信息。")
-                continue
-
-            base_salary = job_market.jobs_info[job_type]["base_salary"]
-            original_income = resident.income
-
-            # 确定城镇类型
-            town_type = town_data.get('town_type', '非沿河')
-            is_river = town_type == "沿河"
-            
-            if job_type == "农民":
-                new_income = round(base_salary * (1 - climate_impact), 2)
-                resident.income = max(0, new_income)
-                
-                # 记录农民工资
-                key = '沿河农民' if is_river else '非沿河农民'
-                if income_records[key] is None:
-                    income_records[key] = resident.income
-                    
-            elif job_type == "城市居民":
-                new_income = round(base_salary * river_navigability, 2)
-                resident.income = max(0, new_income)
-                
-                # 记录城市居民工资
-                key = '沿河城市居民' if is_river else '非沿河城市居民'
-                if income_records[key] is None:
-                    income_records[key] = resident.income
-            else:
-                self.logger.warning(f"警告：居民 {resident.resident_id} 的职业 '{job_type}' 未在就业市场中找到相应信息。")
-        
-        # 输出工资信息
-        self.logger.info("\n===== 工资统计 =====")
-        for category, income in income_records.items():
-            if income is not None:
-                self.logger.info(f"{category}: {income}")
 
     def summarize_time_step_results(self):
         """总结当前时间步的各项指标变化"""

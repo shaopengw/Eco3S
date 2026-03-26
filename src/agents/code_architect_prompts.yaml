@@ -2,14 +2,37 @@
 
 system_message: "你是Python编码专家，擅长生成完整、可运行的模拟器代码、配置文件和提示词。代码简洁高效，严格遵循Python规范。"
 
+# 新模块插件代码微调
+customize_new_plugin_prompt: |
+  你将修改一个“新插件”的Python源码文件，使其满足 notes 的要求。
+
+  插件名：{plugin_name}
+  inherits_from：{inherits_from}
+  notes：{notes}
+
+  【设计文档】
+  {description_md}
+
+  【当前插件代码】
+  {current_code}
+
+  【base插件代码】
+  {base_code}
+
+  【硬约束】
+  - 只输出一个 ```python 代码块，内容为“完整文件源码”
+  - 保持文件可导入、可运行；不要输出解释
+  - 不要引入不存在的第三方依赖
+  - 尽量复用现有结构，只做实现 notes 所需的最小修改
+
 # 分析错误相关的模块和配置文件
 analyze_error_modules_prompt: |
-  分析以下错误信息，判断可能需要参考哪些文档或配置文件。
+  分析以下错误信息，判断可能需要参考哪些接口文件或配置文件。
 
   错误堆栈：
   {error_traceback}
 
-  可用的模块API文档映射：
+  可用的模块接口文件映射：
   {module_mapping}
 
   配置文件和提示词文件列表：
@@ -17,13 +40,13 @@ analyze_error_modules_prompt: |
 
   【任务】
   根据错误信息，判断需要参考哪些文档来修复问题，尽可能只找最相关的一个文件：
-  1. API文档：模块接口和方法说明（.md文件）
+  1. 接口文件：模块接口和方法定义（.py文件）
   2. 配置文件：可能与错误相关的配置或提示词文件（.yaml/.json文件）
 
   【输出格式】
   返回JSON对象，包含两个数组：
   {{
-    "api_docs": ["climate.md", "time.md"],
+    "api_docs": ["iclimate.py", "itime.py"],
     "config_files": ["simulation_config.yaml", "residents_prompts.yaml"]
   }}
 
@@ -43,11 +66,12 @@ generate_simulator_code_prompt: |
   {template_content}
 
   【修改要求】
-  1. 删除不需要的模块相关代码（例如如果不需要叛军，删除rebels相关代码；如果不需要政府，删除government相关代码）
+  1. 删除不需要的模块相关代码（严格参考模块配置文件，文件中没有的模块直接删除所有相关代码）
   2. 保留模板中有用的方法，必要时修改
   3. 可以新增模板中没有但需要的方法
   4. 不要添加注释和测试代码
   5. 以尽可能少的代码修改实现功能
+  6. 保留影响函数接入（InfluenceManager + apply_all_influences）。
   
   【严格禁止】
   - 禁止添加任何import语句，模板已经通过 from .simulator_imports import * 导入所有必需模块
@@ -81,9 +105,8 @@ generate_main_file_prompt: |
   基于模板生成完整的main文件，需要做以下修改：
   1. 修改simulator导入：from src.simulation.simulator_{simulation_name} import [实际类名]
   2. 设置模拟名称：SimulationContext.set_simulation_name("{simulation_name}")
-  2. 修改parse_args中的默认配置路径：config/{simulation_name}/simulation_config.yaml
-  3. 删除不需要的模块初始化代码（根据simulator.__init__参数判断）
-  4. 调整对象初始化，确保与simulator.__init__参数匹配
+  3. 修改parse_args中的默认配置路径：config/{simulation_name}/simulation_config.yaml
+  4. 保持模板的 run_with_cache + build_*_simulator_via_di 骨架（influences.yaml 会由骨架加载；不存在时不报错）。
   
   【严格禁止】
   - 禁止添加import语句（模板已通过 from shared_imports import * 导入所有必需模块）
@@ -115,16 +138,15 @@ create_simulator_todo_list_prompt: |
   {description_md}
 
   任务：
-  1. 从模块配置的selected_modules中提取所有required=true的模块
+  1. 从模块配置的 selected_modules 中提取模块名（结构为 dict: {{module_name: plugin_name}}）
   2. 按照模块在配置中的顺序创建工作列表
-  3. 对于每个模块，记录其module_name、display_name和api_doc
+  3. 对于每个模块，记录其module_name、display_name
 
   返回格式（JSON数组）：
   [
     {{
       "module_name": "模块名（如：time, map等）",
-      "display_name": "模块显示名称",
-      "api_doc": "对应的API文档文件名（如：time.md）",
+      "display_name": "模块显示名称"
     }}
   ]
 
@@ -132,7 +154,7 @@ create_simulator_todo_list_prompt: |
 
 # 基于模块API完善simulator代码（增量修改版）
 refine_simulator_with_module_prompt: |
-  根据设计文档和API文档完善代码。
+  根据设计文档和接口文件完善代码。
 
   【设计文档】
   {description_md}
@@ -140,8 +162,8 @@ refine_simulator_with_module_prompt: |
   【当前代码】
   {simulator_content}
 
-  【模块API】
-  {api_docs}
+  【模块接口】
+  {interface_docs}
 
   【要求】
   1. 根据设计文档理解业务需求
@@ -181,6 +203,7 @@ check_and_fix_simulator_prompt: |
   1. 未完成实现（pass、TODO等）
   2. 代码质量（逻辑缺陷、异常处理、变量未定义等）
   3. 方法完整性（__init__, init_results, update_state, execute_actions, collect_results, save_results）
+  4. 不要删掉 InfluenceManager/apply_all_influences。
 
   【严格禁止】
   - 禁止添加import语句
@@ -411,8 +434,8 @@ generate_config_file_prompt: |
   配置模板参考：
   {template_content}
 
-  API文档参考：
-  {api_docs}
+  接口参考：
+  {interface_docs}
 
   要求：
   1. 参考模板的结构和字段
@@ -516,14 +539,14 @@ fix_runtime_errors_prompt: |
   相关配置文件内容：
   {config_files_str}
 
-  相关模块API文档：
-  {module_api_docs}
+  相关模块接口：
+  {module_interface_docs}
 
   【任务】
   1. 分析错误堆栈，定位问题所在的文件和函数/方法
-  2. 参考API文档和配置文件，确保使用正确的方法名、参数和配置
+  2. 参考接口文件和配置文件，确保使用正确的方法名、参数和配置
   3. 尽可能以最小改动修复问题，可以修改代码、配置文件或提示词
-  4. 只有当API中没有可用的方法，且该功能必须实现，才尝试自己编写函数/方法
+  4. 只有当接口中没有可用的方法，且该功能必须实现，才尝试自己编写函数/方法
 
   【输出格式】
   根据需要修改的文件类型，返回对应的JSON块。Main文件用 # === MAIN FILE ===，Simulator文件用 # === SIMULATOR FILE ===，配置文件和提示词文件用 # === CONFIG FILES ===。

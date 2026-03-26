@@ -207,14 +207,14 @@ registry.unload_plugin('my_plugin')
 
 | 插件名称 | 说明 | 接口 |
 |---------|------|------|
-| default_map | 默认地图实现 | IMapPlugin, IMap |
-| default_time | 默认时间系统 | ITimePlugin, ITime |
-| default_towns | 默认城镇系统 | ITownsPlugin, ITowns |
-| default_population | 默认人口系统 | IPopulationPlugin, IPopulation |
-| default_social_network | 默认社交网络 | ISocialNetworkPlugin, ISocialNetwork |
-| default_transport_economy | 默认交通经济 | ITransportEconomyPlugin, ITransportEconomy |
-| default_climate | 默认气候系统 | IClimatePlugin, IClimate |
-| default_job_market | 默认就业市场 | IJobMarketPlugin, IJobMarket |
+| map | 默认地图实现 | IMapPlugin, IMap |
+| time | 默认时间系统 | ITimePlugin, ITime |
+| towns | 默认城镇系统 | ITownsPlugin, ITowns |
+| population | 默认人口系统 | IPopulationPlugin, IPopulation |
+| social_network | 默认社交网络 | ISocialNetworkPlugin, ISocialNetwork |
+| transport_economy | 默认交通经济 | ITransportEconomyPlugin, ITransportEconomy |
+| climate | 默认气候系统 | IClimatePlugin, IClimate |
+| job_market | 默认就业市场 | IJobMarketPlugin, IJobMarket |
 
 ## 启用/禁用插件
 
@@ -233,8 +233,8 @@ enabled: false  # 禁用插件
 
 ```yaml
 dependencies:
-  - default_map    # 依赖地图插件
-  - default_time   # 依赖时间插件
+  - map    # 依赖地图插件
+  - time   # 依赖时间插件
 ```
 
 **注意：** 当前版本需要手动确保依赖插件先加载。未来版本将支持自动依赖解析。

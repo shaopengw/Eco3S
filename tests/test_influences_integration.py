@@ -13,7 +13,6 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from src.influences import InfluenceRegistry
 from src.utils.di_helpers import setup_container_for_simulation
-from src.interfaces import IMap, IPopulation, ITransportEconomy, IClimateSystem
 
 def test_influences_loading():
     """测试影响函数配置加载"""
@@ -57,7 +56,11 @@ def test_influences_loading():
 
 
 def test_container_with_influences():
-    """测试 DIContainer 与影响函数集成"""
+    """测试 DIContainer 与影响函数集成（简化版）。
+
+    当前架构下：核心模块由插件系统创建；DIContainer 只负责在插件构造期提供共享服务。
+    这里验证 InfluenceRegistry 能被注册并通过容器获取。
+    """
     print("\n" + "=" * 60)
     print("测试 2: DIContainer 与影响函数集成")
     print("=" * 60)
@@ -81,49 +84,16 @@ def test_container_with_influences():
         
         # 设置容器
         modules_config_path = 'config/default/modules_config.yaml'
-        container = setup_container_for_simulation(
-            modules_config_path,
-            sim_config,
-            influence_registry
-        )
+        container = setup_container_for_simulation(influence_registry)
         print("✓ 成功创建 DIContainer")
         
-        # 测试解析模块
-        print("\n解析模块测试:")
-        
-        # 测试 Map
-        map_instance = container.resolve(IMap)
-        has_influence_registry = hasattr(map_instance, '_influence_registry')
-        registry_set = has_influence_registry and map_instance._influence_registry is not None
-        print(f"  - Map: {type(map_instance).__name__}")
-        print(f"    * 有 influence_registry 属性: {has_influence_registry}")
-        print(f"    * influence_registry 已设置: {registry_set}")
-        
-        # 测试 Population
-        population_instance = container.resolve(IPopulation)
-        has_influence_registry = hasattr(population_instance, '_influence_registry')
-        registry_set = has_influence_registry and population_instance._influence_registry is not None
-        print(f"  - Population: {type(population_instance).__name__}")
-        print(f"    * 有 influence_registry 属性: {has_influence_registry}")
-        print(f"    * influence_registry 已设置: {registry_set}")
-        
-        # 测试 TransportEconomy
-        transport_instance = container.resolve(ITransportEconomy)
-        has_influence_registry = hasattr(transport_instance, '_influence_registry')
-        registry_set = has_influence_registry and transport_instance._influence_registry is not None
-        print(f"  - TransportEconomy: {type(transport_instance).__name__}")
-        print(f"    * 有 influence_registry 属性: {has_influence_registry}")
-        print(f"    * influence_registry 已设置: {registry_set}")
-        
-        # 测试 ClimateSystem
-        climate_instance = container.resolve(IClimateSystem)
-        has_influence_registry = hasattr(climate_instance, '_influence_registry')
-        registry_set = has_influence_registry and climate_instance._influence_registry is not None
-        print(f"  - ClimateSystem: {type(climate_instance).__name__}")
-        print(f"    * 有 influence_registry 属性: {has_influence_registry}")
-        print(f"    * influence_registry 已设置: {registry_set}")
-        
-        return True
+        # 验证 InfluenceRegistry 能从容器获取
+        reg2 = container.get(InfluenceRegistry)
+        ok = reg2 is influence_registry
+        print("\n共享服务测试:")
+        print(f"  - InfluenceRegistry 注册成功: {ok}")
+
+        return ok
         
     except Exception as e:
         print(f"❌ 容器集成测试失败: {e}")

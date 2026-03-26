@@ -1,9 +1,8 @@
-"""
-人口插件实现 - 包装器模式
-"""
-from typing import Dict, Any
+"""人口插件实现 - 包装器模式"""
+
+from typing import Dict, Any, Optional
 from src.plugins import IPopulationPlugin, PluginContext
-from src.interfaces import IPopulation
+from src.influences import InfluenceRegistry
 from src.environment.population import Population
 
 
@@ -12,8 +11,12 @@ class DefaultPopulationPlugin(IPopulationPlugin):
     默认人口插件 - 包装现有 Population 类
     """
     
-    def __init__(self, initial_population: int = 1000,
-                 birth_rate: float = 0.01):
+    def __init__(
+        self,
+        initial_population: int = 1000,
+        birth_rate: float = 0.01,
+        influence_registry: Optional[InfluenceRegistry] = None,
+    ):
         """
         初始化人口插件
         
@@ -26,6 +29,7 @@ class DefaultPopulationPlugin(IPopulationPlugin):
         # 保存参数
         self._initial_population_param = initial_population
         self._birth_rate_param = birth_rate
+        self._influence_registry_param = influence_registry
         self._population = None
     
     def init(self, context: PluginContext) -> None:
@@ -33,12 +37,25 @@ class DefaultPopulationPlugin(IPopulationPlugin):
         self._context = context
         self.logger = context.logger
         self.config = context.config
+
+        # 从 simulation_config.yaml 覆盖默认参数（若存在）
+        sim_cfg = (context.config or {}).get('simulation', {})
+        if isinstance(sim_cfg, dict):
+            if isinstance(sim_cfg.get('initial_population'), int):
+                self._initial_population_param = sim_cfg['initial_population']
+            if isinstance(sim_cfg.get('birth_rate'), (int, float)):
+                self._birth_rate_param = float(sim_cfg['birth_rate'])
         
         # 创建原始 Population 实例
         self._population = Population(
             initial_population=self._initial_population_param,
-            birth_rate=self._birth_rate_param
+            birth_rate=self._birth_rate_param,
+            influence_registry=self._influence_registry_param,
         )
+        self._service = self._population
+
+        # 让 InfluenceManager 能识别该模块可应用影响函数
+        self._influence_registry = getattr(self._population, "_influence_registry", None) or self._influence_registry_param
     
     # ===== BasePlugin 生命周期方法 =====
     
@@ -63,32 +80,8 @@ class DefaultPopulationPlugin(IPopulationPlugin):
             "version": "1.0.0",
             "description": "默认人口系统插件（包装 Population 类）",
             "author": "AgentWorld Team",
-            "dependencies": ["default_towns"]
+            "dependencies": ["towns"]
         }
-    
-    # ===== IPopulation 接口属性 - 代理到内部 Population 实例 =====
-    
-    @property
-    def population(self) -> int:
-        return self._population.population
-    
-    @population.setter
-    def population(self, value: int):
-        self._population.population = value
-    
-    @property
-    def birth_rate(self) -> float:
-        return self._population.birth_rate
-    
-    @birth_rate.setter
-    def birth_rate(self, value: float):
-        self._population.birth_rate = value
-    
-    # ===== IPopulation 接口方法 - 代理到内部 Population 实例 =====
-    
-    def update_birth_rate(self, satisfaction: float) -> None:
-        """根据居民平均满意度更新出生率"""
-        self._population.update_birth_rate(satisfaction)
     
     def birth(self, num: int) -> int:
         """人口出生"""
@@ -104,14 +97,6 @@ class DefaultPopulationPlugin(IPopulationPlugin):
         
         return new_population
     
-    def get_population(self) -> int:
-        """获取当前人口数量"""
-        return self._population.get_population()
-    
-    def set_population(self, value: int) -> None:
-        """设置人口数量"""
-        self._population.population = value
-    
     def death(self) -> None:
         """人口死亡"""
         old_population = self._population.population
@@ -124,16 +109,17 @@ class DefaultPopulationPlugin(IPopulationPlugin):
             'change': -1
         })
     
-    def print_population_status(self) -> None:
-        """打印人口状态"""
-        self._population.print_population_status()
-    
-    def apply_influences(self, target_name: str, context: Dict[str, Any]) -> None:
-        """应用影响函数"""
-        self._population.apply_influences(target_name, context)
-    
     # ===== 内部方法 =====
     
     def _on_residents_initialized(self, data: Dict[str, Any]) -> None:
         """居民初始化时的处理"""
         self.logger.info("收到 resident_groups_initialized 事件")
+
+        resident_count = None
+        if isinstance(data, dict):
+            resident_count = data.get('resident_count')
+
+        if isinstance(resident_count, int) and resident_count >= 0:
+            old = self._population.population
+            self._population.population = resident_count
+            self.logger.info(f"Population 同步为居民数量: {old} -> {resident_count}")

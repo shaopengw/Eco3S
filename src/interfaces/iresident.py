@@ -345,39 +345,6 @@ class IResident(ABC):
         pass
 
     @abstractmethod
-    def update_resident_status(self, basic_living_cost: float) -> bool:
-        """
-        更新居民状况，包括健康状况和寿命
-        
-        Args:
-            basic_living_cost: 基本生活成本
-            
-        Returns:
-            bool: 如果居民死亡则返回True，否则返回False
-        """
-        pass
-
-    @abstractmethod
-    def update_health_index(self, basic_living_cost: float) -> None:
-        """
-        根据收入和满意度等因素更新健康状况
-        
-        Args:
-            basic_living_cost: 基本生活成本
-        """
-        pass
-
-    @abstractmethod
-    def update_lifespan(self) -> bool:
-        """
-        检查健康状况并更新寿命
-        
-        Returns:
-            bool: 如果寿命更新后为0，认为该居民死亡，返回True
-        """
-        pass
-
-    @abstractmethod
     def get_random_direction_town(self, map: Any) -> Optional[str]:
         """
         随机选择一个相邻城市进行迁移

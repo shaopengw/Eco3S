@@ -1,9 +1,8 @@
-"""
-交通经济插件实现 - 包装器模式
-"""
-from typing import Dict, Any
+"""交通经济插件实现 - 包装器模式"""
+
+from typing import Dict, Any, Optional
 from src.plugins import ITransportEconomyPlugin, PluginContext
-from src.interfaces import ITransportEconomy
+from src.influences import InfluenceRegistry
 from src.environment.transport_economy import TransportEconomy
 
 
@@ -12,9 +11,13 @@ class DefaultTransportEconomyPlugin(ITransportEconomyPlugin):
     默认交通经济插件 - 包装现有 TransportEconomy 类
     """
     
-    def __init__(self, transport_cost: float = 1.0,
-                 transport_task: float = 500.0,
-                 maintenance_cost_base: float = 100.0):
+    def __init__(
+        self,
+        transport_cost: float = 1.0,
+        transport_task: float = 500.0,
+        maintenance_cost_base: float = 100.0,
+        influence_registry: Optional[InfluenceRegistry] = None,
+    ):
         """
         初始化交通经济插件
         
@@ -29,6 +32,7 @@ class DefaultTransportEconomyPlugin(ITransportEconomyPlugin):
         self._transport_cost_param = transport_cost
         self._transport_task_param = transport_task
         self._maintenance_cost_base_param = maintenance_cost_base
+        self._influence_registry_param = influence_registry
         self._transport_economy = None
     
     def init(self, context: PluginContext) -> None:
@@ -41,7 +45,13 @@ class DefaultTransportEconomyPlugin(ITransportEconomyPlugin):
         self._transport_economy = TransportEconomy(
             transport_cost=self._transport_cost_param,
             transport_task=self._transport_task_param,
-            maintenance_cost_base=self._maintenance_cost_base_param
+            maintenance_cost_base=self._maintenance_cost_base_param,
+            influence_registry=self._influence_registry_param,
+        )
+        self._service = self._transport_economy
+
+        self._influence_registry = (
+            getattr(self._transport_economy, "_influence_registry", None) or self._influence_registry_param
         )
     
     # ===== BasePlugin 生命周期方法 =====
@@ -67,60 +77,8 @@ class DefaultTransportEconomyPlugin(ITransportEconomyPlugin):
             "version": "1.0.0",
             "description": "默认交通经济系统插件（包装 TransportEconomy 类）",
             "author": "AgentWorld Team",
-            "dependencies": ["default_map", "default_towns"]
+            "dependencies": ["map", "towns"]
         }
-    
-    # ===== ITransportEconomy 接口属性 - 代理到内部 TransportEconomy 实例 =====
-    
-    @property
-    def transport_cost(self) -> float:
-        return self._transport_economy.transport_cost
-    
-    @property
-    def transport_task(self) -> float:
-        return self._transport_economy.transport_task
-    
-    @property
-    def maintenance_cost_base(self) -> float:
-        return self._transport_economy.maintenance_cost_base
-    
-    @property
-    def river_price(self) -> float:
-        return self._transport_economy.river_price
-    
-    @river_price.setter
-    def river_price(self, value: float):
-        self._transport_economy.river_price = value
-    
-    @property
-    def sea_price(self) -> float:
-        return self._transport_economy.sea_price
-    
-    # ===== ITransportEconomy 接口方法 - 代理到内部 TransportEconomy 实例 =====
-    
-    def calculate_river_price(self, navigability: float) -> float:
-        """计算河运价格"""
-        return self._transport_economy.calculate_river_price(navigability)
-    
-    def calculate_maintenance_cost(self, navigability: float, exponent: int = 3) -> float:
-        """计算维护成本"""
-        return self._transport_economy.calculate_maintenance_cost(navigability, exponent)
-    
-    def update_prices(self, navigability: float) -> None:
-        """更新价格"""
-        self._transport_economy.update_prices(navigability)
-    
-    def get_transport_revenue(self) -> float:
-        """获取运输收入"""
-        return self._transport_economy.get_transport_revenue()
-    
-    def calculate_total_transport_cost(self, river_ratio: float) -> float:
-        """计算总运输成本"""
-        return self._transport_economy.calculate_total_transport_cost(river_ratio)
-    
-    def apply_influences(self, target_name: str, context: Dict[str, Any]) -> None:
-        """应用影响函数"""
-        self._transport_economy.apply_influences(target_name, context)
     
     # ===== 内部方法 =====
     

@@ -1,0 +1,25 @@
+# 政府插件元数据
+name: government
+version: 1.0.0
+description: 默认政府系统插件
+author: AgentWorld Team
+enabled: true
+
+plugin_class: DefaultGovernmentPlugin
+module: government_plugin
+
+interfaces:
+  - IGovernmentPlugin
+  - IGovernment
+
+dependencies:
+  - map
+  - time
+  - towns
+  - transport_economy
+
+init_params:
+  military_strength: 0
+  initial_budget: 0
+
+config: {}

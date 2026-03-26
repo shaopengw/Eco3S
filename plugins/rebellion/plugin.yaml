@@ -1,0 +1,22 @@
+# 叛军插件元数据
+name: rebellion
+version: 1.0.0
+description: 默认叛军系统插件
+author: AgentWorld Team
+enabled: true
+
+plugin_class: DefaultRebellionPlugin
+module: rebellion_plugin
+
+interfaces:
+  - IRebellionPlugin
+  - IRebellion
+
+dependencies:
+  - towns
+
+init_params:
+  initial_strength: 0
+  initial_resources: 0
+
+config: {}

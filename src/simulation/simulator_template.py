@@ -2,26 +2,33 @@ from .simulator_imports import *
 
 class YourSimulator:
     
-    def __init__(self, container: DIContainer, residents: Dict[int, IResident], config: Dict, 
-                 government_officials: List[IOrdinaryGovernmentAgent] = None,
-                 rebels_agents: List[IOrdinaryRebel] = None,
-                 loaded_plugins: Dict = None):
+    def __init__(
+        self,
+        plugin_registry: Any,
+        residents: Dict[int, IResident],
+        config: Dict,
+        government_officials: List[IOrdinaryGovernmentAgent] = None,
+        rebels_agents: List[IOrdinaryRebel] = None,
+        influence_manager: Any = None,
+    ):
                 
         # 初始化日志记录器
         self.logger = LogManager.get_logger('simulator', console_output=True)
 
-        # === 从插件或容器获取核心对象 ===
-        self.map = self._resolve_instance('default_map', IMap, container, loaded_plugins)
-        self.time = self._resolve_instance('default_time', ITime, container, loaded_plugins)
-        self.population = self._resolve_instance('default_population', IPopulation, container, loaded_plugins)
-        self.social_network = self._resolve_instance('default_social_network', ISocialNetwork, container, loaded_plugins)
-        self.towns = self._resolve_instance('default_towns', ITowns, container, loaded_plugins)
-        
-        # === 从容器获取可选对象 ===
-        self.government = container.resolve(IGovernment)
-        self.rebellion = container.resolve(IRebellion)
-        self.transport_economy = self._resolve_instance('default_transport_economy', ITransportEconomy, container, loaded_plugins)
-        self.climate = self._resolve_instance('default_climate', IClimateSystem, container, loaded_plugins)
+        self.plugin_registry = plugin_registry
+        # 影响函数编排器：默认启用
+        self.influence_manager = influence_manager or InfluenceManager(logger=self.logger)
+
+        # === 从插件注册中心获取核心对象 ===
+        self.map = require_module(self.plugin_registry, 'map')
+        self.time = require_module(self.plugin_registry, 'time')
+        self.population = require_module(self.plugin_registry, 'population')
+        self.social_network = require_module(self.plugin_registry, 'social_network')
+        self.towns = require_module(self.plugin_registry, 'towns')
+        self.government = require_module(self.plugin_registry, 'government')
+        self.rebellion = require_module(self.plugin_registry, 'rebellion')
+        self.transport_economy = require_module(self.plugin_registry, 'transport_economy')
+        self.climate = require_module(self.plugin_registry, 'climate')
         
         # === 接受作为参数传入的对象 ===
         self.residents = residents
@@ -32,8 +39,6 @@ class YourSimulator:
         # === 经济参数 ===
         self.basic_living_cost = 8  # 年基本生活成本（单位：两）
         self.gdp = 0  # GDP
-        self.tax_income = 0  # 税收收入
-        self.rebellion_income = 0  # 叛军收入
         
         # === 社会指标 ===
         self.average_satisfaction = None  # 平均满意度
@@ -48,6 +53,21 @@ class YourSimulator:
         self.results = self.init_results()
         self.start_time = None
         self.end_time = None
+
+        # 保存初始数据（先算基础指标再落盘）
+        self.gdp = self.calculate_gdp()
+        self.average_satisfaction = self.calculate_average_satisfaction()
+        self.results["years"].append("初始")
+        self.results["rebellions"].append(self.rebellion_records)
+        self.results["unemployment_rate"].append(0)
+        self.results["population"].append(self.population.get_population())
+        self.results["government_budget"].append(self.government.get_budget() if self.government else 0)
+        self.results["rebellion_strength"].append(self.rebellion.get_strength() if self.rebellion else 0)
+        self.results["rebellion_resources"].append(self.rebellion.get_resources() if self.rebellion else 0)
+        self.results["average_satisfaction"].append(self.average_satisfaction)
+        self.results["tax_rate"].append(self.government.get_tax_rate() if self.government else 0)
+        self.results["river_navigability"].append(self.map.get_navigability() if self.map else 0)
+        self.results["gdp"].append(self.gdp)
         
         # === 结果文件路径 ===
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -57,20 +77,12 @@ class YourSimulator:
         self.result_file = os.path.join(data_dir, f"running_data_{timestamp}_pid{pid}.csv")
         # 如果保存为 JSON，使用: f"running_data_{timestamp}_pid{pid}.json"
     
-    @staticmethod
-    def _resolve_instance(plugin_name: str, interface_type, container: DIContainer, loaded_plugins: Dict = None):
-        """从插件或容器中获取实例"""
-        if loaded_plugins and plugin_name in loaded_plugins:
-            return loaded_plugins[plugin_name]
-        return container.resolve(interface_type)
-    
     def init_results(self):
         """初始化结果数据结构"""
         return {
             "years": [],
             "rebellions": [],
             "unemployment_rate": [],
-            "migration_rate": [],
             "population": [],
             "government_budget": [],
             "rebellion_strength": [],
@@ -99,8 +111,8 @@ class YourSimulator:
             # 4. 收集本轮结果
             self.collect_results()
             
-            # 5. 保存结果（增量追加模式）
-            self.save_results(self.result_file, append=True)
+            # 5. 保存结果（始终覆盖写入完整结果）
+            self.save_results(self.result_file)
             
             # 6. 推进时间
             self.time.step()
@@ -123,40 +135,59 @@ class YourSimulator:
 
     async def update_state(self):
         """更新系统状态（经济、气候、人口等）"""
-        # 更新GDP和税收
+        # ==================== 计算基础状态（用于构建 context） ====================
+        current_year = getattr(self.time, 'current_time', None)
+        start_year = getattr(self.time, 'start_time', None)
+
         self.gdp = self.calculate_gdp()
-        if self.government:
-            self.tax_income = self.gdp * self.government.get_tax_rate()
-            self.government.budget = round(self.government.budget + self.tax_income, 2)
-            self.government.military_strength = self.calculate_total_government_military()
-        
-        # 更新叛军
-        if self.rebellion:
-            self.rebellion_income = self.rebellion.get_strength() * 6
-            self.rebellion.resources = round(self.rebellion.resources + self.rebellion_income, 2)
-            self.rebellion.strength = self.calculate_total_rebels()
-        
-        # 更新人口和满意度
         self.average_satisfaction = self.calculate_average_satisfaction()
-        self.population.update_birth_rate(self.average_satisfaction)
-        
-        # 打印状态信息
+        climate_impact_factor = None
+        if self.climate is not None and hasattr(self.climate, 'get_current_impact'):
+            climate_impact_factor = self.climate.get_current_impact(current_year, start_year)
+
+        # ==================== 应用影响函数（按 influences.yaml 编排） ====================
+        # 说明：这里不再硬编码“税收/预算/军力/叛军资源/运河维护”等互影响公式。
+        simulator_state = {
+            'time': self.time,
+            'map': self.map,
+            'population': self.population,
+            'transport_economy': self.transport_economy,
+            'climate': self.climate,
+            'towns': self.towns,
+            'social_network': self.social_network,
+            'government': self.government,
+            'rebellion': self.rebellion,
+            'residents': self.residents,
+            'gdp': self.gdp,
+            'average_satisfaction': self.average_satisfaction,
+            'basic_living_cost': self.basic_living_cost,
+            # 常用补充字段（影响函数可选读取）
+            'gdp_growth_rate': self._calculate_gdp_growth_rate() if hasattr(self, '_calculate_gdp_growth_rate') else 0.0,
+            'rebellion_records': self.rebellion_records,
+            'climate_impact_factor': climate_impact_factor,
+            'current_navigability': self.map.get_navigability() if self.map else 0.0,
+            'navigability': self.map.get_navigability() if self.map else 0.0,
+            'transport_cost': getattr(self.transport_economy, 'transport_cost', 0.0),
+            'maintenance_cost_base': getattr(self.transport_economy, 'maintenance_cost_base', 0.0),
+            'tax_rate': self.government.get_tax_rate() if self.government else 0.0,
+        }
+
+        global_context = self.influence_manager.apply_all_influences(simulator_state)
+
+        # 影响函数通常会写回模块内部状态；这里仅做读取与日志。
+        tax_income = global_context.get('tax_income', 0.0)
+        rebellion_income = global_context.get('rebellion_income', 0.0)
+        maintenance_cost = (global_context.get('result') or {}).get('maintenance_cost')
+
         if self.government:
-            self.logger.info(f"GDP：{self.gdp}，税收收入：{self.tax_income}，政府预算：{self.government.budget}")
+            self.logger.info(f"GDP：{self.gdp}，税收收入：{tax_income}，政府预算：{self.government.get_budget()}")
+        if self.rebellion:
+            self.logger.info(f"叛军收入：{rebellion_income}，叛军资源：{self.rebellion.get_resources()}")
         if self.transport_economy:
-            self.logger.info(f"河运价格：{self.transport_economy.river_price}，维护成本：{self.transport_economy.calculate_maintenance_cost(self.map.get_navigability())}")
-        
-        # 更新运河与经济
-        if self.transport_economy:
-            self.transport_economy.calculate_river_price(self.map.get_navigability())
-        if self.climate:
-            climate_impact_factor = self.climate.get_current_impact(self.time.current_time, self.time.start_time)
-            self.map.decay_river_condition_naturally(climate_impact_factor)
+            self.logger.info(f"河运价格：{getattr(self.transport_economy, 'river_price', None)}，维护成本：{maintenance_cost}")
 
     async def execute_actions(self):
         """执行所有智能体的决策和行为"""
-        self.migration_count = 0
-        
         # 1. 居民出生
         new_count = int(self.population.birth_rate * self.population.get_population())
         new_residents = await generate_new_residents(
@@ -196,12 +227,17 @@ class YourSimulator:
             self.execute_government_decision(government_decision)
         if rebellion_decision:
             self.execute_rebellion_decision(rebellion_decision)
-        
+
+        # 重置社交网络的对话计数器（如实现了该方法）
+        if self.social_network and hasattr(self.social_network, 'reset_dialogue_count'):
+            self.social_network.reset_dialogue_count()
+
         # 4. 居民行为（并发执行）
         tasks = []
         speech_tasks = []
         town_job_requests = defaultdict(list)
-        
+
+        # 清空上一轮的求职信息
         for resident_name in list(self.residents.keys()):
             resident = self.residents[resident_name]
             tax_rate = self.government.get_tax_rate() if self.government else 0
@@ -221,37 +257,42 @@ class YourSimulator:
             # task = resident.decide_action_by_llm(tax_rate=tax_rate, market_info=market_info)
 
             tasks.append(task)
-            
-            # 更新居民寿命
-            if resident.update_resident_status(self.basic_living_cost):
-                self.population.death()
+
         
         # 并发执行所有居民行为
         if tasks:
             results = await asyncio.gather(*tasks)
-            residents_list = list(self.residents.values())
-            
+
+            # 处理返回的结果
+            residents_list = list(self.residents.values())  # 获取当前的居民列表
+            job_request_count = 0
             for i, result in enumerate(results):
                 if i >= len(residents_list):
                     break
                 resident = residents_list[i]
-                
                 if isinstance(result, dict) and "town" in result:
+                    # 处理求职请求
                     town_job_requests[result["town"]].append(result)
+                    job_request_count += 1
                 elif isinstance(result, tuple) and len(result) == 4:
+                    # 处理带有发言的决策结果
                     select, reason, speech, relation_type = result
-                    await resident.execute_decision(select, map=self.map)
-                    if select == "2":
-                        self.migration_count += 1
+                    # 执行决策
+                    await resident.execute_decision(select)
+                    # 收集发言传播任务
                     speech_tasks.append(asyncio.create_task(
                         self.social_network.spread_speech_in_network(resident.resident_id, speech, relation_type)
                     ))
                 elif isinstance(result, tuple) and len(result) == 2:
+                    # 处理普通决策结果
                     select, reason = result
-                    await resident.execute_decision(select, map=self.map)
-                    if select == "2":
-                        self.migration_count += 1
-            
+                    # 执行决策
+                    await resident.execute_decision(select)
+
+            if job_request_count > 0:
+                self.logger.info(f"\n收集到 {job_request_count} 个求职请求")
+
+            # 并发执行所有发言传播任务
             if speech_tasks:
                 await asyncio.gather(*speech_tasks)
         
@@ -262,29 +303,55 @@ class YourSimulator:
         else:
             self.logger.info("\n本轮无求职请求")
         
-        # 6. 每3-5年更新社交网络
-        current_year = self.time.current_time
-        if current_year % random.randint(3, 5) == 0:
-            self.social_network.update_network_edges()
-
     def collect_results(self):
         """收集本轮结果数据"""
+        # 更新就业市场（default 模拟会根据通航能力变化调整岗位结构）
+        if self.towns and hasattr(self.towns, 'adjust_job_market'):
+            old_navigability = self.results["river_navigability"][-1] if self.results["river_navigability"] else self.map.get_navigability()
+            current_navigability = self.map.get_navigability()
+            change_rate = (current_navigability - old_navigability) / old_navigability if old_navigability else 0
+            self.towns.adjust_job_market(change_rate, self.residents)
+
+        # 每3-5年更新社交网络
+        current_year = self.time.current_time
+        if self.social_network and hasattr(self.social_network, 'update_network_edges'):
+            if current_year % random.randint(3, 5) == 0:
+                self.social_network.update_network_edges()
+
+        self.propaganda_prob = 0
+
         total_unemployment_rate = self.calculate_total_unemployment_rate()
-        migration_rate = getattr(self, 'migration_count', 0) / self.population.get_population() * 100 if self.population.get_population() > 0 else 0
-        
-        if self.rebellion:
-            self.rebellion.strength = self.calculate_total_rebels()
-        if self.government:
-            self.government.military_strength = self.calculate_total_government_military()
+
+        # 更新政府军力/叛军人数：由 influences.yaml 驱动（基于已更新的就业市场）
+        if self.influence_manager and hasattr(self.influence_manager, 'build_global_context'):
+            simulator_state = {
+                'time': self.time,
+                'map': self.map,
+                'population': self.population,
+                'transport_economy': self.transport_economy,
+                'climate': self.climate,
+                'towns': self.towns,
+                'government': self.government,
+                'rebellion': self.rebellion,
+                'gdp': self.gdp,
+                'average_satisfaction': self.average_satisfaction,
+                'basic_living_cost': self.basic_living_cost,
+                'gdp_growth_rate': self._calculate_gdp_growth_rate() if hasattr(self, '_calculate_gdp_growth_rate') else 0.0,
+                'rebellion_records': self.rebellion_records,
+            }
+            context = self.influence_manager.build_global_context(simulator_state)
+            if self.government and hasattr(self.government, 'apply_influences'):
+                self.government.apply_influences('military_strength', context)
+            if self.rebellion and hasattr(self.rebellion, 'apply_influences'):
+                self.rebellion.apply_influences('strength', context)
         
         self.results["years"].append(self.time.current_time)
         self.results["rebellions"].append(self.rebellion_records)
         self.results["unemployment_rate"].append(total_unemployment_rate)
-        self.results["migration_rate"].append(migration_rate)
         self.results["population"].append(self.population.get_population())
         self.results["government_budget"].append(self.government.get_budget() if self.government else 0)
-        self.results["rebellion_strength"].append(self.rebellion.strength if self.rebellion else 0)
-        self.results["rebellion_resources"].append(self.rebellion.resources if self.rebellion else 0)
+        self.results["rebellion_strength"].append(self.rebellion.get_strength() if self.rebellion else 0)
+        self.results["rebellion_resources"].append(self.rebellion.get_resources() if self.rebellion else 0)
         self.results["average_satisfaction"].append(self.average_satisfaction)
         self.results["tax_rate"].append(self.government.get_tax_rate() if self.government else 0)
         self.results["river_navigability"].append(self.map.get_navigability())
@@ -294,7 +361,6 @@ class YourSimulator:
               f"叛乱次数: {self.rebellion_records}, "
               f"人口数量: {self.population.get_population()}, "
               f"失业率: {self.results['unemployment_rate'][-1]:.2f}%, "
-              f"迁移率: {self.results['migration_rate'][-1]:.2f}%, "
               f"平均满意度: {self.results['average_satisfaction'][-1]:.2f}, "
               f"税率: {self.results['tax_rate'][-1]:.2f}, "
               f"GDP: {self.results['gdp'][-1]:.2f}, "
@@ -303,7 +369,6 @@ class YourSimulator:
         )
         
         self.rebellion_records = 0
-        self.migration_count = 0
 
     def save_results(self, filename=None, append=False):
         """保存结果到CSV文件"""
@@ -315,19 +380,9 @@ class YourSimulator:
             pid = os.getpid()  # 获取进程ID以避免并行实验文件名冲突
             filename = os.path.join(data_dir, f"running_data_{timestamp}_pid{pid}.csv")
         
-        if append:
-            last_row_data = {key: [value[-1]] for key, value in self.results.items() if value}
-            df = pd.DataFrame(last_row_data)
-        else:
-            df = pd.DataFrame(self.results)
-        
-        if append and os.path.exists(filename):
-            df.to_csv(filename, mode='a', header=False, index=False)
-        else:
-            df.to_csv(filename, index=False)
-        
-        if not append:
-            self.logger.info(f"模拟结果已完整保存至 {filename}")
+        df = pd.DataFrame(self.results)
+        df.to_csv(filename, index=False)
+        self.logger.info(f"模拟结果已完整保存至 {filename}")
 
     def display_total_simulation_time(self):
         """显示总模拟时间"""
@@ -340,108 +395,27 @@ class YourSimulator:
     async def collect_group_decision(self, group_type, config, max_rounds=2):
         """收集群体决策（政府或叛军）"""
         self.logger.info(f"开始收集 {group_type} 的决策")
-        
-        # 读取配置
-        try:
-            with open(f'config/{SimulationContext.get_simulation_type()}/simulation_config.yaml', 'r', encoding='utf-8') as f:
-                sim_config = yaml.safe_load(f)
-                group_decision_config = sim_config['simulation'].get('group_decision', {})
-                group_config = group_decision_config.get(group_type, {})
-                group_decision_enabled = group_config.get('enabled', True)
-                configured_max_rounds = group_config.get('max_rounds', 2)
-        except Exception as e:
-            self.logger.warning(f"读取群体决策配置失败，使用默认值：{e}")
-            group_decision_enabled = True
-            configured_max_rounds = max_rounds
-        
+
         # 计算决策参数
         _, government_salary = self.calculate_total_salaries()
         if group_type == 'rebellion':
             group_param = self.get_rebels_statistics()
         else:
             group_param = government_salary
-        
-        # 获取领导者
-        leaders = [member for member in config['agents'].values()
-                  if isinstance(member, config['leader_type'])]
-        if not leaders:
+
+        group_obj = self.rebellion if group_type == 'rebellion' else self.government
+        if not hasattr(group_obj, 'orchestrate_group_decision'):
             return None
-        
-        # 直接决策模式（不启用群体决策）
-        if not group_decision_enabled:
-            leader = leaders[0]
-            if group_type == 'rebellion':
-                # 叛军首领使用 towns_stats 参数
-                decision = await leader.make_decision(
-                    summary="直接决策模式，无群体讨论。",
-                    towns_stats=group_param
-                )
-            else:
-                # 政府首领使用 salary 参数
-                decision = await leader.make_decision(
-                    summary="直接决策模式，无群体讨论。",
-                    salary=group_param
-                )
-            return decision
-        
-        # 群体决策模式
-        ordinary_members = [
-            member for member in config['agents'].values()
-            if isinstance(member, config['ordinary_type'])
-            and not isinstance(member, InformationOfficer)
-            and not isinstance(member, RebelsInformationOfficer)
-        ]
-        
-        if not ordinary_members:
-            return None
-        
-        shared_pool = list(config['agents'].values())[0].shared_pool
-        await shared_pool.clear_discussions()
-        
-        # 第一轮：所有成员异步发表初始意见
-        if group_type == 'rebellion':
-            # 叛军使用 towns_stats 参数
-            first_round_tasks = [
-                member.generate_opinion(towns_stats=group_param)
-                for member in random.sample(ordinary_members, len(ordinary_members))
-            ]
-        else:
-            # 政府使用 salary 参数
-            first_round_tasks = [
-                member.generate_opinion(salary=group_param)
-                for member in random.sample(ordinary_members, len(ordinary_members))
-            ]
-        await asyncio.gather(*first_round_tasks)
-        
-        # 后续轮次：基于之前的讨论内容发表见解
-        for round_num in range(2, configured_max_rounds + 1):
-            self.logger.info(f"第{round_num}轮决策")
-            round_tasks = [
-                member.generate_and_share_opinion(salary=group_param)
-                for member in random.sample(ordinary_members, len(ordinary_members))
-            ]
-            await asyncio.gather(*round_tasks)
-        
-        # 获取信息整理员
-        info_officers = [
-            member for member in config['agents'].values()
-            if isinstance(member, InformationOfficer)
-            or isinstance(member, RebelsInformationOfficer)
-        ]
-        
-        # 处理讨论结果
-        if info_officers and leaders:
-            discussion_summary = await info_officers[0].summarize_discussions()
-            if discussion_summary:
-                if group_type == 'rebellion':
-                    # 叛军首领使用 towns_stats 参数
-                    decision = await leaders[0].make_decision(discussion_summary, group_param)
-                else:
-                    # 政府首领使用 salary 参数
-                    decision = await leaders[0].make_decision(discussion_summary, group_param)
-                return decision
-        
-        return None
+
+        return await group_obj.orchestrate_group_decision(
+            agents=config['agents'],
+            group_param=group_param,
+            group_type=group_type,
+            ordinary_type=config['ordinary_type'],
+            leader_type=config['leader_type'],
+            info_officer_types=(InformationOfficer, RebelsInformationOfficer),
+            max_rounds=max_rounds,
+        )
     
     def execute_government_decision(self, decision):
         """执行政府决策"""
@@ -688,24 +662,6 @@ class YourSimulator:
         self.logger.info(f"总体就业率: {total_employed} / {total_residents} = {total_employed / total_residents:.2f}")
         unemployment_rate = (1.0 - (total_employed / total_residents)) * 100
         return unemployment_rate
-    
-    def calculate_total_rebels(self):
-        """计算叛军总数"""
-        total_rebels = 0
-        for town_name, town_data in self.towns.towns.items():
-            job_market = town_data['job_market']
-            if job_market:
-                total_rebels += len(job_market.jobs_info.get("叛军", {}).get("employed", []))
-        return total_rebels
-    
-    def calculate_total_government_military(self):
-        """计算政府军总数"""
-        total_military = 0
-        for town_name, town_data in self.towns.towns.items():
-            job_market = town_data['job_market']
-            if job_market:
-                total_military += len(job_market.jobs_info.get("官员及士兵", {}).get("employed", []))
-        return total_military
     
     def calculate_total_salaries(self):
         """计算所有城镇的叛军和其他职业总收入"""

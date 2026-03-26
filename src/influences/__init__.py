@@ -38,6 +38,7 @@ from .builtin import (
     ConstantInfluence,
     LinearInfluence,
     CodeInfluence,
+    ExprInfluence,
 )
 
 __all__ = [
@@ -51,4 +52,5 @@ __all__ = [
     'ConstantInfluence',
     'LinearInfluence',
     'CodeInfluence',
+    'ExprInfluence',
 ]
