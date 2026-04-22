@@ -11,7 +11,7 @@ parse_requirement_prompt: |
 
   请返回以下JSON格式（严格遵守格式）：
   {{
-    "simulation_name": "模拟名称（使用下划线连接的英文，如climate_migration）",
+    "simulation_name": "模拟名称（使用下划线连接的英文）",
     "objectives": ["目标1", "目标2"],
     "key_elements": ["关键要素1", "关键要素2", "关键要素3"]
   }}

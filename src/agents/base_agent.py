@@ -1,8 +1,73 @@
 from .shared_imports import *
+from collections import deque
 from ..utils.simulation_context import SimulationContext
+from .model_backend_factory import create_backend_from_model_config
 
 class BaseAgent:
     """基础Agent类，封装共同的大模型调用逻辑"""
+
+    # 通用限流容器：按 rate_limit_key 使用配置文件中的策略。
+    _rate_limit_profiles = {}
+    _rate_limit_semaphores = {}
+    _rate_limit_timestamps = {}
+    _rate_limit_locks = {}
+
+    @classmethod
+    def _configure_rate_limits(cls, profiles):
+        if not isinstance(profiles, dict):
+            return
+        cls._rate_limit_profiles = {str(k): dict(v or {}) for k, v in profiles.items()}
+
+    @classmethod
+    def _get_rate_limit_profile(cls, key):
+        if not key:
+            return {}
+        profile = cls._rate_limit_profiles.get(key) or cls._rate_limit_profiles.get("default") or {}
+        return dict(profile)
+
+    @classmethod
+    def _get_rate_limit_semaphore(cls, key, max_concurrency):
+        if not key or max_concurrency <= 0:
+            return None
+        semaphore = cls._rate_limit_semaphores.get(key)
+        if semaphore is None:
+            semaphore = asyncio.Semaphore(max_concurrency)
+            cls._rate_limit_semaphores[key] = semaphore
+        return semaphore
+
+    @classmethod
+    async def _acquire_rate_slot(cls, key, rpm_limit, window_seconds):
+        if not key or rpm_limit <= 0:
+            return
+
+        if key not in cls._rate_limit_timestamps:
+            cls._rate_limit_timestamps[key] = deque()
+        if key not in cls._rate_limit_locks:
+            cls._rate_limit_locks[key] = asyncio.Lock()
+
+        timestamps = cls._rate_limit_timestamps[key]
+        lock = cls._rate_limit_locks[key]
+
+        while True:
+            async with lock:
+                now = time.monotonic()
+                window_start = now - window_seconds
+
+                while timestamps and timestamps[0] <= window_start:
+                    timestamps.popleft()
+
+                if len(timestamps) < rpm_limit:
+                    timestamps.append(now)
+                    return
+
+                oldest = timestamps[0]
+                wait_seconds = max(
+                    0.01,
+                    window_seconds - (now - oldest) + 0.01,
+                )
+
+            await asyncio.sleep(wait_seconds)
+
     def __init__(self, agent_id, group_type, window_size=3, model_api_name=None, model_type_name=None):
         """
         初始化BaseAgent
@@ -11,8 +76,8 @@ class BaseAgent:
             agent_id: Agent ID
             group_type: 组类型
             window_size: 记忆窗口大小
-            model_api_name: 指定的API名称（如 "CLAUDE", "OPENAI"），None表示随机选择
-            model_type_name: 指定的模型类型（如 "claude-sonnet-4-5-20250929"），None表示使用API的默认模型
+            model_api_name: 指定的API名称（如 "CLAUDE", "OPENAI"），None表示按模型名或随机选择
+            model_type_name: 指定的模型类型（如 "claude-sonnet-4-5-20250929"），可在不指定API时直接选模型
         """
         self.agent_id = agent_id
         self.model_manager = ModelManager()
@@ -20,39 +85,18 @@ class BaseAgent:
         # 根据参数选择模型配置
         if model_api_name:
             model_config = self.model_manager.get_specific_model_config(model_api_name, model_type_name)
+        elif model_type_name:
+            model_config = self.model_manager.get_model_config_by_type(model_type_name)
         else:
             model_config = self.model_manager.get_random_model_config()
-        
-        # 对于 OPENAI_COMPATIBLE_MODEL，直接使用字符串作为 model_type
-        if model_config["model_platform"] == ModelPlatformType.OPENAI_COMPATIBLE_MODEL:
-            self.model_type = model_config["model_type"]
-        else:
-            self.model_type = ModelType(model_config["model_type"])
-            
-        self.model_config = ChatGPTConfig(**model_config["model_config"])
-        
-        # 构建 ModelFactory.create 的参数
-        create_params = {
-            "model_platform": model_config["model_platform"],
-            "model_type": self.model_type,
-            "model_config_dict": self.model_config.as_dict(),
-        }
-        
-        # 如果是 OPENAI_COMPATIBLE_MODEL，添加 url 和 api_key
-        if model_config["model_platform"] == ModelPlatformType.OPENAI_COMPATIBLE_MODEL:
-            create_params["url"] = model_config["url"]
-            create_params["api_key"] = model_config["api_key"]
-        
-        self.model_backend = ModelFactory.create(**create_params)
-        
-        # 对于 token counter，如果是自定义模型，使用一个通用的模型类型
-        if isinstance(self.model_type, str):
-            # 使用 GPT-4 的 token counter 作为通用计数器
-            self.token_counter = OpenAITokenCounter(ModelType.GPT_4O_MINI)
-            memory_model_type = ModelType.GPT_4O_MINI  # 用于 MemoryManager
-        else:
-            self.token_counter = OpenAITokenCounter(self.model_type)
-            memory_model_type = self.model_type
+
+        BaseAgent._configure_rate_limits(self.model_manager.get_rate_limit_profiles())
+        self.rate_limit_key = model_config.get("rate_limit_key")
+
+        # 统一从配置创建 backend（支持本地 Ollama `/api/generate`）
+        self.model_backend, self.model_type, self.token_counter, memory_model_type = (
+            create_backend_from_model_config(model_config)
+        )
             
         self.context_creator = ScoreBasedContextCreator(self.token_counter, 4096)
         self.memory = MemoryManager(
@@ -102,10 +146,23 @@ class BaseAgent:
 
         # print("-------总提示信息-----------",messages)
 
+        rate_limit_key = getattr(self.model_backend, "rate_limit_key", None) or getattr(self, "rate_limit_key", None)
+        profile = BaseAgent._get_rate_limit_profile(rate_limit_key)
+        max_concurrency = int(profile.get("max_concurrency", 0) or 0)
+        rpm_limit = int(profile.get("rpm_limit", 0) or 0)
+        window_seconds = float(profile.get("window_seconds", 60) or 60)
+        semaphore = BaseAgent._get_rate_limit_semaphore(rate_limit_key, max_concurrency)
+
         attempts = 0
         while attempts < self.max_retry_attempts:
             try:
-                response = await asyncio.to_thread(self.model_backend.run, prompt_messages)
+                await BaseAgent._acquire_rate_slot(rate_limit_key, rpm_limit, window_seconds)
+
+                if semaphore is not None:
+                    async with semaphore:
+                        response = await asyncio.to_thread(self.model_backend.run, messages)
+                else:
+                    response = await asyncio.to_thread(self.model_backend.run, messages)
                 content = response.choices[0].message.content
                 if content is not None:
                     return content

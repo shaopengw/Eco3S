@@ -9,11 +9,23 @@ class CodeArchitectAgent(BaseAgent):
 	编码师Agent，继承BaseAgent，负责根据设计文档和配置，自动生成模拟器代码、详细配置和提示词。
 	工作流程：每次只生成一个文件，逐步完成所有任务。
 	"""
-	def __init__(self, agent_id, simulator_output_dir, main_output_dir, docs_dir, config_dir, config_template_dir, simulation_name, simulation_type='decision', session=None):
+	def __init__(
+			self,
+			agent_id,
+			simulator_output_dir,
+			main_output_dir,
+			docs_dir,
+			config_dir,
+			config_template_dir,
+			simulation_name,
+			simulation_type='decision',
+			session=None,
+			auto_mode: bool = False,
+	):
 		# 指定使用 CLAUDE 的 claude-sonnet-4-5-20250929 模型
-		# super().__init__(agent_id, group_type='code_architect', window_size=3, 
-		#                  model_api_name='CLAUDE', model_type_name='claude-sonnet-4-5-20250929')
-		super().__init__(agent_id, group_type='research_analyst', window_size=3)
+		super().__init__(agent_id, group_type='code_architect', window_size=3, 
+		                 model_api_name='CLAUDE', model_type_name='claude-sonnet-4-5-20250929')
+		# super().__init__(agent_id, group_type='research_analyst', window_size=3)
 		
 		# 加载prompts配置
 		prompts_path = os.path.join(os.path.dirname(__file__), 'code_architect_prompts.yaml')
@@ -29,6 +41,7 @@ class CodeArchitectAgent(BaseAgent):
 		self.simulation_name = simulation_name
 		self.simulation_type = simulation_type  # 'decision' 或 'survey'
 		self.session = session  # Web模式的会话对象
+		self.auto_mode = bool(auto_mode)
 		self.logger = CustomLogger('code_architect').logger
 
 	def _wait_for_user_confirmation(self, step_name):
@@ -36,6 +49,11 @@ class CodeArchitectAgent(BaseAgent):
 		print(f"\n{'='*60}")
 		print(f"✓ {step_name} 已完成")
 		print(f"{'='*60}")
+
+		# 自动模式下不做交互式确认，直接继续
+		if self.auto_mode:
+			self.logger.info(f"{step_name} 已完成（自动模式：跳过确认）")
+			return
 		
 		# 如果是Web模式，将输出发送到前端，但不等待确认
 		if self.session:
@@ -1191,7 +1209,8 @@ class CodeArchitectAgent(BaseAgent):
 			modules=modules_config_yaml,
 			template_content=template_content,
 			api_docs=api_docs,
-			file_format=file_format
+			file_format=file_format,
+			simulation_name=self.simulation_name,
 		)
 		
 		# 特殊处理 simulation_config.yaml，强制设置小规模测试参数

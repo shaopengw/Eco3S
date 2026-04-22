@@ -23,13 +23,6 @@ SPECIAL_ENTRYPOINTS = {
     'default': 'entrypoints/main.py',
     'TEOG': 'entrypoints/main_TEOG.py',
     'info_propagation': 'entrypoints/main_info_propagation.py',
-    'asset_market_bubble_sim': 'entrypoints/main_asset_market_bubble_sim.py',
-    'climate_migration_sim': 'entrypoints/main_climate_migration_sim.py',
-    'customer_satisfaction_sim': 'entrypoints/main_customer_satisfaction_sim.py',
-    'financial_herd_behavior_sim': 'entrypoints/main_financial_herd_behavior_sim.py',
-    'price_discovery_simulation': 'entrypoints/main_price_discovery_simulation.py',
-    'pricing_model_simulation': 'entrypoints/main_pricing_model_simulation.py',
-    'schelling_segregation_model': 'entrypoints/main_schelling_segregation_model.py'
 }
 
 def get_config_path(config_type: str):

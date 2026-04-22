@@ -21,6 +21,8 @@ class ProjectMasterAgent(BaseAgent):
         self.logger = CustomLogger('project_master').logger
         self.web_mode = web_mode  # Web模式标志
         self.session = session  # 存储session对象
+        self.auto_mode = False  # 完全自动模式标志（run_full_workflow内启用）
+        self._auto_scaled_up_after_prototype = False  # 自动模式：原型跑通后是否已放大规模
         
         # 子Agent实例（延迟初始化）
         self.code_architect = None
@@ -32,6 +34,67 @@ class ProjectMasterAgent(BaseAgent):
             self.prompts = yaml.safe_load(f)
         
         self.system_message = self.prompts['system_message']
+
+    def _is_small_scale_config(self, config_path: str) -> bool:
+        """判断配置是否为原型小规模（pop=5, steps/years=1）。"""
+        if not config_path or not os.path.exists(config_path):
+            return False
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config_data = yaml.safe_load(f) or {}
+            simulation_cfg = config_data.get('simulation', {}) or {}
+            pop = simulation_cfg.get('initial_population')
+
+            steps = None
+            time_cfg = simulation_cfg.get('time')
+            if isinstance(time_cfg, dict):
+                steps = time_cfg.get('total_steps')
+            if steps is None:
+                steps = simulation_cfg.get('total_years')
+
+            return pop == 5 and steps == 1
+        except Exception as e:
+            self.logger.warning(f"检查小规模配置失败: {e}")
+            return False
+
+    def _scale_up_simulation_config(self, config_path: str, target_population: int = 100, target_steps: int = 10) -> bool:
+        """将原型配置放大到可评估规模。
+
+        - initial_population -> target_population
+        - simulation.time.total_steps 或 simulation.total_years -> target_steps
+        """
+        if not config_path or not os.path.exists(config_path):
+            return False
+
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config_data = yaml.safe_load(f) or {}
+
+            if not isinstance(config_data, dict):
+                return False
+
+            simulation_cfg = config_data.setdefault('simulation', {})
+            if not isinstance(simulation_cfg, dict):
+                simulation_cfg = {}
+                config_data['simulation'] = simulation_cfg
+
+            simulation_cfg['initial_population'] = int(target_population)
+
+            time_cfg = simulation_cfg.get('time')
+            if isinstance(time_cfg, dict) and 'total_steps' in time_cfg:
+                time_cfg['total_steps'] = int(target_steps)
+            else:
+                # 默认使用 total_years 作为时间步/周期配置
+                simulation_cfg['total_years'] = int(target_steps)
+
+            with open(config_path, 'w', encoding='utf-8') as f:
+                yaml.dump(config_data, f, allow_unicode=True, default_flow_style=False)
+
+            self.logger.info(f"✓ 已放大实验规模: pop={target_population}, steps={target_steps}")
+            return True
+        except Exception as e:
+            self.logger.error(f"放大实验规模失败: {e}")
+            return False
     
     def _check_step_completion(self, step_name, check_files):
         """检查步骤是否已完成（所有必需文件都存在）
@@ -498,7 +561,8 @@ class ProjectMasterAgent(BaseAgent):
                 config_template_dir=self.config_template_dir,
                 simulation_name=self.current_simulation_name,
                 simulation_type=simulation_type,  # 传递模拟类型
-                session=self.session  # 传递session对象
+                session=self.session,  # 传递session对象
+                auto_mode=self.auto_mode,
             )
         
         coder = self.code_architect
@@ -847,7 +911,6 @@ class ProjectMasterAgent(BaseAgent):
                 env['PYTHONIOENCODING'] = 'utf-8'
                 
                 # 运行程序
-                # 在 Windows 上，使用 chcp 65001 设置 UTF-8 编码
                 if os.name == 'nt':  # Windows
                     run_command_with_encoding = f'chcp 65001 >nul && {run_command}'
                 else:
@@ -861,8 +924,8 @@ class ProjectMasterAgent(BaseAgent):
                     text=True,
                     timeout=300,  # 5分钟超时
                     encoding='utf-8',
-                    errors='replace',  # 将无法解码的字符替换为 �
-                    env=env  # 使用包含 PYTHONIOENCODING 的环境变量
+                    errors='replace',  
+                    env=env
                 )
                 
                 # 检查是否成功
@@ -1118,6 +1181,8 @@ class ProjectMasterAgent(BaseAgent):
             完整的执行结果
         """
         print("开始运行完整工作流程...")
+        self.auto_mode = True
+        self._auto_scaled_up_after_prototype = False
         self.logger.info("=" * 80)
         self.logger.info("开始完整工作流程")
         self.logger.info("=" * 80)
@@ -1141,6 +1206,29 @@ class ProjectMasterAgent(BaseAgent):
             # 阶段 4: 运行模拟
             self.logger.info(f"\n阶段 4: 运行模拟 (第 {iteration} 轮)")
             simulation_successful = await self.run_simulation(coding_results, max_fix_attempts=10)
+
+            # 自动模式：原型小规模跑通一次后，自动放大规模并重新实验
+            if (
+                self.auto_mode
+                and simulation_successful == 'small_scale_completed'
+                and not self._auto_scaled_up_after_prototype
+            ):
+                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                simulation_name = self.current_simulation_name
+                config_path = os.path.join(project_root, 'config', simulation_name, 'simulation_config.yaml')
+
+                # 仅当确实还是小规模配置时才放大
+                if self._is_small_scale_config(config_path):
+                    self.logger.info("原型测试成功，自动放大模拟人数与时间步以获得可评估结果...")
+                    if self._scale_up_simulation_config(config_path, target_population=100, target_steps=10):
+                        self._auto_scaled_up_after_prototype = True
+                        simulation_successful = await self.run_simulation(coding_results, max_fix_attempts=10)
+                    else:
+                        self.logger.error("❌ 自动放大规模失败，工作流程终止")
+                        break
+                else:
+                    # 配置已不再是小规模（可能被外部修改），直接继续
+                    self._auto_scaled_up_after_prototype = True
             
             if not simulation_successful:
                 self.logger.error("❌ 模拟运行失败，工作流程终止")
@@ -1150,7 +1238,7 @@ class ProjectMasterAgent(BaseAgent):
             
             # 阶段 5: 评估结果并优化
             self.logger.info(f"\n阶段 5: 评估结果并优化 (第 {iteration} 轮)")
-            evaluation_results = await self.run_evaluation_and_optimization_phase(simulation_successful)
+            evaluation_results = await self.run_evaluation_and_optimization_phase(True)
             
             optimization_history.append({
                 'iteration': iteration,
@@ -1176,6 +1264,8 @@ class ProjectMasterAgent(BaseAgent):
         self.logger.info("工作流程完成")
         self.logger.info(f"项目目录: {project_dir}")
         self.logger.info("=" * 80)
+
+        self.auto_mode = False
         
         return {
             'status': 'completed',
@@ -1291,6 +1381,8 @@ class ProjectMasterAgent(BaseAgent):
         print("\n" + "=" * 80)
         print("开始交互式工作流程")
         print("=" * 80)
+
+        self.auto_mode = False
         
         self.logger.info("=" * 80)
         self.logger.info("开始交互式工作流程")

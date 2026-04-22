@@ -18,6 +18,16 @@
 
 ## Quick Start
 
+### API Configuration
+
+Running LLM-based simulations requires configuring the API base URLs and keys first. Adjusting the available model list and the default selection is optional.
+
+Most related settings are in:
+- [config/api_models_config.yaml]: available models, `model_platform`, `rate_limit_key`, and per-API parameters.
+- [.env]: API endpoints and credentials, e.g. `OPENAI_API_BASE_URL`, `OPENAI_API_KEY`
+
+In most cases, fill in the URLs/keys in `.env` first, then enable or switch models in `config/api_models_config.yaml`.
+
 ### Environment Setup
 
 ```bash

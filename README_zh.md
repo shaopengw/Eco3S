@@ -18,6 +18,16 @@
 
 ## 快速开始
 
+### API 配置说明
+
+如果要使用大模型进行模拟，必须先配置各 API 的地址和密钥；可用模型列表与默认选择则是可选修改项。
+
+相关配置主要集中在：
+- [config/api_models_config.yaml]：配置可用模型、`model_platform`、`rate_limit_key` 和各 API 的参数。
+- [.env]：配置各 API 对应的地址和密钥，例如 `OPENAI_API_BASE_URL`、`OPENAI_API_KEY`
+
+一般情况下，只需要先在 `.env` 里填好地址和密钥，再在 `config/api_models_config.yaml` 里启用或切换模型即可。
+
 ### 环境配置
 
 ```bash

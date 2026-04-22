@@ -15,7 +15,7 @@ parse_user_requirement_prompt: |
   
   返回以下JSON格式（严格遵守格式）：
   {{
-    "simulation_name": "模拟实验的简短英文名称（用下划线连接，如 climate_migration_sim）",
+    "simulation_name": "模拟实验的简短英文名称（用下划线连接）",
     "description": "简短描述",
     "key_requirements": ["关键需求1", "关键需求2"],
     "simulation_type": "decision 或 survey"

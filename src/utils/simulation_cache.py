@@ -6,6 +6,7 @@ from typing import Any, Optional, Type, TypeVar
 import yaml
 import time as time_module
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from src.agents.model_backend_factory import create_backend_from_model_config
 
 from src.agents.resident import Resident, ResidentGroup, ResidentSharedInformationPool
 from src.agents.government import (
@@ -317,8 +318,9 @@ class SimulationCache:
                         shared_pool = ResidentSharedInformationPool()
                         model_manager = ModelManager()
                         model_config = model_manager.get_random_model_config()
-                        model_type = ModelType(model_config["model_type"])
-                        model_config_obj = ChatGPTConfig(**model_config["model_config"])
+                        # 兼容本地模型（字符串 model_type）
+                        backend, model_type, token_counter, memory_model_type = create_backend_from_model_config(model_config)
+                        model_config_obj = ChatGPTConfig(**(model_config.get("model_config") or {}))
                         
                         # 定义单个居民恢复函数
                         def restore_single_resident(res_state):
@@ -338,12 +340,9 @@ class SimulationCache:
                                 resident.model_manager = model_manager
                                 resident.model_type = model_type
                                 resident.model_config = model_config_obj
-                                resident.model_backend = ModelFactory.create(
-                                    model_platform=model_config["model_platform"],
-                                    model_type=model_type,
-                                    model_config_dict=model_config_obj.as_dict(),
-                                )
-                                resident.token_counter = OpenAITokenCounter(model_type)
+                                resident.model_backend = backend
+                                resident.rate_limit_key = model_config.get('rate_limit_key')
+                                resident.token_counter = token_counter
                                 resident.context_creator = ScoreBasedContextCreator(resident.token_counter, 4096)
                                 
                                 # 恢复居民状态
@@ -363,7 +362,7 @@ class SimulationCache:
                                 if memory_state and (memory_state.get('chat_history') or memory_state.get('longterm_memory')):
                                     resident.memory = MemoryManager(
                                         agent_id=resident.resident_id,
-                                        model_type=model_type,
+                                        model_type=memory_model_type,
                                         group_type='resident',
                                         window_size=5
                                     )
@@ -616,21 +615,18 @@ class SimulationCache:
                     # 初始化model_manager和model_backend
                     rebel.model_manager = ModelManager()
                     model_config = rebel.model_manager.get_random_model_config()
-                    rebel.model_type = ModelType(model_config["model_type"])
-                    rebel.model_config = ChatGPTConfig(**model_config["model_config"])
-                    rebel.model_backend = ModelFactory.create(
-                        model_platform=model_config["model_platform"],
-                        model_type=rebel.model_type,
-                        model_config_dict=rebel.model_config.as_dict(),
+                    rebel.model_backend, rebel.model_type, rebel.token_counter, memory_model_type = (
+                        create_backend_from_model_config(model_config)
                     )
-                    rebel.token_counter = OpenAITokenCounter(rebel.model_type)
+                    rebel.rate_limit_key = model_config.get('rate_limit_key')
+                    rebel.model_config = ChatGPTConfig(**(model_config.get("model_config") or {}))
                     rebel.context_creator = ScoreBasedContextCreator(rebel.token_counter, 4096)
                     # 恢复记忆系统
                     memory_state = rebel_state.get('memory')
                     if memory_state:
                         rebel.memory = MemoryManager(
                             agent_id=rebel.agent_id,
-                            model_type=rebel.model_type,
+                            model_type=memory_model_type,
                             group_type='rebellion',
                             window_size=5
                         )
@@ -685,16 +681,88 @@ class SimulationCache:
                 'Simulator': 'simulator',
                 'TEOGSimulator': 'simulator_TEOG',
                 'InfoPropagationSimulator': 'simulator_info_propagation',
-                'ClimateMigrationSimSimulator': 'simulator_climate_migration',
-                'FinancialHerdBehaviorSimSimulator': 'simulator_financial_herd_behavior',
-                'SurveySimulator': 'simulator_survey',
-                'YourSimulator': 'simulator_template'
             }
             logger_name = logger_name_map.get(simulator_class.__name__, 'simulator')
             simulator.logger = LogManager.get_logger(logger_name, console_output=True)
             print(f"已重新初始化logger: {logger_name}")
 
+            # 配置优先：当 YAML 与缓存状态冲突时，优先采用 YAML 中可安全热更新的参数
+            # 说明：世界结构性状态（如 map 尺寸、城镇/居民分布）通常不应在续跑时强行变更，
+            # 这里只覆盖对续跑影响大且不破坏已存在状态的参数。
+            SimulationCache._apply_config_precedence_over_cache(simulator, config)
+
             return simulator
         except Exception as e:
             raise Exception(f"加载缓存失败: {str(e)}")
             return None
+
+    @staticmethod
+    def _apply_config_precedence_over_cache(simulator: Any, config: dict) -> None:
+        """在从缓存恢复后，将部分运行参数按 YAML 配置覆盖。
+        """
+        try:
+            sim_cfg = (config or {}).get('simulation', {}) or {}
+            data_cfg = (config or {}).get('data', {}) or {}
+
+            # 0) 覆盖 agents 使用的全局配置
+            if 'response_probability' in sim_cfg:
+                try:
+                    from src.agents import shared_imports as agents_shared_imports
+
+                    if isinstance(getattr(agents_shared_imports, 'global_config', None), dict):
+                        agents_shared_imports.global_config.setdefault('simulation', {})
+                        old_val = agents_shared_imports.global_config['simulation'].get('response_probability')
+                        new_val = sim_cfg.get('response_probability')
+                        if new_val is not None and old_val != new_val:
+                            agents_shared_imports.global_config['simulation']['response_probability'] = new_val
+                            logging.info(
+                                f"[cache override] global_config.simulation.response_probability: {old_val} -> {new_val} (from simulation_config.yaml)"
+                            )
+                except Exception as e:
+                    logging.warning(f"[cache override] failed to override global_config.response_probability: {e}")
+
+            # 1) 覆盖人口基础出生率
+            if 'birth_rate' in sim_cfg and getattr(simulator, 'population', None) is not None:
+                pop = simulator.population
+                if hasattr(pop, 'birth_rate'):
+                    new_rate = sim_cfg.get('birth_rate')
+                    if new_rate is not None and pop.birth_rate != new_rate:
+                        old_rate = pop.birth_rate
+                        pop.birth_rate = new_rate
+                        logging.info(
+                            f"[cache override] population.birth_rate: {old_rate} -> {new_rate} (from simulation_config.yaml)"
+                        )
+
+            # 2) 覆盖气候数据源
+            climate_path = data_cfg.get('climate_info_path')
+            if climate_path:
+                try:
+                    from src.environment.climate import ClimateSystem
+                    current = getattr(simulator, 'climate', None)
+                    # 无论是否存在旧对象，都以 YAML 指定的数据重新构建（ClimateSystem本身无状态）
+                    simulator.climate = ClimateSystem(climate_path)
+                    if current is not None:
+                        logging.info(
+                            f"[cache override] climate reloaded from: {climate_path} (from simulation_config.yaml)"
+                        )
+                except Exception as e:
+                    # 如果重载失败，为保证续跑可用，保留缓存中的 climate
+                    logging.warning(f"[cache override] failed to reload climate from {climate_path}: {e}")
+
+            # 3) 覆盖模拟器本身的简单标量参数（若 YAML 中提供同名字段）
+            #    例如：basic_living_cost / propaganda_prob 等若未来放入 YAML 可直接生效。
+            for key, value in sim_cfg.items():
+                if value is None:
+                    continue
+                if key in {'initial_population', 'map_width', 'map_height', 'start_year', 'total_years'}:
+                    # 结构性/时间轴参数在续跑场景不强行覆盖
+                    continue
+                if hasattr(simulator, key) and isinstance(getattr(simulator, key), (int, float, str, bool)):
+                    old_val = getattr(simulator, key)
+                    if old_val != value:
+                        setattr(simulator, key, value)
+                        logging.info(
+                            f"[cache override] simulator.{key}: {old_val} -> {value} (from simulation_config.yaml)"
+                        )
+        except Exception as e:
+            logging.warning(f"[cache override] apply_config_precedence failed: {e}")

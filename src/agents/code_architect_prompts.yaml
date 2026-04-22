@@ -402,6 +402,9 @@ final_check_main_prompt: |
 generate_config_file_prompt: |
   根据设计文档生成配置文件 {config_filename}。
 
+  模拟名称：
+  {simulation_name}
+
   设计文档：
   {description_md}
 

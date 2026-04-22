@@ -1,0 +1,75 @@
+models:
+  OPENAI:
+    model_types:
+      - gpt-3.5-turbo
+    model_platform: OPENAI
+    url_env: OPENAI_API_BASE_URL
+    api_key_env: OPENAI_API_KEY
+    allow_random: true
+    rate_limit_key: openai
+
+  CLAUDE:
+    model_types:
+      - claude-sonnet-4-5-20250929
+    model_platform: OPENAI_COMPATIBLE_MODEL
+    url_env: ANTHROPIC_API_BASE_URL
+    api_key_env: ANTHROPIC_API_KEY
+    allow_random: false
+    rate_limit_key: claude
+
+    # OPENAI:
+    # model_types:
+    #   - gpt-4o
+    # model_platform: OPENAI
+    # url_env: OPENAI_API_BASE_URL
+    # api_key_env: OPENAI_API_KEY
+    # allow_random: true
+    # rate_limit_key: openai
+
+  # QWEN_DASHSCOPE:
+  #   model_types:
+  #     - qwen3-235b-a22b
+  #   model_platform: DASHSCOPE_CHAT_COMPLETIONS
+  #   backend_type: chat_completions
+  #   url_env: DASHSCOPE_API_BASE_URL
+  #   api_key_env: DASHSCOPE_API_KEY
+  #   allow_random: true
+  #   payload_defaults:
+  #     enable_thinking: false
+  #   allow_external_model_type: true
+  #   rate_limit_key: dashscope
+
+  # OLLAMA_LOCAL:
+  #   model_types:
+  #     - llama3.1:8b
+  #   model_platform: OLLAMA_GENERATE
+  #   backend_type: ollama_generate
+  #   url_env: OLLAMA_API_BASE_URL
+  #   allow_random: true
+  #   rate_limit_key: ollama
+
+rate_limits:
+  default:
+    max_concurrency: 0
+    rpm_limit: 0
+    window_seconds: 60
+
+  openai:
+    max_concurrency: 8
+    rpm_limit: 0
+    window_seconds: 60
+
+  claude:
+    max_concurrency: 8
+    rpm_limit: 0
+    window_seconds: 60
+
+  dashscope:
+    max_concurrency: 8
+    rpm_limit: 480
+    window_seconds: 60
+
+  ollama:
+    max_concurrency: 2
+    rpm_limit: 0
+    window_seconds: 60
