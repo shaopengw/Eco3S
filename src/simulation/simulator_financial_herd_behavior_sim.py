@@ -88,7 +88,8 @@ class FinancialHerdBehaviorSimSimulator:
 
 
             self.save_results(self.result_file, append=True)
-
+            
+            ResidentStateExporter.save_resident_data(self)
 
             self.time.step()
 
@@ -158,13 +159,14 @@ class FinancialHerdBehaviorSimSimulator:
                 self.population.death()
                 continue
             print(f"居民 {resident.resident_id} (正在决策...")
-            # task = resident.decide_action_by_llm(
-            #     tax_rate=0.0,
-            #     basic_living_cost=0.0,
-            #     climate_impact=0.0,
-            #     市场信息=market_info_text
-            # )
-            # tasks.append(task)
+            task = resident.decide_action_by_llm(
+                tax_rate=0.0,
+                basic_living_cost=0.0,
+                climate_impact=0.0,
+                市场信息=market_info_text,
+                current_year=self.time.current_time
+            )
+            tasks.append(task)
 
         # 执行决策
         if tasks:

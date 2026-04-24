@@ -127,6 +127,7 @@ class AssetMarketBubbleSimSimulator:
 
             self.save_results(self.result_file, append=True)
 
+            ResidentStateExporter.save_resident_data(self)
 
             self.time.step()
 
@@ -938,7 +939,8 @@ class AssetMarketBubbleSimSimulator:
                     tax_rate=0,
                     basic_living_cost=0,
                     climate_impact=0,
-                    market_info=market_info
+                    market_info=market_info,
+                    current_year=self.time.current_time
                 )
                 # 解析LLM返回的决策结果
                 if isinstance(decision_result, tuple):

@@ -1169,7 +1169,7 @@ class ProjectMasterAgent(BaseAgent):
 
 
 
-    async def run_full_workflow(self, requirement_text, max_iterations=5):
+    async def run_full_workflow(self, requirement_text, max_iterations=10):
         """
         运行完整的工作流程。
         

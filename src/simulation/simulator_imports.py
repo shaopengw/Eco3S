@@ -39,5 +39,5 @@ from src.environment.time import Time
 
 from src.utils.simulation_context import SimulationContext
 from src.utils.logger import LogManager
-
+from src.utils.resident_state_exporter import ResidentStateExporter
 

@@ -302,6 +302,37 @@ def simulation_status(process_id):
         'running_data': running_data
     })
 
+@app.route('/resident_states/<process_id>')
+def get_resident_states(process_id):
+    if process_id not in running_simulations:
+        return jsonify({'error': '模拟进程不存在'}), 404
+
+    simulation_info = running_simulations[process_id]
+    config_type = simulation_info.get('config_type', '')
+
+    residents_data = []
+    try:
+        base_history_dir = os.path.join(BASE_DIR, '..', 'history', config_type)
+
+        if os.path.exists(base_history_dir):
+            simulation_folders = [f for f in os.listdir(base_history_dir) if os.path.isdir(os.path.join(base_history_dir, f)) and f != 'analysis_results']
+            if simulation_folders:
+                simulation_folders.sort(key=lambda d: os.path.getctime(os.path.join(base_history_dir, d)))
+                latest_folder = simulation_folders[-1]
+                latest_folder_path = os.path.join(base_history_dir, latest_folder)
+
+                residents_file = os.path.join(latest_folder_path, 'residents_data.json')
+                if os.path.exists(residents_file):
+                    with open(residents_file, 'r', encoding='utf-8') as f:
+                        residents_data = json.load(f)
+    except Exception as e:
+        print(f"读取居民位置数据失败: {str(e)}")
+
+    return jsonify({
+        'status': simulation_info['status'],
+        'residents': residents_data
+    })
+
 @app.route('/description/<config_type>')
 def get_description(config_type):
     desc_path = get_description_path(config_type)
@@ -355,6 +386,24 @@ def serve_history_files(filename):
         return send_from_directory(os.path.join(project_root, 'history'), filename)
     else:
         return jsonify({'error': f'File not found: {filename}', 'searched_path': full_path}), 404
+
+@app.route('/towns/<config_type>')
+def get_towns_data(config_type):
+    try:
+        config_dir = os.path.join(BASE_DIR, '..', 'config', config_type)
+        towns_file = os.path.join(config_dir, 'towns_data.json')
+        if not os.path.exists(towns_file):
+            # Fallback to default if not found
+            towns_file = os.path.join(BASE_DIR, '..', 'config', 'default', 'towns_data.json')
+            
+        if os.path.exists(towns_file):
+            with open(towns_file, 'r', encoding='utf-8') as f:
+                towns_data = json.load(f)
+            return jsonify(towns_data)
+        else:
+            return jsonify({'error': 'Towns data not found'}), 404
+    except Exception as e:
+        return jsonify({'error': f'读取城镇数据失败: {str(e)}'}), 500
 
 @app.route('/log/<path:log_path>')
 def get_log_content(log_path):

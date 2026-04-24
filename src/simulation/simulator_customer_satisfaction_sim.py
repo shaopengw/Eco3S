@@ -121,6 +121,9 @@ class CustomerSatisfactionSimSimulator:
             # 5. 保存结果（增量追加模式）
             self.save_results(self.result_file, append=True)
             
+            # 保存居民微观状态（实时更新）
+            ResidentStateExporter.save_resident_data(self)
+            
             # 6. 推进时间
             self.time.step()
         
@@ -271,7 +274,7 @@ class CustomerSatisfactionSimSimulator:
                 tax_rate = self.government.get_tax_rate() if self.government else 0
 
 
-                task = resident.decide_action_by_llm(tax_rate=tax_rate, basic_living_cost=self.basic_living_cost)
+                task = resident.decide_action_by_llm(tax_rate=tax_rate, basic_living_cost=self.basic_living_cost, current_year=self.time.current_time)
                 tasks.append(task)
 
 

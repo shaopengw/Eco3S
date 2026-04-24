@@ -94,6 +94,7 @@ class Resident(BaseAgent):
         self.employed = False  # 是否就业
         self.job = None  # 当前工作
         self.income = 0  # 收入
+        self.yearly_decisions = []  # 新增：保存每年决策信息的列表
         self.satisfaction = 0  # 对政府的满意度（0到100）
         self.health_index = 0 # 居民的健康状况（1到5）
         self.lifespan = 0  # 居民的寿命
@@ -335,17 +336,38 @@ class Resident(BaseAgent):
                 # 确保满意度在0-100范围内
                 self.satisfaction = max(0, min(100, self.satisfaction + satisfaction_change))
 
+            # 获取当前年份 (从kwargs中或者尝试获取全局时间)
+            current_year = kwargs.get('current_year', "未知年份")
+            
             # 记录居民的决策信息
             if desired_job is None and min_salary is None:
                 self.resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}, 更新满意度：{self.satisfaction}")
             else:
                 self.resident_log.info(f"居民 {self.resident_id} 的思考：{reason}, 选择：{select}, 期望职业：{desired_job}, 最低收入：{min_salary}, 更新满意度：{self.satisfaction}")
     
-            # 检查是否是求职决策（从配置中查找绑定了handle_work函数的动作）
+            # 将每年决策保存到 yearly_decisions 列表
+            action_desc = "未知决策"
             actions = self.actions_config.get('actions', {}) if self.actions_config else {}
             action = actions.get(select) or actions.get(str(select)) or (
                 actions.get(int(select)) if str(select).isdigit() else None
             )
+            if action:
+                action_desc = action.get('description', action.get('name', f"选项 {select}"))
+            
+            # 保存到内存
+            decision_record = {
+                "year": current_year,
+                "action": action_desc,
+                "reason": reason,
+                "select": select,
+                "speech": speech,
+                "desired_job": desired_job
+            }
+            self.yearly_decisions.append(decision_record)
+
+            # 限制保存数量，防止内存泄漏（保留最近200年即可）
+            if len(self.yearly_decisions) > 200:
+                self.yearly_decisions = self.yearly_decisions[-200:]
             
             # 检查动作是否绑定了handle_work函数
             is_work_action = False

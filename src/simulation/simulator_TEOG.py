@@ -143,6 +143,8 @@ class TEOGSimulator:
             self.logger.info(f"城市居民：{self.get_urban_scale()}，农民：{self.population.get_population() - self.get_urban_scale()}")
             # 在每个时间步结束时保存结果
             self.save_results(result_file, append=True)
+            # 保存居民微观状态
+            ResidentStateExporter.save_resident_data(self)
             self.time.step()
         self.end_time = datetime.now()  # 记录模拟结束时间
         self.display_total_simulation_time()
@@ -382,7 +384,7 @@ class TEOGSimulator:
             # 收集居民行为决策
             tax_rate = self.government.get_tax_rate()
             climate_impact_factor = self.climate.get_current_impact(self.time.current_time, self.time.start_time)
-            task = resident.decide_action_by_llm(tax_rate=tax_rate, basic_living_cost=self.basic_living_cost, climate_impact=climate_impact_factor)
+            task = resident.decide_action_by_llm(tax_rate=tax_rate, basic_living_cost=self.basic_living_cost, climate_impact=climate_impact_factor, current_year=self.time.current_time)
             tasks.append(task)
             resident_decisions.append(resident)  # 保存对应的居民对象
 

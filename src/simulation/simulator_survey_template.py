@@ -68,6 +68,8 @@ class SurveySimulator:
         self.end_time = datetime.now()
         self.display_total_simulation_time()
         self.save_results()
+        # 保存居民状态
+        ResidentStateExporter.save_resident_data(self)
 
     async def run_single_round(self, year: int):
         """

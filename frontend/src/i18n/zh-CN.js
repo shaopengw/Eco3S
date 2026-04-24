@@ -24,18 +24,27 @@ export default {
     unknownFile: '未知文件',
     noReason: '未提供原因',
     modification: '修改',
-    modificationApplied: '已应用修改'
+    modificationApplied: '已应用修改',
+    yes: '是',
+    no: '否'
   },
   header: {
     title: 'Eco3S',
     lightMode: '浅色',
     darkMode: '深色',
-    language: 'English'
+    language: 'English',
+    nav: {
+      dashboard: '运行大盘',
+      history: '运行历史',
+      analysis: '数据分析',
+      backHome: '返回首页'
+    }
   },
   menu: {
     createNew: '创建新模拟',
     aiAssisted: 'AI辅助创建',
-    existingSimulations: '已有模拟'
+    existingSimulations: '已有模拟',
+    projectList: '项目列表'
   },
   aiCreator: {
     title: 'AI辅助模拟系统创建器',
@@ -205,13 +214,57 @@ export default {
   
   simulationRunner: {
     title: '模拟运行器',
+    config: '系统配置',
     backButton: '返回描述页面',
     runButton: '运行模拟',
     running: '运行中...',
-    output: '输出日志',
-    realtime: '实时数据',
-    results: '实验结果',
-    startFailed: '启动模拟失败',
+    ready: '系统就绪',
+    mapTitle: '实时居民分布图',
+    activeResidents: '活跃居民',
+    noMapData: '暂无轨迹数据',
+    runToGenerate: '请先运行模拟生成数据',
+    logTitle: '运行日志',
+    waitingCmd: '等待执行指令...',
+    analysisTitle: '实时数据分析',
+    noChartData: '暂无图表数据',
+    residentArchive: '居民档案 #{id}',
+    residentId: '居民ID',
+    town: '所在城镇',
+    job: '职业',
+    employmentStatus: '就业状态',
+    employed: '已就业',
+    unemployed: '失业',
+    income: '财产/收入',
+    satisfaction: '满意度',
+    healthIndex: '健康指数',
+    unknown: '未知',
+    none: '无',
+    close: '关闭',
+    results: '结果图表',
+    basicInfo: '基本信息',
+    yearlyDecisions: '历年决策',
+    recentMemory: '近期决策与记忆',
+    longtermMemory: '长期记忆',
+    roleDecision: '决策思考',
+    roleEnv: '环境与经历',
+    reason: '思考',
+    decision: '决策',
+    desiredJob: '期望职业',
+    speech: '言论',
+    noData: '暂无记录'
+  },
+  charts: {
+    unemployment_rate: '失业率 (%)',
+    migration_rate: '迁移率 (%)',
+    population: '人口总数',
+    government_budget: '政府预算',
+    rebellion_strength: '叛军力量',
+    rebellion_resources: '叛军资源',
+    average_satisfaction: '平均满意度',
+    tax_rate: '税率',
+    river_navigability: '运河通航能力',
+    gdp: 'GDP',
+    rebellions: '叛乱次数'
   },
   
   simulationHistory: {

@@ -24,18 +24,27 @@ export default {
     unknownFile: 'Unknown File',
     noReason: 'No reason provided',
     modification: 'Modification',
-    modificationApplied: 'Modification applied'
+    modificationApplied: 'Modification applied',
+    yes: 'Yes',
+    no: 'No'
   },
   header: {
     title: 'Eco3S',
     lightMode: 'Light',
     darkMode: 'Dark',
-    language: '中文'
+    language: '中文',
+    nav: {
+      dashboard: 'Dashboard',
+      history: 'History',
+      analysis: 'Analysis',
+      backHome: 'Home'
+    }
   },
   menu: {
-    createNew: 'Create New Simulation',
-    aiAssisted: 'AI-Assisted Creation',
-    existingSimulations: 'Existing Simulations'
+    createNew: 'Create New',
+    aiAssisted: 'AI Assisted Creation',
+    existingSimulations: 'Existing Simulations',
+    projectList: 'Projects'
   },
   aiCreator: {
     title: 'AI-Assisted Simulation System Creator',
@@ -205,13 +214,57 @@ export default {
   
   simulationRunner: {
     title: 'Simulation Runner',
+    config: 'Settings',
     backButton: 'Back to Description',
     runButton: 'Run Simulation',
     running: 'Running...',
-    output: 'Output Log',
-    realtime: 'Real-time Data',
-    results: 'Simulation Results',
-    startFailed: 'Failed to start simulation',
+    ready: 'System Ready',
+    mapTitle: 'Real-time Resident Map',
+    activeResidents: 'Active Residents',
+    noMapData: 'No Map Data',
+    runToGenerate: 'Please run simulation first',
+    logTitle: 'Running Log',
+    waitingCmd: 'Waiting for system command...',
+    analysisTitle: 'Real-time Analysis',
+    noChartData: 'No Chart Data',
+    residentArchive: 'Resident Archive #{id}',
+    residentId: 'Resident ID',
+    town: 'Town',
+    job: 'Job',
+    employmentStatus: 'Employment',
+    employed: 'Employed',
+    unemployed: 'Unemployed',
+    income: 'Income/Assets',
+    satisfaction: 'Satisfaction',
+    healthIndex: 'Health Index',
+    unknown: 'Unknown',
+    none: 'None',
+    close: 'Close',
+    results: 'Result Plot',
+    basicInfo: 'Basic Info',
+    yearlyDecisions: 'Yearly Decisions',
+    recentMemory: 'Recent Decisions',
+    longtermMemory: 'Long-term Memory',
+    roleDecision: 'Decision & Thoughts',
+    roleEnv: 'Environment',
+    reason: 'Reasoning',
+    decision: 'Decision',
+    desiredJob: 'Desired Job',
+    speech: 'Speech',
+    noData: 'No Records'
+  },
+  charts: {
+    unemployment_rate: 'Unemployment Rate (%)',
+    migration_rate: 'Migration Rate (%)',
+    population: 'Total Population',
+    government_budget: 'Gov Budget',
+    rebellion_strength: 'Rebellion Strength',
+    rebellion_resources: 'Rebellion Resources',
+    average_satisfaction: 'Avg Satisfaction',
+    tax_rate: 'Tax Rate',
+    river_navigability: 'River Navigability',
+    gdp: 'GDP',
+    rebellions: 'Rebellions Count'
   },
   
   simulationHistory: {

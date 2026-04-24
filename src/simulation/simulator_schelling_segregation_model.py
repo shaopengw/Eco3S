@@ -113,6 +113,7 @@ class SchellingSegregationModelSimulator:
 
                 self.save_results(self.result_file, append=True)
 
+                ResidentStateExporter.save_resident_data(self)
 
                 self.time.step()
 
@@ -202,7 +203,8 @@ class SchellingSegregationModelSimulator:
                 task = resident.decide_action_by_llm(
                     basic_living_cost=self.basic_living_cost,
                     neighbor_similarity=neighbor_similarity,
-                    similarity_threshold=self.similarity_threshold
+                    similarity_threshold=self.similarity_threshold,
+                    current_year=self.time.current_time
                 )
                 tasks.append(task)
 

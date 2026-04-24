@@ -89,8 +89,11 @@ class YourSimulator:
             
             # 5. 保存结果（增量追加模式）
             self.save_results(self.result_file, append=True)
-            
-            # 6. 推进时间
+
+            # 6. 保存居民微观状态（实时更新）
+            ResidentStateExporter.save_resident_data(self)
+
+            # 7. 推进时间
             self.time.step()
         
         self.end_time = datetime.now()
@@ -199,14 +202,14 @@ class YourSimulator:
             if resident.job == "叛军":
                 tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
             else:
-                task = resident.decide_action_by_llm(tax_rate=tax_rate, basic_living_cost=self.basic_living_cost)
+                task = resident.decide_action_by_llm(tax_rate=tax_rate, basic_living_cost=self.basic_living_cost, current_year=self.time.current_time)
             # 2.基于LLM的决策(无叛军情况)
-            task = resident.decide_action_by_llm(tax_rate=tax_rate, basic_living_cost=self.basic_living_cost)
+            task = resident.decide_action_by_llm(tax_rate=tax_rate, basic_living_cost=self.basic_living_cost, current_year=self.time.current_time)
             
             # 重要提示：如需传递额外信息给LLM，请通过kwargs传递完整文本，而非在提示词模板中使用占位符
             # 示例：
             # market_info = f"当前价格：{price}元，库存：{stock}件"
-            # task = resident.decide_action_by_llm(tax_rate=tax_rate, market_info=market_info)
+            # task = resident.decide_action_by_llm(tax_rate=tax_rate, market_info=market_info, current_year=self.time.current_time)
 
             tasks.append(task)
             

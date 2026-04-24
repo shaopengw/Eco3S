@@ -471,6 +471,9 @@ class SimulatorAblation(Simulator):
             
             # 在每个时间步结束时保存结果
             self.save_results(result_file, append=True)
+
+            # 保存居民微观状态（实时更新）
+            ResidentStateExporter.save_resident_data(self)
             
             # 时间前进
             self.time.step()

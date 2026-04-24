@@ -106,9 +106,6 @@ onMounted(() => {
 
 <template>
   <div class="config-editor">
-    <div class="config-header">
-      <h3>{{ t('configEditor.title') }}</h3>
-    </div>
     <div class="config-content">
       <el-form label-position="top" size="small">
         <template v-if="configData.simulation">
@@ -175,18 +172,6 @@ onMounted(() => {
   flex-direction: column;
   background-color: var(--el-bg-color);
   border-radius: 8px;
-}
-
-.config-header {
-  padding: 16px;
-  border-bottom: 1px solid var(--el-border-color-light);
-}
-
-.config-header h3 {
-  margin: 0;
-  color: var(--el-text-color-primary);
-  font-size: 18px;
-  font-weight: 500;
 }
 
 .config-content {

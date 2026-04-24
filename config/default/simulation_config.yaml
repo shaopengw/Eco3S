@@ -18,7 +18,7 @@ simulation:
     rebellion:
       enabled: 0
       max_rounds: 2
-  initial_population: 2000
+  initial_population: 20
   map_height: 150
   map_width: 100
   max_retry_attempts: 3
@@ -28,4 +28,4 @@ simulation:
   retry_delay: 1
   simulation_name: ""
   start_year: 1650
-  total_years: 15
+  total_years: 3
