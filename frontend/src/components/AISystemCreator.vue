@@ -2,7 +2,6 @@
   <div class="ai-system-creator">
     <div class="creator-header">
       <h2>{{ t('aiCreator.title') }}</h2>
-      <el-button @click="$emit('back')" text>{{ t('common.back') }}</el-button>
     </div>
 
     <!-- 步骤指示器 -->
@@ -39,10 +38,21 @@
           </el-alert>
 
           <div class="mode-selection">
-            <el-radio-group v-model="mode">
-              <el-radio value="auto">{{ t('aiCreator.requirement.mode.auto') }}</el-radio>
-              <el-radio value="interactive">{{ t('aiCreator.requirement.mode.interactive') }}</el-radio>
-            </el-radio-group>
+            <div class="mode-row">
+              <el-radio-group v-model="mode">
+                <el-radio value="auto">{{ t('aiCreator.requirement.mode.auto') }}</el-radio>
+                <el-radio value="interactive">{{ t('aiCreator.requirement.mode.interactive') }}</el-radio>
+              </el-radio-group>
+            </div>
+            <div class="mode-row">
+              <el-radio-group v-model="experienceMode">
+                <el-radio value="lightweight">{{ t('aiCreator.requirement.experienceMode.light') }}</el-radio>
+                <el-radio value="full">{{ t('aiCreator.requirement.experienceMode.full') }}</el-radio>
+              </el-radio-group>
+              <div class="mode-hint">
+                <div>{{ t('aiCreator.requirement.experienceMode.explanation') }}</div>
+              </div>
+            </div>
           </div>
 
           <el-input
@@ -310,7 +320,7 @@
                 <el-alert type="success" :closable="false" show-icon style="margin-bottom: 12px;">
                   ✅ {{ t('aiCreator.phases.simulation.smallScaleSuccess') }}
                 </el-alert>
-                <div>
+                <div v-if="experienceMode !== 'lightweight'">
                   <el-space>
                     <el-button size="small" type="primary" @click="runLargeScaleTest" :loading="loading">
                       {{ t('aiCreator.phases.simulation.continueTest') }}
@@ -323,23 +333,26 @@
                     {{ t('aiCreator.phases.simulation.testOptions') }}
                   </el-alert>
                 </div>
+                <el-alert v-else type="info" :closable="false" show-icon>
+                  轻量化模式已完成，可直接进入结果查看。
+                </el-alert>
               </el-card>
             </el-timeline-item>
 
             <!-- 评估优化阶段 -->
             <el-timeline-item
-              v-if="phaseResults?.evaluation_results || status === 'evaluating'"
-              :timestamp="status === 'evaluating' || status === 'evaluation_waiting_confirm' ? t('aiCreator.phases.evaluation.timestamp') : t('aiCreator.phases.evaluation.timestampCompleted')"
-              :type="status === 'evaluating' || status === 'evaluation_waiting_confirm' ? 'primary' : 'success'"
+              v-if="phaseResults?.evaluation_results || status === 'evaluating' || status === 'applying_optimization'"
+              :timestamp="status === 'evaluating' || status === 'evaluation_waiting_confirm' || status === 'applying_optimization' ? t('aiCreator.phases.evaluation.timestamp') : t('aiCreator.phases.evaluation.timestampCompleted')"
+              :type="status === 'evaluating' || status === 'evaluation_waiting_confirm' || status === 'applying_optimization' ? 'primary' : 'success'"
               size="large"
-              :hollow="!(status === 'evaluating' || status === 'evaluation_waiting_confirm')"
+              :hollow="!(status === 'evaluating' || status === 'evaluation_waiting_confirm' || status === 'applying_optimization')"
               placement="top"
             >
-              <el-card shadow="hover" :class="{ 'active-phase-card': status === 'evaluating' || status === 'evaluation_waiting_confirm' }">
+              <el-card shadow="hover" :class="{ 'active-phase-card': status === 'evaluating' || status === 'evaluation_waiting_confirm' || status === 'applying_optimization' }">
                 <template #header>
                   <div style="display: flex; align-items: center; gap: 8px;">
-                    <el-icon v-if="status === 'evaluating'" class="rotating"><Loading /></el-icon>
-                    <span class="timeline-card-title">📊 {{ status === 'evaluating' ? t('aiCreator.phases.evaluation.running') : t('aiCreator.phases.evaluation.completed') }}</span>
+                    <el-icon v-if="status === 'evaluating' || status === 'applying_optimization'" class="rotating"><Loading /></el-icon>
+                    <span class="timeline-card-title">📊 {{ status === 'evaluating' || status === 'applying_optimization' ? t('aiCreator.phases.evaluation.running') : t('aiCreator.phases.evaluation.completed') }}</span>
                   </div>
                 </template>
                 
@@ -355,8 +368,20 @@
                   />
                 </div>
 
+                <!-- 优化应用中的等待展示 -->
+                <div v-if="status === 'applying_optimization'">
+                  <div style="color: var(--el-text-color-secondary); line-height: 1.8; margin-bottom: 12px; font-size: 15px;">
+                    正在应用优化调整，请稍候...
+                  </div>
+                  <el-progress
+                    :percentage="70"
+                    :indeterminate="true"
+                    status="primary"
+                  />
+                </div>
+
                 <!-- 评估结果 -->
-                <div v-if="phaseResults?.evaluation_results">
+                <div v-if="phaseResults?.evaluation_results && !hideEvaluationResults">
                   <el-tag
                     :type="phaseResults.evaluation_results.needs_adjustment ? 'warning' : 'success'"
                     size="large"
@@ -442,6 +467,37 @@
                 </div>
               </el-card>
             </el-timeline-item>
+
+            <!-- 优化完成后重新运行提示 -->
+            <el-timeline-item
+              v-if="status === 'optimization_applied'"
+              :timestamp="t('aiCreator.phases.simulation.timestamp')"
+              type="primary"
+              size="large"
+              :hollow="false"
+              placement="top"
+            >
+              <el-card shadow="hover" class="active-phase-card">
+                <template #header>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <el-icon class="rotating"><Loading /></el-icon>
+                    <span class="timeline-card-title">🔁 重新运行模拟中</span>
+                  </div>
+                </template>
+                <div style="color: var(--el-text-color-secondary); line-height: 1.8; margin-bottom: 12px;">
+                  优化已应用，正在重新运行模拟...
+                </div>
+                <el-progress
+                  :percentage="70"
+                  :indeterminate="true"
+                  status="primary"
+                />
+                <div v-if="latestLogMessage" class="latest-log-message" style="margin-top: 12px;">
+                  <el-icon class="log-icon"><InfoFilled /></el-icon>
+                  <span class="log-text">{{ latestLogMessage }}</span>
+                </div>
+              </el-card>
+            </el-timeline-item>
           </el-timeline>
         </div>
 
@@ -508,6 +564,9 @@
           <el-alert type="error" :closable="false" style="margin-bottom: 12px;">
             ❌ {{ t('aiCreator.errors.message') }}
           </el-alert>
+          <div v-if="latestErrorMessage" class="error-detail">
+            {{ latestErrorMessage }}
+          </div>
           <el-button-group>
             <el-button @click="retryCurrentPhase" :loading="loading">
               {{ t('aiCreator.errors.retryStep') }}
@@ -694,10 +753,12 @@ const emit = defineEmits(['back', 'simulation-created'])
 // 使用i18n
 const useI18nFunc = inject('useI18n')
 const { t } = useI18nFunc()
+const ensureApiKeysForExperiment = inject('ensureApiKeysForExperiment', async () => true)
 
 // 状态变量
 const currentStep = ref(0)
 const mode = ref('auto')
+const experienceMode = ref('lightweight')
 const requirement = ref('')
 const sessionId = ref(null)
 const status = ref('')
@@ -728,7 +789,10 @@ const adjustmentList = ref([])  // 收集到的调整需求列表
 
 // 实时日志显示
 const latestLogMessage = ref('')  // 最新的INFO日志消息
+const latestErrorMessage = ref('')  // 最新的错误日志消息
 const allOutputLines = ref([])  // 累积所有输出行
+const hideEvaluationResults = ref(false)  // 应用优化后暂时隐藏评估结果
+const lightweightCompleted = ref(false)
 
 // 编码进度追踪
 const codingStartTime = ref(null)
@@ -815,7 +879,7 @@ const waitingForFeedback = computed(() => {
 })
 
 const isCompleted = computed(() => {
-  return status.value === 'completed'
+  return status.value === 'completed' || lightweightCompleted.value
 })
 
 const hasError = computed(() => {
@@ -896,8 +960,12 @@ const startCreation = async () => {
     return
   }
 
+  const gate = await ensureApiKeysForExperiment()
+  if (!gate) return
+
   loading.value = true
   currentStep.value = 1
+  lightweightCompleted.value = false
 
   try {
     // 1. 解析需求
@@ -1071,6 +1139,13 @@ const checkStatus = async () => {
       // 从新接收到的行中提取最新的有效日志
       for (let i = newLines.length - 1; i >= 0; i--) {
         const line = newLines[i].trim()
+        if (line.includes('❌') || line.includes('错误') || line.includes('Traceback') || line.includes('Exception')) {
+          const errMsg = line.replace(/^\[\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\]\s*/, '')
+          if (errMsg) {
+            latestErrorMessage.value = errMsg
+          }
+          continue
+        }
         if (line.includes('INFO') || line.includes('✓') || line.includes('修改') || line.includes('修复') || line.includes('尝试') || line.includes('步骤')) {
           // 多种格式的日志提取
           let msg = ''
@@ -1169,15 +1244,39 @@ const checkStatus = async () => {
         console.log('✓ 自动触发小规模模拟')
         setTimeout(() => runSimulation('small'), 1000)
       } else if (data.status === 'small_scale_completed') {
-        // 小规模完成后，继续大规模测试（自动模式）
-        console.log('✓ 小规模完成，继续大规模测试')
-        setTimeout(() => runLargeScaleTest(), 1000)
+        if (experienceMode.value === 'lightweight') {
+          console.log('✓ 轻量化模式完成，小规模结束')
+          lightweightCompleted.value = true
+          stopStatusPolling()
+          loading.value = false
+        } else {
+          // 小规模完成后，继续大规模测试（自动模式）
+          console.log('✓ 小规模完成，继续大规模测试')
+          setTimeout(() => runLargeScaleTest(), 1000)
+        }
       }
+    }
+
+    // 优化应用完成后，自动重新运行模拟
+    if (prevStatus !== data.status && data.status === 'optimization_applied') {
+      console.log('✓ 优化已应用，重新运行模拟')
+      setTimeout(() => runSimulation(testType.value || 'small'), 1000)
+    }
+
+    if (prevStatus !== data.status && (data.status === 'evaluation_waiting_confirm' || data.status === 'completed')) {
+      hideEvaluationResults.value = false
     }
     
     if (data.status === 'completed' || data.status === 'error' || data.status === 'simulation_failed') {
       // 停止轮询
       console.log('✓ 流程结束，停止轮询')
+      stopStatusPolling()
+      loading.value = false
+    }
+
+    if (data.status === 'small_scale_completed' && experienceMode.value === 'lightweight' && !lightweightCompleted.value) {
+      console.log('✓ 轻量化模式：小规模完成即结束')
+      lightweightCompleted.value = true
       stopStatusPolling()
       loading.value = false
     }
@@ -1348,7 +1447,10 @@ const resetCreator = () => {
   loading.value = false
   userFeedback.value = ''
   latestLogMessage.value = ''  // 清空日志消息
+  latestErrorMessage.value = ''  // 清空错误消息
   allOutputLines.value = []  // 清空累积的输出
+  hideEvaluationResults.value = false  // 重置评估展示
+  lightweightCompleted.value = false
   // 重置编码进度
   codingProgress.value = {
     simulator: { status: 'pending', progress: 0 },
@@ -1656,8 +1758,10 @@ const finishMechanismAdjust = async () => {
 
 const applyOptimization = async () => {
   console.log('🚀 开始应用优化调整...')
-  
-  // 不要在这里设置loading，由后端状态变化来控制
+  // 立即进入等待状态，避免界面停滞
+  loading.value = true
+  status.value = 'applying_optimization'
+  hideEvaluationResults.value = true
   try {
     const response = await fetch('/api/ai_system/apply_optimization', {
       method: 'POST',
@@ -1675,6 +1779,8 @@ const applyOptimization = async () => {
     
     ElMessage.success('开始应用优化调整')
     console.log('✓ 优化调整已启动')
+    // 确保轮询继续
+    startStatusPolling()
     
     // 隐藏确认按钮，由后端状态更新控制显示
     if (phaseResults.value?.evaluation_results) {
@@ -1684,6 +1790,7 @@ const applyOptimization = async () => {
   } catch (error) {
     console.error('❌ 应用优化失败:', error)
     ElMessage.error(error.message)
+    loading.value = false
   }
 }
 
@@ -1788,11 +1895,28 @@ onUnmounted(() => {
 
 <style scoped>
 .ai-system-creator {
-  padding: 20px;
+  padding: 20px 24px 28px;
   height: 100%;
   display: flex;
   flex-direction: column;
   font-size: 1rem;
+}
+
+.ai-system-creator > * {
+  width: 100%;
+  max-width: 1320px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (max-width: 1024px) {
+  .ai-system-creator {
+    padding: 20px 20px 24px;
+  }
+
+  .ai-system-creator > * {
+    max-width: 100%;
+  }
 }
 
 .creator-header {
@@ -1820,6 +1944,12 @@ onUnmounted(() => {
   overflow-y: auto;
 }
 
+.step-content :deep(.el-card) {
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+}
+
 .requirement-input {
   display: flex;
   flex-direction: column;
@@ -1841,10 +1971,25 @@ onUnmounted(() => {
 
 .mode-selection {
   margin: 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .mode-selection :deep(.el-radio__label) {
   font-size: 1rem;
+}
+
+.mode-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mode-hint {
+  font-size: 0.95rem;
+  color: var(--el-text-color-secondary);
+  line-height: 1.6;
 }
 
 .example-requirements {
@@ -1986,6 +2131,18 @@ onUnmounted(() => {
 
 .actions :deep(.el-button) {
   font-size: 1.05rem;
+}
+
+.error-detail {
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border-radius: 8px;
+  border: 1px solid #f5c2c7;
+  background: #fff5f5;
+  color: #b42318;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  word-break: break-word;
 }
 
 .card-header {

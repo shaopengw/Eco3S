@@ -4,7 +4,7 @@
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: light dark;
+  color-scheme: light;
   color: #000000;
   background-color: #ffffff;
 
@@ -32,18 +32,10 @@ body {
   overflow: hidden;
 }
 
-/* Element Plus 暗色主题覆盖 */
-html.dark {
-  --el-bg-color: #1e1e1e;
-  --el-bg-color-overlay: #1e1e1e;
-  --el-text-color-primary: #ffffff;
-  --el-border-color: #333333;
-}
-
 :root {
-  --el-bg-color: #ffffff; /* Default background for light mode */
+  --el-bg-color: #ffffff;
   --el-bg-color-page: #ffffff;
-  --el-text-color-primary: #000000; /* Default text color for light mode */
+  --el-text-color-primary: #000000;
   --el-text-color-regular: #000000;
   --el-border-color-light: #dcdfe6;
   --el-fill-color: #f0f2f5;
@@ -54,7 +46,7 @@ html.dark {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background-color: var(--el-bg-color-page); /* Use variable for main background */
+  background-color: var(--el-bg-color-page);
 }
 
 .app-header {
@@ -63,14 +55,14 @@ html.dark {
   display: flex;
   align-items: center;
   padding: 0 20px;
-  background-color: #f0f0f0; /* Grey background for header */
+  background-color: #f0f0f0;
   color: var(--el-text-color-primary);
 }
 
 .header-controls {
   display: flex;
   gap: 12px;
-  margin-left: auto; /* Push buttons to the right */
+  margin-left: auto;
 }
 
 .app-title {
@@ -89,14 +81,14 @@ html.dark {
   width: 200px;
   height: 100%;
   border-right: 1px solid var(--el-border-color-light);
-  background-color: #f0f0f0; /* Grey background for sidebar */
+  background-color: #f0f0f0;
 }
 
 .main-content {
   flex: 1;
   height: 100%;
   overflow: hidden;
-  background-color: var(--el-bg-color-page); /* Ensure main content also uses white background */
+  background-color: var(--el-bg-color-page);
 }
 
 .simulation-container {
@@ -105,23 +97,4 @@ html.dark {
   grid-template-columns: 1fr 1fr;
   gap: 20px;
   padding: 20px;
-}
-
-/* 深色主题样式 */
-.dark {
-  --el-bg-color: #1a1a1a;
-  --el-bg-color-page: #333333; /* Main page background grey */
-  --el-text-color-primary: #ffffff;
-  --el-text-color-regular: #e5eaf3;
-  --el-border-color-light: #4c4d4f;
-  --el-fill-color: #262727;
-  --el-fill-color-light: #1f1f1f;
-}
-
-.dark .app-header {
-  background-color: #000000; /* Black for dark theme header */
-}
-
-.dark .sidebar {
-  background-color: #000000; /* Black for dark theme sidebar */
 }

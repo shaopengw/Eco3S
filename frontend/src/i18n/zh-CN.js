@@ -30,16 +30,51 @@ export default {
   },
   header: {
     title: 'Eco3S',
-    lightMode: '浅色',
-    darkMode: '深色',
-    language: 'English',
+    topNav: {
+      aria: '主导航',
+      intro: '介绍',
+      workbench: '工作台',
+      ai: 'AI 系统'
+    },
     nav: {
       dashboard: '运行大盘',
       history: '运行历史',
       analysis: '数据分析',
       backHome: '返回首页'
-    }
+    },
+    localeAria: '界面语言'
   },
+
+  settings: {
+    open: '模型与 API 设置',
+    drawerTitle: '模型与 API 配置',
+    drawerHint: '运行模拟或 AI 流程前先在此填写接口地址与密钥。API Key 留空表示不改动已保存的值。',
+    providerKeyPh: '厂商键名（如 OPENAI）',
+    modelTypes: '模型类型（英文逗号分隔）',
+    modelTypesPh: '例如 gpt-4o, gpt-3.5-turbo',
+    modelPlatform: '模型平台（ModelPlatformType）',
+    urlEnv: 'Base URL 环境变量名',
+    urlEnvPh: '例如 OPENAI_API_BASE_URL',
+    baseUrl: 'Base URL 取值',
+    apiKeyEnv: 'API Key 环境变量名',
+    apiKeyEnvPh: '例如 OPENAI_API_KEY',
+    apiKey: 'API Key 取值',
+    apiKeyConfigured: '已保存',
+    apiKeyPlaceholder: '粘贴 API Key',
+    apiKeyLeaveBlank: '留空则保留当前密钥',
+    allowRandom: '允许随机选用',
+    allowRandomHelp: '开启后，该模型可被系统随机选用；关闭后，系统不会自动选择它，但仍可手动指定使用。',
+    addProvider: '添加厂商',
+    remove: '删除',
+    confirmRemove: '从列表中删除该厂商？',
+    needOneProvider: '请至少保留一个已命名的厂商后再保存。',
+    save: '保存',
+    loadFailed: '加载 API 配置失败',
+    saveFailed: '保存失败',
+    saveSuccess: '已保存。若后端已在运行，请重启后再试。',
+    precheckMessage: '请先在设置中配置 API Key 后再开始（缺少）'
+  },
+
   menu: {
     createNew: '创建新模拟',
     aiAssisted: 'AI辅助创建',
@@ -69,6 +104,11 @@ export default {
       mode: {
         auto: '自动模式 - 一次性完成所有步骤',
         interactive: '交互模式 - 每个阶段等待确认'
+      },
+      experienceMode:{
+        light: '轻量化模式',
+        full: '完整模式',
+        explanation: '轻量化模式适合初步体验，小规模运行成功后即结束。完整模式可能需要更多时间和资源。若没有明确的研究目标或仅想试用，建议选择轻量化模式。'
       },
       placeholder: '例如：我想研究气候变化对居民迁移的影响，需要模拟100个居民在不同气候条件下的行为，观察他们在极端天气下的决策...',
       examples: '示例需求：',
@@ -210,10 +250,15 @@ export default {
     startButton: '开始模拟',
     historyButton: '模拟历史',
     analyzeButton: '数据分析',
+    detailBadge: '项目概览',
+    loadingDoc: '正在加载项目说明…',
+    loadError: '无法加载该项目的说明文档。',
+    emptyDoc: '该项目暂无说明内容。'
   },
   
   simulationRunner: {
     title: '模拟运行器',
+    firstRunMayTakeLong: '首次运行可能较长，请耐心等待',
     config: '系统配置',
     backButton: '返回描述页面',
     runButton: '运行模拟',
@@ -317,5 +362,35 @@ export default {
     loadFailed: '加载配置失败',
     saveFailed: '保存配置失败',
     saveSuccess: '配置保存成功',
+  },
+
+  landing: {
+    eyebrow: '大语言模型驱动的多智能体因果模拟',
+    heroTitle: 'Eco3S · 经济社会系统仿真实验室',
+    heroLead:
+      'Eco3S（Economic Social System Simulation）面向复杂经济与社会系统：共演物理–社会环境、结构因果反事实推演，以及 SAR（模拟–分析–精炼）自动化，把自然语言研究问题变成可复现、可对比的实验流水线。',
+    ctaWorkbench: '进入可视化工作台',
+    ctaAi: 'AI 辅助创建（SAR）',
+    pillar1Title: '共演环境设计',
+    pillar1Body:
+      '物理层（气候、地理等）与社会层（异质信息网络 HIN）双层动态耦合：群体行为改变设施与环境，环境变化又驱动迁移、动荡等涌现行为。',
+    pillar2Title: '结构因果模拟（SCS）',
+    pillar2Body:
+      '任意步保存快照，施加政策或气候等干预（类比 do-算子），重新运行以估计因果效应，而不止于相关性轨迹展示。',
+    pillar3Title: 'SAR 自动化范式',
+    pillar3Body:
+      '多角色 AI 协作：需求分析 → 架构与配置生成 → 运行排错 → 结果诊断与闭环优化，把高维研究目标沉淀为稳健代码与配置。',
+    modesTitle: '两种使用方式',
+    modesSub: '从顶刊对齐的基准复现，到开放式假设探索。',
+    mode1Tag: '传统模拟',
+    mode1Title: '论文级基准场景',
+    mode1Body:
+      '内置运河衰败与叛乱、治理起源、信息传播等场景，对齐高影响力经济学研究中的核心机制与空间/网络结构。',
+    mode2Tag: 'AI 辅助',
+    mode2Title: '用自然语言描述想法',
+    mode2Body:
+      '由 AI 委员会自动生成与迭代配置与代码、运行与修复，并支持一键轨迹解析、统计图与可读因果叙事分析。',
+    footnote: '* 目前处于早期开发阶段，欢迎感兴趣的研究者加入测试与反馈！',
+    navHint: '也可随时通过顶部导航在介绍、工作台与 AI 系统之间切换。'
   }
 }

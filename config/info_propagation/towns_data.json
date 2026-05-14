@@ -5,8 +5,9 @@
     "min_latitude": 8.0,
     "max_latitude": 37.0
   },
+  "is_real_world": false,
   "canals": [],
   "other_towns": [
-    {"name": "印度某村", "longitude": 76.9, "latitude": 28.9}
+    {"name": "A Village in India", "longitude": 76.9, "latitude": 28.9}
   ]
 }

@@ -112,7 +112,6 @@ class ModelManager:
                 "model_types": model_types,
                 "model_platform": self._parse_platform(api_info.get("model_platform")),
                 "allow_random": bool(api_info.get("allow_random", True)),
-                "allow_external_model_type": bool(api_info.get("allow_external_model_type", False)),
             }
             for key in RUNTIME_KEYS:
                 if api_info.get(key) is not None:
@@ -165,7 +164,7 @@ class ModelManager:
             raise ValueError(f"未找到API: {api_name}，可用的API: {list(self.available_models.keys())}")
         api_info = self.available_models[api_name]
         model_type = model_type or api_info["model_types"][0]
-        if model_type not in api_info["model_types"] and not api_info.get("allow_external_model_type", False):
+        if model_type not in api_info["model_types"]:
             raise ValueError(f"模型 {model_type} 不在 {api_name} 的可用模型列表中: {api_info['model_types']}")
         return self._build(api_info, model_type)
 
@@ -175,7 +174,4 @@ class ModelManager:
         for name, info in self.available_models.items():
             if model_type in info.get("model_types", []):
                 return self.get_specific_model_config(name, model_type)
-        for name, info in self.available_models.items():
-            if info.get("allow_external_model_type", False):
-                return self.get_specific_model_config(name, model_type)
-        raise ValueError(f"未找到模型 {model_type}，且没有开启 allow_external_model_type 的 API。")
+        raise ValueError(f"未找到模型 {model_type}，请确认 model_types 配置是否包含该名称。")

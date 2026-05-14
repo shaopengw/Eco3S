@@ -22,10 +22,25 @@ class CodeArchitectAgent(BaseAgent):
 			session=None,
 			auto_mode: bool = False,
 	):
-		# 指定使用 CLAUDE 的 claude-sonnet-4-5-20250929 模型
-		super().__init__(agent_id, group_type='code_architect', window_size=3, 
-		                 model_api_name='CLAUDE', model_type_name='claude-sonnet-4-5-20250929')
-		# super().__init__(agent_id, group_type='research_analyst', window_size=3)
+		# 优先使用已配置的 CLAUDE，否则回退到默认选择逻辑
+		model_api_name = None
+		model_type_name = None
+		try:
+			model_manager = ModelManager()
+			claude_info = model_manager.available_models.get('CLAUDE') if model_manager else None
+			if claude_info and 'claude-sonnet-4-5-20250929' in claude_info.get('model_types', []):
+				model_api_name = 'CLAUDE'
+				model_type_name = 'claude-sonnet-4-5-20250929'
+		except Exception:
+			pass
+
+		super().__init__(
+			agent_id,
+			group_type='code_architect',
+			window_size=3,
+			model_api_name=model_api_name,
+			model_type_name=model_type_name
+		)
 		
 		# 加载prompts配置
 		prompts_path = os.path.join(os.path.dirname(__file__), 'code_architect_prompts.yaml')
@@ -754,11 +769,7 @@ class CodeArchitectAgent(BaseAgent):
 				item_name = item_info.get('method_name') or item_info.get('function_name')
 				item_code = item_info.get('method_code') or item_info.get('function_code')
 				description = item_info.get('description', '')
-				
-				# 关键修复：将字面的\n转换为真正的换行符
-				if isinstance(item_code, str):
-					# 如果代码中包含字面的 \n，将其替换为真正的换行符
-					item_code = item_code.replace('\\n', '\n')
+
 				
 				# 从可能包含完整签名的 item_name 中提取纯函数名
 				# 例如: "async def update_state(self):" -> "update_state"
@@ -1548,13 +1559,14 @@ class CodeArchitectAgent(BaseAgent):
 		if not response:
 			self.logger.error("❌ 大模型未返回有效响应")
 			return False
-		
-		# ❌ 此方法已被禁用：不应直接替换整个文件
-		# 应该使用 _apply_code_changes 进行增量修改
-		self.logger.error("❌ _diagnose_failure 方法已被禁用，因为它会直接替换整个文件")
-		self.logger.error("❌ 请使用正确的增量修改机制（JSON格式）进行代码修复")
-		self.logger.error(f"大模型响应（前500字符）：{response[:500]}...")
-		raise NotImplementedError("_diagnose_failure 方法不应直接替换文件，已被禁用。请使用 _apply_code_changes 进行增量修改。")
+				# 应用修改
+		if self._apply_code_changes(file_path, response):
+			self._wait_for_user_confirmation(f"检查并修复代码")
+			return []  # 已修复
+		else:
+			# 修复失败
+			self.logger.warning("无法应用修复内容")
+			return ["无法应用修复内容"]
 
 	async def _extract_module_api_docs_from_error(self, error_traceback):
 		"""

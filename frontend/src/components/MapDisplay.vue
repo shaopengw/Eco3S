@@ -1,6 +1,6 @@
 <template>
   <div class="map-area">
-    <div ref="mapContainer" class="map-canvas"></div>
+    <div ref="mapContainer" class="map-canvas" :class="{ 'is-virtual': !isRealWorld }"></div>
     <div v-if="!hasDataToDisplay" class="map-empty">
       <div class="map-empty-icon">🗺️</div>
       <div class="map-empty-title">{{ t('simulationRunner.noMapData') || '暂无轨迹数据' }}</div>
@@ -30,9 +30,14 @@ let map = null
 let markerDict = {} // resident_id -> marker instance
 let townsLayerGroup = null // layer group for towns and canals
 let isFirstRender = true
+let baseTileLayer = null
 
 const hasDataToDisplay = computed(() => {
-  return hasGeoNodes.value || (props.townsData && (props.townsData.canals || props.townsData.other_towns));
+  return hasGeoNodes.value || (props.townsData && (props.townsData.canals || props.townsData.counties || props.townsData.other_towns));
+})
+
+const isRealWorld = computed(() => {
+  return Boolean(props.townsData && props.townsData.is_real_world)
 })
 
 const THEME = {
@@ -169,6 +174,28 @@ function renderTowns() {
     })
   }
 
+  // 渲染片区与片区城镇（如资产市场）
+  if (props.townsData.counties) {
+    props.townsData.counties.forEach(county => {
+      county.towns.forEach(town => {
+        const latlng = [town.latitude, town.longitude]
+        bounds.push(latlng)
+
+        L.circleMarker(latlng, {
+          radius: 7,
+          fillColor: '#f59e0b',
+          color: '#ffffff',
+          weight: 2,
+          opacity: 1,
+          fillOpacity: 0.9,
+          interactive: false
+        })
+        .bindTooltip(town.name, { permanent: true, direction: 'right', className: 'town-label-transparent', offset: [8, 0], interactive: false })
+        .addTo(townsLayerGroup)
+      })
+    })
+  }
+
   // 渲染其他城镇
   if (props.townsData.other_towns) {
     props.townsData.other_towns.forEach(town => {
@@ -189,8 +216,15 @@ function renderTowns() {
     })
   }
 
+  // 虚拟地图按配置范围缩放，确保地图范围与配置一致
+  if (!isRealWorld.value && props.townsData.map_boundaries) {
+    const b = props.townsData.map_boundaries
+    bounds.push([b.min_latitude, b.min_longitude])
+    bounds.push([b.max_latitude, b.max_longitude])
+  }
+
   // 渲染地图边界（可选，这里只用来调整视野）
-  if (isFirstRender && bounds.length > 0 && props.nodes.length === 0) {
+  if (isFirstRender && bounds.length > 0 && (props.nodes.length === 0 || !isRealWorld.value)) {
     map.fitBounds(L.latLngBounds(bounds), { padding: [40, 40], animate: true })
     isFirstRender = false
   }
@@ -271,13 +305,26 @@ function renderMap() {
 
 let resizeObserver = null
 
+function updateBasemap() {
+  if (!map) return
+  if (isRealWorld.value) {
+    if (!baseTileLayer) {
+      baseTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
+        subdomains: 'abcd',
+        maxZoom: 19
+      })
+      baseTileLayer.addTo(map)
+    }
+  } else if (baseTileLayer) {
+    map.removeLayer(baseTileLayer)
+    baseTileLayer = null
+  }
+}
+
 onMounted(() => {
   map = L.map(mapContainer.value, { zoomControl: false }).setView([39.9, 116.4], 10)
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
-    subdomains: 'abcd',
-    maxZoom: 19
-  }).addTo(map)
+  updateBasemap()
   renderTowns()
   renderMap()
 
@@ -292,7 +339,10 @@ onMounted(() => {
   }
 })
 
-watch(() => props.townsData, renderTowns, { deep: true, immediate: true })
+watch(() => props.townsData, () => {
+  updateBasemap()
+  renderTowns()
+}, { deep: true, immediate: true })
 watch(() => [props.nodes, props.theme], renderMap, { deep: true })
 
 onBeforeUnmount(() => {
@@ -334,14 +384,20 @@ defineExpose({ map, highlightResident })
 .map-area {
   position: relative;
   width: 100%;
-  height: 100%;
-  min-height: 400px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .map-canvas {
   position: absolute;
   inset: 0;
   z-index: 1;
   background-color: #eef2f5; /* 配合浅蓝色水域的底色 */
+}
+
+.map-canvas.is-virtual {
+  background-color: #e6ebf2;
 }
 
 /* 使大地部分变成浅灰色，水域保留较深的蓝色调 */

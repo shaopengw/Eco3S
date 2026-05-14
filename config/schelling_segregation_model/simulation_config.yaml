@@ -70,7 +70,7 @@ simulation:
     rebellion:
       enabled: 1
       max_rounds: 2
-  initial_population: 200
+  initial_population: 100
   map_height: 10
   map_width: 10
   max_retry_attempts: 3
@@ -88,4 +88,4 @@ simulation:
   seed_count: 1
   simulation_name: schelling_segregation_model
   start_year: 0
-  total_years: 30
+  total_years: 3

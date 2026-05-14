@@ -15,8 +15,92 @@ from visualization.plot_results import plot_all_results
 from utils.simulation_context import SimulationContext
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, '..'))
+API_MODELS_CONFIG_PATH = os.path.join(PROJECT_ROOT, 'config', 'api_models_config.yaml')
+DOTENV_PATH = os.path.join(PROJECT_ROOT, '.env')
+os.environ.setdefault('AGENTWORLD_API_MODELS_CONFIG_FILE', API_MODELS_CONFIG_PATH)
 
 app = Flask(__name__)
+
+
+def _parse_dotenv_file(path: str) -> dict:
+    """Parse KEY=VALUE lines from a .env file (no multiline / no export prefix)."""
+    out = {}
+    if not os.path.isfile(path):
+        return out
+    with open(path, 'r', encoding='utf-8') as f:
+        for raw in f:
+            line = raw.strip()
+            if not line or line.startswith('#'):
+                continue
+            if '=' in line:
+                k, _, v = line.partition('=')
+                k = k.strip()
+                out[k] = v.strip().strip('"').strip("'")
+    return out
+
+
+def _merge_dotenv(path: str, updates: dict) -> None:
+    """Insert or replace KEY= lines; other lines and comments preserved."""
+    lines = []
+    if os.path.isfile(path):
+        with open(path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+    replaced = set()
+    out = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith('#') and '=' in stripped:
+            k = stripped.split('=', 1)[0].strip()
+            if k in updates:
+                out.append(f"{k}={updates[k]}\n")
+                replaced.add(k)
+                continue
+        if not line.endswith('\n'):
+            line = line + '\n'
+        out.append(line)
+    for k, v in updates.items():
+        if k not in replaced:
+            out.append(f"{k}={v}\n")
+    d = os.path.dirname(os.path.abspath(path))
+    if d:
+        os.makedirs(d, exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as f:
+        f.writelines(out)
+
+
+def _load_api_models_raw() -> dict:
+    if not os.path.isfile(API_MODELS_CONFIG_PATH):
+        return {'models': {}, 'rate_limits': {}}
+    with open(API_MODELS_CONFIG_PATH, 'r', encoding='utf-8') as f:
+        data = yaml.safe_load(f) or {}
+    if not isinstance(data, dict):
+        return {'models': {}, 'rate_limits': {}}
+    models = data.get('models') or {}
+    rate_limits = data.get('rate_limits') or {}
+    if not isinstance(models, dict):
+        models = {}
+    if not isinstance(rate_limits, dict):
+        rate_limits = {}
+    return {'models': models, 'rate_limits': rate_limits, '_extra': {k: v for k, v in data.items() if k not in ('models', 'rate_limits')}}
+
+
+def _experiment_precheck_payload() -> dict:
+    raw = _load_api_models_raw()
+    models = raw.get('models') or {}
+    env_map = _parse_dotenv_file(DOTENV_PATH)
+    missing = []
+    for provider, spec in models.items():
+        if not isinstance(spec, dict):
+            continue
+        ake = spec.get('api_key_env')
+        if not ake:
+            continue
+        key = str(ake).strip()
+        val = (env_map.get(key) or '').strip()
+        if not val:
+            missing.append({'provider': str(provider), 'env': key})
+    return {'ok': len(missing) == 0, 'missing': missing}
 
 # 已知模拟的专用入口映射，其他统一使用模板入口
 SPECIAL_ENTRYPOINTS = {
@@ -33,17 +117,27 @@ def get_config_path(config_type: str):
         return path
     return None
 
-def get_description_path(config_type: str):
+def get_description_path(config_type: str, locale: str | None = None):
     """返回描述文件的绝对路径，存在则返回路径，不存在返回None"""
     rel_dir = os.path.join('config', config_type)
-    path = os.path.join(BASE_DIR, '..', rel_dir, 'description.md')
+    base_dir = os.path.join(BASE_DIR, '..', rel_dir)
+    use_en = bool(locale and str(locale).lower().startswith('en'))
+    if use_en:
+        en_path = os.path.join(base_dir, 'description_en.md')
+        if os.path.exists(en_path):
+            return en_path
+    path = os.path.join(base_dir, 'description.md')
     if os.path.exists(path):
         return path
     return None
 
 def get_command_for_simulation(config_type: str):
     """根据模拟类型返回运行命令。已知模拟使用专用入口，其他使用模板入口。"""
-    entry_script = SPECIAL_ENTRYPOINTS.get(config_type, 'entrypoints/main_template.py')
+    entry_script = SPECIAL_ENTRYPOINTS.get(config_type)
+    if not entry_script:
+        candidate = os.path.join('entrypoints', f'main_{config_type}.py')
+        candidate_path = os.path.join(BASE_DIR, '..', candidate)
+        entry_script = candidate if os.path.exists(candidate_path) else 'entrypoints/main_template.py'
     rel_config_path = os.path.join('config', config_type, 'simulation_config.yaml')
     command = f'python {entry_script} --config_path {rel_config_path}'
     return command
@@ -335,7 +429,7 @@ def get_resident_states(process_id):
 
 @app.route('/description/<config_type>')
 def get_description(config_type):
-    desc_path = get_description_path(config_type)
+    desc_path = get_description_path(config_type, request.args.get('lang'))
     if not desc_path:
         return jsonify({'description': '暂无描述'})
     try:
@@ -1246,13 +1340,24 @@ def run_ai_system_full_simulation(session_id):
         
         test_type = session.get('test_type', 'small')
         output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 测试类型: {"小规模测试" if test_type == "small" else "大规模测试"}')
+
+        if test_type == 'large':
+            # 大规模测试前强制设置人口与步长
+            simulation_name = project_master.current_simulation_name
+            config_path = os.path.join(PROJECT_ROOT, 'config', simulation_name, 'simulation_config.yaml')
+            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 正在设置大规模测试参数，配置路径: {config_path}')
+            if project_master.scale_up_simulation_config(config_path, target_population=100, target_steps=10):
+                output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✓ 已设置大规模参数: 人口=100, 步长=10')
+            else:
+                output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ❌ 大规模参数设置失败，已中止运行')
+                raise RuntimeError('大规模参数设置失败')
         output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 正在执行模拟...')
         
         # 运行模拟
         simulation_results = loop.run_until_complete(
             project_master.run_simulation(
                 session['results']['coding_results'],
-                max_fix_attempts=3
+                max_fix_attempts=5
             )
         )
         
@@ -1265,9 +1370,6 @@ def run_ai_system_full_simulation(session_id):
         if simulation_results and test_type == 'small':
             session['status'] = 'small_scale_completed'
             output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✅ 小规模测试运行成功！')
-            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 可选操作：')
-            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] - 进行机制调整以优化参数')
-            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] - 继续大规模测试')
         elif simulation_results:
             output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✓ 模拟运行完成')
             
@@ -1510,5 +1612,83 @@ def run_ai_system_apply_optimization(session_id):
     finally:
         sys.stdout = old_stdout
 
+
+@app.route('/settings/experiment_precheck', methods=['GET'])
+def settings_experiment_precheck():
+    """Return whether every model block with api_key_env has a non-empty value in .env."""
+    return jsonify(_experiment_precheck_payload())
+
+
+@app.route('/settings/api_models', methods=['GET'])
+def settings_get_api_models():
+    """Return api_models_config.yaml content plus .env URL / key presence hints."""
+    raw = _load_api_models_raw()
+    env_map = _parse_dotenv_file(DOTENV_PATH)
+    entries = []
+    for name, spec in (raw.get('models') or {}).items():
+        if not isinstance(spec, dict):
+            continue
+        ue = spec.get('url_env')
+        ak = spec.get('api_key_env')
+        base_url = ''
+        if ue:
+            base_url = env_map.get(str(ue).strip(), '') or ''
+        key_ok = False
+        if ak:
+            key_ok = bool((env_map.get(str(ak).strip(), '') or '').strip())
+        entries.append({
+            'provider': name,
+            'url_env': ue,
+            'api_key_env': ak,
+            'base_url': base_url,
+            'api_key_configured': key_ok,
+        })
+    return jsonify({
+        'models': raw['models'],
+        'rate_limits': raw['rate_limits'],
+        'env_hints': entries,
+    })
+
+
+@app.route('/settings/api_models', methods=['POST'])
+def settings_save_api_models():
+    """Write config/api_models_config.yaml and merge keys into project root .env."""
+    try:
+        data = request.json or {}
+        models = data.get('models')
+        env_updates = data.get('env_updates') or {}
+        if not isinstance(models, dict):
+            return jsonify({'error': 'models must be an object'}), 400
+        if not isinstance(env_updates, dict):
+            return jsonify({'error': 'env_updates must be an object'}), 400
+
+        raw = _load_api_models_raw()
+        rate_limits = data.get('rate_limits')
+        if not isinstance(rate_limits, dict):
+            rate_limits = dict(raw.get('rate_limits') or {})
+
+        dump_body = {'models': models, 'rate_limits': rate_limits}
+        for k, v in (raw.get('_extra') or {}).items():
+            dump_body[k] = v
+
+        os.makedirs(os.path.dirname(API_MODELS_CONFIG_PATH), exist_ok=True)
+        with open(API_MODELS_CONFIG_PATH, 'w', encoding='utf-8') as f:
+            yaml.safe_dump(
+                dump_body,
+                f,
+                allow_unicode=True,
+                default_flow_style=False,
+                sort_keys=False,
+            )
+
+        merged = {str(k).strip(): str(v) for k, v in env_updates.items() if str(k).strip() and str(v).strip()}
+        if merged:
+            _merge_dotenv(DOTENV_PATH, merged)
+
+        return jsonify({'message': 'ok', 'precheck': _experiment_precheck_payload()})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=False, use_reloader=False, port=5000)

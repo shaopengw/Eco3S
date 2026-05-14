@@ -59,6 +59,7 @@ import { ElMessage } from 'element-plus'
 
 const useI18nFunc = inject('useI18n')
 const { t } = useI18nFunc()
+const ensureApiKeysForExperiment = inject('ensureApiKeysForExperiment', async () => true)
 
 const props = defineProps({
   configType: {
@@ -100,6 +101,8 @@ const getPlotTitle = (filename) => {
 }
 
 const runAnalysis = async () => {
+  const gate = await ensureApiKeysForExperiment()
+  if (!gate) return
   loading.value = true
   try {
     // 构建请求体，只包含非空参数

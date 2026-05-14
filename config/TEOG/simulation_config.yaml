@@ -3,9 +3,9 @@ data:
   government_info_path: experiment_dataset/government_data/official_data.json
   government_prompt_path: config/TEOG/government_prompts.yaml
   jobs_config_path: config/TEOG/jobs_config.yaml
+  resident_actions_path: config/TEOG/resident_actions.yaml
   resident_info_path: experiment_dataset/resident_data/resident_data.json
   resident_prompt_path: config/TEOG/residents_prompts.yaml
-  resident_actions_path: config/TEOG/resident_actions.yaml
   towns_data_path: config/TEOG/towns_data.json
 simulation:
   birth_rate: 0.05
@@ -13,13 +13,13 @@ simulation:
     government:
       enabled: 1
       max_rounds: 2
-  initial_population: 2000
+  initial_population: 10
   map_height: 150
   map_width: 100
   max_retry_attempts: 3
   response_probability: 0.05
   resume_from_cache: 0
-  save_cache: 1
   retry_delay: 1
+  save_cache: 1
   start_year: 1650
-  total_years: 20
+  total_years: 2

@@ -57,7 +57,7 @@ class ProjectMasterAgent(BaseAgent):
             self.logger.warning(f"检查小规模配置失败: {e}")
             return False
 
-    def _scale_up_simulation_config(self, config_path: str, target_population: int = 100, target_steps: int = 10) -> bool:
+    def scale_up_simulation_config(self, config_path: str, target_population: int = 100, target_steps: int = 10) -> bool:
         """将原型配置放大到可评估规模。
 
         - initial_population -> target_population
@@ -1220,7 +1220,7 @@ class ProjectMasterAgent(BaseAgent):
                 # 仅当确实还是小规模配置时才放大
                 if self._is_small_scale_config(config_path):
                     self.logger.info("原型测试成功，自动放大模拟人数与时间步以获得可评估结果...")
-                    if self._scale_up_simulation_config(config_path, target_population=100, target_steps=10):
+                    if self.scale_up_simulation_config(config_path, target_population=100, target_steps=10):
                         self._auto_scaled_up_after_prototype = True
                         simulation_successful = await self.run_simulation(coding_results, max_fix_attempts=10)
                     else:
@@ -1720,8 +1720,8 @@ class ProjectMasterAgent(BaseAgent):
                             print("\n准备进行大规模测试...")
                             print("请输入大规模测试参数:")
                             try:
-                                new_pop = int(input("人口数量 (默认300): ") or "300")
-                                new_steps = int(input("模拟时间步 (默认50): ") or "50")
+                                new_pop = int(input("人口数量 (默认200): ") or "200")
+                                new_steps = int(input("模拟时间步 (默认10): ") or "10")
                                 
                                 # 更新配置文件
                                 config_path = os.path.join(

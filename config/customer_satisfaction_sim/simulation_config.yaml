@@ -61,7 +61,7 @@ simulation:
     rebellion:
       enabled: 0
       max_rounds: 2
-  initial_population: 200
+  initial_population: 5
   map_height: 100
   map_width: 100
   max_retry_attempts: 3
@@ -72,7 +72,7 @@ simulation:
   seed_count: 1
   simulation_name: customer_satisfaction_sim
   start_year: 2024
-  total_years: 30
+  total_years: 2
 thresholds:
   loyalty:
     high: 75

@@ -2,13 +2,13 @@ data:
   jobs_config_path: config/info_propagation/jobs_config.yaml
   message_config_path: config/info_propagation/message_config.yaml
   questionnaire_path: config/info_propagation/questionnaire.yaml
+  resident_actions_path: config/info_propagation/resident_actions.yaml
   resident_info_path: experiment_dataset/resident_data/resident_data.json
   resident_prompt_path: config/info_propagation/residents_prompts.yaml
-  resident_actions_path: config/info_propagation/resident_actions.yaml
   towns_data_path: config/info_propagation/towns_data.json
 simulation:
   birth_rate: 0.05
-  initial_population: 200
+  initial_population: 10
   map_height: 100
   map_width: 100
   max_retry_attempts: 3

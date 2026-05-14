@@ -5,12 +5,13 @@
     "min_latitude": 39.5,
     "max_latitude": 40.0
   },
+  "is_real_world": false,
   "counties": [
     {
-      "name": "交易区",
+      "name": "Trading Zone",
       "towns": [
         {
-          "name": "资产交易中心",
+          "name": "Asset Trading Center",
           "longitude": 116.25,
           "latitude": 39.75
         }

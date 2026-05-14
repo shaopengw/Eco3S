@@ -282,9 +282,12 @@ if __name__ == "__main__":
     config["save_cache"] = args.save_cache
 
     # 设置模拟名称
-    population = config["simulation"].get("initial_population")
-    total_years = config["simulation"].get("total_years")
-    SimulationContext.set_simulation_name(config["simulation"].get("simulation_name"), population, total_years)
+    population = config.get("simulation", {}).get("initial_population")
+    total_years = config.get("simulation", {}).get("total_years")
+    sim_name = config.get("simulation", {}).get("simulation_name")
+    if not sim_name or sim_name == SimulationContext.get_simulation_type():
+        sim_name = None
+    SimulationContext.set_simulation_name(sim_name, population, total_years)
 
     # 运行模拟
     asyncio.run(run_simulation(config))

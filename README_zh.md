@@ -1,241 +1,173 @@
-# Eco3S
+# 🌍 Eco3S: Complex Economic Social System Simulation
 
-**语言选择:** [English](README.md) | [中文](README_zh.md)
+<div align="center">
+
+**基于大语言模型（LLM）的多智能体复杂经济社会系统因果仿真框架**
+
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<!-- [![Paper](https://img.shields.io/badge/📄-Read_Paper-red)](#) -->
+[![Web UI](https://img.shields.io/badge/🖥️-Vite%20%2B%20Vue-42b883)](#)
+
+[English](README.md) · **简体中文**
+
+</div>
 
 ---
 
-## 简介
+![Eco3S Framework Architecture](assets/framework.png)
+> *Eco3S 架构概览：配置 (Configuration) -> 仿真 (Simulation) -> 自动分析 (Auto-analysis)*
 
-![框架概览](assets/framework.png)
+## 💡 框架简介 (What is Eco3S?)
 
-**Eco3S** (Complex **Eco**nomic **S**ocial **S**ystem **S**imulation) 是一个专为经济研究与政策分析设计的多智能体模拟框架。它利用大语言模型（LLMs）赋予智能体复杂的感知、推理和决策能力，填补了传统模拟方法在环境交互、反事实推断及场景泛化方面的空白。Eco3S 包含三个核心模块：精细化智能体/环境配置、高保真模拟以及自动化多维分析。
+随着大语言模型（LLMs）的爆发，基于智能体的建模（ABM）焕发了新的生机。然而，现有的 LLM-ABM 框架普遍面临三大科学挑战：**缺乏物理与社会的协同演化环境**、**难以进行支持因果推断的反事实推理**、以及**无法将高层研究问题自动转化为可运行的代码**。
 
-### 核心亮点
-1.  **精细化环境设计 (Delicate Environment Design)**：模拟动态演变的物理环境（气候、地理）、异构信息网络（HIN）及"个体-群体"双决策模式。
-2.  **反事实实验机制 (Counterfactual Mechanism)**：支持在任意模拟步骤保存快照、回滚并修改干预条件（政策、环境参数），实现严谨的因果效应评估。
-3.  **人类反馈驱动的自动模拟 (Auto-Simulation)**：通过 AI Agent 委员会（架构师、程序员、分析师）将自然语言需求自动转化为实验场景。
-4.  **全自动多维分析 (Auto-Analysis)**：自动解析模拟轨迹，生成统计图表、因果解释报告。
+**Eco3S** (Economic Social System Simulation) 正是为解决这些痛点而生。它不仅是一个多智能体沙盒，更是一个**研究级的可复现社会科学实验平台**。无论你是想复现顶刊论文中的宏观经济现象，还是想用自然语言从零生成一条完整的实验流水线，Eco3S 都能为你提供强大的自动化支持。
 
-## 快速开始
+---
 
-### API 配置说明
+## 🚀 核心学术贡献 (Core Innovations)
 
-如果要使用大模型进行模拟，必须先配置各 API 的地址和密钥；可用模型列表与默认选择则是可选修改项。
+根据本框架的底层研究，Eco3S 在以下三个维度实现了突破：
 
-相关配置主要集中在：
-- [config/api_models_config.yaml]：配置可用模型、`model_platform`、`rate_limit_key` 和各 API 的参数。
-- [.env]：配置各 API 对应的地址和密钥，例如 `OPENAI_API_BASE_URL`、`OPENAI_API_KEY`
+*   🌪️ **共演化环境设计 (Co-evolving Environment Design)**
+    打破传统静态环境的局限，构建了**物理环境（如气候、地理）**与**社会结构（异构信息网络 HIN）**的双层动态系统。智能体的集体行为会重塑环境（如基础设施老化），而环境变迁又会反向驱动智能体的涌现行为（如移民、叛乱）。
+*   ⏪ **结构化因果仿真 (Structural Causal Simulation, SCS)**
+    受结构因果模型（SCM）启发，Eco3S 内置了强大的**反事实机制（Counterfactual Mechanism）**。支持在任意模拟步长保存快照、施加干预（相当于 $do$-operator，如修改政策、改变气候），并重新运行以进行严格的因果效应评估。
+*   🤖 **SAR 自动化演进范式 (Simulate-Analyze-Refine)**
+    告别繁琐的调参和代码编写。Eco3S 引入了由四大特化 AI Agent 组成的委员会，将高维度的自然语言研究目标，通过闭环反馈（需求分析 -> 代码/配置生成 -> 运行纠错 -> 结果优化），全自动转化为稳健的仿真模型。
 
-一般情况下，只需要先在 `.env` 里填好地址和密钥，再在 `config/api_models_config.yaml` 里启用或切换模型即可。
+---
 
-### 环境配置
+## 🛠️ 快速开始 (Quick Start)
 
+### 1. 配置 API 与大模型引擎
+Eco3S 支持多款主流 LLM（如 GPT-4o, DeepSeek, Qwen 等）。请在项目中配置你的 API 凭证：
+*   复制或创建 `.env` 文件，填入你的 API 密钥（如 `OPENAI_API_BASE_URL`, `OPENAI_API_KEY` 等）。
+*   在 `config/api_models_config.yaml` 中选择并激活你想要驱动智能体的模型。
+
+### 2. 初始化 Python 环境
+我们推荐使用 Conda 隔离环境：
 ```bash
-# 创建虚拟环境
 conda create --name Eco3S python=3.10
 conda activate Eco3S
-
-# 安装依赖
 pip install -r requirements.txt
 ```
 
-### 启动可视化界面
+### 3. 启动 Web 可视化工作台
+Eco3S 提供了一个现代化的前端面板，用于实时追踪仿真轨迹和数据图表。
 
-**方式一：Windows 用户一键启动**
 ```bash
-start_web.bat
-```
-
-**方式二：手动启动**
-1. 启动后端服务
-```bash
+# 终端 1: 启动 Python 后端
 cd src
 python app.py
-```
 
-2. 启动前端服务（新终端）
-```bash
+# 终端 2: 启动 Vue 前端 (首次需 npm install)
 cd frontend
-npm install  # 首次运行需要
-npm install chart.js vue-chartjs  # 首次运行需要
+npm install
 npm run dev
 ```
-
-访问 http://localhost:5173 查看 Web 界面。
+打开浏览器访问：👉 **http://localhost:5173**
 
 ---
 
-## 使用方式
+## 🎮 使用指南 (Usage Modes)
 
-### 一、传统模拟模式
+Eco3S 提供两种截然不同的工作模式，满足从理论验证到自由探索的全部需求。
 
-Eco3S 内置了多个基于顶级经济学/历史学研究复现的基准场景：
-1.  **运河衰败与叛乱 (Canal Decay and Rebellion)**：复现 Cao & Chen (2022) 的研究，探讨交通基础设施（京杭大运河）演变对社会稳定性的影响。
-2.  **治理的起源 (Origins of Governance/TEOG)**：基于 Allen (2023) 的发现，模拟由于气候/河流变化产生的集体行动和政府雏形。
-3.  **信息传播与政策实施 (Information Propagation)**：复现 Banerjee et al. (2016) 关于印度废钞政策的研究，测试不同传播策略（种子节点 vs 广播）的效果。
+### 模式一：传统模拟（复现顶刊基准）
+系统内置了对齐高影响力经济学论文的基准场景，验证了框架在复杂决策、空间计量和认知演化上的稳健性。
 
-#### 可用场景
+| 仿真场景 | 对应文献与核心机制 | 运行入口 |
+| :--- | :--- | :--- |
+| 🔥 **运河衰败与叛乱**<br>*(Canal Decay & Rebellion)* | Cao & Chen (2022) <br> *基础设施退化、失业与社会动荡的空间异质性* | `python entrypoints/main.py --config_path config/default/simulation_config.yaml` |
+| 🏛️ **治理的起源**<br>*(Origins of Governance)* | Allen et al. (2023) <br> *气候/水文驱动的公共品需求与集体治理的涌现* | `python entrypoints/main_TEOG.py --config_path config/TEOG/simulation_config.yaml` |
+| 📢 **信息传播与废钞令**<br>*(Information Propagation)* | Banerjee et al. (2024) <br> *印度“废钞令”下的网络传播、播种策略与社会学习* | `python entrypoints/main_info_propagation.py --config_path config/info_propagation/simulation_config.yaml` |
 
-**1. 运河的衰败**
-```bash
-python entrypoints/main.py --config_path config/default/simulation_config.yaml
-```
+---
 
-**2. TEOG 场景**
-```bash
-python entrypoints/main_TEOG.py --config_path config/TEOG/simulation_config.yaml
-```
+### 模式二：AI 辅助模拟（SAR 自动化演进）
+**“把你的 Idea 告诉 AI，剩下的交给 Eco3S。”**
 
-**3. 信息传播**
-```bash
-python entrypoints/main_info_propagation.py --config_path config/info_propagation/simulation_config.yaml
-```
-
-### 二、AI 辅助模拟模式
-
-通过自然语言描述需求，系统自动完成实验设计、代码生成、运行模拟和结果优化的全流程。
-
-#### 启动系统
+通过 `run_ai_system.py`，你只需输入一段自然语言描述，系统的 AI 委员会（ProjectMaster, SimArchitect, CodeArchitect, ResearchAnalyst）将自动完成**代码生成、运行查错、结果比对与配置迭代**。
 
 ```bash
 python run_ai_system.py
 ```
 
-#### 运行模式
+📝 **典型 Prompt 示例：**
+> *"研究极端气候下，政府如何通过调整税收和基建投资来平衡财政并抑制叛乱。系统需包含政府、居民和叛军三种角色，并设定极端气候会随机发生，加速运河设施的破坏..."*
 
-**自动模式**（推荐）
-- 全自动运行，从需求输入到最终结果一键完成
-- 自动循环优化直到满足预期目标
-- 适合需求明确的场景
+⚙️ **工作流概览：**
+1. **需求解析 (Analyzing Demand)**
+2. **架构设计与配置生成 (Generating Configuration)**
+3. **仿真运行与异常修复 (Running & Debugging)**
+4. **结果诊断与闭环优化 (Auto-analyzing & Optimizing)** *(默认最多优化 10 轮迭代)*
 
-**交互模式**
-- 每个关键阶段后等待用户确认
-- 可审查中间结果（设计文档、生成代码等）
-- 适合需求探索和逐步调整
-
-#### 工作流程
-
-系统通过 6 个阶段自动完成模拟实验：
-
-1. **需求输入**：捕捉用户的自然语言需求描述
-2. **需求分析**：解析并形式化模拟目标与约束条件
-3. **系统设计**：生成设计文档和模块配置
-4. **代码生成**：自动生成模拟器代码、配置文件和提示词
-5. **运行模拟**：执行模拟并自动修复运行错误
-6. **结果评估**：分析结果，自动优化配置直到达到预期
-
-
-#### 使用示例
-
-```
-请输入您的模拟实验需求:
-研究极端气候下政府如何通过税收和投资平衡财政并抑制叛乱。
-模拟包含政府、居民和叛军三种角色，极端气候随机发生并破坏运河。
-```
-
-系统将自动生成：
-- 配置文件：`config/<simulation_name>/`
-- 模拟器代码：`src/simulation/simulator_<simulation_name>.py`
-- 入口脚本：`entrypoints/main_<simulation_name>.py`
-- 实验数据：`history/<simulation_name>/`
+> **💡 提示：** 框架在泛化实验中已成功全自动合成了包括**金融市场羊群效应 (Herding Effect)**、**资产泡沫形成 (Asset Bubble)** 以及 **Schelling 种族隔离模型**等经典场景。
 
 ---
 
-## 数据分析
+## 📊 多维数据分析 (Auto-analysis)
 
-使用内置分析工具生成统计报告和可视化图表：
+仿真结束后，系统支持一键生成轨迹解析、统计图表与可读的因果叙事报告。
 
 ```bash
-# 分析指定类型的模拟结果
+# 基础分析 (基于 default 场景)
 python src/analyzer/simulation_analyzer.py --type default
 
-# 分析特定参数的结果
-python src/analyzer/simulation_analyzer.py --type default --p 200 --y 15
+# 高阶分析：指定人口规模、模拟步长与自定义输出路径
+python src/analyzer/simulation_analyzer.py --type default --p 2000 --y 10 --output_dir ./my_research_reports
 
-# 直接指定文件进行分析
+# 自定义分析：显式指定要对比的历史快照文件
 python src/analyzer/simulation_analyzer.py --type default --input_files history/default/data1.json history/default/data2.csv
-
-# 自定义输出目录
-python src/analyzer/simulation_analyzer.py --type default --output_dir ./my_reports
 ```
-
-**参数说明**
-- `--type`：模拟类型，可选 `default`、`TEOG`、`info_propagation`
-- `--p`：初始化人口数量（可选）
-- `--y`：总模拟步长（可选）
-- `--input_files`：直接指定要分析的文件（可选）
-- `--output_dir`：自定义输出目录（可选）
-
-分析结果保存在 `history/<type>/analysis_results/` 目录。
+生成的图表与分析报告默认保存在 `history/<type>/analysis_results/` 目录下。
 
 ---
 
-## 项目结构
+## 📂 核心代码结构 (Project Structure)
 
-```
-├── config/                  # 配置文件
-│   ├── default/             # 运河的衰败场景
-│   ├── TEOG/                # TEOG 场景
-│   ├── info_propagation/    # 信息传播场景
-│   ├── template/            # 配置模板
-│   └── ...                  # 其他场景
-├── entrypoints/             # 模拟入口脚本
-│   ├── main.py              # 运河的衰败场景
-│   ├── main_TEOG.py         # TEOG 场景
-│   ├── main_info_propagation.py  # 信息传播场景
-│   └── ...                  # 其他场景
-├── src/                     # 核心源代码
-│   ├── agents/              # 智能体模块
-│   ├── environment/         # 环境模块
-│   ├── simulation/          # 模拟器模块
-│   ├── analyzer/            # 数据分析模块
-│   └── visualization/       # 可视化模块
-├── frontend/                # Web 可视化界面
-├── history/                 # 模拟结果数据
-├── run_ai_system.py         # AI 辅助系统入口
-└── start_web.bat            # Windows 一键启动脚本
+```text
+Eco3S/
+├── config/                  # 运行配置中心 (YAML参数, LLM Prompts)
+│   ├── default/             # 运河衰败实验配置
+│   ├── TEOG/                # 治理起源实验配置
+│   └── template/            # SAR 自动生成的模板库
+├── entrypoints/             # 仿真执行入口点
+├── src/
+│   ├── agents/              # 智能体定义 (认知, 记忆, 决策机制)
+│   ├── environment/         # 共演化环境设计 (气候, 空间网络, 就业市场)
+│   ├── simulation/          # 核心调度器与结构化因果仿真(SCS)逻辑
+│   ├── analyzer/            # 自动化数据分析模块
+│   └── app.py               # Web 可视化后端
+├── frontend/                # 现代化的 Vite + Vue 前端大屏
+├── history/                 # 运行时输出数据、快照与分析报告
+└── run_ai_system.py         # AI 自动演进模拟的主入口
 ```
 
 ---
 
-## 核心功能
+## 📖 延伸阅读 (Appendix & Papers)
 
-- 🤖 **AI 辅助实验设计**：自然语言描述需求，自动生成完整模拟实验
-- 🎯 **多智能体模拟**：政府、居民、叛军等多角色交互
-- 🔄 **自动优化循环**：智能评估结果并自动调整参数
-- 📊 **实时可视化**：Web 界面实时展示模拟过程
-- 📈 **数据分析**：自动生成统计报告和可视化图表
-- ⚙️ **灵活配置**：支持自定义模拟场景和参数
+如果你对 Eco3S 的底层算法、AI 编排架构、时间/空间复杂度分析，以及与其他基线模型（如 System Dynamics / YuLan-OneSim / GenSim）的 Head-to-Head 对比感兴趣，请务必查阅项目根目录下的 **[Appendix.pdf](./Appendix.pdf)**。
 
 ---
 
-## 补充材料
+## ❓ 常见问题 (FAQ)
 
-如需了解更深入的技术细节和扩展实验结果，请参阅我们的 **[附录.pdf](./Appendix.pdf)**。
+<details>
+<summary><b>1. 我应该选择传统模式还是 AI 辅助模式？</b></summary>
+如果你需要严格复现论文中的 Benchmark，或进行快速的机制测试 (Sanity Check)，请使用<b>传统模式</b>；如果你有一套全新的世界观或经济学猜想，希望系统替你打工写底层代码，请果断使用 <b>AI 辅助模式</b>。
+</details>
 
-附录（共24页）包含：
-- **实验详述**：所有基准场景（运河衰败、TEOG、信息传播）的完整智能体逻辑、环境公式和完整轨迹。
-- **自动模拟框架**：AI Agent 委员会（Master、Architect 等）的内部架构和迭代错误恢复机制。
-- **扩展案例研究**：四个额外的 AI 生成实验，包括金融羊群行为、资产泡沫和 Schelling 隔离模型。
-- **鲁棒性与性能分析**：不同 LLM（GPT-4、DeepSeek、Qwen）间的一致性评估和系统扩展基准测试（最多10,000个智能体）。
-- **技术验证**：与传统系统动力学（SD）模型的对比以及与经验 DID 基线的对齐。
+<details>
+<summary><b>2. AI 生成的代码靠谱吗？我可以手动修改吗？</b></summary>
+非常靠谱。Eco3S 的 CodeArchitect 生成的是标准、模块化的 Python 代码以及结构化的 YAML 配置文件。这避免了“黑盒”问题，你完全可以在生成的 `src/simulation/simulator_xxx.py` 或配置中进行二次修改和深度调优。
+</details>
 
----
+<details>
+<summary><b>3. 模拟速度和可扩展性如何？</b></summary>
+借助异步并发架构，Eco3S 在模拟数千个智能体时表现出次线性的时间复杂度。主要瓶颈通常在于你所使用的 LLM API 的并发请求速率限制（Rate Limits）。详细的吞吐量测试请参考论文的 Scalability Analysis 部分。
+</details>
 
-## 常见问题
-
-**Q: 如何选择传统模式还是 AI 辅助模式？**  
-A: 如果要运行现有场景或快速测试，使用传统模式；如果要创建新的模拟实验，使用 AI 辅助模式。
-
-**Q: AI 自动优化会运行多少次？**  
-A: 默认最多 3 次，可在 `project_master.py` 的 `run_full_workflow` 方法中修改 `max_iterations` 参数。
-
-**Q: 交互模式可以返回上一阶段吗？**  
-A: 当前版本不支持跨阶段返回，但可在当前阶段提供反馈重新生成。
-
-**Q: 可以手动修改生成的代码吗？**  
-A: 可以。AI 生成的是标准 Python 代码和 YAML/JSON 配置文件，支持手动修改和扩展。
-
----
-
-*注：运行可视化界面需要安装 Node.js。*

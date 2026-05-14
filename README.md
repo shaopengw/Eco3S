@@ -1,240 +1,173 @@
-# Eco3S
+# 🌍 Eco3S: Complex Economic Social System Simulation
 
-**Languages:** [English](README.md) | [中文](README_zh.md)
+<div align="center">
+
+**A multi-agent causal simulation framework for complex economic and social systems, powered by large language models (LLMs)**
+
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<!-- [![Paper](https://img.shields.io/badge/📄-Read_Paper-red)](#) -->
+[![Web UI](https://img.shields.io/badge/🖥️-Vite%20%2B%20Vue-42b883)](#)
+
+**English** · [简体中文](README_zh.md)
+
+</div>
 
 ---
 
-## Introduction
+![Eco3S Framework Architecture](assets/framework.png)
+> *Eco3S architecture overview: Configuration → Simulation → Auto-analysis*
 
-![Framework Overview](assets/framework.png)
+## 💡 Framework overview (What is Eco3S?)
 
-**Eco3S** (Complex **Eco**nomic **S**ocial **S**ystem **S**imulation) is a multi-agent simulation framework designed for economic research and policy analysis. It leverages Large Language Models (LLMs) to endow agents with sophisticated perception, reasoning, and decision-making capabilities, bridging gaps in traditional simulation methods regarding environmental interaction, counterfactual inference, and scenario generalization.Eco3S consists of three core modules: delicate agent/environment configuration, high-fidelity simulation, and automated multi-dimensional analysis.
+As large language models (LLMs) have taken off, agent-based modeling (ABM) has gained new momentum. Yet existing LLM-ABM frameworks face three major scientific challenges: **lack of a co-evolving physical–social environment**, **difficulty supporting counterfactual reasoning for causal inference**, and **inability to turn high-level research questions into runnable code automatically**.
 
-### Key Highlights
-1.  **Delicate Environment Design**: Simulates dynamically evolving physical environments (climate, geography), heterogeneous information networks (HIN), and dual "individual-collective" decision-making modes.
-2.  **Counterfactual Mechanism**: Supports snapshot saving at any simulation step, rollback, and intervention modification (policies, environmental parameters) for rigorous causal effect evaluation.
-3.  **Auto-Simulation with Human Feedback**: Automatically transforms natural language requirements into experimental scenarios through a LLM agent-based orchestration framework(ProjectMasterAgent, SimArchitectAgent, CodeArchitectAgent, and ResearchAnalystAgent).
-4.  **Auto-Analysis**: Automatically parses simulation trajectories to generate statistical charts and causal interpretation reports.
+**Eco3S** (Economic Social System Simulation) was built to address these gaps. It is not only a multi-agent sandbox but also a **research-grade, reproducible platform for social-science experiments**. Whether you want to reproduce macro phenomena from top-journal papers or generate a full experimental pipeline from natural language alone, Eco3S provides strong automation support.
 
-## Quick Start
+---
 
-### API Configuration
+## 🚀 Core academic contributions (Core innovations)
 
-Running LLM-based simulations requires configuring the API base URLs and keys first. Adjusting the available model list and the default selection is optional.
+Grounded in the framework’s underlying research, Eco3S advances along three dimensions:
 
-Most related settings are in:
-- [config/api_models_config.yaml]: available models, `model_platform`, `rate_limit_key`, and per-API parameters.
-- [.env]: API endpoints and credentials, e.g. `OPENAI_API_BASE_URL`, `OPENAI_API_KEY`
+*   🌪️ **Co-evolving environment design**
+    Moving beyond static environments, Eco3S builds a **two-layer dynamic system** of **physical settings (e.g., climate, geography)** and **social structure (heterogeneous information networks, HIN)**. Collective agent behavior reshapes the environment (e.g., infrastructure aging), and environmental change in turn drives emergent agent behavior (e.g., migration, rebellion).
+*   ⏪ **Structural causal simulation (SCS)**
+    Inspired by structural causal models (SCM), Eco3S includes a powerful **counterfactual mechanism**: save snapshots at any simulation step, apply interventions (analogous to the $do$-operator, e.g., policy or climate changes), and re-run for rigorous causal effect estimation.
+*   🤖 **SAR automation paradigm (Simulate–Analyze–Refine)**
+    Leave tedious tuning and hand-written code behind. Eco3S uses a committee of four specialized AI agents to turn high-dimensional natural-language research goals into robust simulation models through closed-loop feedback (requirements analysis → code/config generation → run-and-fix → result refinement).
 
-In most cases, fill in the URLs/keys in `.env` first, then enable or switch models in `config/api_models_config.yaml`.
+---
 
-### Environment Setup
+## 🛠️ Quick start
 
+### 1. Configure APIs and LLM engines
+Eco3S supports mainstream LLMs (e.g., GPT-4o, DeepSeek, Qwen). Configure your API credentials in the project:
+*   Copy or create a `.env` file and fill in your API keys (e.g., `OPENAI_API_BASE_URL`, `OPENAI_API_KEY`, etc.).
+*   In `config/api_models_config.yaml`, select and activate the model you want to drive the agents.
+
+### 2. Initialize the Python environment
+We recommend an isolated Conda environment:
 ```bash
-# Create virtual environment
 conda create --name Eco3S python=3.10
 conda activate Eco3S
-
-# Install dependencies
 pip install -r requirements.txt
 ```
 
-### Launch Visualization Interface
+### 3. Launch the Web visualization workbench
+Eco3S provides a modern front-end panel for live simulation traces and charts.
 
-**Option 1: One-Click Start for Windows Users**
 ```bash
-start_web.bat
-```
-
-**Option 2: Manual Start**
-1. Start backend service
-```bash
+# Terminal 1: start the Python backend
 cd src
 python app.py
-```
 
-2. Start frontend service (new terminal)
-```bash
+# Terminal 2: start the Vue front end (run npm install on first use)
 cd frontend
-npm install  # First run only
-npm install chart.js vue-chartjs  # First run only
+npm install
 npm run dev
 ```
-
-Visit http://localhost:5173 to view the web interface.
+Open your browser at: 👉 **http://localhost:5173**
 
 ---
 
-## Usage
+## 🎮 Usage modes
 
-### I. Traditional Simulation Mode
+Eco3S offers two distinct modes, from theory validation to open exploration.
 
-Eco3S includes multiple benchmark scenarios based on replications of top-tier economic/historical research:
-1.  **Canal Decay and Rebellion**: Replicates Cao & Chen (2022) research, exploring the impact of transportation infrastructure evolution (Grand Canal) on social stability.
-2.  **Origins of Governance (TEOG)**: Based on Allen (2023) findings, simulates collective action and government emergence from climate/river changes.
-3.  **Information Propagation**: Replicates Banerjee et al. (2016) research on India's demonetization policy, testing different propagation strategies (seed nodes vs. broadcast).
+### Mode 1: Traditional simulation (reproducing top-journal benchmarks)
+The system ships with benchmark scenarios aligned to high-impact economics papers, validating robustness on complex decisions, spatial econometrics, and cognitive evolution.
 
-#### Available Scenarios
+| Simulation scenario | Reference and core mechanism | Entry command |
+| :--- | :--- | :--- |
+| 🔥 **Canal decay & rebellion**<br>*(Canal Decay & Rebellion)* | Cao & Chen (2022) <br> *Spatial heterogeneity of infrastructure decay, unemployment, and social unrest* | `python entrypoints/main.py --config_path config/default/simulation_config.yaml` |
+| 🏛️ **Origins of governance**<br>*(Origins of Governance)* | Allen et al. (2023) <br> *Climate/hydrology-driven demand for public goods and emergence of collective governance* | `python entrypoints/main_TEOG.py --config_path config/TEOG/simulation_config.yaml` |
+| 📢 **Information propagation & demonetization**<br>*(Information Propagation)* | Banerjee et al. (2024) <br> *Network propagation, seeding strategies, and social learning under India’s demonetization* | `python entrypoints/main_info_propagation.py --config_path config/info_propagation/simulation_config.yaml` |
 
-**1. Canal Decay**
-```bash
-python entrypoints/main.py --config_path config/default/simulation_config.yaml
-```
+---
 
-**2. TEOG Scenario**
-```bash
-python entrypoints/main_TEOG.py --config_path config/TEOG/simulation_config.yaml
-```
+### Mode 2: AI-assisted simulation (SAR automation)
+**“Tell the AI your idea—Eco3S handles the rest.”**
 
-**3. Information Propagation**
-```bash
-python entrypoints/main_info_propagation.py --config_path config/info_propagation/simulation_config.yaml
-```
-
-### II. AI-Assisted Simulation Mode
-
-Describe requirements in natural language, and the system automatically completes experimental design, code generation, simulation execution, and result optimization.
-
-#### Start System
+With `run_ai_system.py`, you only need a natural-language description. The AI committee (ProjectMaster, SimArchitect, CodeArchitect, ResearchAnalyst) automatically performs **code generation, run-and-debug, result comparison, and configuration iteration**.
 
 ```bash
 python run_ai_system.py
 ```
 
-#### Running Modes
+📝 **Example prompt:**
+> *“Study how, under extreme climate, a government balances the budget and curbs rebellion by adjusting taxes and infrastructure investment. The system should include government, residents, and rebels, with extreme weather occurring at random and accelerating damage to canal facilities…”*
 
-**Automatic Mode** (Recommended)
-- Fully automated from requirement input to final results
-- Auto-iterates optimization until meeting expected goals
-- Suitable for clear requirements
+⚙️ **Workflow overview:**
+1. **Analyzing demand**
+2. **Architecture design and configuration generation**
+3. **Simulation run and error repair**
+4. **Result diagnosis and closed-loop optimization** *(up to 10 optimization rounds by default)*
 
-**Interactive Mode**
-- Pauses after each key stage for user confirmation
-- Allows review of intermediate results (design documents, generated code, etc.)
-- Suitable for requirement exploration and gradual adjustments
-
-#### Workflow
-
-The system automatically completes simulation experiments through 6 stages:
-
-1. **Requirement Input**: Captures natural language descriptions from users
-2. **Requirement Analysis**: Parses and formalizes simulation objectives and constraints
-3. **System Design**: Generates design documents and module configurations
-4. **Code Generation**: Automatically generates simulator code, configuration files, and prompts
-5. **Run Simulation**: Executes simulation and automatically fixes runtime errors
-6. **Result Evaluation**: Analyzes results and auto-optimizes configurations until expectations are met
-
-#### Usage Example
-
-```
-Please enter your simulation experiment requirements:
-Research how governments balance finances and suppress rebellion through taxation and investment under extreme climate conditions.
-The simulation includes three roles: government, residents, and rebels, with extreme weather randomly occurring and damaging canals.
-```
-
-The system will automatically generate:
-- Configuration files: `config/<simulation_name>/`
-- Simulator code: `src/simulation/simulator_<simulation_name>.py`
-- Entry scripts: `entrypoints/main_<simulation_name>.py`
-- Experimental data: `history/<simulation_name>/`
+> **💡 Tip:** In generalized experiments, the framework has fully automated synthesis of classic setups including **financial-market herding**, **asset-bubble formation**, and the **Schelling segregation model**.
 
 ---
 
-## Data Analysis
+## 📊 Multi-dimensional data analysis (Auto-analysis)
 
-Use built-in analysis tools to generate statistical reports and visualization charts:
+After a simulation, the system can one-click generate trajectory parsing, statistical charts, and readable causal narratives.
 
 ```bash
-# Analyze results of specified type
+# Basic analysis (default scenario)
 python src/analyzer/simulation_analyzer.py --type default
 
-# Analyze results with specific parameters
-python src/analyzer/simulation_analyzer.py --type default --p 200 --y 15
+# Advanced analysis: set population size, simulation horizon, and custom output path
+python src/analyzer/simulation_analyzer.py --type default --p 2000 --y 10 --output_dir ./my_research_reports
 
-# Directly specify files for analysis
+# Custom analysis: explicitly list historical snapshot files to compare
 python src/analyzer/simulation_analyzer.py --type default --input_files history/default/data1.json history/default/data2.csv
-
-# Custom output directory
-python src/analyzer/simulation_analyzer.py --type default --output_dir ./my_reports
 ```
-
-**Parameter Description**
-- `--type`: Simulation type, options: `default`, `TEOG`, `info_propagation`
-- `--p`: Initial population size (optional)
-- `--y`: Total simulation steps (optional)
-- `--input_files`: Directly specify files to analyze (optional)
-- `--output_dir`: Custom output directory (optional)
-
-Analysis results are saved in `history/<type>/analysis_results/` directory.
+Charts and analysis reports are saved by default under `history/<type>/analysis_results/`.
 
 ---
 
-## Project Structure
+## 📂 Core project structure
 
-```
-├── config/                  # Configuration files
-│   ├── default/             # Canal Decay scenario
-│   ├── TEOG/                # TEOG scenario
-│   ├── info_propagation/    # Information Propagation scenario
-│   ├── template/            # Configuration templates
-│   └── ...                  # Other scenarios
-├── entrypoints/             # Simulation entry scripts
-│   ├── main.py              # Canal Decay scenario
-│   ├── main_TEOG.py         # TEOG scenario
-│   ├── main_info_propagation.py  # Information Propagation scenario
-│   └── ...                  # Other scenarios
-├── src/                     # Core source code
-│   ├── agents/              # Agent modules
-│   ├── environment/         # Environment modules
-│   ├── simulation/          # Simulator modules
-│   ├── analyzer/            # Data analysis modules
-│   └── visualization/       # Visualization modules
-├── frontend/                # Web visualization interface
-├── history/                 # Simulation result data
-├── run_ai_system.py         # AI-assisted system entry
-└── start_web.bat            # Windows one-click start script
+```text
+Eco3S/
+├── config/                  # Run configuration hub (YAML parameters, LLM prompts)
+│   ├── default/             # Canal decay experiment
+│   ├── TEOG/                # Origins of governance experiment
+│   └── template/            # Templates for SAR auto-generation
+├── entrypoints/             # Simulation entry points
+├── src/
+│   ├── agents/              # Agent definitions (cognition, memory, decision rules)
+│   ├── environment/         # Co-evolving environment (climate, spatial networks, labor market)
+│   ├── simulation/          # Core scheduler and structural causal simulation (SCS)
+│   ├── analyzer/            # Automated data analysis
+│   └── app.py               # Web visualization backend
+├── frontend/                # Modern Vite + Vue dashboard
+├── history/                 # Runtime outputs, snapshots, and analysis reports
+└── run_ai_system.py         # Main entry for AI-driven simulation
 ```
 
 ---
 
-## Core Features
+## 📖 Further reading (Appendix & papers)
 
-- 🤖 **AI-Assisted Experimental Design**: Natural language requirements automatically generate complete simulation experiments
-- 🎯 **Multi-Agent Simulation**: Multi-role interactions including government, residents, rebels, etc.
-- 🔄 **Auto-Optimization Loop**: Intelligent evaluation and automatic parameter adjustment
-- 📊 **Real-time Visualization**: Web interface displays simulation process in real-time
-- 📈 **Data Analysis**: Automatically generates statistical reports and visualization charts
-- ⚙️ **Flexible Configuration**: Supports custom simulation scenarios and parameters
+For underlying algorithms, AI orchestration, time/space complexity, and head-to-head comparisons with baselines (e.g., System Dynamics / YuLan-OneSim / GenSim), see **[Appendix.pdf](./Appendix.pdf)** in the project root.
 
 ---
 
-## Supplementary Material
+## ❓ FAQ
 
-For more in-depth technical details and extended experimental results, please refer to our **[Appendix.pdf](./Appendix.pdf)**.
+<details>
+<summary><b>1. Should I use traditional mode or AI-assisted mode?</b></summary>
+Use <b>traditional mode</b> when you need strict paper-aligned benchmarks or quick mechanism checks (sanity tests); use <b>AI-assisted mode</b> when you have a new world model or economic hypothesis and want the system to draft the underlying code for you.
+</details>
 
-The appendix (24 pages) provides:
-- **Experimental Elaborations**: Comprehensive agent logic, environmental formulas, and full trajectories for all benchmark scenarios (Canal Decay, TEOG, Info Propagation).
-- **Auto-Simulation Framework**: Internal architecture of the AI agent committee (Master, Architect, etc.) and the iterative error-recovery mechanisms.
-- **Extended Case Studies**: Four additional AI-generated experiments, including Financial Herding, Asset Bubble, and Schelling Segregation models.
-- **Robustness & Performance Analysis**: Consistency evaluations across different LLMs (GPT-4, DeepSeek, Qwen) and system scaling benchmarks (up to 10,000 agents).
-- **Technical Validation**: Comparison with traditional System Dynamics (SD) models and alignment with empirical DID baselines.
+<details>
+<summary><b>2. How reliable is AI-generated code? Can I edit it by hand?</b></summary>
+Very reliable. Eco3S’s CodeArchitect emits standard, modular Python and structured YAML configs—avoiding a “black box.” You can freely edit generated files such as `src/simulation/simulator_xxx.py` or configs for fine-tuning.
+</details>
 
----
+<details>
+<summary><b>3. How fast and scalable is simulation?</b></summary>
+With an async concurrent architecture, Eco3S shows sublinear time complexity for thousands of agents. The usual bottleneck is your LLM API’s rate limits. See the paper’s scalability analysis for throughput details.
+</details>
 
-## FAQ
-
-**Q: How to choose between Traditional Mode and AI-Assisted Mode?**  
-A: Use Traditional Mode for running existing scenarios or quick testing; use AI-Assisted Mode for creating new simulation experiments.
-
-**Q: How many times will AI auto-optimization run?**  
-A: Maximum 3 times by default. You can modify the `max_iterations` parameter in the `run_full_workflow` method of `project_master.py`.
-
-**Q: Can Interactive Mode return to a previous stage?**  
-A: Cross-stage returns are not supported in the current version, but you can provide feedback to regenerate within the current stage.
-
-**Q: Can I manually modify the generated code?**  
-A: Yes. The AI-generated files are standard Python code and YAML/JSON configuration files, supporting manual modification and extension.
-
----
-
-*Note: Node.js installation is required to run the visualization interface.*

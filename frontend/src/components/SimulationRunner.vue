@@ -21,16 +21,22 @@
         >
           {{ t('simulationRunner.config') || '系统配置' }}
         </el-button>
-        <el-button
-          type="primary"
-          class="run-btn"
-          size="large"
-          :loading="isRunning"
-          @click="runSimulation"
-          round
-        >
-          {{ isRunning ? t('simulationRunner.running') : t('simulationRunner.runButton') }}
-        </el-button>
+        
+        <div class="run-wrapper">
+          <el-button
+            type="primary"
+            class="run-btn"
+            size="large"
+            :loading="isRunning"
+            @click="runSimulation"
+            round
+          >
+            {{ isRunning ? t('simulationRunner.running') : t('simulationRunner.runButton') }}
+          </el-button>
+          <div class="run-hint">
+            {{ t('simulationRunner.firstRunMayTakeLong') || '首次运行可能较长，请耐心等待' }}
+          </div>
+        </div>
       </div>
     </header>
 
@@ -51,13 +57,15 @@
             </div>
           </div>
           <div class="card-body map-wrapper">
-            <MapDisplay
-              ref="mapDisplayRef"
-              :nodes="residentNodes"
-              :towns-data="townsData"
-              :theme="configType"
-              @node-click="onNodeClick"
-            />
+            <div class="map-host">
+              <MapDisplay
+                ref="mapDisplayRef"
+                :nodes="residentNodes"
+                :towns-data="townsData"
+                :theme="configType"
+                @node-click="onNodeClick"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -255,7 +263,7 @@
 </template>
 
 <script setup>
-import { ref, onUnmounted, onMounted, reactive, inject, nextTick } from 'vue'
+import { ref, onUnmounted, onMounted, reactive, inject, nextTick, computed } from 'vue'
 import { Line } from 'vue-chartjs'
 import {
   Chart as ChartJS,
@@ -285,6 +293,7 @@ ChartJS.register(
 
 const useI18nFunc = inject('useI18n')
 const { t } = useI18nFunc()
+const ensureApiKeysForExperiment = inject('ensureApiKeysForExperiment', async () => true)
 
 const props = defineProps({
   configType: {
@@ -309,8 +318,6 @@ const showConfigDrawer = ref(false)
 const showResidentListDrawer = ref(false)
 const searchResidentQuery = ref('')
 const mapDisplayRef = ref(null)
-
-import { computed } from 'vue'
 
 const filteredResidentNodes = computed(() => {
   if (!searchResidentQuery.value) return residentNodes.value
@@ -344,6 +351,8 @@ const scrollToBottom = () => {
 }
 
 const runSimulation = async () => {
+  const gate = await ensureApiKeysForExperiment()
+  if (!gate) return
   try {
     isRunning.value = true
     output.value = ''
@@ -457,7 +466,12 @@ const fetchResidentStates = async () => {
     const response = await fetch(`/api/resident_states/${processId.value}`)
     const data = await response.json()
     if (data.residents && Array.isArray(data.residents)) {
-      residentNodes.value = data.residents
+      if (data.residents.length > 0) {
+        residentNodes.value = data.residents
+      } else if (!(isRunning.value && residentNodes.value.length > 0)) {
+        // 运行中且已有居民时，避免短暂空数据导致地图清空
+        residentNodes.value = data.residents
+      }
     }
   } catch (error) {
     console.error('获取居民位置失败:', error)
@@ -667,11 +681,6 @@ onUnmounted(() => {
   100% { opacity: 1; }
 }
 
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
 
 .config-btn {
   font-weight: 600;
@@ -700,11 +709,13 @@ onUnmounted(() => {
   box-shadow: 0 6px 16px rgba(64, 158, 255, 0.4);
 }
 
-/* 主体内容网格 */
+/* 主体内容网格：单行撑满剩余高度 */
 .dashboard-content {
   flex: 1;
+  min-height: 0;
   display: grid;
-  grid-template-columns: 1.5fr 1fr; /* 左侧更宽，右侧稍窄 */
+  grid-template-columns: 1.5fr 1fr;
+  grid-template-rows: minmax(0, 1fr);
   gap: 24px;
   padding: 24px 32px;
   overflow: hidden;
@@ -715,6 +726,8 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 24px;
   overflow: hidden;
+  min-height: 0;
+  height: 100%;
 }
 
 /* 通用卡片样式 */
@@ -757,12 +770,27 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-/* 左侧：地图 */
+/* 左侧：地图 — 占满列剩余高度 */
 .map-card {
-  flex: 1; /* 地图填满左侧 */
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
+
+.map-host {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .map-wrapper {
-  padding: 0; /* 地图填满卡片 */
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
   position: relative;
 }
 .resident-count {
@@ -903,22 +931,36 @@ onUnmounted(() => {
   border-radius: 3px;
 }
 
-/* 图表区域 */
+/* 图表区域：与地图列对齐撑到底 */
 .charts-card {
   flex: 1;
-  min-height: 0; /* 防止内容溢出 */
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
+
 .charts-wrapper {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 16px;
+  display: flex;
+  flex-direction: column;
 }
+
 .charts-grid {
-  display: grid;
-  grid-template-columns: 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 24px;
+  flex: 1;
+  min-height: 0;
 }
+
 .chart-item {
-  height: 280px;
+  flex: 1;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
   background: #ffffff;
   border-radius: 12px;
   padding: 16px;
@@ -926,13 +968,28 @@ onUnmounted(() => {
   border: 1px solid #ebeef5;
   transition: transform 0.3s, box-shadow 0.3s;
 }
+
+.chart-item > * {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
 .chart-item:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
 }
 
+.plot-item {
+  flex: 1;
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .empty-charts {
-  height: 100%;
+  flex: 1;
+  min-height: 200px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1111,5 +1168,28 @@ onUnmounted(() => {
   height: 100%;
   border: none;
   box-shadow: none;
+}
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.run-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.run-hint {
+  position: absolute;
+  top: 90%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 4px;
+  font-size: 10px; 
+  color: #b1b1b6;
+  white-space: nowrap;
+  pointer-events: none;
+  background: transparent;
 }
 </style>

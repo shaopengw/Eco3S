@@ -30,16 +30,51 @@ export default {
   },
   header: {
     title: 'Eco3S',
-    lightMode: 'Light',
-    darkMode: 'Dark',
-    language: '中文',
+    topNav: {
+      aria: 'Main sections',
+      intro: 'Overview',
+      workbench: 'Workbench',
+      ai: 'AI system'
+    },
     nav: {
       dashboard: 'Dashboard',
       history: 'History',
       analysis: 'Analysis',
       backHome: 'Home'
-    }
+    },
+    localeAria: 'Interface language'
   },
+
+  settings: {
+    open: 'Model & API settings',
+    drawerTitle: 'Model API configuration',
+    drawerHint: 'Set endpoints and keys here before running simulations or AI flows. Leave API key empty to keep the current saved value.',
+    providerKeyPh: 'Provider name (e.g. OPENAI)',
+    modelTypes: 'Model types (comma-separated)',
+    modelTypesPh: 'e.g. gpt-4o, gpt-3.5-turbo',
+    modelPlatform: 'Model platform',
+    urlEnv: 'Base URL environment variable',
+    urlEnvPh: 'e.g. OPENAI_API_BASE_URL',
+    baseUrl: 'Base URL value',
+    apiKeyEnv: 'API key environment variable',
+    apiKeyEnvPh: 'e.g. OPENAI_API_KEY',
+    apiKey: 'API key value',
+    apiKeyConfigured: 'Saved',
+    apiKeyPlaceholder: 'Paste API key',
+    apiKeyLeaveBlank: 'Leave blank to keep the current key',
+    allowRandom: 'Allow random selection',
+    allowRandomHelp: 'When enabled, this model can be randomly selected by the system. When disabled, the system will not automatically pick it, but you can still manually specify it.',
+    addProvider: 'Add provider',
+    remove: 'Remove',
+    confirmRemove: 'Remove this provider from the list?',
+    needOneProvider: 'Keep at least one provider with a name before saving.',
+    save: 'Save',
+    loadFailed: 'Failed to load API configuration',
+    saveFailed: 'Save failed',
+    saveSuccess: 'Saved. Restart the backend if it was already running.',
+    precheckMessage: 'Configure API keys in settings before starting (missing)'
+  },
+
   menu: {
     createNew: 'Create New',
     aiAssisted: 'AI Assisted Creation',
@@ -69,6 +104,11 @@ export default {
       mode: {
         auto: 'Auto Mode - Complete all steps at once',
         interactive: 'Interactive Mode - Wait for confirmation at each stage'
+      },
+      experienceMode:{
+        light: 'Lightweight Mode',
+        full: 'Full Mode',
+        explanation: 'Lightweight mode is suitable for initial experience, ending after successful small-scale run. Full mode may require more time and resources. If you don\'t have a clear research goal or just want to try it out, lightweight mode is recommended.'
       },
       placeholder: 'Example: I want to study the impact of climate change on resident migration, simulating 100 residents\' behavior under different climate conditions, observing their decisions during extreme weather...',
       examples: 'Example Requirements:',
@@ -210,10 +250,15 @@ export default {
     startButton: 'Start Simulation',
     historyButton: 'Simulation History',
     analyzeButton: 'Data Analysis',
+    detailBadge: 'Project overview',
+    loadingDoc: 'Loading documentation…',
+    loadError: 'Could not load this project’s documentation.',
+    emptyDoc: 'No description is available for this project yet.'
   },
   
   simulationRunner: {
     title: 'Simulation Runner',
+    firstRunMayTakeLong: 'First run may take longer, please be patient',
     config: 'Settings',
     backButton: 'Back to Description',
     runButton: 'Run Simulation',
@@ -317,5 +362,35 @@ export default {
     loadFailed: 'Failed to load configuration',
     saveFailed: 'Failed to save configuration',
     saveSuccess: 'Configuration saved successfully',
+  },
+
+  landing: {
+    eyebrow: 'LLM-powered multi-agent simulation',
+    heroTitle: 'Eco3S · Economic & social system lab',
+    heroLead:
+      'Eco3S (Economic Social System Simulation) is a research-grade, reproducible platform: a co-evolving physical–social environment, structural causal counterfactuals, and SAR automation that turns natural-language hypotheses into runnable experiments.',
+    ctaWorkbench: 'Open visualization workbench',
+    ctaAi: 'AI-assisted creation (SAR)',
+    pillar1Title: 'Co-evolving environment',
+    pillar1Body:
+      'Two-layer dynamics of physical settings (climate, geography) and social structure (HIN). Collective behavior reshapes the world; environmental change drives migration, unrest, and more.',
+    pillar2Title: 'Structural causal simulation',
+    pillar2Body:
+      'Snapshot any step, apply interventions (do-operator style), and re-run for rigorous causal effect estimation—beyond purely correlational traces.',
+    pillar3Title: 'Simulate–Analyze–Refine',
+    pillar3Body:
+      'A committee of specialized agents turns high-dimensional research goals into robust models: requirements → design → code → run-and-fix → refinement.',
+    modesTitle: 'Two ways to run experiments',
+    modesSub: 'From journal-aligned benchmarks to open-ended exploration.',
+    mode1Tag: 'Traditional',
+    mode1Title: 'Paper-grade benchmarks',
+    mode1Body:
+      'Shipped scenarios (canal decay & rebellion, origins of governance, information propagation) reproduce mechanisms from top-field economics work.',
+    mode2Tag: 'AI-assisted',
+    mode2Title: 'Describe it; the system builds it',
+    mode2Body:
+      'Natural-language goals drive automatic configuration, code generation, debugging, and multi-round optimization—then analyze trajectories in one click.',
+    footnote: '* Currently in early development, welcome interested researchers to join testing and feedback!',
+    navHint: 'You can also switch sections anytime from the top navigation.'
   }
 }
