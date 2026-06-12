@@ -433,36 +433,6 @@ class IResident(ABC):
 
     @property
     @abstractmethod
-    def income(self) -> float:
-        """收入"""
-        pass
-
-    @property
-    @abstractmethod
-    def satisfaction(self) -> float:
-        """对政府的满意度（0到100）"""
-        pass
-
-    @property
-    @abstractmethod
-    def health_index(self) -> int:
-        """居民的健康状况（0到10）"""
-        pass
-
-    @property
-    @abstractmethod
-    def lifespan(self) -> int:
-        """居民的寿命"""
-        pass
-
-    @property
-    @abstractmethod
-    def personality(self) -> Optional[str]:
-        """性格"""
-        pass
-
-    @property
-    @abstractmethod
     def group(self) -> Optional[Any]:
         """所属群组"""
         pass

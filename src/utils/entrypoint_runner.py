@@ -6,7 +6,7 @@
 - 构建新 Simulator（由调用方提供 build_new_simulator）
 - 运行 + 可选保存缓存
 
-目标：让 main*.py 尽量只保留“仿真特有编排”，减少重复样板代码。
+目标：让 main*.py 尽量只保留"仿真特有编排"，减少重复样板代码。
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ import yaml
 from src.influences import InfluenceRegistry
 from src.simulation.plugin_access import require_module
 from src.utils.simulation_cache import SimulationCache
+from src.visualization.auto_plotter import auto_plot_results
 
 
 class CacheBackend(Protocol):
@@ -127,6 +128,7 @@ async def run_with_cache(
     post_resume: Optional[Callable[[Any], None]] = None,
     after_run: Optional[Callable[[Any], None]] = None,
     cache_backend: Optional[CacheBackend] = None,
+    auto_plot_results: bool = True,
 ) -> Any:
     """固定运行骨架：先尝试从缓存恢复，否则调用 build_new_simulator 构建。"""
 
@@ -184,8 +186,18 @@ async def run_with_cache(
 
     try:
         await simulator.run()
-        if after_run is not None:
+
+        # 如果没有自定义 after_run，自动保存结果
+        if after_run is None:
+            if hasattr(simulator, 'save_results') and callable(simulator.save_results):
+                simulator.save_results()
+        else:
             after_run(simulator)
+
+        # 自动绘图
+        if auto_plot_results:
+            plot_config = (config or {}).get('visualization')
+            _try_auto_plot(simulator, plot_config=plot_config)
     finally:
         if simulator is not None and cache_opts.save_cache and cache_file:
             try:
@@ -194,6 +206,34 @@ async def run_with_cache(
                 pass
 
     return simulator
+
+
+def _try_auto_plot(simulator: Any, plot_config: Optional[Dict] = None) -> None:
+    """尝试自动根据 simulator.results 或数据目录中的结果文件生成图表。"""
+    try:
+        # 优先从 simulator.results 直接绘图
+        if hasattr(simulator, 'results') and isinstance(simulator.results, dict):
+            auto_plot_results(simulator.results, plot_config=plot_config)
+            return
+
+        # 否则扫描数据目录
+        from src.utils.simulation_context import SimulationContext
+        data_dir = SimulationContext.get_data_dir()
+        if os.path.exists(data_dir):
+            files = [f for f in os.listdir(data_dir) if f.startswith('running_data')]
+            csv_files = [f for f in files if f.endswith('.csv')]
+            json_files = [f for f in files if f.endswith('.json')]
+
+            if csv_files:
+                csv_files.sort(key=lambda f: os.path.getctime(os.path.join(data_dir, f)), reverse=True)
+                auto_plot_results(os.path.join(data_dir, csv_files[0]), plot_config=plot_config)
+                return
+
+            if json_files:
+                json_files.sort(key=lambda f: os.path.getctime(os.path.join(data_dir, f)), reverse=True)
+                auto_plot_results(os.path.join(data_dir, json_files[0]), plot_config=plot_config)
+    except Exception as e:
+        print(f"自动绘图失败: {e}")
 
 
 # ====================
@@ -225,9 +265,9 @@ class RuntimeModulesState:
         """通用运行期初始化输出。
 
         说明：
-        - 尽量只包含“系统态”与初始化产物，不绑定特定 Simulator。
+        - 尽量只包含"系统态"与初始化产物，不绑定特定 Simulator。
         - `modules` 中保存所有已加载插件（key 为插件名）。
-        - `initialized` 表示已完成“运行期初始化”的模块名集合。
+        - `initialized` 表示已完成"运行期初始化"的模块名集合。
         - 模块对象默认都是 plugin 实例（而非 service），以便调用初始化方法/触发事件；
             业务侧若需要 service，可用 `module.service`。
         """
@@ -301,59 +341,6 @@ def _get_cfg(config: dict, path: str, default: Any = None) -> Any:
     return cur
 
 
-def _load_plugins_yaml_dependency_overrides(plugins_config_path: str) -> Dict[str, List[str]]:
-    """从 config/plugins.yaml 提取 dependencies 覆盖。
-
-    约定：兼容两种写法：
-    - plugins[].dependencies
-    - plugins[].metadata.dependencies
-
-    注意：bootstrap 当前只从 config/plugins.yaml 读取 enabled/init_params。
-    这里读取 dependencies 仅用于“运行期初始化编排”的排序。
-    """
-
-    if not plugins_config_path or not os.path.exists(plugins_config_path):
-        return {}
-
-    try:
-        with open(plugins_config_path, "r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f) or {}
-    except Exception:
-        return {}
-
-    plugins_cfg = cfg.get("plugins")
-    if not isinstance(plugins_cfg, list):
-        return {}
-
-    overrides: Dict[str, List[str]] = {}
-    for item in plugins_cfg:
-        if not isinstance(item, dict):
-            continue
-        name = item.get("name")
-        if not isinstance(name, str) or not name.strip():
-            continue
-        name = name.strip()
-
-        deps = item.get("dependencies")
-        if deps is None:
-            md = item.get("metadata")
-            if isinstance(md, dict):
-                deps = md.get("dependencies")
-
-        if deps is None:
-            continue
-        if isinstance(deps, str):
-            deps_list = [deps]
-        elif isinstance(deps, list):
-            deps_list = [d for d in deps if isinstance(d, str) and d.strip()]
-        else:
-            continue
-
-        overrides[name] = [d.strip() for d in deps_list]
-
-    return overrides
-
-
 def _collect_loaded_plugins(plugin_registry: Any) -> Dict[str, Any]:
     """尽量通用地枚举已加载插件。"""
 
@@ -368,15 +355,6 @@ def _collect_loaded_plugins(plugin_registry: Any) -> Dict[str, Any]:
         except Exception:
             return {}
 
-    # 兼容旧 PluginManager
-    get_all_plugins = getattr(plugin_registry, "get_all_plugins", None)
-    if callable(get_all_plugins):
-        try:
-            loaded = get_all_plugins()
-            return dict(loaded) if isinstance(loaded, dict) else {}
-        except Exception:
-            return {}
-
     return {}
 
 
@@ -384,13 +362,20 @@ def _get_module_dependencies(
     *,
     module_name: str,
     plugin_registry: Any,
-    dependency_overrides: Dict[str, List[str]],
 ) -> List[str]:
-    """获取模块依赖：优先 config/plugins.yaml，其次插件自身 metadata.dependencies。"""
+    """获取模块依赖：优先使用 PluginRegistry 的依赖图，否则回退到单插件 metadata。"""
 
-    if module_name in dependency_overrides:
-        return list(dependency_overrides.get(module_name) or [])
+    # 优先从统一依赖图读取（与加载期约束一致）
+    graph_getter = getattr(plugin_registry, "get_dependency_graph", None)
+    if callable(graph_getter):
+        try:
+            graph = graph_getter()
+            deps = graph.get(module_name, [])
+            return [d for d in deps if isinstance(d, str) and d.strip()]
+        except Exception:
+            pass
 
+    # 回退：直接读取单个插件的 metadata
     md_getter = getattr(plugin_registry, "get_plugin_metadata", None)
     if callable(md_getter):
         try:
@@ -404,16 +389,28 @@ def _get_module_dependencies(
 
 
 def _iter_auto_init_methods(plugin: Any) -> List[Tuple[str, Callable[..., Any]]]:
-    """枚举插件的“可自动初始化”的方法。
+    """枚举插件的"可自动初始化"的方法。
 
     约定：
     - 方法名为 initialize 或 initialize_* 会被认为是运行期初始化步骤。
+    - 只收集在插件类**本身**定义的方法，排除从业务基类（如 Map/Towns/ClimateSystem）
+      继承来的方法，避免运行期重复/错误调用。
     - residents 插件的 ensure_initialized 由 orchestrator 统一特殊处理。
     """
 
     methods: List[Tuple[str, Callable[..., Any]]] = []
+    plugin_cls = plugin.__class__
     for method_name, member in inspect.getmembers(plugin, predicate=callable):
         if method_name == "initialize" or method_name.startswith("initialize_"):
+            if method_name not in plugin_cls.__dict__:
+                continue
+            # 排除从基类继承并重写的方法（如 Map/Towns/SocialNetwork 的 initialize_*）
+            if any(
+                method_name in base.__dict__
+                for base in plugin_cls.__mro__[1:]
+                if base is not object
+            ):
+                continue
             methods.append((method_name, member))
     return methods
 
@@ -449,29 +446,26 @@ async def orchestrate_runtime_modules_init(
 ) -> RuntimeModulesState:
     """通用运行期初始化编排：依赖驱动 + 方法签名驱动。
 
-    目标：减少 entrypoint_runner 对“具体模块名/固定顺序”的硬编码。
+    目标：减少 entrypoint_runner 对"具体模块名/固定顺序"的硬编码。
 
     自动规则：
     - 自动枚举 plugin_registry 中已加载插件。
     - 每个插件：
-      - 依赖来自 `config/plugins.yaml` 的 dependencies（若存在），否则回退到插件 metadata.dependencies。
+      - 依赖来自插件自身 metadata.dependencies（由 plugins/*/plugin.yaml 提供）。
       - 自动执行其 `initialize` / `initialize_*` 方法（按依赖与参数签名排序）。
       - residents 插件：若存在 `ensure_initialized`，则用 config+residents_kwargs 拼装参数并执行，产出 `residents`。
 
     依赖与排序：
-    - 编排器将每个模块的“就绪”标记为 `initialized:<module>`。
+    - 编排器将每个模块的"就绪"标记为 `initialized:<module>`。
     - 若某个模块依赖另一个模块（dependencies 中声明），则其初始化会等待依赖模块 `initialized`。
     - 若某个 initialize_* 的签名参数与其他模块同名（如 map/towns/social_network），也会等待该模块 initialized。
 
     扩展方式（新增模块示例）：
-    - 在 config/plugins.yaml 里启用该插件，并在 dependencies 中声明依赖（例如 ["map"]）。
+    - 在 plugins/<插件>/plugin.yaml 的 dependencies 中声明依赖（例如 ["map"]）。
     - 在插件类里提供 `initialize_xxx(map, ...)` 或 `initialize_xxx(map_service, ...)`（后者会自动传入依赖模块的 service）。
     """
 
     residents_kwargs = dict(residents_kwargs or {})
-
-    # 依赖覆盖：优先读取 config/plugins.yaml（用户更容易改），否则使用插件自身 metadata。
-    dependency_overrides = _load_plugins_yaml_dependency_overrides(os.path.join("config", "plugins.yaml"))
 
     modules = _collect_loaded_plugins(plugin_registry)
     loaded_names: Set[str] = set(modules.keys())
@@ -499,7 +493,6 @@ async def orchestrate_runtime_modules_init(
             deps = _get_module_dependencies(
                 module_name="residents",
                 plugin_registry=plugin_registry,
-                dependency_overrides=dependency_overrides,
             )
 
             done_token = "init_done:residents.ensure_initialized"
@@ -521,8 +514,8 @@ async def orchestrate_runtime_modules_init(
                 kwargs = {
                     "initial_population": sim_cfg.get("initial_population"),
                     "resident_info_path": data_cfg.get("resident_info_path"),
-                    "resident_prompt_path": data_cfg.get("resident_prompt_path"),
-                    "resident_actions_path": data_cfg.get("resident_actions_path"),
+                    "config_dir": os.path.dirname(data_cfg.get("agent_profile_path") or ""),
+                    "agent_profile_path": data_cfg.get("agent_profile_path"),
                 }
                 kwargs.update({k: v for k, v in (_residents_kwargs or {}).items() if v is not None})
 
@@ -556,7 +549,6 @@ async def orchestrate_runtime_modules_init(
         deps = _get_module_dependencies(
             module_name=module_name,
             plugin_registry=plugin_registry,
-            dependency_overrides=dependency_overrides,
         )
 
         for method_name, method in _iter_auto_init_methods(plugin):
@@ -580,7 +572,7 @@ async def orchestrate_runtime_modules_init(
             requires: Set[str] = set()
             requires.update({f"initialized:{d}" for d in deps if isinstance(d, str) and d.strip()})
 
-            # 若签名里出现模块名参数，则默认按 “initialized:<name>” 约束排序。
+            # 若签名里出现模块名参数，则默认按 "initialized:<name>" 约束排序。
             for p in param_names:
                 if p in {"config", "plugin_registry"}:
                     requires.add(p)
@@ -638,7 +630,6 @@ async def orchestrate_runtime_modules_init(
         deps = _get_module_dependencies(
             module_name=module_name,
             plugin_registry=plugin_registry,
-            dependency_overrides=dependency_overrides,
         )
 
         requires: Set[str] = set()
@@ -719,27 +710,22 @@ async def orchestrate_runtime_modules_init(
     )
 
 
-async def build_default_simulator_via_di(
+# ==================== 通用 DI 构建器（动态模块初始化） ====================
+
+async def build_simulator_via_di(
     *,
     config: dict,
     config_path: str,
     simulator_class: type,
     residents_kwargs: Optional[Dict[str, Any]] = None,
+    enable_government: bool = False,
+    enable_rebellion: bool = False,
     logger: Optional[logging.Logger] = None,
 ) -> Any:
-    """默认(default)模拟的“全接管”构建器。
-
-    目标：让 entrypoints 只保留 run_with_cache + after_run。
-    - InfluenceRegistry/DIContainer/PluginSystem 初始化
-    - 运行期模块编排（map/residents/towns/social_network）
-    - government/rebellion 动态初始值 + agent 生成
-    - InfluenceManager + Simulator 构建
+    """通用模拟器 DI 构建器（动态模块初始化）。
+    根据 modules_config.yaml 的 selected_modules 自动初始化，便于后续扩展。
     """
-
-    # 这里采用函数内 import，避免在 pytest 收集阶段引入较重依赖。
     from src.influences import InfluenceManager
-
-    # 直接依赖稳定模块：避免 entrypoints 反向依赖导致循环导入。
     from src.plugins.bootstrap import initialize_plugin_system
     from src.utils.di_helpers import setup_container_for_simulation
 
@@ -750,7 +736,6 @@ async def build_default_simulator_via_di(
 
     runner_logger.info("正在初始化影响函数系统...")
     influence_registry = load_influence_registry_from_dir(config_dir, logger=logging.getLogger("influences"))
-
     container = setup_container_for_simulation(influence_registry=influence_registry)
 
     runner_logger.info("正在初始化插件系统...")
@@ -761,141 +746,145 @@ async def build_default_simulator_via_di(
         logger=logging.getLogger("plugin_system"),
     )
 
+    runner_logger.info("正在编排运行期模块初始化...")
     runtime_state = await orchestrate_runtime_modules_init(
         plugin_registry=plugin_registry,
         config=config,
         residents_kwargs=residents_kwargs,
     )
 
-    residents = runtime_state.residents or {}
-    towns = runtime_state.towns
+    # 采集通用初始化结果
+    simulator_kwargs = {
+        "plugin_registry": plugin_registry,
+        "residents": runtime_state.residents or {},
+        "config": config,
+    }
+
+    # 社交网络可视化（如存在）
     social_network = runtime_state.social_network
+    if social_network:
+        try:
+            social_network.visualize()
+        except Exception as e:
+            runner_logger.warning(f"社交网络可视化失败：{e}")
+        try:
+            social_network.plot_degree_distribution()
+        except Exception as e:
+            runner_logger.warning(f"社交网络节点度分布可视化失败：{e}")
 
-    # 维持原有行为：尽量可视化（失败不阻塞）
-    try:
-        social_network.visualize()
-    except Exception as e:
-        runner_logger.warning(f"社交网络可视化失败：{e}")
-    try:
-        social_network.plot_degree_distribution()
-    except Exception as e:
-        runner_logger.warning(f"社交网络节点度分布可视化失败：{e}")
+    # 动态初始化 government 模块（如启用且已加载）
+    if enable_government and "government" in runtime_state.modules:
+        runner_logger.info("正在初始化 government 模块...")
+        from src.agents.agent_group import AgentGroup
+        import src.agents.government as government_agents
 
-    # 计算所有城镇的总叛军和官兵数量
-    total_rebels = 0
-    total_military = 0
-    towns_dict = getattr(towns, "towns", None)
-    if isinstance(towns_dict, dict):
-        for _, town_data in towns_dict.items():
-            if not isinstance(town_data, dict):
-                continue
-            job_market = town_data.get("job_market")
-            if job_market is None:
-                continue
-            jobs_info = getattr(job_market, "jobs_info", None)
-            if not isinstance(jobs_info, dict):
-                continue
-            try:
-                rebels_count = len((jobs_info.get("叛军") or {}).get("employed") or [])
-                military_count = len((jobs_info.get("官员及士兵") or {}).get("employed") or [])
-                total_rebels += int(rebels_count)
-                total_military += int(military_count)
-            except Exception:
-                continue
+        government_plugin = require_module(runtime_state.plugin_registry, "government")
+        government_obj = getattr(government_plugin, "service", None) or government_plugin
 
-    government_plugin = require_module(plugin_registry, "government")
-    rebellion_plugin = require_module(plugin_registry, "rebellion")
-
-    government_obj = getattr(government_plugin, "service", None) or government_plugin
-    rebellion_obj = getattr(rebellion_plugin, "service", None) or rebellion_plugin
-
-    # 写入动态初始值（尽量不强依赖具体字段）
-    try:
-        setattr(government_obj, "military_strength", total_military)
-    except Exception:
-        pass
-    try:
-        setattr(rebellion_obj, "strength", total_rebels)
-        setattr(rebellion_obj, "resources", total_rebels * 10)
-    except Exception:
-        pass
-
-    # 生成政府/叛军 agent 图谱
-    from src.agents.agent_group import AgentGroup
-    import src.agents.government as government_agents
-    import src.agents.rebels as rebels_agents_module
-
-    def init_official(official: Any, data: Dict[str, Any]) -> None:
-        official.personality = data["personality"]
-        if data.get("rank") == "普通官员":
-            official.function = data["function"]
-            official.faction = data["faction"]
-
-    def build_government_info_officer(agent_id: int, gov: Any, pool: Any) -> Any:
-        return government_agents.InformationOfficer(agent_id=agent_id, government=gov, shared_pool=pool)
-
-    government_officials, _, _ = await AgentGroup.generate_agents_from_info_json(
-        (config.get("data") or {}).get("government_info_path"),
-        group_obj=government_obj,
-        rank_factories={
-            "普通官员": lambda agent_id, gov, pool: government_agents.OrdinaryGovernmentAgent(
+        government_info_path = (config.get("data") or {}).get("government_info_path")
+        government_officials, _, _ = await AgentGroup.generate_agents_from_info_json(
+            government_info_path,
+            group_obj=government_obj,
+            rank_factories={
+                "普通官员": lambda agent_id, gov, pool: government_agents.OrdinaryGovernmentAgent(
+                    agent_id=agent_id, government=gov, shared_pool=pool
+                ),
+                "高级官员": lambda agent_id, gov, pool: government_agents.HighRankingGovernmentAgent(
+                    agent_id=agent_id, government=gov, shared_pool=pool
+                ),
+            },
+            shared_pool_factory=government_agents.government_SharedInformationPool,
+            init_agent=lambda official, data: (
+                setattr(official, "personality", data["personality"]),
+                setattr(official, "function", data["function"]) if data.get("rank") == "普通官员" else None,
+                setattr(official, "faction", data["faction"]) if data.get("rank") == "普通官员" else None,
+            ),
+            add_info_officer=lambda agent_id, gov, pool: government_agents.InformationOfficer(
                 agent_id=agent_id, government=gov, shared_pool=pool
             ),
-            "高级官员": lambda agent_id, gov, pool: government_agents.HighRankingGovernmentAgent(
-                agent_id=agent_id, government=gov, shared_pool=pool
+            validate_types=(
+                government_agents.OrdinaryGovernmentAgent,
+                government_agents.HighRankingGovernmentAgent,
+                government_agents.InformationOfficer,
             ),
-        },
-        shared_pool_factory=government_agents.government_SharedInformationPool,
-        init_agent=init_official,
-        add_info_officer=build_government_info_officer,
-        validate_types=(
-            government_agents.OrdinaryGovernmentAgent,
-            government_agents.HighRankingGovernmentAgent,
-            government_agents.InformationOfficer,
-        ),
-    )
+        )
+        simulator_kwargs["government_officials"] = government_officials
 
-    def init_rebel(rebel: Any, data: Dict[str, Any]) -> None:
-        rebel.personality = data["personality"]
-        if data.get("rank") == "普通叛军":
-            rebel.role = data["role"]
+    # 动态初始化 rebellion 模块（如启用且已加载）
+    if enable_rebellion and "rebellion" in runtime_state.modules:
+        runner_logger.info("正在初始化 rebellion 模块...")
+        from src.agents.agent_group import AgentGroup
+        import src.agents.rebels as rebels_agents_module
 
-    def build_rebel_info_officer(agent_id: int, reb: Any, pool: Any) -> Any:
-        return rebels_agents_module.InformationOfficer(agent_id=agent_id, rebellion=reb, shared_pool=pool)
+        rebellion_plugin = require_module(runtime_state.plugin_registry, "rebellion")
+        rebellion_obj = getattr(rebellion_plugin, "service", None) or rebellion_plugin
 
-    rebels_agents, _, _ = await AgentGroup.generate_agents_from_info_json(
-        (config.get("data") or {}).get("rebellion_info_path"),
-        group_obj=rebellion_obj,
-        rank_factories={
-            "普通叛军": lambda agent_id, reb, pool: rebels_agents_module.OrdinaryRebel(
+        rebellion_info_path = (config.get("data") or {}).get("rebellion_info_path")
+        rebels_agents, _, _ = await AgentGroup.generate_agents_from_info_json(
+            rebellion_info_path,
+            group_obj=rebellion_obj,
+            rank_factories={
+                "普通叛军": lambda agent_id, reb, pool: rebels_agents_module.OrdinaryRebel(
+                    agent_id=agent_id, rebellion=reb, shared_pool=pool
+                ),
+                "叛军头子": lambda agent_id, reb, pool: rebels_agents_module.RebelLeader(
+                    agent_id=agent_id, rebellion=reb, shared_pool=pool
+                ),
+            },
+            shared_pool_factory=rebels_agents_module.RebelsSharedInformationPool,
+            init_agent=lambda rebel, data: (
+                setattr(rebel, "personality", data["personality"]),
+                setattr(rebel, "role", data["role"]) if data.get("rank") == "普通叛军" else None,
+            ),
+            add_info_officer=lambda agent_id, reb, pool: rebels_agents_module.InformationOfficer(
                 agent_id=agent_id, rebellion=reb, shared_pool=pool
             ),
-            "叛军头子": lambda agent_id, reb, pool: rebels_agents_module.RebelLeader(
-                agent_id=agent_id, rebellion=reb, shared_pool=pool
+            validate_types=(
+                rebels_agents_module.OrdinaryRebel,
+                rebels_agents_module.RebelLeader,
+                rebels_agents_module.InformationOfficer,
             ),
-        },
-        shared_pool_factory=rebels_agents_module.RebelsSharedInformationPool,
-        init_agent=init_rebel,
-        add_info_officer=build_rebel_info_officer,
-        validate_types=(
-            rebels_agents_module.OrdinaryRebel,
-            rebels_agents_module.RebelLeader,
-            rebels_agents_module.InformationOfficer,
-        ),
-    )
+        )
+        simulator_kwargs["rebels_agents"] = rebels_agents
 
+    # 创建影响管理器
     influence_manager = InfluenceManager(logger=logging.getLogger("influences"))
+    simulator_kwargs["influence_manager"] = influence_manager
 
-    simulator = simulator_class(
-        plugin_registry=plugin_registry,
-        government_officials=government_officials,
-        rebels_agents=rebels_agents,
-        residents=residents,
-        config=config,
-        influence_manager=influence_manager,
-    )
+    runner_logger.info(f"正在构建 {simulator_class.__name__} 实例...")
+    simulator = simulator_class(**simulator_kwargs)
 
     return simulator
+
+
+# ==================== 向后兼容包装函数（保留以支持旧入口） ====================
+
+async def build_default_simulator_via_di(
+    *,
+    config: dict,
+    config_path: str,
+    simulator_class: type,
+    residents_kwargs: Optional[Dict[str, Any]] = None,
+    logger: Optional[logging.Logger] = None,
+) -> Any:
+    """默认(default)模拟的"全接管"构建器。
+
+    目标：让 entrypoints 只保留 run_with_cache + after_run。
+    - InfluenceRegistry/DIContainer/PluginSystem 初始化
+    - 运行期模块编排（map/residents/towns/social_network）
+    - government/rebellion 动态初始值 + agent 生成
+    - InfluenceManager + Simulator 构建
+    """
+
+    return await build_simulator_via_di(
+        config=config,
+        config_path=config_path,
+        simulator_class=simulator_class,
+        residents_kwargs=residents_kwargs,
+        enable_government=True,
+        enable_rebellion=True,
+        logger=logger,
+    )
 
 
 async def build_teog_simulator_via_di(
@@ -906,84 +895,16 @@ async def build_teog_simulator_via_di(
     residents_kwargs: Optional[Dict[str, Any]] = None,
     logger: Optional[logging.Logger] = None,
 ) -> Any:
-    """TEOG 入口的通用 DI 构建器：模块自动初始化 + 仅政府官员生成。"""
+    """TEOG 入口包装函数：调用通用构建器，启用政府官员生成。"""
 
-    from src.plugins.bootstrap import initialize_plugin_system
-    from src.utils.di_helpers import setup_container_for_simulation
-
-    runner_logger = logger or logging.getLogger("entrypoint_runner")
-
-    config_dir = os.path.dirname(config_path)
-    modules_config_path = os.path.join(config_dir, "modules_config.yaml")
-
-    influence_registry = load_influence_registry_from_dir(config_dir, logger=logging.getLogger("influences"))
-    container = setup_container_for_simulation(influence_registry=influence_registry)
-
-    plugin_registry = initialize_plugin_system(
+    return await build_simulator_via_di(
         config=config,
-        modules_config_path=modules_config_path,
-        container=container,
-        logger=logging.getLogger("plugin_system"),
-    )
-
-    runtime_state = await orchestrate_runtime_modules_init(
-        plugin_registry=plugin_registry,
-        config=config,
+        config_path=config_path,
+        simulator_class=simulator_class,
         residents_kwargs=residents_kwargs,
-    )
-
-    residents = runtime_state.residents or {}
-    social_network = runtime_state.social_network
-    try:
-        if social_network is not None:
-            social_network.visualize()
-    except Exception as e:
-        runner_logger.warning(f"社交网络可视化失败：{e}")
-    try:
-        if social_network is not None:
-            social_network.plot_degree_distribution()
-    except Exception as e:
-        runner_logger.warning(f"社交网络节点度分布可视化失败：{e}")
-
-    government_plugin = require_module(plugin_registry, "government")
-    government_obj = getattr(government_plugin, "service", None) or government_plugin
-
-    from src.agents.agent_group import AgentGroup
-    import src.agents.government as government_agents
-
-    government_info_path = (config.get("data") or {}).get("government_info_path")
-    government_officials, _, _ = await AgentGroup.generate_agents_from_info_json(
-        government_info_path,
-        group_obj=government_obj,
-        rank_factories={
-            "普通官员": lambda agent_id, gov, pool: government_agents.OrdinaryGovernmentAgent(
-                agent_id=agent_id, government=gov, shared_pool=pool
-            ),
-            "高级官员": lambda agent_id, gov, pool: government_agents.HighRankingGovernmentAgent(
-                agent_id=agent_id, government=gov, shared_pool=pool
-            ),
-        },
-        shared_pool_factory=government_agents.government_SharedInformationPool,
-        init_agent=lambda official, data: (
-            setattr(official, "personality", data["personality"]),
-            setattr(official, "function", data["function"]) if data.get("rank") == "普通官员" else None,
-            setattr(official, "faction", data["faction"]) if data.get("rank") == "普通官员" else None,
-        ),
-        add_info_officer=lambda agent_id, gov, pool: government_agents.InformationOfficer(
-            agent_id=agent_id, government=gov, shared_pool=pool
-        ),
-        validate_types=(
-            government_agents.OrdinaryGovernmentAgent,
-            government_agents.HighRankingGovernmentAgent,
-            government_agents.InformationOfficer,
-        ),
-    )
-
-    return simulator_class(
-        plugin_registry=plugin_registry,
-        government_officials=government_officials,
-        residents=residents,
-        config=config,
+        enable_government=True,
+        enable_rebellion=False,
+        logger=logger,
     )
 
 
@@ -995,35 +916,14 @@ async def build_info_propagation_simulator_via_di(
     residents_kwargs: Optional[Dict[str, Any]] = None,
     logger: Optional[logging.Logger] = None,
 ) -> Any:
-    """信息传播实验入口的通用 DI 构建器：模块自动初始化 + 仅 residents 产物。"""
+    """信息传播入口包装函数：调用通用构建器，仅初始化 residents。"""
 
-    from src.plugins.bootstrap import initialize_plugin_system
-    from src.utils.di_helpers import setup_container_for_simulation
-
-    _ = logger  # 预留
-
-    config_dir = os.path.dirname(config_path)
-    modules_config_path = os.path.join(config_dir, "modules_config.yaml")
-
-    influence_registry = load_influence_registry_from_dir(config_dir, logger=logging.getLogger("influences"))
-    container = setup_container_for_simulation(influence_registry=influence_registry)
-
-    plugin_registry = initialize_plugin_system(
+    return await build_simulator_via_di(
         config=config,
-        modules_config_path=modules_config_path,
-        container=container,
-        logger=logging.getLogger("plugin_system"),
-    )
-
-    runtime_state = await orchestrate_runtime_modules_init(
-        plugin_registry=plugin_registry,
-        config=config,
+        config_path=config_path,
+        simulator_class=simulator_class,
         residents_kwargs=residents_kwargs,
-    )
-
-    residents = runtime_state.residents or {}
-    return simulator_class(
-        plugin_registry=plugin_registry,
-        residents=residents,
-        config=config,
+        enable_government=False,
+        enable_rebellion=False,
+        logger=logger,
     )

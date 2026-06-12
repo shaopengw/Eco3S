@@ -19,3 +19,16 @@ simulation:
   simulation_name: ''
   start_year: 2016
   total_years: 2
+
+# 可视化配置：针对 JSON 结果的分组绘图
+visualization:
+  default_mode: bar
+  # groups:
+  #   - title: "Incentive Choices"
+  #     columns:
+  #       - "incentive_survey.incentive_choices_a_count"
+  #       - "incentive_survey.incentive_choices_b_count"
+  #     mode: "grouped_bar"
+  #   - title: "Survey Accuracy"
+  #     columns: ["knowledge_survey.overall_accuracy"]
+  #     mode: "bar"

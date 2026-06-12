@@ -10,6 +10,9 @@ os.environ["OMP_NUM_THREADS"] = "1"
 from sklearn.cluster import KMeans
 import asyncio
 from src.interfaces import IHeterogeneousGraph, IHypergraph, ISocialNetwork
+import warnings
+import pandas as pd
+warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning, module="hypernetx")
 
 class HeterogeneousGraph(IHeterogeneousGraph):
     """
@@ -153,7 +156,11 @@ class Hypergraph(IHypergraph):
         :param hyperedge_id: 超边的唯一标识符。
         :return: 包含在超边中的节点列表。
         """
-        return list(self.hypergraph.edges[hyperedge_id])
+        try:
+            result = self.hypergraph.edges[hyperedge_id]
+            return list(result) if result is not None else []
+        except Exception:
+            return []
 
     def get_node_hyperedges(self, node):
         """
@@ -162,7 +169,11 @@ class Hypergraph(IHypergraph):
         :param node: 节点。
         :return: 包含该节点的所有超边的列表。
         """
-        return list(self.hypergraph.nodes[node])
+        try:
+            result = self.hypergraph.nodes[node]
+            return list(result) if result is not None else []
+        except Exception:
+            return []
 
     def remove_node(self, node):
         """
@@ -345,6 +356,8 @@ class SocialNetwork(ISocialNetwork):
             return
             
         neighbors = self.hetero_graph.get_neighbors(resident_id, relation_type)
+        if not neighbors:
+            return
         # 随机选择30%-50%的邻居节点
         selected_count = random.randint(max(1, int(len(neighbors) * 0.3)), max(1, int(len(neighbors) * 0.5)))
         selected_neighbors = random.sample(neighbors, min(selected_count, len(neighbors)))
@@ -364,6 +377,8 @@ class SocialNetwork(ISocialNetwork):
                 if response:
                     response_content, response_type = response
                     next_neighbors = self.hetero_graph.get_neighbors(neighbor, response_type)
+                    if not next_neighbors:
+                        continue
                     next_selected_count = random.randint(max(1, int(len(next_neighbors) * 0.3)), max(1, int(len(next_neighbors) * 0.5)))
                     next_selected_neighbors = random.sample(next_neighbors, min(next_selected_count, len(next_neighbors)))
                     for next_neighbor in next_selected_neighbors:
@@ -392,6 +407,8 @@ class SocialNetwork(ISocialNetwork):
             return
             
         members = self.hyper_graph.get_hyperedge_nodes(group_id)
+        if not members:
+            return
         # 随机选择30%-50%的群组成员
         selected_count = random.randint(max(1, int(len(members) * 0.3)), max(1, int(len(members) * 0.5)))
         selected_members = random.sample(members, min(selected_count, len(members)))
@@ -412,6 +429,8 @@ class SocialNetwork(ISocialNetwork):
                     response_content, response_type = response
                     if response_type in ["friend", "colleague"]:
                         next_neighbors = self.hetero_graph.get_neighbors(member, response_type)
+                        if not next_neighbors:
+                            continue
                         next_selected_count = random.randint(max(1, int(len(next_neighbors) * 0.3)), max(1, int(len(next_neighbors) * 0.5)))
                         next_selected_neighbors = random.sample(next_neighbors, min(next_selected_count, len(next_neighbors)))
                         for next_neighbor in next_selected_neighbors:
@@ -467,7 +486,9 @@ class SocialNetwork(ISocialNetwork):
                 await asyncio.gather(*tasks)
                     
         except Exception as e:
+            import traceback
             print(f"在社交网络中传播发言时出错：{e}")
+            traceback.print_exc()
 
     def get_resident_groups(self, resident_id: int, group_type: str) -> List[str]:
         """
@@ -507,7 +528,12 @@ class SocialNetwork(ISocialNetwork):
             # 计算节点数量
             num_nodes = len(self.hetero_graph.graph.nodes)
             print(f"[可视化] 社交网络包含 {num_nodes} 个节点")
-            
+
+            if num_nodes == 0:
+                print("[可视化] 社交网络为空，跳过可视化")
+                plt.close(fig)
+                return
+
             # 可视化异质图
             ax1 = axes[0]
             plt.sca(ax1)
@@ -654,7 +680,10 @@ class SocialNetwork(ISocialNetwork):
 
         # 使用矩阵方式建立朋友和同事关系
         n = len(resident_ids)
-        
+        if n < 2:
+            print(f"[social_network] 居民数量不足 ({n})，跳过社交网络初始化")
+            return
+
         # 生成朋友关系矩阵（幂律分布）
         # friend_matrix = np.random.random((n, n))
         gamma = 1.5
@@ -698,37 +727,49 @@ class SocialNetwork(ISocialNetwork):
                 
                 # 使用KMeans聚类
                 if len(area_remaining) >= 6:
-                    # 提取所有居民的位置坐标并添加微小噪声
-                    resident_locations = np.array([residents[r].location for r in area_remaining], dtype=np.float64)
-                    resident_locations += np.random.normal(0, 0.0001, resident_locations.shape)
-                    
-                    # 估计家庭数量 (平均每个家庭3人)
-                    num_families = max(1, len(area_remaining) // 3)
-                    
-                    # 使用KMeans聚类算法将居民分组为多个家庭
-                    
-                    try:
-                        kmeans = KMeans(n_clusters=num_families, random_state=0)
-                        clusters = kmeans.fit_predict(resident_locations)
-                        
-                        # 根据聚类结果创建家庭
-                        families = [[] for _ in range(num_families)]
-                        for i, cluster_id in enumerate(clusters):
-                            families[cluster_id].append(area_remaining[i])
-                        
-                        # 批量创建家庭群组
-                        for family_members in families:
-                            if len(family_members) >= 3:  # 确保每个家庭至少有3个成员
-                                family_group_id = f"family_{family_id}"
-                                self.add_group(family_group_id, family_members)
-                                family_id += 1
-                        
-                        # 清空剩余居民集合
-                        area_remaining = []
-                        
-                    except Exception as e:
-                        # 如果KMeans失败，回退到原始算法
-                        print(f"KMeans聚类失败: {e}")
+                    # 过滤掉 location 为 None 或无效的居民
+                    valid_pairs = []
+                    for r in area_remaining:
+                        loc = residents[r].location
+                        if loc is not None and isinstance(loc, (tuple, list)) and len(loc) >= 2:
+                            valid_pairs.append((r, loc))
+
+                    if len(valid_pairs) >= 6:
+                        # 提取所有居民的位置坐标并添加微小噪声
+                        resident_locations = np.array([loc for _, loc in valid_pairs], dtype=np.float64)
+                        # 确保是 2D 数组 (n_samples, n_features)
+                        if resident_locations.ndim == 1:
+                            resident_locations = resident_locations.reshape(-1, 1)
+                        resident_locations += np.random.normal(0, 0.0001, resident_locations.shape)
+
+                        # 估计家庭数量 (平均每个家庭3人)
+                        num_families = max(1, len(valid_pairs) // 3)
+                        num_families = min(num_families, len(valid_pairs))  # 不能超过样本数
+
+                        # 使用KMeans聚类算法将居民分组为多个家庭
+                        try:
+                            kmeans = KMeans(n_clusters=num_families, random_state=0, n_init=10)
+                            clusters = kmeans.fit_predict(resident_locations)
+
+                            # 根据聚类结果创建家庭
+                            families = [[] for _ in range(num_families)]
+                            for i, cluster_id in enumerate(clusters):
+                                families[cluster_id].append(valid_pairs[i][0])
+
+                            # 批量创建家庭群组
+                            for family_members in families:
+                                if len(family_members) >= 3:  # 确保每个家庭至少有3个成员
+                                    family_group_id = f"family_{family_id}"
+                                    self.add_group(family_group_id, family_members)
+                                    family_id += 1
+
+                            # 清空剩余居民集合（只移除成功聚类的，保留无效的）
+                            clustered_ids = {r for r, _ in valid_pairs}
+                            area_remaining = [r for r in area_remaining if r not in clustered_ids]
+
+                        except Exception as e:
+                            # 如果KMeans失败，回退到原始算法
+                            print(f"KMeans聚类失败: {e}")
 
     def add_new_residents(self, new_residents: dict) -> None:
         """
@@ -797,6 +838,9 @@ class SocialNetwork(ISocialNetwork):
         try:
             degree = self.get_node_degree(node_id)
             max_degree = self.get_max_degree()
+            # 防御：所有节点度数均为 0 时避免除零
+            if max_degree == 0:
+                return 0.0
             normalized_degree = degree / max_degree
             return normalized_degree
         except ValueError:
@@ -832,13 +876,21 @@ class SocialNetwork(ISocialNetwork):
         """
         绘制异质图中节点度分布的可视化表格，横坐标为度数，纵坐标为人数。
         """
+        if not self.hetero_graph.graph.nodes:
+            print("[可视化] 社交网络为空，跳过度分布可视化")
+            return
+
         degrees = [self.hetero_graph.graph.degree(n) for n in self.hetero_graph.graph.nodes]
         degree_count = {}
         for d in degrees:
             degree_count[d] = degree_count.get(d, 0) + 1
         x = sorted(degree_count.keys())
         y = [degree_count[k] for k in x]
-        
+
+        if not x:
+            print("[可视化] 没有可用的度数数据，跳过度分布可视化")
+            return
+
         plt.figure(figsize=(10, 6))
         plt.bar(x, y, color='skyblue', edgecolor='navy', alpha=0.7)
         plt.xlabel('度数', fontsize=12)

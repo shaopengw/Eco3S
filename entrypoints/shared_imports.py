@@ -41,7 +41,6 @@ from src.environment.job_market import JobMarket
 # Agent模块（具体实现）
 from src.agents.government import Government
 from src.agents.rebels import Rebellion
-from src.agents.resident_agent_generator import generate_canal_agents
 from src.agents.resident import ResidentGroup
 
 # 群体通用能力/生成器（入口共用）
@@ -50,7 +49,7 @@ import src.agents.government as government_agents
 import src.agents.rebels as rebels_agents_module
 
 # 可视化模块
-from src.visualization.plot_results import plot_all_results, plot_rebellions_over_time, plot_unemployment_rate_over_time, plot_population_over_time, plot_government_budget_over_time, plot_rebellion_strength_over_time, plot_satisfaction_over_time, plot_tax_rate_over_time, plot_river_navigability_over_time, plot_gdp_over_time, plot_urban_scale_over_time
+from src.visualization.auto_plotter import (AutoPlotter,auto_plot_results,auto_plot_from_directory)
 # 生成器模块
 from src.generator.resident_generate import generate_resident_data, save_resident_data
 
@@ -74,8 +73,7 @@ from src.influences import InfluenceRegistry, InfluenceManager
 
 # 插件系统
 from src.plugins import (
-    PluginRegistry, 
-    PluginManager, 
+    PluginRegistry,
     PluginContext,
     BasePlugin
 )

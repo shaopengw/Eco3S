@@ -39,6 +39,17 @@ class ModelManager:
             #     "api_key":os.getenv('DEEPSEEK_API_KEY'),
             #     "allow_random": True
             # },
+            "DEEPSEEK": {
+                "model_types": ["deepseek-v4-flash"],
+                "model_platform": ModelPlatformType.OPENAI_COMPATIBLE_MODEL,
+                "url": os.getenv('DEEPSEEK_API_BASE_URL'),
+                "api_key": os.getenv('DEEPSEEK_API_KEY'),
+                "allow_random": False,
+                "reasoning_config": {
+                    "reasoning_effort": "high",
+                    "extra_body": {"thinking": {"type": "enabled"}}
+                }
+            },
             # "qwen": {
             #     "model_types": ["qwen3-235b-a22b"],
             #     "model_platform": ModelPlatformType.OPENAI_COMPATIBLE_MODEL,

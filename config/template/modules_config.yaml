@@ -1,9 +1,9 @@
 ## modules_config.yaml 写作格式模板
 ## 顶层仅允许键：selected_modules / new_modules
 ##
-## selected_modules: Dict[module_name:str, plugin_name:str]
-## - module_name: 非空字符串；建议小写+下划线；作为“模块标识/绑定名”。
-## - plugin_name: 非空字符串；必须是现有插件名称。
+## selected_modules: List[str]
+## - 直接写入要启用的模块/插件名称，顺序即加载顺序。
+## - 运行时按名称加载，通常模块名与插件名保持一致。
 ##
 ## new_modules: List[Dict]
 ## - name: 新模块/插件名（建议小写+下划线）。
@@ -12,13 +12,12 @@
 ##
 ## 说明：运行时插件加载目前只会使用 selected_modules；new_modules 用于设计阶段记录“需要新增插件”的信息。
 selected_modules:
-  # 核心插件（必有）：SimArchitect 只能“增加”，禁止删除/覆盖这些条目
-  time: time
-  map: map
-  population: population
-  towns: towns
-  social_network: social_network
-  residents: residents
+  - time
+  - map
+  - population
+  - towns
+  - social_network
+  - residents
 
 # 默认不新增插件
 new_modules: []

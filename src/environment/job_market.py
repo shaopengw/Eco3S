@@ -218,6 +218,16 @@ class JobMarket(IJobMarket):
             return total_positions, current_employed, salary
         return None
 
+    def get_employed_count(self):
+        """
+        获取所有职业的总已就业人数
+        :return: 总已就业人数
+        """
+        total_employed = 0
+        for job_type, info in self.jobs_info.items():
+            total_employed += len(info["employed"])
+        return total_employed
+
     def remove_random_jobs(self, num_jobs, residents):
         """
         随机减少指定数量的工作岗位

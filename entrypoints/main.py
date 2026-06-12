@@ -38,21 +38,6 @@ async def run_simulation(config: dict[str, Any], config_path: str) -> None:
         print("初始化完成")
         return simulator
 
-    def after_run(simulator: Any) -> None:
-        data_dict = {
-            'years': simulator.results["years"],
-            'rebellions': simulator.results["rebellions"],
-            'unemployment_rate': simulator.results["unemployment_rate"],
-            'population': simulator.results["population"],
-            'government_budget': simulator.results["government_budget"],
-            'rebellion_strength': simulator.results["rebellion_strength"],
-            'average_satisfaction': simulator.results["average_satisfaction"],
-            'tax_rate': simulator.results["tax_rate"],
-            'river_navigability': simulator.results["river_navigability"],
-            'gdp': simulator.results["gdp"],
-        }
-        plot_all_results(data_dict)
-
     print("开始模拟......")
     await run_with_cache(
         config=config,
@@ -60,7 +45,6 @@ async def run_simulation(config: dict[str, Any], config_path: str) -> None:
         cache_dir="./backups",
         simulator_class=Simulator,
         build_new_simulator=build_new_simulator,
-        after_run=after_run,
     )
 
 

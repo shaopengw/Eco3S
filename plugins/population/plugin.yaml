@@ -1,7 +1,7 @@
 # 人口插件元数据
 name: population
 version: 1.0.0
-description: 默认人口系统插件
+description: 负责初始化人口规模、按出生率等规则更新总人口，并提供人口状态查询。
 author: AgentWorld Team
 enabled: true
 

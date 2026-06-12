@@ -16,8 +16,11 @@
 ## - [<module_name>, <target_name>]
 execution_order:
   - module: map
-    target: example_target
-  - [transport_economy, example_target]
+    target: canal_decay
+  - module: population
+    target: birth_rate
+  - module: government
+    target: government_budget
 
 ## influences: List[Influence]
 ## Influence 必填键：type, source, target, name
@@ -35,18 +38,96 @@ execution_order:
 ## - "context.some_key" / "target.attr" / "module.attr"（module 指 context[module]）
 ## - {path: str, fallback_paths?: [str], default?: any, required?: bool=false, coerce?: "int"|"float"|"str"|"bool", value?: any}
 influences:
-  - type: constant
+  # === 具体示例===
+  - name: climate_impact_to_navigability
+    type: expr
+    source:
+      module: climate
+      inputs:
+        current_navigability:
+          path: context.current_navigability
+          fallback_paths:
+            - target.navigability
+          default: 0.8
+          coerce: float
+        climate_impact_factor:
+          path: context.climate_impact_factor
+          default: 0.0
+          coerce: float
+        natural_decay_rate:
+          value: 0.1
+    target: canal_decay
+    description: 运河通航能力按默认公式自然衰减，并受气候影响
+    params:
+      expr: max(0, current_navigability * (1 - natural_decay_rate) - climate_impact_factor * 0.6)
+      target_attr: navigability
+
+  - name: gdp_tax_rate_to_budget
+    type: expr
+    source:
+      module: economy
+      inputs:
+        gdp:
+          path: context.gdp
+          default: 0.0
+          coerce: float
+        tax_rate:
+          path: context.tax_rate
+          fallback_paths:
+            - target.tax_rate
+          default: 0.0
+          coerce: float
+        old_budget:
+          path: target.budget
+          default: 0.0
+          coerce: float
+    target: government_budget
+    description: 政府预算每年增加税收收入（tax_income = gdp * tax_rate）
+    params:
+      expr: round(old_budget + gdp * tax_rate, 2)
+      target_attr: budget
+      context_updates:
+        tax_income: gdp * tax_rate
+
+  - name: job_market_to_military_strength
+    type: code
+    source: towns
+    target: military_strength
+    description: 军力 = 所有城镇“官员及士兵”已就业人数之和
+    params:
+      code: |
+        towns_obj = context.get('towns')
+        total = 0
+        if towns_obj and hasattr(towns_obj, 'towns'):
+            for _, town_data in towns_obj.towns.items():
+                job_market = None
+                if hasattr(town_data, 'get'):
+                    job_market = town_data.get('job_market')
+                else:
+                    job_market = getattr(town_data, 'job_market', None)
+                if not job_market:
+                    continue
+                jobs_info = getattr(job_market, 'jobs_info', {}) or {}
+                bucket = jobs_info.get('官员及士兵') or {}
+                employed = bucket.get('employed') or []
+                total += len(employed)
+        target.military_strength = int(total)
+        context['military_strength'] = int(total)
+        result = int(total)
+
+  # === 其他类型示例（保留作模板，正式配置时请替换名称及字段） ===
+  - name: example_constant
+    type: constant
     source: any_source
     target: any_target
-    name: any_name
     params:
       target_attr: any_attr
       value: 0
 
-  - type: linear
+  - name: example_linear
+    type: linear
     source: any_source
     target: any_target
-    name: any_name
     params:
       variable: any.path
       coefficient: 1.0
@@ -54,58 +135,20 @@ influences:
       target_attr: null
       mode: set
 
-  - type: code
+  - name: example_threshold
+    type: threshold
     source: any_source
     target: any_target
-    name: any_name
-    params:
-      code: |
-        result = None
-      target_attr: null
-      result_var: result
-
-  - type: expr
-    source:
-      module: any_source
-      inputs:
-        x:
-          path: context.x
-          default: 0
-          coerce: float
-        y:
-          path: target.y
-          default: 1
-          coerce: float
-    target: any_target
-    name: any_name
-    params:
-      expr: max(0, x + y)
-      target_attr: some_attr
-      context_updates:
-        some_key: $result
-
-  - type: linear_multiplier
-    source: any_source
-    target: any_target
-    name: any_name
-    params:
-      source_key: value
-      multiplier: 1.0
-
-  - type: threshold
-    source: any_source
-    target: any_target
-    name: any_name
     params:
       source_key: value
       threshold: 0
       compare_op: gt
       impact_value: true
 
-  - type: conditional
+  - name: example_conditional
+    type: conditional
     source: any_source
     target: any_target
-    name: any_name
     params:
       conditions:
         module.attr: expected

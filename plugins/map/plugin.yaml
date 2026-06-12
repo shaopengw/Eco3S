@@ -1,7 +1,7 @@
 # 地图插件元数据
 name: map
 version: 1.0.0
-description: 默认地图实现插件
+description: 负责初始化二维空间网格、加载城镇/地形数据、维护空间索引与坐标映射，为需要地理信息（城镇位置、区域划分、距离计算）的其他模块提供底层空间服务。
 author: AgentWorld Team
 enabled: true
 
@@ -21,6 +21,7 @@ dependencies: []
 init_params:
   width: 100
   height: 100
+  data_file: config/default/towns_data.json
 
 # 配置项
 config:

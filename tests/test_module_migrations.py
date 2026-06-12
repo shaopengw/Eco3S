@@ -358,11 +358,11 @@ def test_resident_health_without_influences():
         pass
     
     resident = Resident(
-        resident_id=1,
+        agent_id=1,
         job_market=MockJobMarket(),
         shared_pool=MockSharedPool(),
         map=MockMap(),
-        prompts_resident={},
+        prompts={},
         actions_config={},
         lightweight=True,
         influence_registry=None  # 不使用影响函数
@@ -505,11 +505,11 @@ if income >= basic_living_cost * 2:
     
     # 创建带影响函数的 Resident
     resident = Resident(
-        resident_id=2,
+        agent_id=2,
         job_market=MockJobMarket(),
         shared_pool=MockSharedPool(),
         map=MockMap(),
-        prompts_resident={},
+        prompts={},
         actions_config={},
         lightweight=True,
         influence_registry=registry

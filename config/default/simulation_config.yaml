@@ -1,4 +1,5 @@
 data:
+  agent_profile_path: config/default/agent_profile.yaml
   climate_info_path: experiment_dataset/climate_data/climate.csv
   government_info_path: experiment_dataset/government_data/official_data.json
   government_prompt_path: config/default/government_prompts.yaml
@@ -29,3 +30,16 @@ simulation:
   simulation_name: ""
   start_year: 1650
   total_years: 2
+
+# 可视化配置：控制自动绘图的行为
+visualization:
+  default_mode: line
+  # exclude_columns: ["rebellion_resources"]  # 需要排除的列
+  # columns:                                  # 单列精细配置
+  #   population:
+  #     mode: line
+  #     color: "#2ECC71"
+  # groups:                                   # 多列组合图
+  #   - title: "Economic Overview"
+  #     columns: ["gdp", "population"]
+  #     mode: "multi_axis"

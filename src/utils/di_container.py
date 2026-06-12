@@ -227,6 +227,10 @@ class DIContainer:
             if param_name == 'self':
                 continue
 
+            # 跳过 *args 和 **kwargs，避免 DI 注入失败
+            if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+                continue
+
             # 调用方显式提供的参数优先
             if param_name in explicit_kwargs:
                 kwargs[param_name] = explicit_kwargs[param_name]

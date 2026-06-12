@@ -1,0 +1,140 @@
+agents:
+  - name: resident
+    entity_type: resident
+    attributes:
+      - name: gender
+        type: choice
+        choices: ['女性', '男性']
+        weights: [0.351, 0.636]
+      - name: lifespan
+        type: range
+        distribution: weighted_groups
+        groups:
+          - range: [1, 9]
+            weight: 0.10
+          - range: [10, 19]
+            weight: 0.30
+          - range: [20, 39]
+            weight: 0.25
+          - range: [40, 54]
+            weight: 0.25
+          - range: [55, 80]
+            weight: 0.10
+      - name: residence
+        type: choice
+        choices: ['沿河', '非沿河']
+        weights: [0.7, 0.3]
+      - name: satisfaction
+        type: range
+        distribution: uniform
+        min: 1
+        max: 100
+        dtype: int
+      - name: health_index
+        type: range
+        distribution: weighted_groups
+        groups:
+          - range: [1, 1]
+            weight: 0.1
+          - range: [2, 2]
+            weight: 0.2
+          - range: [3, 3]
+            weight: 0.4
+          - range: [4, 4]
+            weight: 0.2
+          - range: [5, 5]
+            weight: 0.1
+      - name: income
+        type: choice
+        choices: [0, 5, 10, 20, 50]
+      - name: personality
+        type: composite
+        words:
+          - 忠厚
+          - 老实
+          - 淳朴
+          - 坚韧
+          - 勤恳
+          - 节俭
+          - 知礼
+          - 守节
+          - 重义
+          - 仁善
+          - 乐天
+          - 安分
+          - 耿直
+          - 谦和
+          - 孝顺
+          - 克己
+          - 宽容
+          - 守信
+          - 忍让
+          - 敦厚
+          - 豁达
+          - 迂腐
+          - 顽固
+          - 怯懦
+          - 自私
+          - 吝啬
+          - 刻薄
+          - 刁钻
+          - 油滑
+          - 势利
+          - 懒惰
+          - 愚昧
+          - 迷信
+          - 多疑
+          - 善妒
+          - 狭隘
+          - 暴躁
+          - 贪婪
+          - 谄媚
+          - 奸诈
+          - 蛮横
+          - 精明
+          - 世故
+          - 圆滑
+          - 执拗
+          - 孤僻
+          - 倔强
+          - 隐忍
+          - 计较
+          - 虚荣
+          - 要强
+          - 偏执
+          - 保守
+          - 敏感
+          - 机灵
+          - 多虑
+          - 谨慎
+          - 激进
+        count: 2
+        separator: "、"
+    constraints: []
+    extra:
+      description: "清代运河沿线居民"
+
+computed_descriptions:
+  health_conditions:
+    - ""  # 索引0占位（health_index从1开始）
+    - "健康状况非常差"
+    - "亚健康"
+    - "一般健康"
+    - "健康"
+    - "极健康"
+  satisfaction_levels:
+    - "恨之入骨，誓要推翻朝廷"
+    - "怨气深重，斥其昏庸无道"
+    - "漠然视之，不过问政事"
+    - "尚可接受，愿安分守己"
+    - "衷心拥戴，誓死效忠"
+  economic_status_rules:
+    - condition: "income <= 0"
+      description: "家破人亡难以为继"
+    - condition: "income < basic_living_cost * 0.8"
+      description: "终日辛劳不得温饱"
+    - condition: "income < basic_living_cost"
+      description: "勉强糊口"
+    - condition: "income < basic_living_cost * 1.6"
+      description: "生活尚算安稳"
+    - fallback: "生活富裕丰衣足食"

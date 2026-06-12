@@ -2,11 +2,10 @@
 
 system_message: "你是Python编码专家，擅长生成完整、可运行的模拟器代码、配置文件和提示词。代码简洁高效，严格遵循Python规范。"
 
-# 新模块插件代码微调
+# 新模块插件代码生成
 customize_new_plugin_prompt: |
-  你将修改一个“新插件”的Python源码文件，使其满足 notes 的要求。
+  你将编写插件 {plugin_name} 的完整 Python 源码，使其满足 notes 的要求。
 
-  插件名：{plugin_name}
   inherits_from：{inherits_from}
   notes：{notes}
 
@@ -20,10 +19,11 @@ customize_new_plugin_prompt: |
   {base_code}
 
   【硬约束】
-  - 只输出一个 ```python 代码块，内容为“完整文件源码”
+  - 先输出一行：DESCRIPTION: <准确详细的插件描述>
+  - 然后输出一个 ```python 代码块，内容为“完整文件源码”
+  - 类名必须为 {plugin_class}，与当前插件代码中的类名保持一致
   - 保持文件可导入、可运行；不要输出解释
-  - 不要引入不存在的第三方依赖
-  - 尽量复用现有结构，只做实现 notes 所需的最小修改
+  - 尽可能使用当前插件代码和 base 代码中已有的 import，严禁凭空捏造不存在的 import
 
 # 分析错误相关的模块和配置文件
 analyze_error_modules_prompt: |
@@ -52,44 +52,100 @@ analyze_error_modules_prompt: |
 
   注意：如果某类文件没有相关的，对应数组为空。只返回JSON对象，不要其他解释。
 
-# 生成模拟器主代码（增量修改版）
 generate_simulator_code_prompt: |
-  根据设计文档和模块配置文件，生成对simulator文件模板的增量修改。
+  【任务目标】
+  根据设计文档，构建一个功能完备、结构清晰的模拟器主代码框架，为后续模块完善做好引导。
 
-  【设计文档】
+  【输入文件】
+  --- BEGIN_DESIGN_DOC ---
   {description_md}
+  --- END_DESIGN_DOC ---
 
-  【模块配置文件】
+  --- BEGIN_MODULES_CONFIG ---
   {modules_config_yaml}
+  --- END_MODULES_CONFIG ---
 
-  【simulator文件模板】
+  --- BEGIN_INFLUENCES_YAML ---
+  {influences_yaml}
+  --- END_INFLUENCES_YAML ---
+
+  --- BEGIN_TEMPLATE_CODE ---
   {template_content}
+  --- END_TEMPLATE_CODE ---
 
-  【修改要求】
-  1. 删除不需要的模块相关代码（严格参考模块配置文件，文件中没有的模块直接删除所有相关代码）
-  2. 保留模板中有用的方法，必要时修改
-  3. 可以新增模板中没有但需要的方法
-  4. 不要添加注释和测试代码
-  5. 以尽可能少的代码修改实现功能
-  6. 保留影响函数接入（InfluenceManager + apply_all_influences）。
-  
+  【核心约束】
+  1. **最小修改原则**：在模板基础上增量修改，保留无明确用途但可能被依赖的方法（标记TODO）；新增设计文档要求且模板缺失的核心方法。
+  2. **TODO引导规范**：对于依赖后续步骤实现的功能，用TODO注释说明所需模块或逻辑。除此类必要TODO外，不添加其他注释。
+  3. **数据一致性**：`init_results()` 中的每个键必须在 `__init__()` 中通过 `self.results[键].append(...)` 提供初始值，确保所有列表长度一致。
+  4. **接口严格性**：只能调用 `src/interfaces/` 中定义的方法；若不存在，用TODO标记，不得自行编造。
+  5. **影响函数集成**：
+     - `update_state` 中构建的 `simulator_state` 必须暴露 `influences.yaml` 中所有 `inputs/variables` 字段。
+     - 正确调用 `influence_manager.apply_all_influences(simulator_state)`。
+     - 禁止在simulator中硬编码与 `influences.yaml` 重复的状态更新逻辑。
+  6. **代码风格**：遵循Python最佳实践，保持风格一致，避免冗余代码。
+
   【严格禁止】
-  - 禁止添加任何import语句，模板已经通过 from .simulator_imports import * 导入所有必需模块
-  - 禁止删除或修改模板中已有的重要初始化语句，如 towns.initialize_resident_groups(residents)
-  - 禁止修改模板中已经正确的代码，只修改必须改动的部分
-  - 如果模板代码没有错误，就不要修改
+  - 添加任何 `import` 语句。
+  - 删除或修改模板中已有的重要初始化语句。
+  - 在非代码块中输出解释或说明。
+  - 将Simulator类作为插件实现类，或直接复制插件接口中的方法。
 
   【输出格式】
-  返回JSON格式，包含需要修改的内容：
-
+  返回JSON，结构如下：
   ```json
   {{
-    "methods": [{{"method_name": "方法名", "method_code": "完整代码(从def/async def开始)", "description": "修改说明"}}],
+    "methods": [{{"method_name": "方法名", "method_code": "完整代码（从def/async def开始）", "description": "修改说明"}}],
     "delete_methods": ["不需要的方法名1", "不需要的方法名2"]
   }}
-  ```
 
-  注意：delete_methods 是可选字段，用于删除不需要的方法
+# 生成模拟器主代码
+# generate_simulator_code_prompt: |
+#   【任务目标】
+#   构建一个功能完备、结构清晰的模拟器主代码框架，该框架应严格遵循设计文档的架构和功能要求，并为后续模块的逐步完善做好引导。
+
+#   【设计文档】
+#   {description_md}
+#   # 注意：仔细阅读设计文档，理解模拟器的核心功能、整体架构、数据流以及各个模块之间的交互。
+
+#   【模块配置文件】
+#   {modules_config_yaml}
+#   # 注意：此文件定义了模拟器将要集成的各个功能模块。
+
+#   【影响函数配置（influences.yaml）】
+#   {influences_yaml}
+#   # 注意：此文件定义了模块间的因果影响关系与执行顺序。生成simulator时必须参考此配置，确保：
+#   # 1. update_state 中构建的 simulator_state 须暴露 influences.yaml 所有 inputs/variables 所需字段。
+#   # 2. 正确调用 influence_manager.apply_all_influences(simulator_state)。
+#   # 3. 不要在simulator中硬编码与 influences.yaml 重复的状态更新逻辑。
+
+#   【simulator文件模板】
+#   {template_content}
+#   # 注意：这是一个基础模板，包含了一些通用的结构和方法。你的工作是在此基础上进行增量修改，而不是从零开始。
+
+#   【修改要求】
+#   1. 代码修改与完善：根据设计文档，对模板中现有的方法进行修改和完善，确保它们与模拟器的整体逻辑和数据结构相符，并能满足设计文档中描述的功能需求。如果一个方法当前没有明确用途，但看起来是通用功能或未来可能被依赖，请倾向于保留它，并通过TODO注释进行标记，而不是修改其核心结构。
+#   2. 代码新增：根据设计文档，新增模板中没有但模拟器核心逻辑所必需的方法。这些新增方法应能体现设计文档中描述的关键操作或状态管理。
+#   3. 框架引导： 对于依赖后续步骤完善的模块功能，请在主代码中用注释形式留下明确的TODO标识，并简要说明该部分需要什么模块数据或实现逻辑。
+#   4. 代码风格： 以尽可能少的代码修改实现功能，避免冗余代码。保持代码风格一致，遵循Python最佳实践。
+#   5. 数据一致性：init_results() 中定义的每个键，必须在 __init__() 中通过 self.results[键].append(...) 提供初始值；禁止出现长度不齐的 results 结构。
+#   6. 接口严格性：只能调用模块接口文件（src/interfaces/）中明确定义的方法；若接口不存在所需方法，用 TODO 标记而非自行编造。
+
+#   【严格禁止】
+#   - 禁止添加任何import语句。
+#   - 禁止删除或修改模板中已有的重要初始化语句。
+#   - 禁止在非代码块中输出解释或说明。
+#   - Simulator 类是编排器，不是插件实现类。严禁直接复制插件接口中的方法。
+#   - 禁止在 simulator 中硬编码特定年份（如 if year == 2016）或历史事件；时间敏感逻辑应通过配置注入。
+
+#   【输出格式】
+#   返回JSON格式，包含需要修改的内容。请确保JSON结构严格符合以下定义：
+
+#   ```json
+#   {{
+#     "methods": [{{"method_name": "方法名", "method_code": "完整代码(从def/async def开始)", "description": "修改说明"}}],
+#     "delete_methods": ["不需要的方法名1", "不需要的方法名2"]
+#   }}
+#   ```
 
 # 生成main入口文件（完整文件版）
 generate_main_file_prompt: |
@@ -138,7 +194,7 @@ create_simulator_todo_list_prompt: |
   {description_md}
 
   任务：
-  1. 从模块配置的 selected_modules 中提取模块名（结构为 dict: {{module_name: plugin_name}}）
+  1. 从模块配置的 selected_modules 中提取模块名（结构为列表，按顺序排列）
   2. 按照模块在配置中的顺序创建工作列表
   3. 对于每个模块，记录其module_name、display_name
 
@@ -154,7 +210,7 @@ create_simulator_todo_list_prompt: |
 
 # 基于模块API完善simulator代码（增量修改版）
 refine_simulator_with_module_prompt: |
-  根据设计文档和接口文件完善代码。
+  根据设计文档和接口文件完善代码，重点实现 simulator 中的 `TODO` 功能点，或修正交互错误。
 
   【设计文档】
   {description_md}
@@ -166,18 +222,21 @@ refine_simulator_with_module_prompt: |
   {interface_docs}
 
   【要求】
-  1. 根据设计文档理解业务需求
-  2. 只修改与模块相关且确实有错误的代码，不修改缩进问题
-  3. 只能调用API中存在的方法
-  4. 如果代码已正确，只返回OK，不要返回其他任何内容
+  1. 只修改与模块集成相关的错误或不完整的代码，包括：
+      - 实现或完善 `TODO` 中与此模块相关的功能点
+      - 修正与模块接口交互时的逻辑错误
+      - 确保方法调用符合接口定义（参数、返回值）
+  2.尽量实现与模块相关的 TODO，无法完整实现时保留 TODO 并添加说明。
+  3. 如果代码已正确，只返回OK，不要返回其他任何内容。
 
   【严格禁止】
   - 修改已正确的代码
   - 添加import语句
   - 删除重要初始化语句
+  - 直接复制接口中的方法体
 
   【输出格式】
-  无问题返回：OK
+  无问题只返回：OK
   
   有问题返回：
   ```json
@@ -213,10 +272,16 @@ check_and_fix_simulator_prompt: |
   - 只做最小必要修改，无错误就只返回OK
 
   要求：
-  - 以尽可能少的代码修改修复问题
-  - 有问题直接修复并返回修复后代码，无问题只返回OK
+  1. 以尽可能少的代码修改修复问题。
+  2. 如果代码没有错误、没有 TODO、没有 pass、没有语法问题，请绝对只返回 OK，不要返回任何 JSON 或代码块。
+  3. 只有确实存在需要修复的问题时，才返回 JSON 格式的修改内容。
+  4. 禁止修改已经正确的代码。
+  5. 指标语义检查：检查所有 calculate_xxx 方法的实现是否与常规定义一致（如失业率分母应为劳动力人口，而非岗位总数）。
+  6. 并发健壮性检查：所有 asyncio.gather 调用必须设置 return_exceptions=True。
 
   【输出格式】
+  如果没有任何问题，只返回：OK
+
   如果有问题，返回JSON格式：
 
   ```json
@@ -231,75 +296,6 @@ check_and_fix_simulator_prompt: |
     "delete_methods": ["不需要的方法名1", "不需要的方法名2"]
   }}
   ```
-  如果没有问题，只返回：OK
-
-# 完善数据可视化代码
-refine_visualization_code_prompt: |
-  根据设计文档、simulator代码和main代码，检查并完善数据保存和可视化相关代码。
-
-  【设计文档】
-  {description_md}
-
-  【Simulator代码】
-  {simulator_content}
-
-  【Main代码】
-  {main_content}
-
-  【可用的可视化模块代码】
-  {plot_results_content}
-
-  【任务】
-  1. 检查并确保simulator和main文件中的数据处理和可视化部分符合实验设计，能够从保存的数据中得出设计文档所需的结论。如果有不必要的结果数据，删除。
-  2. 检查simulator代码中数据收集部分（如update_results方法）是否完整、格式正确，是否每个时间步都能正确收集，并确保数据获取和计算方式无误。
-  3. 检查目前的可视化模块代码是否能正确读取和处理simulator生成的数据，如有问题，修复。
-  4. 如果目前的可视化模块代码缺乏处理数据的函数，在main文件中新建可视化函数，并完善。
-  5. 保持代码风格一致，不要添加注释。
-  6. 只返回最小必要修改，无问题只返回OK。
-
-  【严格禁止】
-  - 禁止添加import语句，模板已经通过 from shared_imports import * 导入所有必需模块
-  - 禁止修改与可视化无关的代码
-  - 禁止添加注释和测试代码
-
-  【输出格式】
-  无问题返回：OK
-  
-  有问题返回（请根据需要修改的文件返回对应的JSON块）：
-
-  ```json
-  # === MAIN FILE ===
-  {{
-    "functions": [
-      {{
-        "function_name": "函数名",
-        "function_code": "完整的函数代码（从def开始）",
-        "description": "修改说明"
-      }}
-    ],
-    "delete_functions": ["不需要的函数名1", "不需要的函数名2"]
-  }}
-  ```
-
-  ```json
-  # === SIMULATOR FILE ===
-  {{
-    "methods": [
-      {{
-        "method_name": "方法名",
-        "method_code": "完整的方法代码（从def/async def开始）",
-        "description": "修改说明"
-      }}
-    ],
-    "delete_methods": ["不需要的方法名1", "不需要的方法名2"]
-  }}
-  ```
-
-  注意：
-  - function_name/method_name 必须是纯名称，不要包含 def、括号等
-  - function_code/method_code 是完整的代码
-  - delete_functions/delete_methods 是可选字段
-  - 只返回需要修改的文件的JSON块
 
 # 检查并修复main代码（增量修改版）
 check_and_fix_main_prompt: |
@@ -322,11 +318,13 @@ check_and_fix_main_prompt: |
   5. 语法错误：缩进、括号等
 
   要求：
-  1. 如果没有问题，返回：OK
-  2. 如果有问题，返回JSON格式的修改内容（只修改需要改动的部分）
+  1. 如果代码没有错误、没有 TODO、没有 pass、没有语法问题，请绝对只返回 OK，不要返回任何 JSON 或代码块。
+  2. 只有存在需要修复的问题时，才返回 JSON 格式的修改内容。
   3. 禁止修改已经正确的代码，如果没有真正的错误，就只返回OK，不要做不必要的修改
 
   【输出格式】
+  如果没有任何问题，只返回：OK
+
   如果有问题，返回JSON格式：
 
   ```json
@@ -351,77 +349,7 @@ check_and_fix_main_prompt: |
   
   如果没有问题，只返回：OK
 
-# 步骤4.1: 创建main文件的工作列表
-create_main_todo_list_prompt: |
-  检查以下main入口文件代码，找出所有不完整的地方。
-
-  Main代码：
-  {main_content}
-
-  Simulator代码（用于了解需要初始化什么）：
-  {simulator_content}
-
-  设计文档：
-  {description_md}
-
-  任务：
-  1. 检查是否有TODO、pass或空实现
-  2. 检查对象初始化是否完整（Map, Time, Population, Residents等）
-  3. 检查simulator实例创建是否正确
-  4. 检查结果保存逻辑是否完整
-  5. 为每个不完整的部分创建待办项
-
-  返回格式（JSON数组）：
-  [
-    {{
-      "task_name": "任务名称（如：初始化Map对象）",
-      "description": "该任务的具体描述",
-      "required_modules": ["可能用到的模块1", "模块2"]
-    }}
-  ]
-
-  只返回JSON数组，不要其他解释。
-
-# 步骤4.4: 总体检查main代码
-final_check_main_prompt: |
-  对以下main入口文件代码进行严格的总体检查。
-
-  Main代码：
-  {main_content}
-
-  Simulator代码参考：
-  {simulator_content}
-
-  设计文档：
-  {description_md}
-
-  严格检查项：
-  1. 语法检查：
-     - 是否有语法错误（缩进错误、括号不匹配等）？
-     - 是否有重复的关键字？
-
-  2. 导入检查：
-     - 是否正确导入了simulator模块？
-     - 是否导入了必要的依赖（os, sys, yaml等）？
-
-  3. 实现完整性：
-     - 是否还有TODO或pass未实现？
-     - 对象初始化是否完整（根据simulator的__init__参数）？
-     - simulator实例创建是否正确？
-     - 结果保存逻辑是否完整？
-
-  4. 代码质量：
-     - 配置文件路径是否正确？
-     - 代码是否可以正常运行？
-     - 异常处理是否完善？
-
-  请返回检查结果：
-  - 如果代码完整无问题，只返回：OK
-  - 如果有问题，列出具体问题清单（每行一个问题）
-
-  要求：严格检查，有任何问题都要指出。
-
-# 步骤5: 生成配置文件
+# 生成配置文件
 generate_config_file_prompt: |
   根据设计文档生成配置文件 {config_filename}。
 
@@ -438,14 +366,144 @@ generate_config_file_prompt: |
   {interface_docs}
 
   要求：
-  1. 参考模板的结构和字段
+  1. 参考模板的结构和字段，但不要照搬
   2. 根据设计文档调整具体数值和内容
   3. 确保配置的完整性和一致性
   4. 如果有已生成的配置，保持参数之间的关联性
+  5. 如果设计文档中包含 "Agent Profile 配置" 章节，请将其完整保留并嵌入到生成的 simulation_config.yaml 的 agent_profile 字段中，不要修改其结构
 
-# 步骤6: 生成提示词文件
-generate_prompt_file_prompt: |
-  根据设计文档生成{role_type}的提示词文件。
+generate_influence_pairs_prompt: |
+  你将根据项目的设计文档与模块配置，推断该模拟环境下“客观环境/系统状态之间的多跳因果链条”。
+  只捕捉自然条件、基础设施、资源供给、经济指标等可量化变量之间的传导，不允许出现任何需要决策的主观选择。
+
+  【核心要求】
+  1. 连通性：因果网络应当是一个连通图（以模块为节点、影响关系为边），任意两个模块之间存在路径，严禁出现孤立节点或互不相交的子图。
+  2. 结构偏好：优先提取设计文档中的显式因果链路，保留级联（A→B→C）和反馈环（A→B→A）；优先选择跨模块的间接影响与双向反馈，而非多个独立的直接影响对。
+  3. 覆盖性：网络应覆盖所有核心模块之间的主要传导路径，确保每个模块至少参与一条连接（不成为仅出现一次的孤立叶子节点）。
+  4. 总量控制：影响对数量通常不超过 15 条；网络完整性优先于数量限制。
+
+  【信息优先级】
+  设计文档是因果网络构建的首要依据，权重最高；模块配置次之；论文库检索结果仅供参考，用于验证或补充设计文档未覆盖的客观传导关系。
+
+  【生成策略】
+  1. 先提取设计文档中的主干因果链（最核心的 3-5 条跨模块传导路径），确保骨架完整。
+  2. 再围绕主干补充必要的分支和反馈连接，形成网络。
+  3. 最后才参考论文库中的补充关系，且只采纳与设计文档方向一致、能强化主干网络的证据，无关或次要论文证据直接忽略。
+
+  示例（仅示意，不可抄写）：
+  - 极端气候 → 运河通航能力下降 → 相关就业减少
+
+  【设计文档】
+  {description_md}
+
+  【模块配置】
+  {modules_config_yaml}
+
+  【论文库检索参考】
+  {paper_candidates_context}
+
+  # 若上方提供了参考影响对，请优先考虑或验证这些客观传导关系，但不要直接抄写无关项。
+
+  输出 JSON 数组；每个元素描述一条客观影响链中的一环。
+  格式示例（仅示意，不可抄写）：
+  ```json
+  [
+    {{
+      "pair_id": 1,
+      "cause": {{"module": "climate", "param": "climate stability"}},
+      "effect": {{"module": "transport_economy", "param": "canal navigability"}},
+      "direction": "increase",
+      "effect_size": "moderate"
+    }}
+  ]
+  ```
+
+  约束：
+  1. pair_id 递增且唯一。
+  2. 重要：module 名必须使用模块配置中存在的名称，不得自行编造，param 用英文短语描述“客观可测的状态/指标”。
+  3. direction 仅取 increase/decrease，effect_size 用定性短语（如 moderately、drastically）。
+  4. 严禁将主观行为列入 cause/effect，可描述其客观前因。
+  5. 只返回 JSON，不要解释或注释。
+
+resolve_influence_pair_params_prompt: |
+  根据模块接口文件，完善影响对。
+
+  【当前影响对】
+  {pair_json}
+
+  【cause 模块接口文件】
+  {cause_interface_docs}
+
+  【effect 模块接口文件】
+  {effect_interface_docs}
+
+  任务：
+  1. 属性名严格匹配：将 cause.param 和 effect.param 替换为对应接口文件 中实际存在的属性名，必须严格一致。
+  2. 无合适匹配时：保留最接近的可识别名称，在 rationale 中说明"未找到严格匹配的属性，已标记 TODO"。
+  3. 不要修改其他内容，特殊情况可附加 `rationale`字段。
+
+  输出：严格 JSON 数组，结构与输入一致，不要解释。
+
+enrich_influence_pairs_prompt: |
+  根据给出初步的影响对列表与基于参数描述检索到的上下文，重新评估初步影响对的 direction 与 effect_size。
+
+  【初步影响对】
+  {pairs_json}
+
+  【RAG 检索上下文】
+  {rag_context}
+  # 上下文包含：直接证据（向量检索 causal_claims）、相关影响对（相同 cause/effect）、调节/中介变量论文。
+
+  任务：只更新 direction/effect_size；数值优先，严禁纯定性词。
+    effect_size 的优先级：
+    a. 如果上下文中提供了具体数值、百分比或公式，优先直接采用。
+    b. 否则使用基于证据的合理估算数值（如 0.12、"8%"、"0.3 * base"）。
+    c. 严禁使用纯定性词（如 moderate、slightly、significant、high、low）。
+    若上下文中有相关影响对或调节变量信息，可在 rationale 中简要说明交互关系。
+
+  输出：严格 JSON 数组，结构与输入一致。
+
+generate_influence_block_prompt: |
+  基于模拟影响对，生成一个可直接写入 influences.yaml 的 influence 块。
+  只处理当前这一条 pair，不要输出顶层 execution_order，也不要输出 influences 列表外的解释文字。
+
+  【当前影响对】
+  {pair_json}
+
+  【cause 模块代码】
+  {cause_module_code}
+
+  【effect 模块代码】
+  {effect_module_code}
+
+  【influences.yaml 模板参考】
+  {template_content}
+
+  任务：
+  1. 结合当前 pair 的 cause/effect 信息和对应模块源码，生成这一条影响对应的单个 influence 块。
+  2. 输出必须与 influences.yaml 的单条列表项结构兼容，至少包含 name/type/source/target/params。
+  3. source 优先使用 cause 模块名或模块对象写法，target 依据 effect 模块及该 pair 的语义选择合适的目标名。
+  4. 如果无法确定字段名，优先保守生成可解析的 YAML 块，不要编造不存在的属性。
+  5. expr 必须是可执行的定量表达式（数值、Python 算术表达式、或引用其他模块属性的简单公式），严禁纯定性词（如 moderate、slightly、high、low）。
+  6. 若 effect 的参数属于 Agent 主观决策/选择类（如 job selection、migration decision、consumer choice 等），该 influence 为**占位声明**，必须在 `params` 中写 `placeholder: true`，并在 description 中简要说明。
+
+  输出格式：
+  ```yaml
+  name: example_name
+  type: expr
+  source:
+    module: example_source
+  target: example_target
+  description: example description
+  params:
+    expr: example_expression
+  ```
+
+  只返回一个 YAML 代码块，不要输出其他内容。
+
+# 生成提示词文件
+generate_role_files_prompt: |
+  根据设计文档生成{role_type}的相关配置文件。
 
   设计文档：
   {description_md}
@@ -455,69 +513,61 @@ generate_prompt_file_prompt: |
   
   {template_content_action}
 
-  {configs_str}
+  {agent_profile_attrs_doc}
 
   要求：
-  1. 参考模板的结构和风格
-  2. 提示词要详细、具体、符合{role_type}角色特征
-  3. 根据设计文档中的实验背景和目标定制提示词
-  4. 确保提示词能引导Agent做出合理的决策
-  5. 确保包含代码所需的提示词模块，不需要的模块删除
-  6. 不可以使用模板中没有的变量
-  7. 删除所有注释
+  1. 参照模板的结构与风格  
+  2. 提示词与动作配置需详细、具体，符合角色特征，基于实验背景与目标定制，确保引导合理决策  
+  3. 若提供动作模板参考，需同步生成对应的动作配置文件  
+  4. 仅保留代码所需的提示词模块，删除无关模块  
+  5. 只使用模板中已定义的变量（允许将Agent Profile属性作为{{属性名}}占位符），禁用未定义变量，并删除所有注释
 
-  请生成完整的YAML格式提示词文件。
-  
-  特别地，在生成'residents'的提示词文件时，请同时生成'resident_actions.yaml'的内容。
-  两个文件内容需要相互对应，特别是编号和行动内容。
-  请使用以下格式分隔两个文件的内容：
+  请生成完整的YAML格式文件，包括prompts/{role_type}.yaml，以及 actions/{role_type}.yaml 。
+  两个文件内容需要相互对应，请使用以下格式分隔两个文件的内容：
   
   ```yaml
-  # residents_prompts.yaml
+  # prompts/{role_type}.yaml
   ...
   ```
   
   ```yaml
-  # resident_actions.yaml
+  # actions/{role_type}.yaml
   ...
   ```
-  
-  如果不是'residents'，则只生成提示词文件。
 
-# 诊断并修复失败步骤
-diagnose_failure_prompt: |
-  现在有一个自动化代码生成任务反复失败，需要你直接修复代码。
+# 基于 influences.yaml 检查 simulator
+check_simulator_with_influences_prompt: |
+  根据 influences.yaml 双向检查 simulator 代码合规性：
+  1. influences.yaml 中引用的所有状态/参数必须在 simulator 中有真实、有意义的定义或来源；
+  2. simulator 中暴露/计算的所有影响相关字段必须在 influences.yaml 中有对应条目，避免单边声明。
 
-  【失败步骤】
-  {step_name}
+  【influences.yaml】
+  {influences_yaml}
 
-  【失败次数】
-  已尝试 {attempt_count} 次，全部失败
+  【simulator 代码】
+  {simulator_content}
 
-  【错误信息】
-  {error_info}
+  检查项：
+  1. 去重：删除 simulator 中与 influences.yaml 重复的状态更新硬编码逻辑。
+  2. simulator_state 完整性：update_state 中构建的 simulator_state 须暴露 influences.yaml 所有 inputs/variables 所需字段。
+  3. apply_all_influences 调用时机：确认其在 update_state 中被正确调用。
+  4. 参数真实存在性：逐条检查 influences.yaml 中 source/inputs/variables/target_attr/expr/code 引用的字段，是否在 simulator 的 __init__、init_results、update_state、collect_results 或其他方法中有真实定义或可靠来源。
+     - 如果某字段仅被引用但无定义，或对应 influence 的 description/params 包含 TODO/占位声明，必须使 simulator 与 influences.yaml 同步：要么在 simulator 中主动定义，要么从 influences.yaml 中删除/修正该条目。
+     - 主动定义方式包括：在 __init__ 中初始化属性、在 init_results 中注册 results 键、在 update_state 中计算并写入 simulator_state、新增辅助计算方法/统计方法等。
+     - 对于需要汇总/统计的字段（如总人口、失业率、军力等），设计合理的计算方法或统计方法。
+  5. influences.yaml 一致性：如果 simulator 新增了影响相关字段，必须在 influences.yaml 中补充对应 influence；如果 influences.yaml 中存在 simulator 无法提供的字段，必须删除或修正该 influence。
 
-  【当前文件完整内容】
-  {file_content}
-
-  任务：
-  1. 分析失败的根本原因
-  2. 定位具体问题所在
-  3. **直接生成修复后的完整代码**
-
-  要求：
-  - 不要只给建议或诊断报告
-  - 必须返回完整的、可直接运行的修复后代码
-  - 保持代码结构和风格一致
-  - 确保修复后的代码逻辑正确、完整
-
-  请生成修复后的完整代码，使用以下格式返回：
-
-  ```python
-  # 修复后的完整代码
+  若无问题只返回：OK
+  若有修改返回 JSON（influences_yaml 字段必须是完整的文件内容， simulator 字段只包含增量修改）：
+  ```json
+  {{
+    "methods": [{{"method_name": "...", "method_code": "...", "description": "..."}}],
+    "delete_methods": ["..."],
+    "influences_yaml": "完整的 influences.yaml 内容（YAML字符串，保留原始缩进和格式）"
+  }}
   ```
 
-  确保代码包含在 ```python 和 ``` 标记之间。
+  注意：只返回最小必要修改，不要添加未在 influences.yaml 中使用的字段；influences.yaml 必须保持完整可解析的 YAML 格式。
 
 # 运行时错误修复（增量修改版）
 fix_runtime_errors_prompt: |
@@ -547,6 +597,7 @@ fix_runtime_errors_prompt: |
   2. 参考接口文件和配置文件，确保使用正确的方法名、参数和配置
   3. 尽可能以最小改动修复问题，可以修改代码、配置文件或提示词
   4. 只有当接口中没有可用的方法，且该功能必须实现，才尝试自己编写函数/方法
+  5. 修复错误时优先解决根因，禁止通过添加裸 except Exception 掩盖错误；若必须使用 try/except，应捕获具体异常类型。
 
   【输出格式】
   根据需要修改的文件类型，返回对应的JSON块。Main文件用 # === MAIN FILE ===，Simulator文件用 # === SIMULATOR FILE ===，配置文件和提示词文件用 # === CONFIG FILES ===。
@@ -596,9 +647,31 @@ fix_runtime_errors_prompt: |
   }}
   ```
 
+  【特殊场景：配置文件语法错误】
+  如果错误是 YAML/JSON 语法错误（如 ScannerError、YAMLError、JSONDecodeError），
+  参数级增量修改无法工作（因为文件本身已无法解析）。此时请直接返回修正后的完整文件内容：
+
+  ```yaml
+  # === REWRITE FILE: jobs_config.yaml ===
+  jobs_info:
+    品牌商高管:
+      base_salary: 150
+  ```
+
+  或对于JSON文件：
+
+  ```json
+  # === REWRITE FILE: towns_data.json ===
+  {{
+    "towns": [{{"name": "Town1"}}]
+  }}
+  ```
+
   注意：
   - delete_methods/delete_functions 是可选字段。
-  - 只返回需要修改的文件的严格的JSON块，不要分析和说明。
+  - 只返回需要修改的文件的严格的JSON块或重写块，不要分析和说明。
+  - 若错误在 src/agents/ 核心文件中且是 KeyError，优先通过修改 CONFIG FILES（提示词模板）移除不兼容占位符，不要反复修改 SIMULATOR。
+  - 对于配置文件**语法错误**（如包含反引号、Markdown标记导致解析失败），必须使用 REWRITE FILE 模式返回完整修正内容，禁止使用 CONFIG FILES 增量修改模式。
 
 # 生成配置修改方案
 generate_config_modifications_prompt: |
@@ -744,3 +817,50 @@ apply_user_adjustment_prompt: |
   - delete_methods/delete_functions 是可选字段
   - 只返回需要修改的文件的JSON块，不要分析和说明
   - 确保JSON格式严格正确
+
+# 专门修复语法错误的提示词（不传入设计文档等冗余内容）
+fix_syntax_error_prompt: |
+  以下 Python 文件存在语法错误，请只修复语法错误，不要改变任何功能逻辑。
+
+  【语法错误信息】
+  错误类型: {exc_type}
+  出错行号: {error_line}
+  出错行内容: {error_text}
+  错误详情: {compile_error}
+
+  【出错位置上下文】
+  ```python
+  {error_context}
+  ```
+
+  【出错方法】
+  {error_method}
+
+  【任务】
+  1. 只修复上述语法错误，不要修改功能逻辑、变量名、方法签名等
+  2. 优先检查以下常见问题：
+     - 缩进不一致（def/class/if/for 后的代码块缩进）
+     - 括号未闭合（圆括号、方括号、花括号）
+     - 引号未闭合（字符串引号不匹配）
+     - 转义字符问题（如字面 \n 未被正确处理）
+     - 多余空行导致的 unexpected EOF
+  3. 如果错误不在最近修改的方法中，请检查文件末尾是否被截断
+
+  【输出格式】
+  返回 JSON 格式的增量修改，只包含需要修改的方法/函数：
+  ```json
+  {{
+    "methods": [
+      {{
+        "method_name": "方法名（纯方法名，不含def/async def）",
+        "method_code": "完整的方法代码（从def/async def开始）",
+        "description": "修复说明"
+      }}
+    ]
+  }}
+  ```
+
+  注意：
+  - 如果没有语法错误（或无法定位），只返回：OK
+  - 只修改有语法错误的方法/函数，不要动其他正确的代码
+  - main 文件请将 "methods" 替换为 "functions"，"method_name" 替换为 "function_name"

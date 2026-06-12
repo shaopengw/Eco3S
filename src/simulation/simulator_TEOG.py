@@ -4,6 +4,7 @@ if "sphinx" not in sys.modules:
     resident_log = logging.getLogger(name="resident.agent")
     resident_log.setLevel("DEBUG")
     now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    os.makedirs("./log", exist_ok=True)
     file_handler = logging.FileHandler(f"./log/resident.agent-{str(now)}.log")
     file_handler.setLevel("DEBUG")
     file_handler.setFormatter(
@@ -52,7 +53,7 @@ class TEOGSimulator:
         
         # 保存初始数据
         self.gdp = self.calculate_gdp()  # 确保先计算初始GDP
-        self.average_satisfaction = self.calculate_average_satisfaction()  # 计算初始满意度
+        self.average_satisfaction = self._avg_resident_attr("satisfaction", 0.0)  # 计算初始满意度
         
         self.save_initial_results()
         self.start_time = None  # 用于记录模拟开始时间
@@ -89,35 +90,29 @@ class TEOGSimulator:
 
             # ==================== 计算基础状态（用于构建 context） ====================
             self.gdp = self.calculate_gdp()
-            self.average_satisfaction = self.calculate_average_satisfaction()
+            self.average_satisfaction = self._avg_resident_attr("satisfaction", 0.0)
             climate_impact_factor = self.climate.get_current_impact(current_year, start_year)
             self.logger.info(f"天气影响因子：{climate_impact_factor}")
 
             # ==================== 应用影响函数（按 influences.yaml 编排） ====================
-            simulator_state = {
-                'time': self.time,
-                'map': self.map,
-                'population': self.population,
-                'transport_economy': self.transport_economy,
-                'climate': self.climate,
-                'towns': self.towns,
-                'government': self.government,
-                'residents': self.residents,
-                'gdp': self.gdp,
-                'average_satisfaction': self.average_satisfaction,
-                'basic_living_cost': self.basic_living_cost,
-                # 供 canal_decay 读取
-                'climate_impact_factor': climate_impact_factor,
-                'current_navigability': self.map.get_navigability(),
-                # 供 river_price/maintenance_cost 读取（canal_decay 会写回 context['navigability']）
-                'navigability': self.map.get_navigability(),
-                'transport_cost': getattr(self.transport_economy, 'transport_cost', 0.0),
-                'maintenance_cost_base': getattr(self.transport_economy, 'maintenance_cost_base', 0.0),
-                # 供 government_budget 读取
-                'tax_rate': self.government.get_tax_rate(),
-            }
-
-            global_context = self.influence_manager.apply_all_influences(simulator_state)
+            global_context = self.influence_manager.apply_all_influences(
+                plugin_registry=self.plugin_registry,
+                extra_state={
+                    "residents": self.residents,
+                    "gdp": self.gdp,
+                    "average_satisfaction": self.average_satisfaction,
+                    "basic_living_cost": self.basic_living_cost,
+                    # 供 canal_decay 读取
+                    "climate_impact_factor": climate_impact_factor,
+                    "current_navigability": self.map.get_navigability(),
+                    # 供 river_price/maintenance_cost 读取（canal_decay 会写回 context['navigability']）
+                    "navigability": self.map.get_navigability(),
+                    "transport_cost": getattr(self.transport_economy, "transport_cost", 0.0),
+                    "maintenance_cost_base": getattr(self.transport_economy, "maintenance_cost_base", 0.0),
+                    # 供 government_budget 读取
+                    "tax_rate": self.government.get_tax_rate(),
+                },
+            )
 
             tax_income = global_context.get('tax_income', 0.0)
             maintenance_cost = (global_context.get('result') or {}).get('maintenance_cost')
@@ -128,7 +123,7 @@ class TEOGSimulator:
             
             # 居民出生（每年）
             new_count = int(self.population.birth_rate * self.population.get_population())
-            new_residents = await generate_new_residents(
+            new_residents = await generate_new_agents(
                 count=new_count,
                 map=self.map,
                 residents=self.residents,
@@ -403,12 +398,6 @@ class TEOGSimulator:
         self.results["river_navigability"].append(self.map.get_navigability())
         self.results["gdp"].append(self.gdp)
         self.results["urban_scale"].append(self.get_urban_scale())
-
-    def calculate_average_satisfaction(self):
-        """计算平均满意度"""
-        if not self.residents:
-            return 0
-        return sum(resident.satisfaction for resident in self.residents.values()) / len(self.residents)
 
     def save_results(self, filename=None, append=False):
         """

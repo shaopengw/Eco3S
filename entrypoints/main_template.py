@@ -20,7 +20,7 @@ async def run_simulation(config, config_path):
     1. 根据config初始化环境对象（map, time, population等）
     2. 创建模拟器实例（Simulator或其子类）
     3. 运行模拟器：await simulator.run()
-    4. 保存结果和可视化
+    4. 保存结果
     """
     async def build_new_simulator(config: dict, config_path: str):
         simulator = await build_default_simulator_via_di(
@@ -39,10 +39,6 @@ async def run_simulation(config, config_path):
 
         return simulator
 
-    def after_run(simulator: Any) -> None:
-        plot_all_results(simulator.results)
-        simulator.save_results()
-
     print("开始运行模拟...")
     await run_with_cache(
         config=config,
@@ -50,7 +46,6 @@ async def run_simulation(config, config_path):
         cache_dir="./backups",
         simulator_class=YourSimulator,
         build_new_simulator=build_new_simulator,
-        after_run=after_run,
     )
 
 # ===== 以下代码块不可删除或修改 =====
@@ -67,8 +62,13 @@ if __name__ == "__main__":
         config = yaml.safe_load(f)
     
     # 设置模拟名称
-    if "simulation" in config and "simulation_name" in config["simulation"]:
-        SimulationContext.set_simulation_name(config["simulation"]["simulation_name"])
-    
+    population = config.get("simulation", {}).get("initial_population")
+    total_years = config.get("simulation", {}).get("total_years")
+    SimulationContext.set_simulation_name(
+        config.get("simulation", {}).get("simulation_name"),
+        population=population,
+        total_years=total_years,
+    )
+
     # 运行模拟
     asyncio.run(run_simulation(config, args.config_path))

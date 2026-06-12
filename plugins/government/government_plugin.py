@@ -1,7 +1,4 @@
-"""政府插件实现 - service 组合模式。
-
-插件只负责生命周期与配置读取；业务能力由内部 Government(service) 提供。
-"""
+"""政府插件实现"""
 
 from __future__ import annotations
 
@@ -10,10 +7,10 @@ from typing import Any, Dict, Optional
 from src.agents.government import Government
 from src.influences import InfluenceRegistry
 from src.interfaces import IMap, ITime, ITowns, ITransportEconomy
-from src.plugins import IGovernmentPlugin, PluginContext
+from src.plugins import BasePlugin, PluginContext
 
 
-class DefaultGovernmentPlugin(IGovernmentPlugin):
+class DefaultGovernmentPlugin(Government, BasePlugin):
     def __init__(
         self,
         map: IMap,
@@ -25,7 +22,7 @@ class DefaultGovernmentPlugin(IGovernmentPlugin):
         government_prompt_path: Optional[str] = None,
         influence_registry: Optional[InfluenceRegistry] = None,
     ):
-        super().__init__()
+        BasePlugin.__init__(self)
         self._map_param = map
         self._towns_param = towns
         self._time_param = time
@@ -34,7 +31,6 @@ class DefaultGovernmentPlugin(IGovernmentPlugin):
         self._initial_budget_param = initial_budget
         self._government_prompt_path_param = government_prompt_path
         self._influence_registry_param = influence_registry
-        self.logger = None
 
     def init(self, context: PluginContext) -> None:
         self._context = context
@@ -51,9 +47,10 @@ class DefaultGovernmentPlugin(IGovernmentPlugin):
         if transport is None and context.registry is not None:
             transport_plugin = context.registry.get_plugin("transport_economy")
             if transport_plugin is not None:
-                transport = transport_plugin.service
+                transport = transport_plugin
 
-        self._service = Government(
+        Government.__init__(
+            self,
             map=self._map_param,
             towns=self._towns_param,
             military_strength=self._military_strength_param,
@@ -78,7 +75,7 @@ class DefaultGovernmentPlugin(IGovernmentPlugin):
         return {
             "name": "DefaultGovernment",
             "version": "1.0.0",
-            "description": "默认政府系统插件（包装 Government 类）",
+            "description": "默认政府系统插件（直接实现 IGovernment）",
             "author": "AgentWorld Team",
             "dependencies": ["map", "time", "towns", "transport_economy"],
         }

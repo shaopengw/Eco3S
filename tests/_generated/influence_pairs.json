@@ -1,0 +1,67 @@
+[
+  {
+    "pair_id": 1,
+    "cause": {
+      "module": "taxation",
+      "param": "tax rate adjustment"
+    },
+    "effect": {
+      "module": "residents",
+      "param": "job choice"
+    },
+    "direction": "increase",
+    "effect_size": "moderate"
+  },
+  {
+    "pair_id": 2,
+    "cause": {
+      "module": "residents",
+      "param": "job choice"
+    },
+    "effect": {
+      "module": "residents",
+      "param": "income change"
+    },
+    "direction": "increase",
+    "effect_size": "moderate"
+  },
+  {
+    "pair_id": 3,
+    "cause": {
+      "module": "residents",
+      "param": "income change"
+    },
+    "effect": {
+      "module": "residents",
+      "param": "satisfaction level"
+    },
+    "direction": "increase",
+    "effect_size": "moderate"
+  },
+  {
+    "pair_id": 4,
+    "cause": {
+      "module": "taxation",
+      "param": "tax rate adjustment"
+    },
+    "effect": {
+      "module": "government",
+      "param": "tax revenue"
+    },
+    "direction": "increase",
+    "effect_size": "moderate"
+  },
+  {
+    "pair_id": 5,
+    "cause": {
+      "module": "government",
+      "param": "tax revenue"
+    },
+    "effect": {
+      "module": "government",
+      "param": "policy adjustment"
+    },
+    "direction": "increase",
+    "effect_size": "moderate"
+  }
+]

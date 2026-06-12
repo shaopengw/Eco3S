@@ -67,7 +67,7 @@ class Simulator:
         
         # 保存初始数据
         self.gdp = self.calculate_gdp()  # 确保先计算初始GDP
-        self.average_satisfaction = self.calculate_average_satisfaction()  # 计算初始满意度
+        self.average_satisfaction = self._avg_resident_attr("satisfaction", 0.0)  # 计算初始满意度
         
         self.results["years"].append("初始")
         self.results["rebellions"].append(self.rebellion_records)
@@ -107,34 +107,25 @@ class Simulator:
             # ==================== 计算基础状态 ====================
             # 先计算当前状态，用于构建 context
             self.gdp = self.calculate_gdp()
-            self.average_satisfaction = self.calculate_average_satisfaction()
+            self.average_satisfaction = self._avg_resident_attr("satisfaction", 0.0)
             climate_impact = self.climate.get_current_impact(current_year, start_year)
             
             self.logger.info(f"天气影响因子：{climate_impact}")
             
             # ====================  应用影响函数（通过 InfluenceManager）====================
-            # 构建模拟器状态字典
-            simulator_state = {
-                'time': self.time,
-                'map': self.map,
-                'population': self.population,
-                'transport_economy': self.transport_economy,
-                'climate': self.climate,
-                'towns': self.towns,
-                'government': self.government,
-                'rebellion': self.rebellion,
-                'residents': self.residents,
-                'gdp': self.gdp,
-                'average_satisfaction': self.average_satisfaction,
-                'basic_living_cost': self.basic_living_cost,
-                'gdp_growth_rate': self._calculate_gdp_growth_rate(),
-                'rebellion_records': self.rebellion_records,
-            }
+            global_context = self.influence_manager.apply_all_influences(
+                plugin_registry=self.plugin_registry,
+                extra_state={
+                    "residents": self.residents,
+                    "gdp": self.gdp,
+                    "average_satisfaction": self.average_satisfaction,
+                    "basic_living_cost": self.basic_living_cost,
+                    "gdp_growth_rate": self._calculate_gdp_growth_rate(),
+                    "rebellion_records": self.rebellion_records,
+                },
+            )
             
-            # 通过 InfluenceManager 统一应用所有影响函数
-            global_context = self.influence_manager.apply_all_influences(simulator_state)
-            
-            # ==================== 阶段 4: 年度结算（由 influences.yaml 驱动）====================
+            # ==================== 阶段 4: 年度结算====================
             # 这里不再硬编码预算/资源/军力/人数等互影响公式
             self.rebellion_records = 0
             tax_income = global_context.get('tax_income', 0.0)
@@ -146,13 +137,16 @@ class Simulator:
 
             # 居民出生（每年）
             new_count = int(self.population.birth_rate * self.population.get_population())
-            new_residents = await generate_new_residents(
+            # 加载 agent_profile（供配置驱动生成）
+            profile_config = self._load_agent_profile()
+            new_residents = await generate_new_agents(
                 count=new_count,
                 map=self.map,
                 residents=self.residents,
                 social_network=self.social_network,
                 resident_prompt_path=self.config["data"]["resident_prompt_path"],
                 resident_actions_path=self.config["data"]["resident_actions_path"],
+                profile_config=profile_config,
             )
             await self.integrate_new_residents(new_residents)
             self.population.birth(new_count)
@@ -187,8 +181,6 @@ class Simulator:
             # 重置社交网络的对话计数器
             self.social_network.reset_dialogue_count()
 
-            simulator_state['residents'] = self.residents
-
             # 居民行为
             tasks = []
             speech_tasks = []
@@ -200,11 +192,11 @@ class Simulator:
                 tax_rate = self.government.get_tax_rate()
                 
                 # 基于LLM的决策--测试时建议暂时注释
-                # if resident.job == "叛军":
-                #     tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
-                # else:
-                #     tasks.append(resident.decide_action_by_llm(tax_rate=tax_rate, basic_living_cost=self.basic_living_cost))
-                tasks.append(asyncio.sleep(0, result=("3", "工作中")))
+                if resident.job == "叛军":
+                    tasks.append(resident.generate_provocative_opinion(self.propaganda_prob, self.propaganda_speech))
+                else:
+                    tasks.append(resident.decide_action_by_llm(tax_rate=tax_rate, basic_living_cost=self.basic_living_cost))
+                # tasks.append(asyncio.sleep(0, result=("3", "工作中")))
 
             # 并发执行所有居民的行为并收集结果
             if tasks:  # 只在有任务时执行
@@ -237,7 +229,7 @@ class Simulator:
                         await resident.execute_decision(select)
                 
                 if job_request_count > 0:
-                    self.logger.info(f"\n收集到 {job_request_count} 个求职请求")
+                    self.logger.info(f"收集到 {job_request_count} 个求职请求")
                 
                 # 并发执行所有发言传播任务
                 if speech_tasks:
@@ -245,10 +237,10 @@ class Simulator:
             
             # 处理所有城镇的求职信息
             if town_job_requests:
-                self.logger.info(f"\n开始处理 {len(town_job_requests)} 个城镇的求职请求")
+                self.logger.info(f"开始处理 {len(town_job_requests)} 个城镇的求职请求")
                 hiring_results = self.towns.process_town_job_requests(town_job_requests)
             else:
-                self.logger.info("\n本轮无求职请求")
+                self.logger.info("本轮无求职请求")
 
             # 更新结果数据
             self.update_results()
@@ -271,6 +263,25 @@ class Simulator:
         if self.start_time and self.end_time:
             total_time = self.end_time - self.start_time
             self.logger.info(f"总模拟时间: {total_time}")
+
+    def _load_agent_profile(self) -> Optional[dict]:
+        """加载 agent_profile（优先内联配置，其次文件路径）。"""
+        import os
+        import yaml
+
+        # 1. 内联配置
+        for key in ("agent_profile", "resident_profile"):
+            if key in (self.config or {}):
+                return self.config[key]
+
+        # 2. 文件路径
+        data_cfg = (self.config or {}).get("data", {})
+        profile_path = data_cfg.get("agent_profile_path")
+        if profile_path and os.path.exists(profile_path):
+            with open(profile_path, "r", encoding="utf-8") as f:
+                return yaml.safe_load(f)
+
+        return None
 
     async def collect_group_decision(self, group_type, config, max_rounds=2):
         """
@@ -508,20 +519,6 @@ class Simulator:
             self.social_network.add_new_residents(new_residents)
             self.logger.info(f"{len(new_residents)} 名新居民已加入社交网络")
             # self.social_network.visualize()
-
-    def calculate_average_satisfaction(self):
-        """
-        计算所有居民的平均满意度
-        :return: 平均满意度（浮点数）
-        """
-        if not self.residents:
-            self.logger.warning("没有居民，平均满意度为 0.0")
-            return 0.0
-
-        total_satisfaction = sum(resident.satisfaction for resident in self.residents.values())
-        average_satisfaction = total_satisfaction / self.population.population
-        self.logger.info(f"平均满意度: {average_satisfaction} = {total_satisfaction / self.population.population:.2f}")
-        return average_satisfaction
 
     def get_basic_living_cost(self):
         """
@@ -893,21 +890,16 @@ class Simulator:
         total_unemployment_rate = self.calculate_total_unemployment_rate()
 
         # 更新政府军力/叛军人数（由 influences.yaml 驱动，基于已更新的就业市场）
-        simulator_state = {
-            'time': self.time,
-            'map': self.map,
-            'population': self.population,
-            'transport_economy': self.transport_economy,
-            'climate': self.climate,
-            'towns': self.towns,
-            'government': self.government,
-            'rebellion': self.rebellion,
-            'gdp': self.gdp,
-            'average_satisfaction': self.average_satisfaction,
-            'basic_living_cost': self.basic_living_cost,
-            'gdp_growth_rate': self._calculate_gdp_growth_rate(),
-            'rebellion_records': self.rebellion_records,
-        }
+        simulator_state = build_simulator_state_from_registry(
+            self.plugin_registry,
+            extra_state={
+                "gdp": self.gdp,
+                "average_satisfaction": self.average_satisfaction,
+                "basic_living_cost": self.basic_living_cost,
+                "gdp_growth_rate": self._calculate_gdp_growth_rate(),
+                "rebellion_records": self.rebellion_records,
+            },
+        )
         context = self.influence_manager.build_global_context(simulator_state)
         self.government.apply_influences('military_strength', context)
         self.rebellion.apply_influences('strength', context)

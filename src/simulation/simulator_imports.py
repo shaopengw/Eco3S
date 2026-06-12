@@ -4,6 +4,7 @@ Simulator 模块统一导入文件
 """
 
 import asyncio
+import csv
 import json
 import random
 import sys
@@ -14,6 +15,7 @@ import inspect
 from datetime import datetime
 from collections import defaultdict
 from enum import Enum
+from pathlib import Path
 from typing import List, Dict, Optional
 import pandas as pd
 import yaml
@@ -63,7 +65,7 @@ from src.agents.rebels import (
     InformationOfficer as RebelsInformationOfficer
 )
 from src.agents.resident import Resident
-from src.agents.resident_agent_generator import generate_new_residents
+from src.agents.agent_generator import generate_new_agents
 from src.environment.social_network import SocialNetwork
 from src.environment.towns import Towns
 from src.environment.time import Time
@@ -72,5 +74,5 @@ from src.utils.simulation_context import SimulationContext
 from src.utils.logger import LogManager
 from src.utils.di_container import DIContainer
 
-from .plugin_access import require_module
+from .plugin_access import require_module, build_simulator_state_from_registry
 from src.influences import InfluenceManager

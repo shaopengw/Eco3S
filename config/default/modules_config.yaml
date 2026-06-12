@@ -1,16 +1,14 @@
 # 模块选择配置
 selected_modules:
-  # 说明：
-  # - 值为字符串：表示该模块选用的插件名称（将被自动加载）
-  time: time
-  map: map
-  population: population
-  towns: towns
-  social_network: social_network
-  transport_economy: transport_economy
-  climate: climate
+  - time
+  - map
+  - population
+  - towns
+  - social_network
+  - transport_economy
+  - climate
 
   # Agent系统插件
-  residents: residents
-  government: government
-  rebellion: rebellion
+  - residents
+  - government
+  - rebellion

@@ -1,0 +1,14 @@
+name: plugin_template
+version: 0.1.0
+description: "插件模板：提供最小可运行骨架，复制后修改 name/description 即可"
+author: AgentWorld
+enabled: true
+
+plugin_class: PluginTemplate
+module: plugin_template
+
+interfaces: []
+dependencies: []
+
+init_params: {}
+config: {}

@@ -21,6 +21,8 @@ class ProjectMasterAgent(BaseAgent):
         self.logger = CustomLogger('project_master').logger
         self.web_mode = web_mode  # Web模式标志
         self.session = session  # 存储session对象
+        self.auto_mode = False  # 完全自动模式标志（run_full_workflow内启用）
+        self._auto_scaled_up_after_prototype = False  # 自动模式：原型跑通后是否已放大规模
         
         # 子Agent实例（延迟初始化）
         self.code_architect = None
@@ -33,6 +35,67 @@ class ProjectMasterAgent(BaseAgent):
         
         self.system_message = self.prompts['system_message']
     
+    def _is_small_scale_config(self, config_path: str) -> bool:
+        """判断配置是否为原型小规模（pop=5, steps/years=1）。"""
+        if not config_path or not os.path.exists(config_path):
+            return False
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config_data = yaml.safe_load(f) or {}
+            simulation_cfg = config_data.get('simulation', {}) or {}
+            pop = simulation_cfg.get('initial_population')
+
+            steps = None
+            time_cfg = simulation_cfg.get('time')
+            if isinstance(time_cfg, dict):
+                steps = time_cfg.get('total_steps')
+            if steps is None:
+                steps = simulation_cfg.get('total_years')
+
+            return pop == 5 and steps == 1
+        except Exception as e:
+            self.logger.warning(f"检查小规模配置失败: {e}")
+            return False
+
+    def _scale_up_simulation_config(self, config_path: str, target_population: int = 100, target_steps: int = 10) -> bool:
+        """将原型配置放大到可评估规模。
+
+        - initial_population -> target_population
+        - simulation.time.total_steps 或 simulation.total_years -> target_steps
+        """
+        if not config_path or not os.path.exists(config_path):
+            return False
+
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config_data = yaml.safe_load(f) or {}
+
+            if not isinstance(config_data, dict):
+                return False
+
+            simulation_cfg = config_data.setdefault('simulation', {})
+            if not isinstance(simulation_cfg, dict):
+                simulation_cfg = {}
+                config_data['simulation'] = simulation_cfg
+
+            simulation_cfg['initial_population'] = int(target_population)
+
+            time_cfg = simulation_cfg.get('time')
+            if isinstance(time_cfg, dict) and 'total_steps' in time_cfg:
+                time_cfg['total_steps'] = int(target_steps)
+            else:
+                # 默认使用 total_years 作为时间步/周期配置
+                simulation_cfg['total_years'] = int(target_steps)
+
+            with open(config_path, 'w', encoding='utf-8') as f:
+                yaml.dump(config_data, f, allow_unicode=True, default_flow_style=False)
+
+            self.logger.info(f"✓ 已放大实验规模: pop={target_population}, steps={target_steps}")
+            return True
+        except Exception as e:
+            self.logger.error(f"放大实验规模失败: {e}")
+            return False
+        
     def _check_step_completion(self, step_name, check_files):
         """检查步骤是否已完成（所有必需文件都存在）
         
@@ -133,7 +196,10 @@ class ProjectMasterAgent(BaseAgent):
                     # 只读取selected_modules部分
                     config = yaml.safe_load(f)
                     if config and 'selected_modules' in config:
-                        return yaml.dump({'selected_modules': config['selected_modules']}, allow_unicode=True)
+                        selected_modules = config['selected_modules']
+                        if isinstance(selected_modules, list):
+                            selected_modules = [name for name in selected_modules if isinstance(name, str) and name.strip()]
+                            return yaml.dump({'selected_modules': selected_modules}, allow_unicode=True)
                     return ""
         return ""
 
@@ -216,15 +282,10 @@ class ProjectMasterAgent(BaseAgent):
         config_dir = os.path.join(project_root, 'config', simulation_name)
         os.makedirs(config_dir, exist_ok=True)
         
-        # 创建实验数据文件夹
+        # 创建实验数据文件夹（仅创建 simulation_type 级别目录，具体实验目录由 SimulationContext 运行时自动生成）
         history_dir = os.path.join(project_root, 'history', simulation_name)
         os.makedirs(history_dir, exist_ok=True)
-        
-        # 在实验数据文件夹下创建子文件夹
-        subdirs = ['results', 'logs']
-        for subdir in subdirs:
-            os.makedirs(os.path.join(history_dir, subdir), exist_ok=True)
-        
+
         self.current_project_dir = history_dir
         self.current_config_dir = config_dir
         self.current_simulation_name = simulation_name
@@ -432,9 +493,9 @@ class ProjectMasterAgent(BaseAgent):
             if user_feedback:
                 previous_modules = self._read_modules_config(full_config=False)
             _ = await designer.select_modules(
-                parsed_req,
                 previous_modules=previous_modules,
-                user_feedback=user_feedback
+                user_feedback=user_feedback,
+                description_md=description_md
             )
             config_files = [modules_config_path] if os.path.exists(modules_config_path) else []
             self.logger.info(f"配置文件已生成: {config_files}")
@@ -442,12 +503,47 @@ class ProjectMasterAgent(BaseAgent):
             config_files = [modules_config_path] if os.path.exists(modules_config_path) else []
         
         modules_config_yaml = self._read_modules_config(full_config=False)
-        
+
+        # ============ 步骤 2.5: 生成 Agent Profile 配置 ============
+        self.logger.info("步骤 2.5: 生成 Agent Profile 配置")
+        agent_profile_path = os.path.join(self.current_config_dir, 'agent_profile.yaml')
+        agent_profile_yaml = ""
+        should_generate_agent_profile = True
+
+        # 检查是否已存在 agent_profile.yaml
+        if os.path.exists(agent_profile_path) and not (previous_version and user_feedback):
+            if not self._check_step_completion("Agent Profile 配置", [agent_profile_path]):
+                should_generate_agent_profile = False
+                with open(agent_profile_path, 'r', encoding='utf-8') as f:
+                    agent_profile_yaml = f.read()
+                self.logger.info("跳过生成，使用现有 agent_profile.yaml")
+
+        if should_generate_agent_profile:
+            previous_agent_profile = None
+            if previous_version and user_feedback:
+                previous_agent_profile = previous_version.get('agent_profile_yaml', '')
+            generated_profile = await designer.generate_agent_profile_config(
+                description_md=description_md,
+                modules_config_yaml=modules_config_yaml,
+                previous_agent_profile=previous_agent_profile,
+                user_feedback=user_feedback
+            )
+            if generated_profile:
+                with open(agent_profile_path, 'w', encoding='utf-8') as f:
+                    f.write(generated_profile)
+                agent_profile_yaml = generated_profile
+                config_files.append(agent_profile_path)
+                self.logger.info(f"agent_profile.yaml 已生成: {agent_profile_path}")
+            else:
+                self.logger.warning("agent_profile.yaml 生成失败，将在编码阶段使用模板默认值")
+
         return {
             'parsed_requirement': parsed_req,
             'description_md': description_md,
             'config_files': config_files,
             'modules_config_yaml': modules_config_yaml,
+            'agent_profile_path': agent_profile_path if agent_profile_yaml else None,
+            'agent_profile_yaml': agent_profile_yaml,
             'simulation_type': simulation_type
         }
 
@@ -493,7 +589,8 @@ class ProjectMasterAgent(BaseAgent):
                 config_template_dir=self.config_template_dir,
                 simulation_name=self.current_simulation_name,
                 simulation_type=simulation_type,  # 传递模拟类型
-                session=self.session  # 传递session对象
+                session=self.session,  # 传递session对象
+                auto_mode=self.auto_mode,
             )
         
         coder = self.code_architect
@@ -565,40 +662,69 @@ class ProjectMasterAgent(BaseAgent):
         except Exception as e:
             # 不阻断主流程：即使新模块生成失败，仍尝试继续生成 simulator
             self.logger.warning(f"处理 new_modules 失败（将继续生成 simulator）: {e}")
-        
-        # === 步骤1: 生成simulator代码框架 ===
-        self.logger.info("步骤 1: 生成simulator代码框架")
-        # description_with_context = design_results['description_md'] + context_suffix
-        
-        simulator_files, skipped = await coder.generate_simulator_code(
-            description_with_context,
-            design_results.get('modules_config_yaml', '')
-        )
-        
-        if not simulator_files:
-            self.logger.error("生成simulator代码失败")
-            return {'status': 'failed', 'reason': 'simulator generation failed'}
-        
-        simulator_file_path = simulator_files[0]
-        self.logger.info(f"Simulator代码已生成: {simulator_file_path}")
-        
-        # === 步骤2: 检查并补完simulator函数 ===
-        # 如果用户选择跳过重新生成，则直接跳过步骤2
-        if skipped:
-            self.logger.info("⏭️  步骤 2: 用户选择使用现有simulator文件，跳过完善步骤")
-        else:
-            self.logger.info("步骤 2: 根据模块配置完善simulator实现")
-            refined_simulator = await coder.refine_simulator_functions(
-                simulator_file_path,
+
+        # === 步骤0.5: 生成影响函数配置（提前到 simulator 之前，供后续约束检查使用） ===
+        self.logger.info("步骤 0.5: 生成影响函数 (influences.yaml)")
+        influences_config_path = None
+        influences_yaml_content = ""
+        try:
+            modules_config_yaml = self._read_modules_config()
+            influences_config_path = await coder.generate_influences_config_file(
                 description_with_context,
-                design_results.get('modules_config_yaml', '')
+                modules_config_yaml,
+                previous_configs=None,
             )
-            
-            if refined_simulator:
-                self.logger.info("Simulator函数已补完")
+            if influences_config_path and os.path.exists(influences_config_path):
+                self.logger.info(f"  ✓ influences.yaml 已生成: {influences_config_path}")
+                with open(influences_config_path, 'r', encoding='utf-8') as f:
+                    influences_yaml_content = f.read()
             else:
-                self.logger.warning("Simulator函数补完失败，保持原文件")
-        
+                self.logger.warning("  ✗ influences.yaml 生成失败（将以默认无影响函数配置运行）")
+        except Exception as e:
+            self.logger.warning(f"  ✗ influences.yaml 生成异常（将以默认无影响函数配置运行）: {e}")
+
+        # 步骤1和步骤2循环：支持 regenerate 后回到步骤1重新生成
+        while True:
+            # === 步骤1: 生成simulator代码框架 ===
+            self.logger.info("步骤 1: 生成simulator代码框架")
+
+            simulator_files, skipped = await coder.generate_simulator_code(
+                description_with_context,
+                design_results.get('modules_config_yaml', ''),
+                influences_yaml=influences_yaml_content
+            )
+
+            if not simulator_files:
+                self.logger.error("生成simulator代码失败")
+                return {'status': 'failed', 'reason': 'simulator generation failed'}
+
+            simulator_file_path = simulator_files[0]
+            self.logger.info(f"Simulator代码已生成: {simulator_file_path}")
+
+            # === 步骤2: 检查并补完simulator函数 ===
+            if skipped:
+                self.logger.info("⏭️  步骤 2: 用户选择使用现有simulator文件，跳过完善步骤")
+                break
+            else:
+                self.logger.info("步骤 2: 根据模块配置完善simulator实现")
+                refined_result = await coder.refine_simulator_functions(
+                    simulator_file_path,
+                    description_with_context,
+                    design_results.get('modules_config_yaml', ''),
+                    influences_file_path=influences_config_path
+                )
+
+                # 检查是否需要重新生成
+                if isinstance(refined_result, dict) and refined_result.get('status') == 'regenerate':
+                    self.logger.info("用户选择重新生成 simulator，回到步骤1...")
+                    continue
+
+                if refined_result and refined_result.get('files'):
+                    self.logger.info("Simulator函数已补完")
+                else:
+                    self.logger.warning("Simulator函数补完失败，保持原文件")
+                break
+
         # === 步骤3: 生成main入口文件完整代码 ===
         self.logger.info("步骤 3: 生成main入口文件完整代码")
         main_result = await coder.generate_main_file(
@@ -640,41 +766,7 @@ class ProjectMasterAgent(BaseAgent):
         else:
             self.logger.warning("Main函数补完失败，保持原文件")
         
-        # === 步骤4.1: 完善数据可视化及保存代码 ===
-        self.logger.info("步骤 4.1: 完善数据可视化及保存代码")
-        visualization_dir = os.path.join('src', 'visualization', 'plot_results.py')
 
-        refined_visualization = await coder.refine_visualization_code(
-            visualization_dir,
-            simulator_file_path,
-            main_file_path,
-            description_with_context
-        )
-
-        if refined_visualization:
-            self.logger.info("数据可视化及保存代码已完善")
-        else:
-            self.logger.warning("数据可视化及保存代码完善失败，保持原文件")
-
-        
-        # === 步骤4.2: 生成影响函数配置并接入运行链路 ===
-        # 说明：influences.yaml 驱动 InfluenceRegistry/InfluenceManager 的执行顺序与影响关系。
-        self.logger.info("步骤 4.2: 生成影响函数 (influences.yaml)")
-        influences_config_path = None
-        try:
-            influences_config_path = await coder.generate_config_file(
-                'influences.yaml',
-                description_with_context,
-                modules_config_yaml,
-                previous_configs=None,
-            )
-            if influences_config_path:
-                self.logger.info(f"  ✓ influences.yaml 已生成: {influences_config_path}")
-            else:
-                self.logger.warning("  ✗ influences.yaml 生成失败（将以默认无影响函数配置运行）")
-        except Exception as e:
-            self.logger.warning(f"  ✗ influences.yaml 生成异常（将以默认无影响函数配置运行）: {e}")
-        
         # === 步骤5: 生成配置文件（按顺序，每次一个） ===
         self.logger.info("步骤 5: 生成配置文件")
         config_files = []
@@ -714,7 +806,7 @@ class ProjectMasterAgent(BaseAgent):
         required_configs = [
             'simulation_config.yaml',
             'jobs_config.yaml',
-            'resident_actions.yaml',
+            # 'resident_actions.yaml',
             'towns_data.json'
         ]
 
@@ -733,10 +825,12 @@ class ProjectMasterAgent(BaseAgent):
         for config_filename in required_configs:
             self.logger.info(f"  生成配置文件: {config_filename}")
             description_with_config_context = description_content + prev_config_context
-            
+
+            # Agent Profile 保持独立文件，不再嵌入 simulation_config.yaml
+
             # 读取模块配置
             modules_config_yaml = self._read_modules_config(full_config=True)
-            
+
             config_path = await coder.generate_config_file(
                 config_filename,
                 description_with_config_context,
@@ -753,49 +847,11 @@ class ProjectMasterAgent(BaseAgent):
             else:
                 self.logger.warning(f"  ✗ {config_filename} 生成失败")
         
-        # === 步骤6: 生成提示词文件（根据modules_config.yaml决定） ===
-        self.logger.info("步骤 6: 生成提示词文件")
+        # === 步骤6: 生成提示词文件与动作文件（优先按 agent_profile.yaml 的角色定义） ===
+        self.logger.info("步骤 6: 生成提示词文件与动作文件")
         prompt_files = []
-        
-        # 读取 modules_config.yaml 确定需要生成哪些提示词文件
-        modules_config_path = os.path.join(self.current_config_dir, 'modules_config.yaml')
-        prompt_file_mapping = {}
-        
-        if os.path.exists(modules_config_path):
-            with open(modules_config_path, 'r', encoding='utf-8') as f:
-                modules_config = yaml.safe_load(f) or {}
+        action_files = []
 
-            selected_modules = (modules_config or {}).get('selected_modules')
-
-            # selected_modules 为 dict[module_name -> plugin_name]
-            if isinstance(selected_modules, dict):
-                if 'government' in selected_modules:
-                    prompt_file_mapping['government'] = 'government_prompts.yaml'
-                if 'rebellion' in selected_modules or 'rebels' in selected_modules:
-                    prompt_file_mapping['rebellion'] = 'rebels_prompts.yaml'
-                if 'residents' in selected_modules or 'resident' in selected_modules:
-                    prompt_file_mapping['residents'] = 'residents_prompts.yaml'
-
-                for module_name, prompt_file in prompt_file_mapping.items():
-                    self.logger.info(f"  模块 {module_name} -> {prompt_file}")
-            else:
-                self.logger.warning(
-                    f"modules_config.yaml 的 selected_modules 必须为 dict[module->plugin]，实际类型: {type(selected_modules)}；将使用默认提示词映射"
-                )
-                prompt_file_mapping = {
-                    'government': 'government_prompts.yaml',
-                    'rebellion': 'rebels_prompts.yaml',
-                    'residents': 'residents_prompts.yaml'
-                }
-        else:
-            self.logger.warning(f"未找到 modules_config.yaml: {modules_config_path}")
-            # 使用默认映射
-            prompt_file_mapping = {
-                'government': 'government_prompts.yaml',
-                'rebellion': 'rebels_prompts.yaml',
-                'residents': 'residents_prompts.yaml'
-            }
-        
         # 如果有上一版本的提示词，加入上下文
         prev_prompt_context = ""
         if previous_version and user_feedback and previous_version.get('prompt_files'):
@@ -806,22 +862,42 @@ class ProjectMasterAgent(BaseAgent):
                     with open(prev_prompt, 'r', encoding='utf-8') as f:
                         prev_prompt_context += f"{prompt_name}:\n{f.read()[:1000]}...\n\n"
             prev_prompt_context += f"=== 用户反馈 ===\n{user_feedback}\n"
+
+        # 先按 agent_profile.yaml 生成角色级 prompts/actions
+        agent_profile_path = os.path.join(self.current_config_dir, 'agent_profile.yaml')
+        description_with_prompt_context = description_content + prev_prompt_context
+        generated_role_files = []
+        if os.path.exists(agent_profile_path):
+            try:
+                generated_role_files = await coder.generate_role_files_from_agent_profile(
+                    description_with_prompt_context,
+                    config_files,
+                    agent_profile_path=agent_profile_path,
+                )
+            except Exception as e:
+                self.logger.warning(f"按 agent_profile.yaml 生成角色文件失败: {e}")
+
+        if generated_role_files:
+            for file_path in generated_role_files:
+                normalized_path = file_path.replace('\\', '/')
+                if '/actions/' in normalized_path:
+                    if file_path not in config_files:
+                        config_files.append(file_path)
+                    action_files.append(file_path)
+                else:
+                    prompt_files.append(file_path)
+            self.logger.info(f"  ✓ 已生成角色提示词/动作文件: {len(generated_role_files)} 个")
+        else:
+            self.logger.warning("agent_profile.yaml 存在但未能生成角色级 prompts/actions 文件")
         
-        # 生成提示词文件
-        for module_name, prompt_filename in prompt_file_mapping.items():
-            self.logger.info(f"  生成提示词文件: {prompt_filename} (来自模块: {module_name})")
-            description_with_prompt_context = description_content + prev_prompt_context
-            generated_paths = await coder.generate_prompt_file(
-                prompt_filename,
-                description_with_prompt_context,
-                config_files
-            )
-            if generated_paths:
-                prompt_files.extend(generated_paths)
-                self.logger.info(f"  ✓ {prompt_filename} 已生成")
-            else:
-                self.logger.warning(f"  ✗ {prompt_filename} 生成失败")
-        
+        # === 步骤6.1: 自动修正 simulation_config.yaml 的 data 路径 ===
+        # 在所有配置文件和提示词文件生成结束后，根据实际存在的文件自动构建路径
+        self.logger.info("步骤 6.1: 自动修正 simulation_config.yaml 的 data 路径")
+        try:
+            coder._finalize_simulation_config_paths()
+        except Exception as e:
+            self.logger.warning(f"自动修正 simulation_config.yaml 路径失败: {e}")
+
         # === 返回结果 ===
         coding_results = {
             'status': 'success',
@@ -831,7 +907,7 @@ class ProjectMasterAgent(BaseAgent):
             'prompt_files': prompt_files,
             'all_files': simulator_files + main_files + config_files + prompt_files
         }
-        
+
         self.logger.info("编码阶段完成")
         self.logger.info(f"共生成 {len(coding_results['all_files'])} 个文件")
         
@@ -889,7 +965,6 @@ class ProjectMasterAgent(BaseAgent):
                 env['PYTHONIOENCODING'] = 'utf-8'
                 
                 # 运行程序
-                # 在 Windows 上，使用 chcp 65001 设置 UTF-8 编码
                 if os.name == 'nt':  # Windows
                     run_command_with_encoding = f'chcp 65001 >nul && {run_command}'
                 else:
@@ -903,8 +978,8 @@ class ProjectMasterAgent(BaseAgent):
                     text=True,
                     timeout=300,  # 5分钟超时
                     encoding='utf-8',
-                    errors='replace',  # 将无法解码的字符替换为 �
-                    env=env  # 使用包含 PYTHONIOENCODING 的环境变量
+                    errors='replace',
+                    env=env
                 )
                 
                 # 检查是否成功
@@ -1160,6 +1235,8 @@ class ProjectMasterAgent(BaseAgent):
             完整的执行结果
         """
         print("开始运行完整工作流程...")
+        self.auto_mode = True
+        self._auto_scaled_up_after_prototype = False
         self.logger.info("=" * 80)
         self.logger.info("开始完整工作流程")
         self.logger.info("=" * 80)
@@ -1183,6 +1260,29 @@ class ProjectMasterAgent(BaseAgent):
             # 阶段 4: 运行模拟
             self.logger.info(f"\n阶段 4: 运行模拟 (第 {iteration} 轮)")
             simulation_successful = await self.run_simulation(coding_results, max_fix_attempts=10)
+            
+            # 自动模式：原型小规模跑通一次后，自动放大规模并重新实验
+            if (
+                self.auto_mode
+                and simulation_successful == 'small_scale_completed'
+                and not self._auto_scaled_up_after_prototype
+            ):
+                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                simulation_name = self.current_simulation_name
+                config_path = os.path.join(project_root, 'config', simulation_name, 'simulation_config.yaml')
+
+                # 仅当确实还是小规模配置时才放大
+                if self._is_small_scale_config(config_path):
+                    self.logger.info("原型测试成功，自动放大模拟人数与时间步以获得可评估结果...")
+                    if self._scale_up_simulation_config(config_path, target_population=100, target_steps=10):
+                        self._auto_scaled_up_after_prototype = True
+                        simulation_successful = await self.run_simulation(coding_results, max_fix_attempts=10)
+                    else:
+                        self.logger.error("❌ 自动放大规模失败，工作流程终止")
+                        break
+                else:
+                    # 配置已不再是小规模（可能被外部修改），直接继续
+                    self._auto_scaled_up_after_prototype = True
             
             if not simulation_successful:
                 self.logger.error("❌ 模拟运行失败，工作流程终止")
@@ -1218,6 +1318,8 @@ class ProjectMasterAgent(BaseAgent):
         self.logger.info("工作流程完成")
         self.logger.info(f"项目目录: {project_dir}")
         self.logger.info("=" * 80)
+
+        self.auto_mode = False
         
         return {
             'status': 'completed',
@@ -1333,6 +1435,8 @@ class ProjectMasterAgent(BaseAgent):
         print("\n" + "=" * 80)
         print("开始交互式工作流程")
         print("=" * 80)
+
+        self.auto_mode = False
         
         self.logger.info("=" * 80)
         self.logger.info("开始交互式工作流程")
@@ -1420,11 +1524,12 @@ class ProjectMasterAgent(BaseAgent):
                     if 'selected_modules' in modules_config:
                         print(f"\n✓ 选择的模块:")
                         selected_modules = modules_config.get('selected_modules')
-                        if isinstance(selected_modules, dict):
-                            for module_name in selected_modules.keys():
-                                print(f"  - {module_name}")
+                        if isinstance(selected_modules, list):
+                            for module_name in selected_modules:
+                                if isinstance(module_name, str):
+                                    print(f"  - {module_name}")
                         else:
-                            print("  (modules_config.yaml 的 selected_modules 不是 dict[module->plugin]，无法展示模块列表)")
+                            print("  (modules_config.yaml 的 selected_modules 不是 list[str]，无法展示模块列表)")
             
             # 显示设计文档内容（前500字符）
             if design_results.get('description_md'):

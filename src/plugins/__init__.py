@@ -6,58 +6,19 @@
 
 from .base_plugin import BasePlugin
 from .plugin_context import PluginContext, EventBus
-from .plugin_context import PluginRegistry as SimplePluginRegistry  # 简单版本
-from .plugin_registry import PluginRegistry, PluginMetadata  # 增强版本
-from .plugin_manager import PluginManager, PluginLoader
-from .plugin_interfaces import (
-    IMapPlugin,
-    ITimePlugin,
-    IPopulationPlugin,
-    ITownsPlugin,
-    ISocialNetworkPlugin,
-    ITransportEconomyPlugin,
-    IClimatePlugin,
-    IJobMarketPlugin,
-    IGovernmentPlugin,
-    IRebellionPlugin,
-    IAgentGroupPlugin,
-    IResidentAgentsPlugin,
-    IResidentsPlugin,
-    IGovernmentOfficialsPlugin,
-    IRebelsAgentsPlugin,
-    PLUGIN_INTERFACE_MAP,
-)
+from .plugin_registry import PluginRegistry, PluginMetadata
+from .events import PluginEvent
 
 __all__ = [
     # 基础类
     'BasePlugin',
     'PluginContext',
     'EventBus',
-    
-    # 注册表（两个版本）
-    'SimplePluginRegistry',  # 简单版本（用于 PluginContext）
-    'PluginRegistry',        # 增强版本（主要使用）
+
+    # 事件
+    'PluginEvent',
+
+    # 注册表
+    'PluginRegistry',
     'PluginMetadata',
-    
-    # 管理器
-    'PluginManager',
-    'PluginLoader',
-    
-    # 插件接口
-    'IMapPlugin',
-    'ITimePlugin',
-    'IPopulationPlugin',
-    'ITownsPlugin',
-    'ISocialNetworkPlugin',
-    'ITransportEconomyPlugin',
-    'IClimatePlugin',
-    'IJobMarketPlugin',
-    'IGovernmentPlugin',
-    'IRebellionPlugin',
-    'IAgentGroupPlugin',
-    'IResidentAgentsPlugin',
-    'IResidentsPlugin',
-    'IGovernmentOfficialsPlugin',
-    'IRebelsAgentsPlugin',
-    'PLUGIN_INTERFACE_MAP',
 ]

@@ -23,3 +23,5 @@ simulation:
   retry_delay: 1
   start_year: 1650
   total_years: 2
+visualization:
+  default_mode: line

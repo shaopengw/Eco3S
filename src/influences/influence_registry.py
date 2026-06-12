@@ -247,19 +247,16 @@ class InfluenceRegistry:
         if not isinstance(config, dict):
             raise ValueError("Influence config must be a dict")
 
-        # 可选：从配置中读取执行顺序
-        self.execution_order = self._parse_execution_order(config.get('execution_order'))
-
         if 'influences' not in config:
             self.logger.warning("Config does not contain 'influences' key")
             return 0
-        
+
         influences_config = config['influences']
         if not isinstance(influences_config, list):
             raise ValueError("Config 'influences' must be a list")
-        
+
         loaded_count = 0
-        
+
         for idx, inf_config in enumerate(influences_config):
             try:
                 self._load_single_influence(inf_config)
@@ -269,7 +266,10 @@ class InfluenceRegistry:
                     f"Failed to load influence #{idx}: {e}",
                     exc_info=True
                 )
-        
+
+        # 加载完 influences 后再解析 execution_order（支持按 influence name 查找）
+        self.execution_order = self._parse_execution_order(config.get('execution_order'))
+
         self.logger.info(
             f"Loaded {loaded_count}/{len(influences_config)} influences from config"
         )
@@ -296,6 +296,19 @@ class InfluenceRegistry:
                 target_name = item.get('target')
             elif isinstance(item, (list, tuple)) and len(item) == 2:
                 module_name, target_name = item[0], item[1]
+            elif isinstance(item, str):
+                # 按 influence name 查找对应的 (source_module, target)
+                found = False
+                for inf in self._influences:
+                    if inf.name == item:
+                        module_name = inf.source
+                        target_name = inf.target
+                        found = True
+                        break
+                if not found:
+                    raise ValueError(
+                        f"execution_order item '{item}' not found in influences"
+                    )
             else:
                 raise ValueError(
                     "execution_order item must be {'module': ..., 'target': ...} or [module, target]"
@@ -329,8 +342,9 @@ class InfluenceRegistry:
 
             source_inputs = source_spec.get('inputs')
             source_variables = source_spec.get('variables')
+            source_params = source_spec.get('params')
 
-            if source_inputs is not None or source_variables is not None:
+            if source_inputs is not None or source_variables is not None or source_params is not None:
                 params = config.setdefault('params', {})
                 if source_inputs is not None:
                     merged_inputs = dict(source_inputs or {})

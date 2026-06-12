@@ -1,7 +1,8 @@
 # 叛军插件元数据
 name: rebellion
 version: 1.0.0
-description: 默认叛军系统插件
+description: 模拟反叛势力的实力积累、资源获取、策略选择与社会传播，支持与政府或城镇的对抗互动。
+  适用于涉及内战、叛乱、社会动荡或安全冲突研究的项目；依赖 towns 模块获取据点与资源信息。
 author: AgentWorld Team
 enabled: true
 

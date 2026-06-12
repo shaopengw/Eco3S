@@ -138,6 +138,7 @@ class SimulationCache:
                         state[attr_name] = [
                             {
                                 'resident_id': resident.resident_id,
+                                'profile': getattr(resident, 'profile', {}) if isinstance(getattr(resident, 'profile', {}), dict) else {},
                                 'shared_pool': resident.shared_pool.shared_info if hasattr(resident.shared_pool, 'shared_info') else {},
                                 'location': getattr(resident, 'location', None),
                                 'town': getattr(resident, 'town', None),
@@ -314,12 +315,38 @@ class SimulationCache:
                     if isinstance(residents_data, list):
                         start_time = time_module.time()
                         print(f"开始恢复 {len(residents_data)} 个居民...")
-                        
-                        # 预加载配置文件（在主线程中加载一次）
-                        with open(config["data"]["resident_prompt_path"], 'r', encoding='utf-8') as file:
-                            prompts_resident = yaml.safe_load(file)
-                        with open(config["data"]["resident_actions_path"], 'r', encoding='utf-8') as file:
-                            actions_config = yaml.safe_load(file)
+
+                        data_cfg = config.get("data", {}) or {}
+                        profile_path = data_cfg.get("agent_profile_path")
+                        config_dir = os.path.dirname(profile_path) if profile_path else None
+                        role_cache = {}
+
+                        def _load_role_files(role_name: str):
+                            role_name = (role_name or "consumer").strip() or "consumer"
+                            if role_name in role_cache:
+                                return role_cache[role_name]
+
+                            prompt_paths = []
+                            action_paths = []
+                            if config_dir:
+                                prompt_paths.append(os.path.join(config_dir, 'prompts', f'{role_name}.yaml'))
+                                action_paths.append(os.path.join(config_dir, 'actions', f'{role_name}.yaml'))
+
+                            prompts_resident = {}
+                            actions_config = {}
+                            for path in prompt_paths:
+                                if os.path.exists(path):
+                                    with open(path, 'r', encoding='utf-8') as file:
+                                        prompts_resident = yaml.safe_load(file) or {}
+                                    break
+                            for path in action_paths:
+                                if os.path.exists(path):
+                                    with open(path, 'r', encoding='utf-8') as file:
+                                        actions_config = yaml.safe_load(file) or {}
+                                    break
+
+                            role_cache[role_name] = (prompts_resident, actions_config)
+                            return role_cache[role_name]
                         
                         # 共享资源（在主线程中创建）
                         shared_pool = ResidentSharedInformationPool()
@@ -332,12 +359,18 @@ class SimulationCache:
                         def restore_single_resident(res_state):
                             """恢复单个居民的函数"""
                             try:
+                                profile = res_state.get('profile', {})
+                                if not isinstance(profile, dict):
+                                    profile = {}
+                                role_name = profile.get('role', 'consumer')
+                                prompts_resident, actions_config = _load_role_files(role_name)
+
                                 resident = Resident(
-                                    resident_id=res_state.get('resident_id'),
+                                    agent_id=res_state.get('resident_id'),
                                     job_market=None,
                                     shared_pool=shared_pool,
                                     map=simulator.map,
-                                    prompts_resident=prompts_resident,
+                                    prompts=prompts_resident,
                                     actions_config=actions_config,
                                     lightweight=True
                                 )

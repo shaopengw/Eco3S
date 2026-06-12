@@ -319,7 +319,7 @@ influences:
           default: 0
           coerce: int
     target: lifespan
-    description: 每个时间步根据健康衰减寿命（health<=1: -5，否则 -1）
+    description: 每个时间步根据健康衰减寿命（health<=1:-5，否则 -1）
     params:
       expr: lifespan - (5 if health_index <= 1 else 1)
       target_attr: lifespan

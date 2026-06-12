@@ -40,19 +40,6 @@ async def run_simulation(config, config_path):
         except Exception:
             pass
 
-    def after_run(simulator: Any) -> None:
-        data_dict = {
-            'years': simulator.results["years"],
-            'population': simulator.results["population"],
-            'government_budget': simulator.results["government_budget"],
-            'average_satisfaction': simulator.results["average_satisfaction"],
-            'tax_rate': simulator.results["tax_rate"],
-            'river_navigability': simulator.results["river_navigability"],
-            'gdp': simulator.results["gdp"],
-            'urban_scale': simulator.results["urban_scale"],
-        }
-        plot_all_results(data_dict)
-
     print("开始模拟......")
     await run_with_cache(
         config=config,
@@ -61,7 +48,6 @@ async def run_simulation(config, config_path):
         simulator_class=TEOGSimulator,
         build_new_simulator=build_new_simulator,
         post_resume=post_resume,
-        after_run=after_run,
     )
 
 if __name__ == "__main__":

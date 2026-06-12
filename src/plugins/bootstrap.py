@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
 import yaml
@@ -26,7 +27,7 @@ def initialize_plugin_system(
     """初始化插件系统并加载配置的插件。
 
     约定：
-    - modules_config.yaml 仅支持 selected_modules: {module_name: plugin_name}
+    - modules_config.yaml 仅支持 selected_modules: [plugin_name, ...]
     - 插件实例创建优先使用 DIContainer.create（支持构造期注入）
     - 插件加载后会把“实现了标准接口”的插件实例注册回 DIContainer，
       以便后续插件可通过类型注入拿到依赖（IMap/ITowns/...）
@@ -37,12 +38,62 @@ def initialize_plugin_system(
 
     registry = PluginRegistry(logger=logger)
 
-    # 约定：插件只存在于仓库根目录下的 plugins/ 目录。
-    count = registry.discover(["plugins/"])
-    logger.info(f"发现了 {count} 个插件")
+    # 先读取 modules_config，若存在 selected_modules 则定向发现（含依赖递归），避免扫描无关插件
+    modules_config: Dict[str, Any] = {}
+    if modules_config_path and os.path.exists(modules_config_path):
+        try:
+            with open(modules_config_path, "r", encoding="utf-8") as f:
+                modules_config = yaml.safe_load(f) or {}
+        except Exception as e:
+            logger.warning(f"读取 modules_config.yaml 失败，将回退到全量扫描: {e}")
+
+    selected_modules = (modules_config or {}).get("selected_modules")
+    if isinstance(selected_modules, list) and selected_modules:
+        # 轻量扫描：收集 name -> directory 映射（只读 YAML，不注册）
+        name_to_dir: Dict[str, Path] = {}
+        plugins_path = Path("plugins")
+        if plugins_path.exists():
+            for subdir in plugins_path.iterdir():
+                if subdir.is_dir() and not subdir.name.startswith("_"):
+                    yaml_file = subdir / "plugin.yaml"
+                    if yaml_file.exists():
+                        try:
+                            with open(yaml_file, "r", encoding="utf-8") as f:
+                                cfg = yaml.safe_load(f)
+                            pname = cfg.get("name") if isinstance(cfg, dict) else None
+                            if pname:
+                                name_to_dir[pname] = subdir
+                        except Exception:
+                            pass
+
+        # 定向发现 selected_modules + 递归依赖
+        discovered: Set[str] = set()
+
+        def _discover_with_deps(name: str) -> None:
+            if name in discovered:
+                return
+            discovered.add(name)
+            plugin_dir = name_to_dir.get(name)
+            if plugin_dir and not registry.has_plugin(name):
+                yaml_file = plugin_dir / "plugin.yaml"
+                registry._discover_from_plugin_yaml(yaml_file, plugin_dir)
+            md = registry.get_plugin_metadata(name)
+            if md and md.metadata:
+                for dep in md.metadata.get("dependencies", []) or []:
+                    _discover_with_deps(dep)
+
+        for name in selected_modules:
+            if isinstance(name, str) and name.strip():
+                _discover_with_deps(name.strip())
+
+        logger.info(f"定向发现 {len(registry.get_all())} 个插件（含依赖）")
+    else:
+        # 约定：插件只存在于仓库根目录下的 plugins/ 目录。
+        count = registry.discover(["plugins/"])
+        logger.info(f"发现了 {count} 个插件")
 
     loaded_plugins: Dict[str, BasePlugin] = {}
-    event_bus = EventBus()
+    event_bus = EventBus(logger=logger)
 
     if container is not None:
         try:
@@ -50,57 +101,10 @@ def initialize_plugin_system(
         except Exception:
             pass
 
-    def _load_enabled_plugins_from_config() -> tuple[Set[str], Dict[str, Dict[str, Any]]]:
-        """从 config/plugins.yaml 读取启用插件列表。
-
-        约定：这里只读取 plugins[].name / enabled / init_params，
-        插件类/元数据以 plugins/*/plugin.yaml 为准。
-        """
-
-        enabled: Set[str] = set()
-        init_overrides: Dict[str, Dict[str, Any]] = {}
-
-        cfg_path = os.path.join("config", "plugins.yaml")
-        if not os.path.exists(cfg_path):
-            return enabled, init_overrides
-
-        try:
-            with open(cfg_path, "r", encoding="utf-8") as f:
-                plugin_system_config = yaml.safe_load(f) or {}
-        except Exception:
-            return enabled, init_overrides
-
-        plugins_cfg = plugin_system_config.get("plugins")
-        if not isinstance(plugins_cfg, list):
-            return enabled, init_overrides
-
-        for item in plugins_cfg:
-            if not isinstance(item, dict):
-                continue
-            name = item.get("name")
-            if not isinstance(name, str) or not name.strip():
-                continue
-            name = name.strip()
-            if item.get("enabled", True) is False:
-                continue
-
-            enabled.add(name)
-            init_params = item.get("init_params")
-            if isinstance(init_params, dict) and init_params:
-                init_overrides[name] = dict(init_params)
-
-        return enabled, init_overrides
-
-    enabled_names, init_overrides = _load_enabled_plugins_from_config()
-
     def _load_one(plugin_name: str) -> None:
         if not plugin_name:
             return
         if plugin_name in loaded_plugins:
-            return
-
-        # 若配置提供 enabled 列表，则只加载启用的插件。
-        if enabled_names and plugin_name not in enabled_names:
             return
 
         context = PluginContext(config=config, logger=logger, event_bus=event_bus, registry=registry)
@@ -108,7 +112,6 @@ def initialize_plugin_system(
             plugin_name,
             context,
             container=container,
-            **(init_overrides.get(plugin_name, {}) or {}),
         )
         loaded_plugins[plugin_name] = plugin_instance
 
@@ -118,51 +121,34 @@ def initialize_plugin_system(
             except Exception:
                 pass
 
+    dep_graph = registry.get_dependency_graph()
+
     def _load_with_dependencies(plugin_name: str, seen: Set[str]) -> None:
         if plugin_name in seen:
             return
         seen.add(plugin_name)
-        md = registry.get_plugin_metadata(plugin_name)
-        deps: List[str] = []
-        if md and md.metadata:
-            deps = md.metadata.get("dependencies", []) or []
-        for dep in deps:
-            if enabled_names and dep not in enabled_names:
-                raise RuntimeError(f"插件 {plugin_name} 依赖 {dep}，但该依赖在 config/plugins.yaml 中未启用")
+        for dep in dep_graph.get(plugin_name, []):
             _load_with_dependencies(dep, seen)
         _load_one(plugin_name)
 
     def _extract_selected_plugins(modules_config: Dict[str, Any]) -> List[str]:
         selected = (modules_config or {}).get("selected_modules")
-        if not isinstance(selected, dict):
+        if not isinstance(selected, list):
             return []
 
         plugins: List[str] = []
         seen: Set[str] = set()
-        for _, plugin_name in selected.items():
+
+        for plugin_name in selected:
             if not isinstance(plugin_name, str) or not plugin_name.strip():
                 continue
             plugin_name = plugin_name.strip()
             if plugin_name in seen:
                 continue
             if registry.has_plugin(plugin_name):
-                if enabled_names and plugin_name not in enabled_names:
-                    continue
                 plugins.append(plugin_name)
                 seen.add(plugin_name)
         return plugins
-
-    modules_config: Dict[str, Any] = {}
-    if modules_config_path and os.path.exists(modules_config_path):
-        try:
-            with open(modules_config_path, "r", encoding="utf-8") as f:
-                modules_config = yaml.safe_load(f) or {}
-        except Exception as e:
-            logger.warning(f"读取 modules_config.yaml 失败，将回退到 config/plugins.yaml: {e}")
-
-    selected_modules = (modules_config or {}).get("selected_modules")
-    if isinstance(selected_modules, dict):
-        registry.bind_modules(selected_modules)
 
     selected_plugins = _extract_selected_plugins(modules_config)
     if selected_plugins:
@@ -180,9 +166,9 @@ def initialize_plugin_system(
         logger.info(f"插件加载完成: {len(loaded_plugins)}/{len(selected_plugins)} 成功")
         return registry
 
-    # 未选择模块时：加载 config/plugins.yaml 里启用的插件（按 name）。
-    plugin_names = sorted(enabled_names)
-    logger.info(f"开始加载 {len(plugin_names)} 个启用插件（来自 config/plugins.yaml）...")
+    # 未提供 modules_config.yaml 时：回退加载所有已发现的插件。
+    plugin_names = sorted(registry.get_all().keys())
+    logger.info(f"未指定 selected_modules，回退加载全部 {len(plugin_names)} 个已发现插件...")
 
     seen: Set[str] = set()
     for name in plugin_names:

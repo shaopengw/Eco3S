@@ -16,6 +16,17 @@ from src.plugins import PluginRegistry, PluginContext
 from src.plugins.plugin_context import EventBus
 import yaml
 
+
+def _selected_module_names(selected_modules):
+    if isinstance(selected_modules, list):
+        names = []
+        for item in selected_modules:
+            if isinstance(item, str) and item.strip() and item.strip() not in names:
+                names.append(item.strip())
+        return names
+
+    return []
+
 def test_simulator_plugin_integration():
     """测试按模块名获取插件实例"""
     print("=" * 60)
@@ -34,12 +45,9 @@ def test_simulator_plugin_integration():
     with open(modules_config_path, 'r', encoding='utf-8') as f:
         modules_config = yaml.safe_load(f)
     
-    selected_modules = modules_config.get('selected_modules', {}) or {}
+    selected_modules = _selected_module_names(modules_config.get('selected_modules', []))
     print(f"\n2. 配置了 {len(selected_modules)} 个选择模块")
     
-    # 绑定模块名 -> 插件名
-    registry.bind_modules(selected_modules)
-
     # 加载插件
     event_bus = EventBus()
     container = DIContainer()
@@ -57,7 +65,7 @@ def test_simulator_plugin_integration():
         }
     }
     
-    map_plugin_name = selected_modules.get('map')
+    map_plugin_name = 'map' if 'map' in selected_modules else None
     if map_plugin_name:
         context = PluginContext(
             config=test_config,

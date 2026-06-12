@@ -1,7 +1,4 @@
-"""叛军插件实现 - service 组合模式。
-
-插件只负责生命周期与配置读取；业务能力由内部 Rebellion(service) 提供。
-"""
+"""叛军插件实现"""
 
 from __future__ import annotations
 
@@ -10,10 +7,10 @@ from typing import Any, Dict, Optional
 from src.agents.rebels import Rebellion
 from src.influences import InfluenceRegistry
 from src.interfaces import ITowns
-from src.plugins import IRebellionPlugin, PluginContext
+from src.plugins import BasePlugin, PluginContext
 
 
-class DefaultRebellionPlugin(IRebellionPlugin):
+class DefaultRebellionPlugin(Rebellion, BasePlugin):
     def __init__(
         self,
         towns: ITowns,
@@ -22,13 +19,12 @@ class DefaultRebellionPlugin(IRebellionPlugin):
         rebels_prompt_path: Optional[str] = None,
         influence_registry: Optional[InfluenceRegistry] = None,
     ):
-        super().__init__()
+        BasePlugin.__init__(self)
         self._towns_param = towns
         self._initial_strength_param = initial_strength
         self._initial_resources_param = initial_resources
         self._rebels_prompt_path_param = rebels_prompt_path
         self._influence_registry_param = influence_registry
-        self.logger = None
 
     def init(self, context: PluginContext) -> None:
         self._context = context
@@ -41,7 +37,8 @@ class DefaultRebellionPlugin(IRebellionPlugin):
         if not prompt_path:
             raise ValueError("DefaultRebellionPlugin 缺少 rebels_prompt_path")
 
-        self._service = Rebellion(
+        Rebellion.__init__(
+            self,
             initial_strength=self._initial_strength_param,
             initial_resources=self._initial_resources_param,
             towns=self._towns_param,
@@ -63,7 +60,7 @@ class DefaultRebellionPlugin(IRebellionPlugin):
         return {
             "name": "DefaultRebellion",
             "version": "1.0.0",
-            "description": "默认叛军系统插件（包装 Rebellion 类）",
+            "description": "默认叛军系统插件（直接实现 IRebellion）",
             "author": "AgentWorld Team",
             "dependencies": ["towns"],
         }

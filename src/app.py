@@ -11,7 +11,6 @@ import os
 import pandas as pd
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from datetime import datetime
-from visualization.plot_results import plot_all_results
 from utils.simulation_context import SimulationContext
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

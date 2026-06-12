@@ -31,12 +31,6 @@ class SurveySimulator:
         self.experiment_results = self.init_results()
         self.start_time = None
         self.end_time = None
-        
-        # === 结果文件路径 ===
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        data_dir = SimulationContext.get_data_dir()
-        SimulationContext.ensure_directories()
-        self.result_file = os.path.join(data_dir, f"running_data_{timestamp}.json")
 
     def init_results(self):
         """
@@ -85,16 +79,11 @@ class SurveySimulator:
 
         # 可选：应用影响函数（若配置存在 influences.yaml 且被注入）
         if self.influence_manager is not None and hasattr(self.influence_manager, 'apply_all_influences'):
-            simulator_state = {
-                'time': self.time,
-                'map': self.map,
-                'population': self.population,
-                'towns': self.towns,
-                'social_network': self.social_network,
-                'residents': self.residents,
-            }
             try:
-                self.influence_manager.apply_all_influences(simulator_state)
+                self.influence_manager.apply_all_influences(
+                    plugin_registry=self.plugin_registry,
+                    extra_state={"residents": self.residents},
+                )
             except Exception:
                 pass
         
@@ -359,13 +348,18 @@ class SurveySimulator:
     
     def save_results(self, filename=None):
         """保存实验结果到JSON文件"""
+        data_dir = SimulationContext.get_data_dir()
+        SimulationContext.ensure_directories()
+
         if filename is None:
-            filename = self.result_file
-        
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            pid = os.getpid()
+            filename = os.path.join(data_dir, f"running_data_{timestamp}_pid{pid}.json")
+
         # 保存为JSON格式
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(self.experiment_results, f, ensure_ascii=False, indent=2)
-        
+
         print(f"实验结果已保存至 {filename}")
     
     def display_total_simulation_time(self):

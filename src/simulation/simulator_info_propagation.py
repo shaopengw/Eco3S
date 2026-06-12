@@ -66,11 +66,11 @@ class InfoPropagationSimulator:
             
             # # 运行知识问答调查
             self.logger.info("\n开始进行知识问答调查...")
-            await self.run_knowledge_survey()
+            # await self.run_knowledge_survey()
             
             # # 运行奖励问题调查
             self.logger.info("\n开始进行奖励问题调查...")
-            await self.run_incentive_survey()
+            # await self.run_incentive_survey()
             
             # 保存当前策略的结果
             self.save_strategy_results()
@@ -89,15 +89,10 @@ class InfoPropagationSimulator:
             self.time.set_current_time(year)  # 设置当前时间
 
         # 应用影响函数
-        simulator_state = {
-            'time': self.time,
-            'map': self.map,
-            'population': self.population,
-            'towns': self.towns,
-            'social_network': self.social_network,
-            'residents': self.residents,
-        }
-        self.influence_manager.apply_all_influences(simulator_state)
+        self.influence_manager.apply_all_influences(
+            plugin_registry=self.plugin_registry,
+            extra_state={"residents": self.residents},
+        )
         
         # 1. 执行信息传播策略
         await self.execute_propagation_strategy(year)

@@ -1,7 +1,7 @@
 # 交通经济插件元数据
 name: transport_economy
 version: 1.0.0
-description: 默认交通经济系统插件
+description: 计算河运/海运等路线的运输成本、年度运输任务量与维护成本。
 author: AgentWorld Team
 enabled: true
 

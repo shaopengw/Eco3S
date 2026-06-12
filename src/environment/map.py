@@ -108,20 +108,48 @@ class Map(IMap):
             with open(data_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             self.town_data = data
-            
-            # 从配置文件加载地图边界
-            boundaries = data.get('map_boundaries', {
-                'min_longitude': 109.0,
-                'max_longitude': 125.0,
-                'min_latitude': 30.0,
-                'max_latitude': 41.0
-            })
-            
-            self.min_longitude = boundaries['min_longitude']
-            self.max_longitude = boundaries['max_longitude']
-            self.min_latitude = boundaries['min_latitude']
-            self.max_latitude = boundaries['max_latitude']
-            
+
+            # 若配置中显式提供了 map_boundaries，优先使用（向后兼容）
+            explicit_boundaries = data.get('map_boundaries')
+            if explicit_boundaries:
+                self.min_longitude = explicit_boundaries['min_longitude']
+                self.max_longitude = explicit_boundaries['max_longitude']
+                self.min_latitude = explicit_boundaries['min_latitude']
+                self.max_latitude = explicit_boundaries['max_latitude']
+            else:
+                # 动态计算：遍历所有城市坐标，取最小/最大值并加 5% padding
+                all_longitudes = []
+                all_latitudes = []
+                for canal in data.get('canals', []):
+                    for town in canal.get('towns', []):
+                        all_longitudes.append(town['longitude'])
+                        all_latitudes.append(town['latitude'])
+                for county in data.get('counties', []):
+                    for town in county.get('towns', []):
+                        all_longitudes.append(town['longitude'])
+                        all_latitudes.append(town['latitude'])
+                for town in data.get('other_towns', []):
+                    all_longitudes.append(town['longitude'])
+                    all_latitudes.append(town['latitude'])
+
+                if all_longitudes:
+                    min_lon = min(all_longitudes)
+                    max_lon = max(all_longitudes)
+                    min_lat = min(all_latitudes)
+                    max_lat = max(all_latitudes)
+                    lon_range = max_lon - min_lon if max_lon != min_lon else 1.0
+                    lat_range = max_lat - min_lat if max_lat != min_lat else 1.0
+                    self.min_longitude = min_lon - lon_range * 0.05
+                    self.max_longitude = max_lon + lon_range * 0.05
+                    self.min_latitude = min_lat - lat_range * 0.05
+                    self.max_latitude = max_lat + lat_range * 0.05
+                else:
+                    # 没有城市时的默认边界
+                    self.min_longitude = 109.0
+                    self.max_longitude = 125.0
+                    self.min_latitude = 30.0
+                    self.max_latitude = 41.0
+
         except Exception as e:
             print(f"加载城市数据失败: {e}")
             # 提供默认数据

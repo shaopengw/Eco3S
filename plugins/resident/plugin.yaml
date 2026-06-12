@@ -1,7 +1,7 @@
 # 居民插件元数据
 name: residents
 version: 1.0.0
-description: 默认居民系统插件
+description: 批量生成具有属性、满意度、记忆与信息池的居民智能体，支持居民之间的社交互动与观点更新；依赖 map 模块。
 author: AgentWorld Team
 enabled: true
 
@@ -17,7 +17,7 @@ interfaces:
 dependencies:
   - map
 
-# 初始化参数（可被 config/plugins.yaml 覆盖）
+# 初始化参数
 init_params:
   window_size: 3
 

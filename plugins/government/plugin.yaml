@@ -1,7 +1,7 @@
 # 政府插件元数据
 name: government
 version: 1.0.0
-description: 默认政府系统插件
+description: 模拟政府部门的财政预算、税收征管、政策制定与信息发布，支持军事力量的维护与调用。
 author: AgentWorld Team
 enabled: true
 

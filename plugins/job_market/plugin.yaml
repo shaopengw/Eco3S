@@ -1,7 +1,7 @@
 # 就业市场插件元数据
 name: job_market
 version: 1.0.0
-description: 默认就业市场插件
+description: 管理城镇岗位配置、居民雇佣/解雇、就业状态与工资水平，区分沿河与非沿河城镇的职业结构；通常与 population 和 towns 配合使用。
 author: AgentWorld Team
 enabled: true
 

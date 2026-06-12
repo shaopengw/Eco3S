@@ -7,25 +7,25 @@
 from typing import Dict, Any, Optional
 import logging
 from dataclasses import dataclass, field
-from .base_plugin import BasePlugin
 
 
 @dataclass
 class PluginContext:
     """
     插件上下文类
-    
+
     提供插件运行所需的所有上下文信息：
     - config: 配置信息
     - logger: 日志记录器
     - event_bus: 事件总线（用于插件间通信）
     - registry: 插件注册表（用于查询其他插件）
     - metadata: 额外的元数据
-    
+
     Example:
         ```python
         from src.utils.log_manager import LogManager
-        
+        from src.plugins import PluginRegistry
+
         # 创建上下文
         context = PluginContext(
             config={'simulation': {'population': 1000}},
@@ -33,7 +33,7 @@ class PluginContext:
             event_bus=EventBus(),
             registry=PluginRegistry()
         )
-        
+
         # 在插件中使用
         plugin = MyPlugin()
         plugin.init(context)
@@ -131,49 +131,52 @@ class PluginContext:
 class EventBus:
     """
     简单的事件总线实现
-    
+
     用于插件间的事件驱动通信。
-    
+
     Example:
         ```python
         bus = EventBus()
-        
+
         # 订阅事件
         def on_start(data):
             print(f"Simulation started with {data['population']} residents")
-        
+
         bus.subscribe('simulation_start', on_start)
-        
+
         # 发布事件
         bus.publish('simulation_start', {'population': 1000})
-        
+
         # 取消订阅
         bus.unsubscribe('simulation_start', on_start)
         ```
     """
-    
-    def __init__(self):
+
+    def __init__(self, logger: Optional[logging.Logger] = None):
         """初始化事件总线"""
         self._subscribers: Dict[str, list] = {}
-    
+        self._logger = logger
+
     def subscribe(self, event_name: str, callback) -> None:
         """
         订阅事件
-        
+
         Args:
             event_name: 事件名称
             callback: 回调函数，接收事件数据作为参数
         """
         if event_name not in self._subscribers:
             self._subscribers[event_name] = []
-        
+
         if callback not in self._subscribers[event_name]:
             self._subscribers[event_name].append(callback)
-    
+            if self._logger:
+                self._logger.debug(f"EventBus: subscribed '{event_name}' -> {callback.__name__}")
+
     def unsubscribe(self, event_name: str, callback) -> None:
         """
         取消订阅事件
-        
+
         Args:
             event_name: 事件名称
             callback: 要移除的回调函数
@@ -181,27 +184,35 @@ class EventBus:
         if event_name in self._subscribers:
             if callback in self._subscribers[event_name]:
                 self._subscribers[event_name].remove(callback)
-    
+                if self._logger:
+                    self._logger.debug(f"EventBus: unsubscribed '{event_name}' -> {callback.__name__}")
+
     def publish(self, event_name: str, data: Any = None) -> None:
         """
         发布事件
-        
+
         Args:
             event_name: 事件名称
             data: 事件数据（可选）
         """
-        if event_name in self._subscribers:
-            for callback in self._subscribers[event_name]:
-                try:
-                    callback(data)
-                except Exception as e:
-                    # 捕获回调异常，避免影响其他订阅者
-                    print(f"Error in event handler for '{event_name}': {e}")
-    
+        if event_name not in self._subscribers:
+            return
+
+        for callback in self._subscribers[event_name]:
+            try:
+                callback(data)
+            except Exception as e:
+                # 捕获回调异常，避免影响其他订阅者，但记录到日志
+                if self._logger:
+                    self._logger.error(
+                        f"EventBus: handler '{callback.__name__}' for '{event_name}' raised {type(e).__name__}: {e}",
+                        exc_info=True
+                    )
+
     def clear(self, event_name: Optional[str] = None) -> None:
         """
         清除订阅
-        
+
         Args:
             event_name: 要清除的事件名称，如果为 None 则清除所有
         """
@@ -211,88 +222,3 @@ class EventBus:
             self._subscribers.clear()
 
 
-class PluginRegistry:
-    """
-    插件注册表
-    
-    用于管理和查询已加载的插件。
-    
-    Example:
-        ```python
-        registry = PluginRegistry()
-        
-        # 注册插件
-        plugin = MyPlugin()
-        registry.register('my_plugin', plugin)
-        
-        # 查询插件
-        plugin = registry.get('my_plugin')
-        
-        # 检查插件是否存在
-        if registry.has('my_plugin'):
-            print("Plugin exists")
-        
-        # 获取所有插件
-        all_plugins = registry.get_all()
-        ```
-    """
-    
-    def __init__(self):
-        """初始化插件注册表"""
-        self._plugins: Dict[str, 'BasePlugin'] = {}
-    
-    def register(self, name: str, plugin: 'BasePlugin') -> None:
-        """
-        注册插件
-        
-        Args:
-            name: 插件名称
-            plugin: 插件实例
-        """
-        self._plugins[name] = plugin
-    
-    def unregister(self, name: str) -> None:
-        """
-        注销插件
-        
-        Args:
-            name: 插件名称
-        """
-        self._plugins.pop(name, None)
-    
-    def get(self, name: str) -> Optional['BasePlugin']:
-        """
-        获取插件
-        
-        Args:
-            name: 插件名称
-            
-        Returns:
-            插件实例，如果不存在返回 None
-        """
-        return self._plugins.get(name)
-    
-    def has(self, name: str) -> bool:
-        """
-        检查插件是否存在
-        
-        Args:
-            name: 插件名称
-            
-        Returns:
-            如果插件存在返回 True，否则返回 False
-        """
-        return name in self._plugins
-    
-    def get_all(self) -> Dict[str, 'BasePlugin']:
-        """
-        获取所有插件
-        
-        Returns:
-            插件名称到插件实例的映射
-        """
-        return self._plugins.copy()
-    
-    def clear(self) -> None:
-        """清空注册表"""
-        self._plugins.clear()

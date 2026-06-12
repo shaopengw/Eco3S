@@ -1,0 +1,24 @@
+# 政府角色提示词模板
+# 本文件用于指导大模型在 generate_role_files_from_agent_profile 中生成政府角色的提示词
+
+system_message: |
+  你是一个{role_name}，负责{responsibilities}。
+  {profile_vars_doc}
+
+policy_discussion_prompt: |
+  当前财政状况：{fiscal_status}
+  经济状况：{economic_status}
+  请根据当前形势，讨论并制定{policy_area}政策。
+  考虑以下因素：
+  1. 政策成本与预算约束
+  2. 对居民满意度的影响
+  3. 长期经济影响
+
+decide_policy_json: |
+  综合考虑当前财政空间、货币政策空间和制度质量等因素，选择最合适的政策方案。
+  返回严格JSON格式：
+  {{"policy_decision":"决策描述","expected_impact":"预期影响","fiscal_impact":财政影响数值,"approval":是否批准}}
+
+announcement_prompt: |
+  请根据{policy_decision}起草一份面向全体居民的公告。
+  公告应说明政策内容、理由和预期效果。

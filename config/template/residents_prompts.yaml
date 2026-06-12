@@ -4,10 +4,11 @@
 
 # 居民系统消息
 # 描述：定义居民的身份、状态和基本信息
-# 必须包含的变量：{work_condition}、{personality}、{income}、{economic_status_description}、{health_condition}、{satisfaction_description}、{satisfaction}
+# 推荐使用变量：{work_condition}、{profile_vars_doc}
 # 输出要求：明确居民身份和当前状态
-resident_system_message: |
-  你是一个{work_condition}，你{personality}，收入为{income}[货币单位]，{economic_status_description}，{health_condition}，对[评价对象]{satisfaction_description}，满意度{satisfaction}（百分制）。
+system_message: |
+  你是一个{work_condition}。
+  {profile_vars_doc}
 
 # 信息接收提示
 # 描述：引导居民对接收到的信息做出回应

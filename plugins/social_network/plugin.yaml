@@ -1,7 +1,7 @@
 # 社交网络插件元数据
 name: social_network
 version: 1.0.0
-description: 默认社交网络插件
+description: 基于小世界网络等模型为居民/智能体构建关系网络，支持信息、观点与影响的传播路径计算；需要先有人口或居民数据。
 author: AgentWorld Team
 enabled: true
 

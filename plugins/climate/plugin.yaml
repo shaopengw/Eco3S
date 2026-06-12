@@ -1,7 +1,7 @@
 # 气候插件元数据
 name: climate
 version: 1.0.0
-description: 默认气候系统插件
+description: 读取气候数据（CSV），计算特定年份的气候影响度；依赖 map 与 time 模块。
 author: AgentWorld Team
 enabled: true
 
@@ -18,6 +18,9 @@ interfaces:
 dependencies:
   - map
   - time
+
+init_params:
+  climate_data_path: experiment_dataset/climate_data/climate.csv
 
 # 配置项
 config:

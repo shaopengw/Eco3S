@@ -424,8 +424,11 @@ result = max(0.0, base - unemployment_penalty)
 
         # 声明式 inputs：把常用取值逻辑从 code 中抽离
         if self.inputs:
-            namespace.update(_resolve_inputs(self.inputs, target_obj=target_obj, context=context))
-        
+            resolved_inputs = _resolve_inputs(self.inputs, target_obj=target_obj, context=context)
+            namespace.update(resolved_inputs)
+            # 同时注入 inputs 字典，支持 inputs.get('key') 的访问方式
+            namespace['inputs'] = resolved_inputs
+
         return namespace
     
     def apply(self, target_obj, context: dict) -> Any:
@@ -598,8 +601,13 @@ class ExprInfluence(IInfluenceFunction):
         result_container: str = 'result',
         context_updates: Optional[Dict[str, str]] = None,
         description: str = "",
+        placeholder: bool = False,
     ):
-        super().__init__(source, target, name, description or f"表达式影响: {expr}")
+        # 支持 expr: 0 等整数/浮点占位写法
+        if not isinstance(expr, str):
+            expr = str(expr)
+
+        super().__init__(source, target, name, description or f"表达式影响: {expr}", placeholder=placeholder)
         self.expr = expr
         self.target_attr = target_attr
         self.inputs = inputs or {}
@@ -614,6 +622,9 @@ class ExprInfluence(IInfluenceFunction):
             raise ValueError(f"表达式语法错误: {e}")
 
     def apply(self, target_obj: Any, context: dict) -> Any:
+        if self.placeholder:
+            return None
+
         namespace: Dict[str, Any] = {
             '__builtins__': self.SAFE_BUILTINS,
             'target': target_obj,
@@ -764,4 +775,5 @@ def create_expr_influence(config: dict) -> ExprInfluence:
         result_container=params.get('result_container', 'result'),
         context_updates=params.get('context_updates'),
         description=config.get('description', ''),
+        placeholder=params.get('placeholder', False),
     )

@@ -4,32 +4,21 @@ system_message: |
   你是多智能体模拟系统的设计师，擅长分析需求、选择模块、生成设计文档和实验配置。输出格式严格遵守JSON或YAML规范。
 
 select_modules_prompt: |
-  插件清单如下：
-  {plugins_catalog}
-
   根据需求，从插件清单中挑选需要的模块，同时评估是否需要新增插件模块：
-  - 如果需要新增：优先选择一个“最接近的可继承插件”(inherits_from)，并写明需要覆盖/扩展的点。
-  - 如果没有任何适合继承的插件：标注为全新插件(inherits_from=null)。
+  - 如果需要新增：优先选择一个"最接近的可继承插件"(inherits_from)，并写明需要覆盖/扩展的点。
 
   项目描述：
-  {description}
+  {description_md_text}
 
-  关键要素：
-  {key_requirements}
+  {plugins_catalog}
 
 select_modules_with_feedback_prompt: |
-  插件清单如下：
-  {plugins_catalog}
-
-  根据需求，从插件清单中挑选“额外需要增加”的模块，同时评估是否需要新增插件模块：
-  - 如果需要新增：优先选择一个“最接近的可继承插件”(inherits_from)，并写明需要覆盖/扩展的点。
-  - 如果没有任何适合继承的插件：标注为全新插件(inherits_from=null)。
+  根据需求，从插件清单中挑选"额外需要增加"的模块，同时评估是否需要新增插件模块：
 
   项目描述：
-  {description}
+  {description_md_text}
 
-  关键要素：
-  {key_requirements}
+  {plugins_catalog}
 
   上一版本选择的模块：
   {previous_modules}
@@ -42,22 +31,23 @@ select_modules_with_feedback_prompt: |
 select_modules_output_format: |
   请返回以下JSON格式（严格遵守格式）：
   {{
-    "selected_modules": {{
-      "模块名（module_name）": "插件名（必须来自插件清单）"
-    }},
-    "new_modules": [
-      {{
-        "name": "new_module_name",
-        "inherits_from": "residents",
-        "notes": "需要扩展/覆盖的关键点"
-      }}
-    ]
+    "selected_modules": [
+      "模块/插件名1",
+      "模块/插件名2"
+    ],
+    "new_modules": []
   }}
-  注：如果没有要新增的模块，new_modules 请返回空列表 []。
+  注：如果需要新增模块，请在new_modules列表中添加如下格式的条目：
+  {{
+    "name": "新模块名称",
+    "inherits_from": "最接近的可继承插件（如果没有则为null）",
+    "notes": "需要覆盖/扩展的关键点说明"
+  }}
 
 generate_description_prompt: |
   请根据以下需求信息，生成一份完整的实验设计文档（markdown格式）。
   注意：尽可能详细，涵盖所有关键部分。
+  注意：直接输出文档正文，第一行必须是 # 开头的标题；不要输出任何前言、开场白、元评论或"写作风格"说明；不要把模板顶部的"写作风格"提示复制到输出中。
 
   用户原始需求:
   {original_requirement}
@@ -71,7 +61,8 @@ generate_description_prompt: |
 generate_description_with_feedback_prompt: |
   请根据以下需求信息，生成一份完整的实验设计文档（markdown格式）。
   注意：尽可能详细，涵盖所有关键部分。
-  
+  注意：直接输出文档正文，第一行必须是 # 开头的标题；不要输出任何前言、开场白、元评论或"写作风格"说明；不要把模板顶部的"写作风格"提示复制到输出中。
+
   用户原始需求:
   {original_requirement}
 
@@ -97,46 +88,101 @@ generate_description_requirements: |
   4. 预期结果
   5. 关键参数说明
 
-generate_config_prompt: |
-  根据实验设计文档和参考模板，生成 modules_config.yaml 配置文件。
+generate_agent_profile_prompt: |
+  请根据设计文档中「智能体与行为」的描述和模块配置，生成模拟中 Agent 的角色定义与画像配置。
 
-  # 插件清单：
-  {plugins_catalog}
+  === 设计文档 - 智能体与行为 ===
+  {agent_behavior_section}
 
-  # 实验设计文档：
-  {description_md}
+  === 模块配置 ===
+  {modules_config_yaml}
 
-  # 参考模板：
-  {experiment_template}
+  请严格遵循以下最小模板结构生成 YAML 配置：
 
-generate_config_with_feedback_prompt: |
-  根据实验设计文档和参考模板，生成 modules_config.yaml 配置文件。
+  ```yaml
+  agents:
+    - name: <角色标识，如 resident / government / consumer>
+      entity_type: resident    # resident | government | rebels，见要求说明
+      attributes:
+        - name: <属性名>
+          type: choice          # choice：离散选择型
+          choices: [<选项1>, <选项2>]
+          weights: [<权重1>, <权重2>]
+        # --- 或 ---
+        - name: <属性名>
+          type: range           # range：范围分布型
+          distribution: uniform # 或 normal / weighted_groups
+          min: <最小值>
+          max: <最大值>
+          dtype: int            # 或 float
+          # normal 还需: mean: <均值>, std: <标准差>
+        # --- 或 ---
+        - name: <属性名>
+          type: composite       # composite：词库组合型，从候选词列表中随机抽取若干词拼接
+          words: [<候选词1>, <候选词2>, <候选词3>, ...]
+          count: <抽取词数量>
+          separator: <分隔符，如 "、">
+      constraints:              # 属性间约束修正规则（可选）
+        - condition: <条件表达式>
+          action: <修正动作>
+      extra:                    # 静态属性，不参与随机生成
+        role: <角色名>          # 用于 prompts/actions 文件命名
+  computed_descriptions:
+    <分组名>:
+      - "<描述文本>"
+  ```
 
-  # 插件清单：
-  {plugins_catalog}
+  要求：
+  1. entity_type 可选：resident（居民个体，默认值）、government（政府主体）、rebels（叛军主体）。
+     - resident：个体级 Agent，每人拥有独立的随机生成画像，适用于大多数模拟角色。
+     - government / rebels：组织级实体，内部有层级结构（领袖 + 成员），适用于需要群体行为的场景。
+  2. 用 extra.role 区分具体角色名（如 consumer、government_official 等）。
+  3. composite 类型必须直接列出候选词（words），不要引用外部文件路径；候选词数量应不少于 count。
+  4. 所有属性名称、取值范围必须与设计文档一致。
+  5. 直接输出严格 YAML 格式，不要加代码块标记或额外解释。
 
-  # 实验设计文档：
-  {description_md}
+generate_agent_profile_with_feedback_prompt: |
+  请根据设计文档中「智能体与行为」的描述、模块配置和用户反馈，重新生成或修正 Agent 的角色定义与画像配置。
 
-  # 参考模板：
-  {experiment_template}
+  === 设计文档 - 智能体与行为 ===
+  {agent_behavior_section}
 
-  === 上一版本的配置文件 ===
-  {previous_config}
+  === 模块配置 ===
+  {modules_config_yaml}
+
+  === 上一版本的 Agent Profile ===
+  {previous_agent_profile}
 
   === 用户反馈意见 ===
   {user_feedback}
 
-  请根据用户反馈，改进并重新生成配置文件。
+  请严格遵循以下最小模板结构生成 YAML 配置：
 
-generate_config_requirements: |
-  要求：
-  1. 根据设计文档调整模块配置和参数
-  2. 在selected_modules中保留所有在设计文档中提到的模块（包括必选和可选）。
-  3. 删除未在设计文档中提到的模块的配置项。
-  4. 参数值要合理且一致
-
-  用代码块输出：
-  ```yaml:modules_config.yaml
-  内容
+  ```yaml
+  agents:
+    - name: <角色标识>
+      entity_type: resident    # resident | government | rebels，见要求说明
+      attributes:
+        - name: <属性名>
+          type: choice | range | composite
+          # choice: choices + weights
+          # range: distribution + min + max + dtype
+          # composite: words + count + separator
+      constraints:
+        - condition: <条件表达式>
+          action: <修正动作>
+      extra:
+        role: <角色名>          # 用于 prompts/actions 文件命名
+  computed_descriptions:
+    <属性值到自然语言描述的映射>
   ```
+
+  要求：
+  1. entity_type 可选：resident（居民个体，默认值）、government（政府主体）、rebels（叛乱主体）。规则同前。
+     - resident：个体级 Agent，每人拥有独立的随机生成画像，适用于大多数模拟角色。
+     - government / rebels：组织级实体，内部有层级结构（领袖 + 成员），适用于需要群体行为的场景。
+  2. 利用 extra.role 区分具体角色名。
+  3. composite 类型必须直接列出候选词（words），不要引用外部文件路径；候选词数量应不少于 count。
+  4. 根据用户反馈对上一版本进行修正，保持其他部分不变。
+  5. 所有属性名称、取值范围必须与设计文档一致。
+  6. 输出严格 YAML 格式，直接返回 YAML 内容，不要加 ```yaml 代码块标记或额外解释。

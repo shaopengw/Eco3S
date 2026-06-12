@@ -1,0 +1,41 @@
+# 政府行为配置模板 (actions.yaml)
+#
+# 本文件定义了政府智能体可以执行的各种行为及其对应的函数和参数。
+
+actions:
+  1:
+    name: "adjust_tax_rate"
+    description: "调整税率"
+    function: "set_tax_rate"
+    is_async: false
+    parameters:
+      - name: "new_rate"
+        type: "number"
+        required: true
+        description: "新的税率值（百分比）"
+
+  2:
+    name: "issue_policy"
+    description: "发布政策公告"
+    function: "broadcast_policy"
+    is_async: true
+    parameters:
+      - name: "policy_content"
+        type: "string"
+        required: true
+        description: "政策公告内容"
+
+  3:
+    name: "allocate_budget"
+    description: "分配预算"
+    function: "allocate_fiscal_budget"
+    is_async: false
+    parameters:
+      - name: "amount"
+        type: "number"
+        required: true
+        description: "分配金额"
+      - name: "department"
+        type: "string"
+        required: true
+        description: "目标部门"

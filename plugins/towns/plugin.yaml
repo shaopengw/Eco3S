@@ -1,7 +1,7 @@
 # 城镇插件元数据
 name: towns
 version: 1.0.0
-description: 默认城镇系统插件
+description: 基于地图数据维护城镇集合，区分沿河/非沿河等城镇类型，管理城镇资源、相互距离及就业市场配置。
 author: AgentWorld Team
 enabled: true
 

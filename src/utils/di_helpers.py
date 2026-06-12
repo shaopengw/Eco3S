@@ -40,16 +40,9 @@ def register_loaded_plugins(container: DIContainer, loaded_plugins: Optional[Dic
 
     # 依赖先加载、目标后加载：后加载的同接口插件会覆盖先前注册
     for plugin in loaded_plugins.values():
-        # 只对“service 模式”的模块插件做注入绑定；例如 residents 这类非模块插件不参与。
-        if not hasattr(plugin, "service"):
-            continue
-
-        service = plugin.service  # type: ignore[attr-defined]
-
         for interface_type in interface_types:
             try:
-                if isinstance(service, interface_type):
-                    # 注入绑定注册插件本体：保留插件层的事件发布/包装逻辑。
+                if isinstance(plugin, interface_type):
                     container.register_instance(interface_type, plugin)
             except TypeError:
                 # 某些 typing/动态类型在 isinstance 下可能抛 TypeError

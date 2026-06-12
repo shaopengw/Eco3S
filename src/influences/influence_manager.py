@@ -43,9 +43,38 @@ class InfluenceManager:
 
     def apply_all_influences(
         self,
-        simulator_state: Dict[str, Any],
+        simulator_state: Optional[Dict[str, Any]] = None,
+        plugin_registry: Optional[Any] = None,
+        extra_state: Optional[Dict[str, Any]] = None,
         execution_order: Optional[Iterable[ExecutionStep]] = None,
     ) -> Dict[str, Any]:
+        """应用所有影响函数。
+
+        支持两种调用方式（向后兼容）：
+        1. 直接传 `simulator_state`（旧方式）
+        2. 传 `plugin_registry` + `extra_state`，内部自动构建 simulator_state（推荐）
+
+        Args:
+            simulator_state: 完整的模拟器状态字典（旧方式）。
+            plugin_registry: 插件注册表；若提供则自动从 selected_modules 构建 simulator_state。
+            extra_state: 需要额外补充到 simulator_state 的字段（如 residents、gdp 等）。
+            execution_order: 显式指定的执行顺序；若 None 则从 registry 中解析。
+
+        Returns:
+            构建/更新后的全局 context。
+        """
+        if simulator_state is None and plugin_registry is not None:
+            # 自动从 plugin_registry 构建 simulator_state（推荐新方式）
+            from src.simulation.plugin_access import build_simulator_state_from_registry
+            simulator_state = build_simulator_state_from_registry(
+                plugin_registry, extra_state=extra_state
+            )
+
+        if simulator_state is None:
+            simulator_state = {}
+            if extra_state:
+                simulator_state.update(extra_state)
+
         context = self.build_global_context(simulator_state)
 
         order = list(execution_order) if execution_order is not None else self._resolve_execution_order(simulator_state)

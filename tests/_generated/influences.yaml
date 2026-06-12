@@ -1,0 +1,80 @@
+execution_order: []
+influences:
+- name: taxation_tax_rate_adjustment_to_residents_job_choice
+  type: expr
+  source:
+    module: economy
+    inputs:
+      gdp:
+        path: context.gdp
+        default: 0.0
+        coerce: float
+      tax_rate:
+        path: context.tax_rate
+        fallback_paths:
+        - target.tax_rate
+        default: 0.0
+        coerce: float
+    variables:
+      old_budget: 0.0
+  target: residents
+  description: 政府提高税率会影响居民的就业选择（暂时使用占位符）
+  params:
+    expr: 0
+- name: job_choice_to_income_change
+  type: expr
+  source:
+    module: residents
+    inputs:
+      job_choice: context.job_choice
+    variables:
+      residents: context.residents
+      shared_info: residents.shared_info
+  target: residents
+  description: 居民收入变化由就业选择决定
+  params:
+    expr: residents.calculate_income_change(job_choice)
+- name: income_change_to_satisfaction_level
+  type: expr
+  source:
+    module: residents
+    param: income change
+  target: residents
+  description: Adjusts satisfaction level based on income change
+  params:
+    expr: 0
+- name: tax_rate_adjustment_to_tax_revenue_increase
+  type: expr
+  source:
+    module: taxation
+    inputs:
+      tax_rate: context.tax_rate_adjustment
+    variables:
+      tax_base: context.tax_base
+  target: government_budget
+  description: Increase in tax revenue due to tax rate adjustment
+  params:
+    expr: round(tax_base * (1 + tax_rate), 2)
+    target_attr: tax_revenue
+    context_updates:
+      tax_revenue: tax_base * (1 + tax_rate)
+- name: government_tax_revenue_to_policy_adjustment
+  type: expr
+  source:
+    module: government
+    inputs:
+      tax_revenue:
+        path: context.tax_revenue
+        default: 0.0
+        coerce: float
+    policy_adjustment:
+      path: context.policy_adjustment
+      default: 0.0
+      coerce: float
+  target: government
+  description: 政府政策调整受税收收入增加影响
+  params:
+    expr: round(policy_adjustment + tax_revenue * 0.29, 2)
+    target_attr: policy_adjustment
+    context_updates:
+      ultimate_capital_stock: tax_revenue * 0.29

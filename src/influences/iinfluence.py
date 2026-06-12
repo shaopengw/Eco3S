@@ -50,16 +50,17 @@ class IInfluenceFunction(ABC):
         validate_context: 验证上下文是否包含必需的信息
     """
     
-    def __init__(self, source: str, target: str, name: str, description: str = ""):
+    def __init__(self, source: str, target: str, name: str, description: str = "", placeholder: bool = False):
         """
         初始化影响函数
-        
+
         Args:
             source: 影响源模块的名称（如 "climate", "transport_economy"）
             target: 目标模块的名称（如 "population", "towns"）
             name: 影响函数的名称，应具有描述性（如 "extreme_weather_death"）
             description: 影响函数的详细描述（可选）
-        
+            placeholder: 是否为占位影响（仅声明，不实际执行）
+
         Example:
             influence = MyInfluence(
                 source="climate",
@@ -72,6 +73,7 @@ class IInfluenceFunction(ABC):
         self._target = target
         self._name = name
         self._description = description
+        self._placeholder = placeholder
     
     @property
     def source(self) -> str:
@@ -92,6 +94,11 @@ class IInfluenceFunction(ABC):
     def description(self) -> str:
         """影响函数的描述信息"""
         return self._description
+
+    @property
+    def placeholder(self) -> bool:
+        """是否为占位影响（仅声明，不实际执行）"""
+        return self._placeholder
     
     @abstractmethod
     def apply(self, target_obj: Any, context: dict) -> Any:

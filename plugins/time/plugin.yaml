@@ -1,7 +1,7 @@
 # 时间插件元数据
 name: time
 version: 1.0.0
-description: 默认时间系统插件
+description: 管理模拟的起始年份、总步长与当前时间，按步推进模拟年份并发布 time_advanced 事件。
 author: AgentWorld Team
 enabled: true
 

@@ -90,27 +90,7 @@ class PluginRegistry:
         self._plugins: Dict[str, PluginMetadata] = {}  # 已注册的插件
         self._logger = logger
         self._discovered_paths: Set[str] = set()  # 已扫描的路径
-        # modules_config.yaml 中的 selected_modules: {module_name: plugin_name}
-        # 允许主引擎通过模块名查询插件实例：registry.get_plugin('map')
-        self._module_bindings: Dict[str, str] = {}
 
-    def bind_modules(self, selected_modules: Dict[str, str]) -> None:
-        """绑定模块名到插件名。
-
-        Args:
-            selected_modules: 形如 {"map": "map", "time": "time"}
-        """
-        if not isinstance(selected_modules, dict):
-            return
-        bindings: Dict[str, str] = {}
-        for module_name, plugin_name in selected_modules.items():
-            if not isinstance(module_name, str) or not module_name.strip():
-                continue
-            if not isinstance(plugin_name, str) or not plugin_name.strip():
-                continue
-            bindings[module_name.strip()] = plugin_name.strip()
-        self._module_bindings = bindings
-    
     # ========================================
     # 核心注册方法
     # ========================================
@@ -225,27 +205,33 @@ class PluginRegistry:
     # 插件发现方法
     # ========================================
     
-    def discover(self, paths: Optional[List[str]] = None) -> int:
+    def discover(
+        self,
+        paths: Optional[List[str]] = None,
+        include_names: Optional[Set[str]] = None,
+    ) -> int:
         """
         发现插件（仅目录扫描 plugin.yaml）
-        
+
         Args:
             paths: 要扫描的目录路径列表（如果为 None，使用默认路径）
-            
+            include_names: 若提供，只注册名称在该集合中的插件；
+                为 None 时注册所有发现的插件。
+
         Returns:
             int: 发现的插件数量
-            
+
         Note:
             - 仅扫描指定目录下的子目录 plugin.yaml
             - 默认扫描路径: ['plugins/']
-            
+
         Example:
             ```python
             # 使用默认路径
             count = registry.discover()
-            
-            # 指定自定义路径
-            count = registry.discover(['plugins/custom', 'plugins/community'])
+
+            # 只发现指定模块
+            count = registry.discover(include_names={'map', 'time'})
             ```
         """
         discovered_count = 0
@@ -253,15 +239,15 @@ class PluginRegistry:
         # 从目录扫描发现
         if paths is None:
             paths = ['plugins/']
-        
+
         for path in paths:
-            scan_count = self._discover_from_directory(path)
+            scan_count = self._discover_from_directory(path, include_names=include_names)
             discovered_count += scan_count
-        
+
         self._log_info(f"Discovery completed: {discovered_count} plugins found")
         return discovered_count
-    
-    def _discover_from_directory(self, directory: str) -> int:
+
+    def _discover_from_directory(self, directory: str, include_names: Optional[Set[str]] = None) -> int:
         """
         从目录扫描发现插件
         
@@ -308,7 +294,9 @@ class PluginRegistry:
                 if subdir.is_dir() and not subdir.name.startswith('_'):
                     yaml_file = subdir / 'plugin.yaml'
                     if yaml_file.exists():
-                        yaml_count = self._discover_from_plugin_yaml(yaml_file, subdir)
+                        yaml_count = self._discover_from_plugin_yaml(
+                            yaml_file, subdir, include_names=include_names
+                        )
                         count += yaml_count
 
             self._log_info(f"Discovered {count} plugins from directory: {directory}")
@@ -317,15 +305,21 @@ class PluginRegistry:
         except Exception as e:
             self._log_error(f"Failed to scan directory {directory}: {e}")
             return 0
-    
-    def _discover_from_plugin_yaml(self, yaml_file: Path, plugin_dir: Path) -> int:
+
+    def _discover_from_plugin_yaml(
+        self,
+        yaml_file: Path,
+        plugin_dir: Path,
+        include_names: Optional[Set[str]] = None,
+    ) -> int:
         """
         从 plugin.yaml 文件发现插件
-        
+
         Args:
             yaml_file: plugin.yaml 文件路径
             plugin_dir: 插件目录路径
-            
+            include_names: 若提供，只注册名称在该集合中的插件
+
         Returns:
             int: 发现的插件数量（0 或 1）
         """
@@ -333,16 +327,20 @@ class PluginRegistry:
             # 读取 YAML 文件
             with open(yaml_file, 'r', encoding='utf-8') as f:
                 plugin_config = yaml.safe_load(f)
-            
+
             # 检查是否启用
             if not plugin_config.get('enabled', True):
                 self._log_debug(f"Plugin disabled in {yaml_file}")
                 return 0
-            
+
             # 获取插件信息
             plugin_name = plugin_config.get('name')
             plugin_class_name = plugin_config.get('plugin_class')
             module_name = plugin_config.get('module')
+
+            # 白名单过滤：不在 include_names 中的插件直接跳过
+            if include_names is not None and plugin_name not in include_names:
+                return 0
             
             if not plugin_name or not plugin_class_name:
                 self._log_warning(f"Invalid plugin.yaml: {yaml_file}")
@@ -399,7 +397,7 @@ class PluginRegistry:
             return 1
             
         except Exception as e:
-            self._log_error(f"Failed to process {yaml_file}: {e}")
+            self._log_warning(f"Skipped invalid plugin.yaml: {yaml_file} ({e})")
             return 0
     
     # ========================================
@@ -525,22 +523,15 @@ class PluginRegistry:
     def get_plugin(self, name: str) -> Optional[BasePlugin]:
         """
         获取已加载的插件实例
-        
+
         Args:
             name: 插件名称
-            
+
         Returns:
             Optional[BasePlugin]: 插件实例，如果未加载返回 None
         """
-        # 允许通过模块名查询
-        if name in self._module_bindings:
-            name = self._module_bindings[name]
-
-        if name not in self._plugins:
-            return None
-        
-        metadata = self._plugins[name]
-        return metadata.instance if metadata.loaded else None
+        metadata = self._plugins.get(name)
+        return metadata.instance if metadata and metadata.loaded else None
     
     def get_plugin_metadata(self, name: str) -> Optional[PluginMetadata]:
         """
@@ -610,11 +601,29 @@ class PluginRegistry:
     def get_all(self) -> Dict[str, PluginMetadata]:
         """
         获取所有已注册的插件
-        
+
         Returns:
             Dict[str, PluginMetadata]: 插件名称到元数据的映射
         """
         return self._plugins.copy()
+
+    def get_dependency_graph(self) -> Dict[str, List[str]]:
+        """
+        返回所有已注册插件的依赖图。
+
+        Returns:
+            Dict[str, List[str]]: name -> [dep_names] 的映射
+
+        Example:
+            >>> graph = registry.get_dependency_graph()
+            >>> graph['towns']
+            ['map']
+        """
+        graph: Dict[str, List[str]] = {}
+        for name, metadata in self._plugins.items():
+            deps = (metadata.metadata or {}).get("dependencies", []) or []
+            graph[name] = [d for d in deps if isinstance(d, str) and d.strip()]
+        return graph
     
     def get_all_loaded(self) -> Dict[str, BasePlugin]:
         """
