@@ -26,11 +26,26 @@ class NewModuleSpec:
 
 
 def project_root_from(config_dir: str) -> str:
+    """根据配置目录推导项目根目录。
+
+    项目根目录的识别标志为存在 plugins/plugin_template 目录。
+    因为 config_dir 可能是 projects/<sim>/config（三层）或旧结构的
+    config/（两层），所以向上遍历查找，避免硬编码两层 parent。
+    """
+    current = os.path.abspath(config_dir)
+    while True:
+        parent = os.path.dirname(current)
+        if parent == current:  # 已到达文件系统根目录
+            break
+        current = parent
+        if os.path.isdir(os.path.join(current, "plugins", "plugin_template")):
+            return current
+    # 未找到标志目录时，回退到旧行为（取上两级目录）
     return os.path.dirname(os.path.dirname(os.path.abspath(config_dir)))
 
 
 def plugin_dir(project_root: str, name: str) -> str:
-    return os.path.join(project_root, "plugins", name)
+    return os.path.join(project_root, "plugins", "generated", name)
 
 
 def plugin_manifest_path(project_root: str, name: str) -> str:
@@ -58,6 +73,18 @@ def write_yaml_file(path: str, data: Dict[str, Any]) -> None:
 def _camel_case(name: str) -> str:
     parts = [p for p in re.split(r"[^a-zA-Z0-9]+", name.strip()) if p]
     return "".join(p[:1].upper() + p[1:] for p in parts) or "Plugin"
+
+
+def _write_init_py(plugin_dir_path: str, plugin_class: str, module: str) -> None:
+    """硬性生成 __init__.py，不经过 LLM，避免类名不一致。"""
+    init_path = os.path.join(plugin_dir_path, "__init__.py")
+    content = (
+        f"from .{module} import {plugin_class}\n"
+        f"\n"
+        f"__all__ = [\"{plugin_class}\"]\n"
+    )
+    with open(init_path, "w", encoding="utf-8") as f:
+        f.write(content)
 
 
 # =============================================================================
@@ -104,6 +131,8 @@ def _prepare_copied_plugin(
 
     new_module = f"{new_name}_plugin"
     new_class = f"Generated{_camel_case(new_name)}Plugin"
+    if "GeneratedGenerated" in new_class or new_class.count("Generated") > 1:
+        raise ValueError(f"非法插件类名（重复 Generated 前缀）: {new_class}")
     manifest["module"] = new_module
     manifest["plugin_class"] = new_class
 
@@ -118,16 +147,17 @@ def _prepare_copied_plugin(
     if os.path.exists(old_py) and old_py != new_py:
         os.rename(old_py, new_py)
 
-    for fname in (new_py, os.path.join(new_dir, "__init__.py")):
-        if not os.path.exists(fname):
-            continue
-        with open(fname, "r", encoding="utf-8") as f:
+    # 主 .py 文件做字符串替换；__init__.py 由代码硬性生成，避免 LLM 干扰
+    if os.path.exists(new_py):
+        with open(new_py, "r", encoding="utf-8") as f:
             content = f.read()
         content = content.replace(old_class, new_class)
         content = content.replace(old_module, new_module)
         content = content.replace(old_name, new_name)
-        with open(fname, "w", encoding="utf-8") as f:
+        with open(new_py, "w", encoding="utf-8") as f:
             f.write(content)
+
+    _write_init_py(new_dir, new_class, new_module)
 
     write_yaml_file(os.path.join(new_dir, "plugin.yaml"), manifest)
     return manifest
@@ -174,9 +204,15 @@ def copy_plugin_as_new(
         base_dir, new_dir,
         ignore=lambda _, names: {n for n in names if n == "__pycache__" or n.endswith(".pyc")}
     )
+
+    # 读取 base 插件的真实 plugin_class/module，避免复制已生成插件时产生双 Generated
+    base_manifest = read_yaml_file(plugin_manifest_path(project_root, base_name))
+    old_class = str(base_manifest.get("plugin_class") or f"Generated{_camel_case(base_name)}Plugin").strip()
+    old_module = str(base_manifest.get("module") or f"{base_name}_plugin").strip()
+
     return _prepare_copied_plugin(
         new_dir=new_dir, new_name=new_name,
-        old_module=f"{base_name}_plugin", old_class=f"{_camel_case(base_name)}Plugin", old_name=base_name,
+        old_module=old_module, old_class=old_class, old_name=base_name,
         description=description,
     )
 
@@ -286,6 +322,47 @@ def validate_plugin_code(project_root: str, plugin_name: str, manifest: Dict[str
                     f"{os.path.basename(interface_path)} 要求的抽象方法: {missing}"
                 )
     return errors
+
+
+def sync_plugin_exports(
+    project_root: str, plugin_name: str, manifest: Dict[str, Any]
+) -> Dict[str, Any]:
+    """根据插件 .py 中实际定义的类，硬性同步 __init__.py 与 plugin.yaml。
+
+    使用场景：LLM 重写 .py 文件后，可能未严格遵循 plugin_class 约束，
+    通过 AST 提取真实类名，并强制更新 __init__.py 和 manifest，确保可导入。
+    """
+    module = str(manifest.get("module") or f"{plugin_name}_plugin").strip()
+    py_path = os.path.join(plugin_dir(project_root, plugin_name), f"{module}.py")
+    if not os.path.exists(py_path):
+        return manifest
+
+    try:
+        with open(py_path, "r", encoding="utf-8") as f:
+            source = f.read()
+        tree = ast.parse(source)
+    except SyntaxError:
+        return manifest
+
+    classes = [node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]
+    expected = str(manifest.get("plugin_class") or "").strip()
+
+    # 优先使用 manifest 中的预期类名；若 LLM 改了名字，则回退查找规则
+    actual = expected if expected in classes else None
+    if actual is None:
+        for cls in classes:
+            if cls.startswith("Generated") and cls.endswith("Plugin"):
+                actual = cls
+                break
+    if actual is None and classes:
+        actual = classes[0]
+
+    if actual and actual != expected:
+        manifest["plugin_class"] = actual
+
+    # 无论是否变化，都硬性重写 __init__.py，保证与 manifest 一致
+    _write_init_py(plugin_dir(project_root, plugin_name), actual or expected, module)
+    return manifest
 
 
 def validate_dependencies(project_root: str, manifest: Dict[str, Any], pending: set[str]) -> List[str]:

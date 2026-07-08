@@ -3,12 +3,148 @@ import time
 from typing import Dict, List, Optional, Tuple
 
 from src.utils.custom_logger import CustomLogger
+from src.utils.ai_system_config import get_agent_model
 from .shared_imports import *
+from .code_change_mixin import CodeChangeMixin
 
 import chromadb
 from openai import OpenAI
 
-class CodeArchitectAgent(BaseAgent):
+
+def exogenous_slug(module: str, param: str) -> str:
+	"""把 (module, param) 规范化为外生变量的 context key / CSV 列名。
+
+	例：("time", "policy implementation period") -> "time_policy_implementation_period"
+	"""
+	import re as _re
+	module = str(module or "").strip()
+	param = str(param or "").strip()
+	base = f"{module}_{param}".lower()
+	# 非字母数字一律转下划线，并压缩连续下划线
+	base = _re.sub(r"[^a-z0-9]+", "_", base)
+	return _re.sub(r"_+", "_", base).strip("_")
+
+
+def extract_exogenous_nodes(pairs: List[dict]) -> List[dict]:
+	"""从 influence_pairs 列表中提取「只作为 cause、从不作为 effect」的根驱动节点。
+
+	Args:
+		pairs: influence_pairs.json 解析出的列表。
+
+	Returns:
+		去重后的纯 cause 节点列表，每项 {"module", "param", "slug"}。
+	"""
+	causes = set()
+	effects = set()
+	for p in pairs or []:
+		if not isinstance(p, dict):
+			continue
+		c = p.get("cause") or {}
+		e = p.get("effect") or {}
+		cm, cp = str(c.get("module") or "").strip(), str(c.get("param") or "").strip()
+		em, ep = str(e.get("module") or "").strip(), str(e.get("param") or "").strip()
+		if cm and cp:
+			causes.add((cm, cp))
+		if em and ep:
+			effects.add((em, ep))
+	pure = causes - effects
+	# 保持稳定顺序：按 module、param 排序
+	nodes = []
+	for (m, p) in sorted(pure):
+		nodes.append({"module": m, "param": p, "slug": exogenous_slug(m, p)})
+	return nodes
+
+
+def exogenous_pair_id_to_slug(pairs: List[dict]) -> Dict[int, str]:
+	"""构建 {pair_id: slug}，仅包含 cause 为纯 cause 根驱动节点的 pair。
+
+	用于在 influence 块生成后，按 pair_id 定位需要重定向到外生变量的块。
+	"""
+	pure_keys = {(n["module"], n["param"]) for n in extract_exogenous_nodes(pairs)}
+	mapping: Dict[int, str] = {}
+	for p in pairs or []:
+		if not isinstance(p, dict):
+			continue
+		c = p.get("cause") or {}
+		cm, cp = str(c.get("module") or "").strip(), str(c.get("param") or "").strip()
+		pid = p.get("pair_id")
+		if pid is not None and (cm, cp) in pure_keys:
+			mapping[int(pid)] = exogenous_slug(cm, cp)
+	return mapping
+
+
+def apply_exogenous_source_override(block_data: dict, slug: str, source_module: str) -> bool:
+	"""把 influence 块中「来自 source 模块的 cause 输入」重定向到外生变量。
+
+	策略（保证向后兼容）：
+	  - 仅改写 source.inputs 中、其 path/fallback_paths 引用了 source 模块的输入
+	    （即 cause 派生量，如 elapsed_steps 的 module.get_elapsed_time_steps()）；
+	  - 把 context.exogenous.<slug> 设为该输入的首选 path，原有 path 全部降级为
+	    fallback_paths —— 这样数据文件缺失/列不存在时会自动回退到内部计算值；
+	  - 在块上打 exogenous: true 标记（信息性，运行时不跳过）。
+
+	Returns:
+		是否成功重定向了至少一个输入。
+	"""
+	if not isinstance(block_data, dict) or not slug:
+		return False
+	source = block_data.get("source")
+	if not isinstance(source, dict):
+		return False
+	inputs = source.get("inputs")
+	if not isinstance(inputs, dict) or not inputs:
+		return False
+
+	exo_path = f"context.exogenous.{slug}"
+	module_token = str(source_module or "").strip()
+	redirected = False
+
+	def _refs_source_module(spec) -> bool:
+		paths = []
+		if isinstance(spec, str):
+			paths = [spec]
+		elif isinstance(spec, dict):
+			if spec.get("path"):
+				paths.append(str(spec["path"]))
+			paths.extend(str(x) for x in (spec.get("fallback_paths") or []))
+		for pth in paths:
+			head = pth.split(".")[0] if pth else ""
+			if head == "module":
+				return True
+			if module_token and head == module_token:
+				return True
+		return False
+
+	for var_name, spec in list(inputs.items()):
+		if not _refs_source_module(spec):
+			continue
+		# 收集原有 path，全部降级为 fallback
+		old_paths: List[str] = []
+		if isinstance(spec, str):
+			old_paths = [spec]
+			new_spec: dict = {}
+		elif isinstance(spec, dict):
+			new_spec = dict(spec)
+			if new_spec.get("path"):
+				old_paths.append(str(new_spec["path"]))
+			old_paths.extend(str(x) for x in (new_spec.get("fallback_paths") or []))
+		else:
+			continue
+		# 去重，排除已是 exo_path 的项
+		fallback = [p for p in old_paths if p and p != exo_path]
+		new_spec["path"] = exo_path
+		if fallback:
+			new_spec["fallback_paths"] = fallback
+		new_spec.setdefault("coerce", "float")
+		inputs[var_name] = new_spec
+		redirected = True
+
+	if redirected:
+		block_data["exogenous"] = True
+	return redirected
+
+
+class CodeArchitectAgent(CodeChangeMixin, BaseAgent):
 	# 常量定义
 	MAX_RETRY_ATTEMPTS = 5  # 每个步骤的最大重试次数
 	MAX_FIX_ATTEMPTS = 2     # 总体检查的最大修复次数
@@ -29,9 +165,13 @@ class CodeArchitectAgent(BaseAgent):
 			session=None,
 			auto_mode: bool = False,
 	):
+		# 指定使用 KIMI 的 kimi-k2-0905-preview 模型
+		# super().__init__(agent_id, group_type='code_architect', window_size=3,
+		#                  model_api_name='KIMI', model_type_name='kimi-k2-0905-preview')
 		# 指定使用 CLAUDE 的 claude-sonnet-4-5-20250929 模型
-		super().__init__(agent_id, group_type='code_architect', window_size=3, 
-		                 model_api_name='CLAUDE', model_type_name='claude-sonnet-4-5-20250929')
+		_api, _model = get_agent_model('code_architect')
+		super().__init__(agent_id, group_type='code_architect', window_size=3,
+		                 model_api_name=_api, model_type_name=_model)
 		# super().__init__(agent_id, group_type='research_analyst', window_size=3)
 		
 		# 加载prompts配置
@@ -40,10 +180,11 @@ class CodeArchitectAgent(BaseAgent):
 			self.prompts = yaml.safe_load(f)
 		
 		self.system_message = self.prompts['system_message']
-		self.simulator_output_dir = simulator_output_dir  # src/simulation/
-		self.main_output_dir = main_output_dir  # entrypoints/
+		self.simulator_output_dir = simulator_output_dir  # src/simulation/（保留兼容，但新项目不再使用）
+		self.main_output_dir = main_output_dir  # entrypoints/（保留兼容，但新项目不再使用）
 		self.docs_dir = docs_dir
-		self.config_dir = config_dir  # config_[模拟名称]/
+		self.config_dir = config_dir  # projects/<name>/config/
+		self.project_dir = os.path.dirname(config_dir)  # projects/<name>/
 		self.config_template_dir = config_template_dir  # config_template/
 		self.simulation_name = simulation_name
 		self.simulation_type = simulation_type  # 'decision' 或 'survey'
@@ -56,165 +197,10 @@ class CodeArchitectAgent(BaseAgent):
 		self._rag_project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 		self._rag_db_path = os.environ.get('CAUSAL_CLAIMS_DB_PATH', os.path.join(self._rag_project_root, 'experiment_dataset', 'chroma_db'))
 		self._rag_embed_model = os.environ.get('CAUSAL_CLAIMS_EMBED_MODEL', 'text-embedding-3-large')
+		# RAG 共享 client：避免 Phase1 并行检索时同时打开多个 PersistentClient 导致 HNSW 索引冲突
+		self._chroma_client = None
 
-	def _rag_embed(self, client, text):
-		max_retries = 3
-		for attempt in range(max_retries):
-			try:
-				resp = client.embeddings.create(model=self._rag_embed_model, input=[text])
-				return resp.data[0].embedding
-			except Exception:
-				if attempt == max_retries - 1:
-					self.logger.warning("RAG embedding failed")
-					return None
-				time.sleep(2 ** attempt)
-		return None
 
-	def _interfaces_dir(self) -> str:
-		return os.path.join(self._rag_project_root, 'src', 'interfaces')
-
-	def _candidate_interface_stems(self, module_name: str) -> List[str]:
-		name = (module_name or '').strip().lower()
-		if not name:
-			return []
-		aliases = {
-			'rebellion': 'rebels',
-			'rebels': 'rebels',
-			'residents': 'resident',
-			'social': 'social_network',
-			'job': 'job_market',
-			'transport': 'transport_economy',
-			'economy': 'transport_economy',
-		}
-		stems = [name]
-		if name in aliases:
-			stems.append(aliases[name])
-		# 再加一个“去掉 module_ 前缀/后缀”的宽松版本
-		stems.append(name.replace('-', '_'))
-		# 去重保持顺序
-		seen = set()
-		ordered: List[str] = []
-		for s in stems:
-			if s and s not in seen:
-				seen.add(s)
-				ordered.append(s)
-		return ordered
-
-	def _find_interface_files(self, module_name: str) -> List[str]:
-		interfaces_dir = self._interfaces_dir()
-		if not os.path.isdir(interfaces_dir):
-			return []
-
-		stems = self._candidate_interface_stems(module_name)
-		# 优先精确匹配 i<stem>.py
-		for stem in stems:
-			candidate = os.path.join(interfaces_dir, f"i{stem}.py")
-			if os.path.exists(candidate):
-				return [candidate]
-
-		# 否则做一次文件名包含匹配（例如 rebellion -> irebels.py）
-		try:
-			files = [f for f in os.listdir(interfaces_dir) if f.endswith('.py') and f.startswith('i')]
-		except Exception:
-			return []
-
-		needles = [s.replace('_', '') for s in stems]
-		matched: List[str] = []
-		for fname in files:
-			base = fname.lower().replace('_', '')
-			if any(n and n in base for n in needles):
-				matched.append(os.path.join(interfaces_dir, fname))
-		return matched[:3]
-
-	def _read_interface_docs_for_modules(self, module_names: List[str], max_chars_per_file: int = 2000) -> str:
-		"""读取 src/interfaces 下与模块名匹配的接口源码，作为“接口说明”。
-
-		若找不到对应接口文件，则回退到读取 plugins/<module> 下的插件源码。
-		"""
-		parts: List[str] = []
-		seen_files: set[str] = set()
-		for name in module_names or []:
-			interface_paths = self._find_interface_files(name)
-			for path in interface_paths:
-				if path in seen_files:
-					continue
-				seen_files.add(path)
-				try:
-					with open(path, 'r', encoding='utf-8') as f:
-						content = f.read()
-					if max_chars_per_file and len(content) > max_chars_per_file:
-						content = content[:max_chars_per_file] + "\n...(已截断)"
-					parts.append(f"\n## {os.path.basename(path)}\n{content}\n")
-				except Exception as e:
-					self.logger.warning(f"读取接口文件失败: {path}, {e}")
-			# 未找到接口文件时，回退读取插件源码
-			if not interface_paths:
-				plugin_code = self._read_plugin_code_for_module(name, max_chars=max_chars_per_file)
-				if plugin_code:
-					parts.append(f"\n## Plugin Code: {name}\n```python\n{plugin_code}\n```\n")
-		return "".join(parts).strip() if parts else "（未找到相关接口文件）"
-
-	def _group_module_params_from_pairs(self, pairs: List[dict]) -> Dict[str, List[str]]:
-		"""从 influence pairs 中聚合每个模块出现过的参数描述，保持出现顺序且去重。"""
-		grouped: Dict[str, List[str]] = {}
-		seen: Dict[str, set] = {}
-		for pair in pairs or []:
-			if not isinstance(pair, dict):
-				continue
-			for role in ('cause', 'effect'):
-				segment = pair.get(role) or {}
-				if not isinstance(segment, dict):
-					continue
-				module_name = str(segment.get('module') or '').strip()
-				param_name = str(segment.get('param') or '').strip()
-				if not module_name or not param_name:
-					continue
-				if module_name not in grouped:
-					grouped[module_name] = []
-					seen[module_name] = set()
-				norm = param_name.lower()
-				if norm in seen[module_name]:
-					continue
-				seen[module_name].add(norm)
-				grouped[module_name].append(param_name)
-		return grouped
-
-	def _read_plugin_code_for_module(self, module_name: str, max_chars: int = 2200) -> str:
-		"""读取 plugins/<module> 下源码片段；优先与模块同名文件。"""
-		plugins_root = os.path.join(self._rag_project_root, 'plugins')
-		stems = self._candidate_interface_stems(module_name)
-		for stem in stems:
-			plugin_dir = os.path.join(plugins_root, stem)
-			if not os.path.isdir(plugin_dir):
-				continue
-			try:
-				py_files = sorted([f for f in os.listdir(plugin_dir) if f.endswith('.py')])
-			except Exception:
-				continue
-			preferred = f"{stem}.py"
-			if preferred in py_files:
-				ordered_files = [preferred] + [f for f in py_files if f != preferred]
-			else:
-				ordered_files = py_files
-
-			parts: List[str] = []
-			for fname in ordered_files:
-				fpath = os.path.join(plugin_dir, fname)
-				try:
-					with open(fpath, 'r', encoding='utf-8') as f:
-						parts.append(f"# {fname}\n" + f.read())
-				except Exception as exc:
-					self.logger.warning(f"读取插件文件失败: {fpath}, {exc}")
-					continue
-				if len('\n\n'.join(parts)) > max_chars:
-					break
-
-			if parts:
-				chunk = '\n\n'.join(parts)
-				if len(chunk) > max_chars:
-					chunk = chunk[:max_chars] + "\n...(truncated)"
-				return chunk
-		return ""
 
 	def _wait_for_user_confirmation(self, step_name):
 		"""等待用户确认是否继续"""
@@ -395,6 +381,9 @@ class CodeArchitectAgent(BaseAgent):
 				if description:
 					manifest["description"] = description
 					pg.write_yaml_file(pg.plugin_manifest_path(project_root, plugin_name), manifest)
+
+				# LLM 可能未严格遵循 plugin_class 约束，硬性同步 __init__.py 与 manifest
+				manifest = pg.sync_plugin_exports(project_root, plugin_name, manifest)
 			except Exception as e:
 				self.logger.error(f"LLM 生成异常: {plugin_name}, {e}")
 				failed.append((plugin_name, base_name))
@@ -412,15 +401,15 @@ class CodeArchitectAgent(BaseAgent):
 				failed.append((plugin_name, base_name))
 				continue
 
-				# 4) 自动接线：更新 modules_config.yaml 的 selected_modules
-				try:
-					pg.patch_modules_config_binding(
-						modules_config_path=modules_config_path,
-						new_plugin_name=plugin_name,
-						inherits_from=base_name,
-					)
-				except Exception as e:
-					self.logger.warning(f"更新 modules_config.yaml 绑定失败: {e}")
+			# 4) 自动接线：更新 modules_config.yaml 的 selected_modules
+			try:
+				pg.patch_modules_config_binding(
+					modules_config_path=modules_config_path,
+					new_plugin_name=plugin_name,
+					inherits_from=base_name,
+				)
+			except Exception as e:
+				self.logger.warning(f"更新 modules_config.yaml 绑定失败: {e}")
 
 			created.append(plugin_name)
 
@@ -553,13 +542,13 @@ class CodeArchitectAgent(BaseAgent):
 				- skipped: 是否跳过了生成（True表示使用现有文件）
 		"""
 		self.logger.info(f"开始生成simulator代码（类型: {self.simulation_type}）...")
-		
-		# 目标文件路径
-		fname = f'simulator_{self.simulation_name}.py'
-		fpath = os.path.join(self.simulator_output_dir, fname)
-		
+
+		# 目标文件路径：统一放到项目目录下
+		os.makedirs(self.project_dir, exist_ok=True)
+		fpath = os.path.join(self.project_dir, 'simulator.py')
+
 		# 检查文件是否已存在
-		if not self._check_file_exists_and_ask(fpath, f"Simulator代码 ({fname})"):
+		if not self._check_file_exists_and_ask(fpath, "Simulator代码 (simulator.py)"):
 			return ([fpath], True)  # 跳过生成，返回现有文件路径和跳过标记
 		
 		# 根据模拟类型选择模板文件
@@ -637,6 +626,9 @@ class CodeArchitectAgent(BaseAgent):
 
 		# 步骤3.5：自动校验并补全 results 结构一致性
 		self._auto_fix_results_schema(fpath)
+
+		# 步骤3.6：确保 simulator 使用绝对导入（适配 projects/<name>/ 布局）
+		self._ensure_absolute_simulator_imports(fpath)
 
 		# 等待用户确认
 		self._wait_for_user_confirmation("生成simulator代码")
@@ -854,7 +846,10 @@ class CodeArchitectAgent(BaseAgent):
 					self.logger.info("✓ 额外尝试后代码完整无误")
 					return {'status': 'success', 'files': [simulator_file_path]}
 				self.logger.error("❌ 额外尝试后仍有问题")
-		
+
+		# 确保 simulator 使用绝对导入
+		self._ensure_absolute_simulator_imports(simulator_file_path)
+
 		# 等待用户确认
 		self._wait_for_user_confirmation("完善simulator函数")
 
@@ -1014,1012 +1009,11 @@ class CodeArchitectAgent(BaseAgent):
 		else:
 			return False
 
-	def _apply_code_changes(self, file_path, llm_response, file_type="simulator", allow_add_new=True):
-		"""
-		应用代码修改（统一处理LLM响应的增量修改方式）
 
-		Args:
-			file_path: 文件路径
-			llm_response: LLM返回的响应（可以是JSON格式的修改，也可以是完整代码）
-			file_type: 文件类型（"simulator" 或 "main"）
-			allow_add_new: 是否允许新增方法/函数（语法修复等场景应设为 False，防止臆造）
-
-		Returns:
-			bool: 是否成功应用修改
-		"""
-		
-		# 策略1: 尝试提取JSON格式的增量修改
-		json_match = re.search(r'```json\s*(\{[\s\S]*?\})\s*```', llm_response, re.DOTALL)
-		if not json_match:
-			if file_type == "main":
-				json_match = re.search(r'\{[\s\S]*"functions"[\s\S]*\}', llm_response, re.DOTALL)
-			else:
-				json_match = re.search(r'\{[\s\S]*"methods"[\s\S]*\}', llm_response, re.DOTALL)
-		
-		if json_match:
-			json_str = json_match.group(1) if json_match.lastindex else json_match.group(0)
-			try:
-				changes = json.loads(json_str)
-				
-				# 应用JSON格式的增量修改
-				if self._apply_incremental_changes(file_path, changes, file_type, allow_add_new=allow_add_new):
-					self.logger.info(f"✓ 已基于JSON增量修改并保存: {file_path}")
-					return True
-				else:
-					self.logger.warning("JSON增量修改失败，尝试完整替换")
-			except json.JSONDecodeError as e:
-				self.logger.warning(f"JSON解析失败: {e}，尝试提取部分完整的函数/方法...")
-				# 尝试提取部分完整的JSON内容
-				partial_changes = self._extract_partial_json(json_str, file_type)
-				if partial_changes:
-					self.logger.info(f"成功提取 {len(partial_changes.get('methods' if file_type == 'simulator' else 'functions', []))} 个完整的{'方法' if file_type == 'simulator' else '函数'}")
-					if self._apply_incremental_changes(file_path, partial_changes, file_type, allow_add_new=allow_add_new):
-						self.logger.info(f"✓ 已基于部分JSON增量修改并保存: {file_path}")
-						return True
-					else:
-						self.logger.warning("部分JSON增量修改失败")
-				else:
-					self.logger.warning("部分提取也失败，尝试从响应文本恢复方法/函数代码...")
-					recovered_changes = self._extract_items_from_malformed_response(llm_response, file_type)
-					if recovered_changes:
-						recovered_count = len(recovered_changes.get('methods' if file_type == 'simulator' else 'functions', []))
-						self.logger.info(f"成功从响应文本恢复 {recovered_count} 个{'方法' if file_type == 'simulator' else '函数'}")
-						if self._apply_incremental_changes(file_path, recovered_changes, file_type, allow_add_new=allow_add_new):
-							self.logger.info(f"✓ 已基于恢复的增量修改并保存: {file_path}")
-							return True
-						self.logger.warning("恢复后的增量修改应用失败")
-		
-		# 所有增量修改策略都失败，直接报错
-		self.logger.error("❌ 未找到有效的JSON增量修改内容，拒绝进行完整文件替换")
-		self.logger.error(f"大模型返回内容（前500字符）：{llm_response[:500]}...")
-		return False
-
-	def _extract_items_from_malformed_response(self, llm_response, file_type="simulator"):
-		"""当LLM返回的JSON格式损坏时，尝试直接从文本中恢复方法/函数代码。"""
-		item_key = 'methods' if file_type == 'simulator' else 'functions'
-		name_key = 'method_name' if file_type == 'simulator' else 'function_name'
-		code_key = 'method_code' if file_type == 'simulator' else 'function_code'
-
-		if not llm_response:
-			return None
-
-		# 将常见转义恢复为文本，便于匹配 def/async def。
-		text = llm_response.replace('\\r\\n', '\n').replace('\\n', '\n').replace('\\t', '    ').replace('\\"', '"')
-
-		name_pattern = rf'"{name_key}"\s*:\s*"([^"]+)"'
-		names = re.findall(name_pattern, text)
-		if not names:
-			return None
-
-		items = []
-		for raw_name in names:
-			name = raw_name.strip()
-			if not name:
-				continue
-
-			def_header = re.search(rf'(?:async\s+def|def)\s+{re.escape(name)}\s*\(', text)
-			if not def_header:
-				continue
-
-			start = def_header.start()
-			next_def = re.search(r'\n\s*(?:async\s+def|def)\s+\w+\s*\(', text[start + 1:])
-			next_desc = re.search(r'\n\s*"description"\s*:', text[start + 1:])
-
-			end_candidates = []
-			if next_def:
-				end_candidates.append(start + 1 + next_def.start())
-			if next_desc:
-				end_candidates.append(start + 1 + next_desc.start())
-			end = min(end_candidates) if end_candidates else len(text)
-
-			code = text[start:end].strip()
-			code = code.rstrip('"').rstrip(',').rstrip()
-			if not re.match(r'^(async\s+def|def)\s+', code):
-				continue
-
-			items.append({
-				name_key: name,
-				code_key: code,
-				"description": "从损坏JSON响应自动恢复",
-			})
-
-		if not items:
-			return None
-
-		return {item_key: items}
 	
-	def _verify_and_fix_final_indentation(self, file_path, file_type):
-		"""
-		验证并修正最终文件的缩进
-		"""
-		if file_type != "simulator":
-			return
-			
-		with open(file_path, 'r', encoding='utf-8') as f:
-			content = f.read()
-		
-		# 检查是否有缩进问题
-		lines = content.split('\n')
-		has_issue = False
-		
-		for i, line in enumerate(lines):
-			stripped = line.strip()
-			if stripped.startswith(('def ', 'async def ')):
-				# 检查函数缩进
-				indent = len(line) - len(line.lstrip())
-				if indent != 4:
-					has_issue = True
-					break
-		
-		if has_issue:
-			self.logger.warning("检测到缩进问题，重新修正...")
-			fixed_content = self._fix_indentation_and_whitespace(content)
-			with open(file_path, 'w', encoding='utf-8') as f:
-				f.write(fixed_content)
 
-	def _extract_partial_json(self, json_str, file_type="simulator"):
-		"""
-		从不完整的JSON字符串中提取完整的函数/方法定义
-		
-		Args:
-			json_str: 不完整的JSON字符串
-			file_type: 文件类型（"simulator" 或 "main"）
-		
-		Returns:
-			dict: 包含完整函数/方法的字典，格式为 {"methods": [...]} 或 {"functions": [...]}
-				  如果无法提取任何完整内容，返回None
-		"""
-		item_key = 'methods' if file_type == 'simulator' else 'functions'
-		name_key = 'method_name' if file_type == 'simulator' else 'function_name'
-		code_key = 'method_code' if file_type == 'simulator' else 'function_code'
-		
-		self.logger.info(f"尝试从不完整的JSON中提取完整的{item_key}...")
-		
-		complete_items = []
-		
-		# 使用更安全的方法：手动查找 { 和配对的 }
-		i = 0
-		while i < len(json_str):
-			# 查找对象开始标记
-			if json_str[i] == '{':
-				# 尝试找到配对的 }
-				brace_count = 1
-				j = i + 1
-				in_string = False
-				escape_next = False
-				
-				while j < len(json_str) and brace_count > 0:
-					if escape_next:
-						escape_next = False
-						j += 1
-						continue
-					
-					if json_str[j] == '\\':
-						escape_next = True
-					elif json_str[j] == '"' and not escape_next:
-						in_string = not in_string
-					elif not in_string:
-						if json_str[j] == '{':
-							brace_count += 1
-						elif json_str[j] == '}':
-							brace_count -= 1
-					
-					j += 1
-				
-				# 如果找到了配对的 }，尝试解析这个对象
-				if brace_count == 0:
-					item_json = json_str[i:j]
-					try:
-						item = json.loads(item_json)
-						# 验证是否包含必要字段
-						if isinstance(item, dict) and name_key in item and code_key in item:
-							complete_items.append(item)
-							self.logger.info(f"✓ 提取到完整的{item_key[:-1]}: {item[name_key]}")
-					except json.JSONDecodeError:
-						pass  # 跳过无效的 JSON 对象
-					
-					i = j  # 继续从下一个位置查找
-				else:
-					i += 1  # 没找到配对，移动到下一个字符
-			else:
-				i += 1
 
-		if complete_items:
-			self.logger.info(f"共提取到 {len(complete_items)} 个完整的{item_key}")
-			return {item_key: complete_items}
-		else:
-			self.logger.warning(f"未能从JSON中提取任何完整的{item_key}")
-			return None
 
-	def _apply_incremental_changes(self, file_path, changes, file_type="simulator", allow_add_new=True):
-		"""
-		应用增量修改（内部方法，处理JSON格式的修改）
-
-		Args:
-			file_path: 文件路径
-			changes: JSON格式的修改内容（dict，包含methods/functions和delete_methods/delete_functions）
-			file_type: 文件类型（"simulator" 或 "main"）
-			allow_add_new: 是否允许新增方法/函数（语法修复等场景应设为 False）
-
-		Returns:
-			bool: 是否成功应用修改
-		"""
-		try:
-			# 读取当前文件内容
-			with open(file_path, 'r', encoding='utf-8') as f:
-				current_content = f.read()
-			
-			# main文件使用functions，simulator文件使用methods
-			code_items = changes.get('functions' if file_type == "main" else 'methods', [])
-			delete_items = changes.get('delete_functions' if file_type == "main" else 'delete_methods', [])
-			if not code_items and not delete_items:
-				self.logger.info(f"无需修改")
-				return True
-			
-			print(f"开始应用增量修改，待处理 {len(code_items)} 个更新，{len(delete_items)} 个删除。")
-			modified_content = current_content
-			
-			# ===== 步骤1: 删除不需要的函数/方法 =====
-			if delete_items:
-				self.logger.info(f"准备删除 {len(delete_items)} 个{'方法' if file_type == 'simulator' else '函数'}")
-				for item_name in delete_items:
-					# 提取纯函数名
-					pure_name = item_name
-					if 'def ' in item_name:
-						name_match = re.search(r'def\s+(\w+)', item_name)
-						if name_match:
-							pure_name = name_match.group(1)
-
-					# 保护核心方法不被删除（防止LLM误删导致模拟器骨架崩溃）
-					if file_type == "simulator" and pure_name in {
-						'__init__', 'run', 'update_state', 'execute_actions',
-						'collect_results', 'save_results', 'init_results'
-					}:
-						self.logger.warning(f"⚠️ 拒绝删除受保护的核心方法: {pure_name}")
-						continue
-
-					# 匹配函数/方法定义并删除
-					# 对于main文件，需要在入口标记前停止匹配
-					if file_type == "main":
-						pattern = rf"(\s*)(?:async\s+)?def\s+{re.escape(pure_name)}\s*\([^)]*\):.*?(?=\n\s*(?:async\s+)?def\s|\n\s*@|\nclass\s|\n#\s*=====\s*以下代码块不可删除或修改\s*=====|\Z)"
-					else:
-						pattern = rf"(\s*)(?:async\s+)?def\s+{re.escape(pure_name)}\s*\([^)]*\):.*?(?=\n\s*(?:async\s+)?def\s|\n\s*@|\nclass\s|\Z)"
-					match = re.search(pattern, modified_content, re.DOTALL)
-					
-					deleted_count = 0
-					# 循环删除所有匹配的同名方法/函数（处理重复定义的情况）
-					while True:
-						match = re.search(pattern, modified_content, re.DOTALL)
-						if not match:
-							break
-						# 删除匹配的函数/方法（包括前导空白行）
-						start_pos = match.start()
-						end_pos = match.end()
-
-						# 删除多余前导空行，但保留至少1个空行
-						while start_pos > 1 and modified_content[start_pos-1] == '\n' and modified_content[start_pos-2] == '\n':
-							start_pos -= 1
-
-						modified_content = modified_content[:start_pos] + modified_content[end_pos:]
-						deleted_count += 1
-
-					if deleted_count > 0:
-						self.logger.info(f"✓ 已删除{'方法' if file_type == 'simulator' else '函数'}: {pure_name} (共 {deleted_count} 个)")
-					else:
-						self.logger.warning(f"⚠️ 未找到要删除的{'方法' if file_type == 'simulator' else '函数'}: {pure_name}")
-			
-			# 用于收集需要添加的新方法
-			methods_to_add = []
-			
-			# 替换或添加方法/函数
-			for item_info in code_items:
-				item_name = item_info.get('method_name') or item_info.get('function_name')
-				item_code = item_info.get('method_code') or item_info.get('function_code')
-				description = item_info.get('description', '')
-				# 关键修复：将字面的\n转换为真正的换行符
-				if isinstance(item_code, str):
-					# 如果代码中包含字面的 \n，将其替换为真正的换行符
-					item_code = item_code.replace('\\n', '\n')
-				
-				# 从可能包含完整签名的 item_name 中提取纯函数名
-				# 例如: "async def update_state(self):" -> "update_state"
-				# 或: "update_state" -> "update_state"
-				pure_name = item_name
-				if 'def ' in item_name:
-					# 匹配 def 或 async def 后面的函数名
-					name_match = re.search(r'def\s+(\w+)', item_name)
-					if name_match:
-						pure_name = name_match.group(1)
-				
-				self.logger.info(f"{'修改' if file_type == 'simulator' else '处理'}{'方法' if file_type == 'simulator' else '函数'}: {pure_name} - {description}")
-				
-				# 查找并替换方法/函数（缩进感知，避免嵌套函数干扰边界）
-				# 步骤1: 匹配方法头
-				header_pattern = rf"(\s*)(?:async\s+)?def\s+{re.escape(pure_name)}\s*\([^)]*\):"
-				header_match = re.search(header_pattern, modified_content)
-				match_start = match_end = None
-				full_prefix = None
-
-				if header_match:
-					full_prefix = header_match.group(1)
-					indent_target = full_prefix.split('\n')[-1]
-					# 步骤2: 从方法头之后搜索下一个相同缩进级别的方法边界
-					# 这样嵌套函数（更大缩进）不会被误当作当前方法的边界
-					rest = modified_content[header_match.end():]
-					if file_type == "main":
-						boundary_pattern = rf"\n{re.escape(indent_target)}(?:async\s+)?def\s|\n{re.escape(indent_target)}@|\nclass\s|\n#\s*=====\s*以下代码块不可删除或修改\s*=====|\Z"
-					else:
-						boundary_pattern = rf"\n{re.escape(indent_target)}(?:async\s+)?def\s|\n{re.escape(indent_target)}@|\nclass\s|\Z"
-					boundary_match = re.search(boundary_pattern, rest)
-					if boundary_match:
-						match_end = header_match.end() + boundary_match.start()
-					else:
-						match_end = len(modified_content)
-					match_start = header_match.start()
-
-				if match_start is not None:
-					# 找到了，替换现有方法
-					# indent_target 已在上方计算
-					# 保留换行前缀，规范为最多1个空行（防止函数粘在一起）
-					newline_prefix = full_prefix[:len(full_prefix) - len(indent_target)]
-					if newline_prefix.count('\n') > 2:
-						newline_prefix = '\n\n'
-					elif newline_prefix:
-						newline_prefix = '\n'
-					code_lines = item_code.split('\n')
-
-					# 计算 LLM 代码的公共前导缩进，避免双重缩进
-					non_empty = [ln for ln in code_lines if ln.strip()]
-					if non_empty:
-						min_indent = min(len(ln) - len(ln.lstrip()) for ln in non_empty)
-					else:
-						min_indent = 0
-
-					# 整体平移：去掉公共缩进，再加上目标缩进
-					indented_lines = []
-					for line in code_lines:
-						if line.strip():
-							indented_lines.append(indent_target + line[min_indent:])
-						else:
-							indented_lines.append('')
-					indented_code = '\n'.join(indented_lines)
-
-					# 替换方法/函数（显式保留换行前缀，避免 match.start() 吞掉换行后函数粘在一起）
-					modified_content = modified_content[:match_start] + newline_prefix + indented_code + modified_content[match_end:]
-					self.logger.info(f"✓ 已替换{'方法' if file_type == 'simulator' else '函数'}: {pure_name}")
-				else:
-					if not allow_add_new:
-						# 语法修复等场景不允许新增方法，避免 LLM 认错方法后污染文件
-						self.logger.error(
-							f"❌ {file_type} 修复模式下不允许新增{'方法' if file_type == 'simulator' else '函数'}: {pure_name}，跳过"
-						)
-						continue
-					# 未找到，标记为需要添加
-					self.logger.info(f"→ 方法 {pure_name} 不存在，将作为新方法添加")
-					methods_to_add.append({
-						'name': pure_name,
-						'code': item_code,
-						'description': description
-					})
-			
-			# 添加新方法到类的末尾
-			if methods_to_add:
-				# 查找类定义的结束位置
-				if file_type == "simulator":
-					# 对于simulator，找到类的最后一个方法后添加
-					# 匹配类定义中的最后一个完整方法
-					class_pattern = r'class\s+\w+.*?(?=\nclass\s|\Z)'
-					class_match = re.search(class_pattern, modified_content, re.DOTALL)
-					
-					if class_match:
-						class_content = class_match.group(0)
-						# 找到类中最后一个方法的结束位置
-						# 方法通常以 4 个空格或 1 个 tab 缩进
-						last_method_pattern = r'(\s{4}|\t)(?:async\s+)?def\s+\w+.*?(?=\n(?:\s{4}|\t)(?:async\s+)?def\s|\n(?:\s{0,3})\S|\Z)'
-						all_methods = list(re.finditer(last_method_pattern, class_content, re.DOTALL))
-						
-						if all_methods:
-							last_method = all_methods[-1]
-							# 在最后一个方法后添加新方法
-							insert_pos = class_match.start() + last_method.end()
-							
-							# 确定缩进（使用类中现有方法的缩进）
-							indent = '    '  # 默认4个空格
-							
-							# 构建要添加的代码
-							new_methods_code = ""
-							for method_info in methods_to_add:
-								# 添加空行分隔
-								new_methods_code += "\n\n"
-								# 添加方法代码，计算公共缩进后平移
-								lines = method_info['code'].split('\n')
-								non_empty = [ln for ln in lines if ln.strip()]
-								if non_empty:
-									min_indent = min(len(ln) - len(ln.lstrip()) for ln in non_empty)
-								else:
-									min_indent = 0
-								for line in lines:
-									if line.strip():
-										new_methods_code += indent + line[min_indent:] + '\n'
-									else:
-										new_methods_code += '\n'
-
-								self.logger.info(f"✓ 已添加新方法: {method_info['name']} - {method_info['description']}")
-							
-							# 插入新方法
-							modified_content = modified_content[:insert_pos] + new_methods_code + modified_content[insert_pos:]
-						else:
-							self.logger.warning("⚠️ 无法找到类中的方法位置，无法添加新方法")
-					else:
-						self.logger.warning("⚠️ 无法找到类定义，无法添加新方法")
-				else:
-					# 对于main文件，添加到文件末尾（入口代码之前）
-					entry_match = re.search(r'(# ===== 以下代码块不可删除或修改 =====)', modified_content)
-					if entry_match:
-						insert_pos = entry_match.start()
-						# 确保在入口标记前保留适当的空行
-						new_functions_code = ""
-						for func_info in methods_to_add:
-							new_functions_code += "\n\n" + func_info['code']
-							self.logger.info(f"✓ 已添加新函数: {func_info['name']} - {func_info['description']}")
-						# 在新函数和入口标记之间添加空行
-						new_functions_code += "\n\n"
-						modified_content = modified_content[:insert_pos] + new_functions_code + modified_content[insert_pos:]
-					else:
-						# 如果没有入口标记，添加到文件末尾
-						insert_pos = len(modified_content)
-						new_functions_code = ""
-						for func_info in methods_to_add:
-							new_functions_code += "\n\n" + func_info['code'] + "\n"
-							self.logger.info(f"✓ 已添加新函数: {func_info['name']} - {func_info['description']}")
-						
-						modified_content = modified_content[:insert_pos] + new_functions_code + modified_content[insert_pos:]
-			
-			# 清理多余的连续空白行（保留最多2个空行，即最多1个空行）
-			modified_content = re.sub(r'\n{4,}', '\n\n\n', modified_content)
-			
-			# 对于simulator文件，进行缩进和空白行修正
-			if file_type == "simulator":
-				modified_content = self._fix_indentation_and_whitespace(modified_content)
-				self.logger.info("✓ 已对simulator代码进行缩进和空白行修正")
-
-			# 保存修改后的代码
-			with open(file_path, 'w', encoding='utf-8') as f:
-				f.write(modified_content)
-
-			# 对于simulator文件，验证并修正最终缩进
-			if file_type == "simulator":
-				self._verify_and_fix_final_indentation(file_path, file_type)
-			
-			# 统计信息
-			replaced_count = len(code_items) - len(methods_to_add)
-			added_count = len(methods_to_add)
-			deleted_count = len(delete_items) if delete_items else 0
-			self.logger.info(f"✓ 已应用增量修改")
-			if replaced_count > 0:
-				self.logger.info(f"  - 替换{'方法' if file_type == 'simulator' else '函数'}: {replaced_count} 个")
-			if added_count > 0:
-				self.logger.info(f"  - 新增{'方法' if file_type == 'simulator' else '函数'}: {added_count} 个")
-			if deleted_count > 0:
-				self.logger.info(f"  - 删除{'方法' if file_type == 'simulator' else '函数'}: {deleted_count} 个")
-
-			# 硬性 py_compile 语法检查（每次修改后必须通过）
-			import py_compile
-			try:
-				py_compile.compile(file_path, doraise=True)
-				self.logger.info(f"✓ py_compile 语法检查通过")
-			except py_compile.PyCompileError as e:
-				# 尝试修正后重试一次
-				self.logger.warning(f"⚠️ py_compile 语法错误: {e}，尝试硬性修正...")
-				with open(file_path, 'r', encoding='utf-8') as f:
-					raw = f.read()
-				fixed = self._fix_indentation_and_whitespace(raw)
-				with open(file_path, 'w', encoding='utf-8') as f:
-					f.write(fixed)
-				try:
-					py_compile.compile(file_path, doraise=True)
-					self.logger.info(f"✓ py_compile 语法检查通过（修正后）")
-				except py_compile.PyCompileError as e2:
-					self.logger.error(f"❌ py_compile 语法错误（修正后仍失败）: {e2}")
-					return False
-
-			return True			
-		except Exception as e:
-			self.logger.error(f"应用增量修改失败: {e}")
-			return False
-
-	def _fix_indentation_and_whitespace(self, code_content):
-		"""
-		硬性修正代码缩进和空白行问题
-
-		主要处理：
-		1. 将tab统一替换为4个空格
-		2. 清理多余的连续空白行（全局压缩）
-		3. class 定义后空行规范化
-		注意：不再强制修改 def 行缩进，避免破坏 main 文件的顶层函数和嵌套函数结构
-
-		Args:
-			code_content: 原始代码内容
-
-		Returns:
-			str: 修正后的代码内容
-		"""
-		# 将tab替换为4个空格
-		code = code_content.replace('\t', '    ')
-
-		# 清理只包含空格的行（变为真正空行，防止 IndentationError）
-		lines = code.split('\n')
-		lines = [line if line.strip() else '' for line in lines]
-		code = '\n'.join(lines)
-
-		# 注意：不再强制将所有 def 行缩进为4个空格。
-		# 原因：main 文件中的 run_simulation 是顶层函数（0缩进），
-		# 内部嵌套的 build_new_simulator 是 8 缩进，强制 4 空格会破坏正确结构。
-		# 真正的缩进缺失问题（如 expected an indented block）由 _auto_fix_syntax_error 处理。
-		# tab 转空格已在上文完成，可解决绝大多数缩进不一致问题。
-
-		# 全局清理：任何2个及以上连续空行（\n{3,} = 3个及以上换行符）压缩为1个空行
-		code = re.sub(r'\n{3,}', '\n\n', code)
-
-		# class 定义后面最多留1个空行（避免class和后续内容之间出现大片空白）
-		code = re.sub(r'(class\s+\w+[^:]*:)\n{2,}', r'\1\n', code)
-
-		# 确保文件末尾只有一个换行符
-		code = code.rstrip() + '\n'
-
-		return code
-
-	def _sanitize_and_validate_config(self, file_path: str) -> bool:
-		"""验证并清理配置文件中的非法字符，移除AI常误写入的Markdown标记。
-
-		Args:
-			file_path: 配置文件路径（.yaml/.yml/.json）
-
-		Returns:
-			bool: 清理并验证通过返回 True，否则返回 False
-		"""
-		import yaml
-
-		try:
-			with open(file_path, 'r', encoding='utf-8') as f:
-				content = f.read()
-		except Exception as e:
-			self.logger.warning(f"读取配置文件失败，跳过清理: {file_path}, {e}")
-			return False
-
-		original_content = content
-		# 1. 移除Markdown代码块标记（AI常把 ``` 写进文件）
-		content = re.sub(r'\n```\w*\r?\n?', '\n', content)
-		content = re.sub(r'^```\w*\r?\n?', '', content)
-		content = re.sub(r'\n```\s*$', '\n', content)
-
-		# 2. 移除纯Markdown说明行（如 **关键设计说明**：）及其后续段落
-		lines = content.split('\n')
-		cleaned_lines = []
-		skip_markdown_section = False
-		for line in lines:
-			# 检测Markdown标题/加粗行（如 **...** 或 # ...）
-			if re.match(r'^\s*\*\*.*\*\*\s*$', line) or re.match(r'^\s*#{1,6}\s+', line):
-				skip_markdown_section = True
-				continue
-			# 如果当前在跳过Markdown区域，遇到空行或YAML内容则恢复
-			if skip_markdown_section:
-				if line.strip() == '':
-					continue
-				# 如果遇到YAML特征行（键值对、列表、注释），恢复保留
-				if re.match(r'^\s*(#|[\w-]+\s*:|-\s)', line):
-					skip_markdown_section = False
-				else:
-					continue
-			cleaned_lines.append(line)
-
-		content = '\n'.join(cleaned_lines).rstrip() + '\n'
-
-		# 3. 重新验证语法
-		is_valid = False
-		try:
-			if file_path.endswith(('.yaml', '.yml')):
-				yaml.safe_load(content)
-				is_valid = True
-			elif file_path.endswith('.json'):
-				json.loads(content)
-				is_valid = True
-		except Exception as e:
-			self.logger.error(f"配置文件语法验证失败: {file_path}, {e}")
-			# 即使验证失败也写入清理后的内容（可能比原来好）
-			is_valid = False
-
-		# 只有内容变化或需要强制保存时才写入
-		if content != original_content or not is_valid:
-			with open(file_path, 'w', encoding='utf-8') as f:
-				f.write(content)
-			if content != original_content:
-				self.logger.info(f"✓ 已清理配置文件中的Markdown标记: {os.path.basename(file_path)}")
-
-		return is_valid
-
-	def _auto_fix_syntax_error(self, file_path, py_exc):
-		"""尝试自动修复常见语法错误，无需调用 LLM。
-
-		目前支持的自动修复：
-		- 缩进不一致（再次执行硬性修正）
-		- def/class/if/for 后缺少缩进（expected an indented block）
-		- 括号未闭合（简单计数补全）
-		- 行尾多余引号（unterminated string literal，通过AST验证避免误删）
-
-		Args:
-			file_path: 文件路径
-			py_exc: py_compile.PyCompileError 异常对象
-
-		Returns:
-			bool: 如果修复成功并保存文件返回 True
-		"""
-		with open(file_path, 'r', encoding='utf-8') as f:
-			content = f.read()
-
-		lines = content.split('\n')
-		error_line = getattr(py_exc, 'lineno', None)
-		error_msg = str(py_exc)
-		# py_compile.PyCompileError 的 lineno 在某些 SyntaxError 场景下为 None，
-		# 需要从异常文本中解析出行号，否则后续基于 error_line 的修复策略会全部失效。
-		if not error_line:
-			line_match = re.search(r'line\s+(\d+)', error_msg)
-			if line_match:
-				try:
-					error_line = int(line_match.group(1))
-				except ValueError:
-					error_line = None
-		fixed = False
-
-		# 策略1: 缩进错误（再次执行硬性修正）
-		if 'IndentationError' in error_msg or 'unexpected indent' in error_msg:
-			fixed_content = self._fix_indentation_and_whitespace(content)
-			if fixed_content != content:
-				content = fixed_content
-				fixed = True
-				self.logger.info("✓ 自动修复：修正缩进")
-
-		# 策略2: expected an indented block（def/class/if/for 后缺少缩进）
-		if not fixed and error_line and 'expected an indented block' in error_msg:
-			idx = error_line - 1
-			if 0 <= idx < len(lines):
-				lines[idx] = '    ' + lines[idx]
-				content = '\n'.join(lines)
-				fixed = True
-				self.logger.info(f"✓ 自动修复：第 {error_line} 行补缩进")
-
-		# 策略3: 括号未闭合（简单计数，修复文件尾部常见截断）
-		if not fixed and ('unexpected EOF' in error_msg or 'invalid syntax' in error_msg):
-			paren_open = content.count('(') - content.count(')')
-			bracket_open = content.count('[') - content.count(']')
-			brace_open = content.count('{') - content.count('}')
-			trail = ""
-			if paren_open > 0:
-				trail += ')' * paren_open
-				fixed = True
-				self.logger.info(f"✓ 自动修复：补全 {paren_open} 个右圆括号")
-			if bracket_open > 0:
-				trail += ']' * bracket_open
-				fixed = True
-				self.logger.info(f"✓ 自动修复：补全 {bracket_open} 个右方括号")
-			if brace_open > 0:
-				trail += '}' * brace_open
-				fixed = True
-				self.logger.info(f"✓ 自动修复：补全 {brace_open} 个右花括号")
-			if trail:
-				content = content.rstrip() + '\n' + trail + '\n'
-
-		# 策略4: 未终止的字符串字面量（常见原因是行尾多了一个孤立引号）
-		if not fixed and error_line and 'unterminated string literal' in error_msg:
-			idx = error_line - 1
-			if 0 <= idx < len(lines):
-				stripped = lines[idx].rstrip()
-				# 依次尝试检测双引号和单引号
-				for quote_char in ('"', "'"):
-					if not (stripped.endswith(quote_char) and len(stripped) >= 2):
-						continue
-					# 统计该行内未转义的 quote_char 数量；偶数说明大概率是合法字符串的闭合引号，跳过
-					unescaped_count = 0
-					escape_next = False
-					for ch in stripped:
-						if escape_next:
-							escape_next = False
-							continue
-						if ch == '\\':
-							escape_next = True
-							continue
-						if ch == quote_char:
-							unescaped_count += 1
-					if unescaped_count % 2 == 0:
-						continue
-					candidate = stripped[:-1]
-					tentative_lines = lines[:]
-					tentative_lines[idx] = candidate
-					tentative_content = '\n'.join(tentative_lines)
-					# 先用整文件 compile 验证，防止误删多行字符串的合法闭合引号
-					try:
-						compile(tentative_content, file_path, 'exec')
-						lines = tentative_lines
-						content = tentative_content
-						fixed = True
-						label = "单引号" if quote_char == "'" else "双引号"
-						self.logger.info(f"✓ 自动修复：删除第 {error_line} 行末尾多余的{label}")
-						break
-					except SyntaxError:
-						# 退回到单行 AST 验证（兼容旧逻辑）
-						try:
-							import ast
-							ast.parse(candidate.lstrip() + '\n')
-							lines = tentative_lines
-							content = tentative_content
-							fixed = True
-							label = "单引号" if quote_char == "'" else "双引号"
-							self.logger.info(f"✓ 自动修复：删除第 {error_line} 行末尾多余的{label}")
-							break
-						except SyntaxError:
-							pass
-
-		if fixed:
-			with open(file_path, 'w', encoding='utf-8') as f:
-				f.write(content)
-			return True
-
-		return False
-
-	def _get_syntax_error_context(self, file_path, error_line, radius=8):
-		"""获取语法错误位置附近的代码上下文，带行号标记。
-
-		Args:
-			file_path: 文件路径
-			error_line: 1-based 行号
-			radius: 上下各取多少行
-
-		Returns:
-			str: 带标记的上下文字符串
-		"""
-		with open(file_path, 'r', encoding='utf-8') as f:
-			lines = f.readlines()
-
-		if not error_line or error_line < 1:
-			return "（无法定位错误行）"
-
-		start = max(0, error_line - radius - 1)
-		end = min(len(lines), error_line + radius)
-
-		context_lines = []
-		for i in range(start, end):
-			marker = ">>> " if i == error_line - 1 else "    "
-			context_lines.append(f"{marker}{i+1:4d} | {lines[i].rstrip()}")
-
-		return '\n'.join(context_lines)
-
-	def _get_enclosing_method_name(self, file_path, error_line):
-		"""根据错误行号定位其所在的函数/方法名（用于语法错误修复提示）。"""
-		if not error_line or error_line < 1:
-			return "（无法定位）"
-		try:
-			with open(file_path, 'r', encoding='utf-8') as f:
-				lines = f.readlines()
-		except Exception:
-			return "（无法读取文件）"
-		if error_line > len(lines):
-			return "（行号超出范围）"
-		err_idx = error_line - 1
-		err_indent = len(lines[err_idx]) - len(lines[err_idx].lstrip())
-		for i in range(err_idx, -1, -1):
-			stripped = lines[i].strip()
-			if stripped.startswith('def ') or stripped.startswith('async def '):
-				header_indent = len(lines[i]) - len(lines[i].lstrip())
-				if header_indent < err_indent:
-					name_match = re.search(r'def\s+(\w+)', stripped)
-					if name_match:
-						return name_match.group(1)
-		return "（未找到）"
-
-	def _auto_fix_results_schema(self, simulator_file_path: str) -> bool:
-		"""自动校验并补全 init_results 与 __init__ 的 results 初始值一致性。
-
-		若 init_results() 中返回的键在 __init__() 中缺少 self.results[键].append(...)，
-		则自动在 __init__ 末尾补全 self.results["键"].append(0.0)。
-
-		Returns:
-			bool: True 表示已修复或无需修复，False 表示修复失败。
-		"""
-		try:
-			import ast
-			with open(simulator_file_path, 'r', encoding='utf-8') as f:
-				content = f.read()
-			tree = ast.parse(content)
-		except Exception as e:
-			self.logger.warning(f"Schema自动校验：解析失败，跳过: {e}")
-			return False
-
-		class_def = None
-		for node in tree.body:
-			if isinstance(node, ast.ClassDef):
-				class_def = node
-				break
-		if not class_def:
-			return False
-
-		# 提取 init_results 返回的字典键
-		init_keys = set()
-		for node in class_def.body:
-			if isinstance(node, ast.FunctionDef) and node.name == 'init_results':
-				for stmt in node.body:
-					if isinstance(stmt, ast.Return) and isinstance(stmt.value, ast.Dict):
-						for k in stmt.value.keys:
-							if isinstance(k, ast.Constant) and isinstance(k.value, str):
-								init_keys.add(k.value)
-						break
-				break
-
-		# 提取 __init__ 中 self.results[...].append(...) 的键
-		append_keys = set()
-		init_node = None
-		for node in class_def.body:
-			if isinstance(node, ast.FunctionDef) and node.name == '__init__':
-				init_node = node
-				for stmt in ast.walk(node):
-					if (isinstance(stmt, ast.Call) and
-						isinstance(stmt.func, ast.Attribute) and
-						stmt.func.attr == 'append' and
-						isinstance(stmt.func.value, ast.Subscript) and
-						isinstance(stmt.func.value.value, ast.Attribute) and
-						stmt.func.value.value.attr == 'results' and
-						isinstance(stmt.func.value.value.value, ast.Name) and
-						stmt.func.value.value.value.id == 'self'):
-						slice_node = stmt.func.value.slice
-						if isinstance(slice_node, ast.Constant) and isinstance(slice_node.value, str):
-							append_keys.add(slice_node.value)
-				break
-
-		if not init_keys or init_node is None:
-			return False
-
-		missing = init_keys - append_keys
-		if not missing:
-			self.logger.info("Schema自动校验：init_results 与 __init__ 已对齐")
-			return True
-
-		self.logger.warning(f"Schema自动校验：__init__ 缺失 {len(missing)} 个 results 初始值：{sorted(missing)}")
-
-		lines = content.split('\n')
-		stmt_indent = '    '  # 类方法体默认4空格缩进
-		# 尝试从 __init__ 第一行非空内容推断实际缩进
-		for i in range(init_node.lineno, min(init_node.end_lineno, len(lines))):
-			stripped = lines[i].strip()
-			if stripped and not stripped.startswith('def ') and not stripped.startswith('#'):
-				stmt_indent = lines[i][:len(lines[i]) - len(lines[i].lstrip())]
-				break
-
-		new_code_lines = [f'{stmt_indent}self.results["{k}"].append(0.0)' for k in sorted(missing)]
-		insert_pos = init_node.end_lineno - 1  # 0-based，在 __init__ 最后一行之前插入
-		before = lines[:insert_pos]
-		after = lines[insert_pos:]
-
-		with open(simulator_file_path, 'w', encoding='utf-8') as f:
-			f.write('\n'.join(before + new_code_lines + after))
-
-		self.logger.info(f"Schema自动校验：已自动补全 {len(missing)} 个缺失的初始值")
-		return True
-
-	async def _check_and_fix_code(self, file_path, description_md, modules, file_type="simulator", simulator_content=None):
-		"""
-		统一的代码检查与修复方法（增量修改版）
-		
-		Args:
-			file_path: 文件路径
-			description_md: 设计文档
-			modules: 模块信息
-			file_type: 文件类型（"simulator" 或 "main"）
-			simulator_content: simulator代码内容（仅main文件需要）
-		
-		Returns:
-			list: 问题列表（空列表表示无问题）
-		"""
-		with open(file_path, 'r', encoding='utf-8') as f:
-			code_content = f.read()
-		
-		# ===== 步骤0: 硬性修正缩进和空白行（在LLM检查之前） =====
-		if file_type == "simulator":
-			code_content = self._fix_indentation_and_whitespace(code_content)
-			# 保存修正后的代码
-			with open(file_path, 'w', encoding='utf-8') as f:
-				f.write(code_content)
-			self.logger.info("✓ 已执行硬性缩进和空白行修正")
-
-		import py_compile
-
-		max_check_rounds = 3
-		for round_idx in range(1, max_check_rounds + 1):
-			# 每次循环前先做 py_compile 语法检查
-			compile_ok = True
-			compile_error = ""
-			try:
-				py_compile.compile(file_path, doraise=True)
-				self.logger.info(f"✓ py_compile 语法检查通过 (round {round_idx})")
-			except py_compile.PyCompileError as e:
-				compile_ok = False
-				compile_error = str(e)
-				self.logger.warning(f"⚠️ py_compile 发现语法错误 (round {round_idx}): {compile_error}")
-
-				# ===== 第一层：自动修复（无需 LLM）=====
-				auto_fixed = self._auto_fix_syntax_error(file_path, e)
-				if auto_fixed:
-					# 重新读取修复后的文件，跳过本轮 LLM 直接再验
-					with open(file_path, 'r', encoding='utf-8') as f:
-						code_content = f.read()
-					continue
-
-				# 提取异常信息供后续 prompt 构建使用
-				error_line = getattr(e, 'lineno', None)
-				if not error_line:
-					line_match = re.search(r'line\s+(\d+)', str(e))
-					if line_match:
-						error_line = int(line_match.group(1))
-				error_text = getattr(e, 'text', '')
-				exc_type = e.exc_type_name if hasattr(e, 'exc_type_name') else 'SyntaxError'
-				error_method = self._get_enclosing_method_name(file_path, error_line)
-
-			# 构建检查提示词
-			if compile_error:
-				# ===== 语法错误场景：使用专用修复提示词（不传设计文档等冗余内容）=====
-				context = self._get_syntax_error_context(file_path, error_line)
-				fix_prompt_tmpl = self.prompts.get('fix_syntax_error_prompt')
-				if compile_error and fix_prompt_tmpl:
-					prompt = fix_prompt_tmpl.format(
-						exc_type=exc_type,
-						error_line=error_line,
-						error_text=error_text,
-						compile_error=compile_error,
-						error_context=context,
-						error_method=error_method,
-					)
-			else:
-				# ===== 无语法错误场景 =====
-				# main文件结构固定且高度模板化，py_compile通过即可认为语法和结构正确
-				# 跳过LLM通用检查，避免LLM对嵌套函数(build_new_simulator)的过度修复引入缩进问题
-				if file_type == "main":
-					self.logger.info(f"✓ main文件 py_compile 通过，跳过LLM通用检查以避免过度修复")
-					return []
-
-				# ===== 无专用模板：使用通用检查提示词 =====
-				if file_type == "simulator":
-					prompt = self.prompts['check_and_fix_simulator_prompt'].format(
-						code_content=code_content,
-						description_md=description_md
-					)
-
-			response = await self.generate_llm_response(prompt)
-			if not response:
-				self.logger.warning(f"检查失败 (round {round_idx}): LLM返回空响应")
-				return ["LLM返回空响应"]
-
-			# 检查是否返回OK
-			if 'OK' in response.upper():
-				if compile_ok:
-					self._wait_for_user_confirmation(f"检查代码 ({file_type}) - 无问题")
-					return []  # 无问题且语法通过，结束循环
-				else:
-					self.logger.warning(f"LLM返回OK但py_compile未通过，继续检查...")
-					# 继续下一轮，让LLM再次检查并修复
-					continue
-
-			# 应用修改（语法修复场景下禁止新增方法/函数，防止 LLM 臆造新方法）
-			if self._apply_code_changes(file_path, response, file_type, allow_add_new=False):
-				# 重新读取文件内容，用于下一轮检查
-				with open(file_path, 'r', encoding='utf-8') as f:
-					code_content = f.read()
-				# 修改已应用，继续下一轮做 py_compile + LLM 检查
-				continue
-			else:
-				self.logger.warning(f"无法应用修复内容 (round {round_idx})")
-				return ["无法应用修复内容"]
-
-		# 达到最大循环次数仍未完全解决
-		self.logger.error("❌ 循环检查达到最大次数，仍存在问题")
-		return ["循环检查达到最大次数仍有问题"]
 		
 	async def refine_main_functions(self, main_file_path, simulator_file_path, description_md, modules_config_yaml, main_skipped=False):
 		"""
@@ -2169,20 +1163,53 @@ class CodeArchitectAgent(BaseAgent):
 
 		pairs_prompt = (self.prompts or {}).get('generate_influence_pairs_prompt')
 		if pairs_prompt:
-			# print("[generate_influences] 调用影响对生成提示词...")
-			# 从论文库检索候选影响对（减少top_k避免信息过载）
-			paper_candidates = self._rag_query_paper_candidates(description_md, top_k=3)
-			paper_candidates_context = ""
-			if paper_candidates:
-				paper_candidates_context = "【论文库检索到的参考影响对】\n" + "\n".join(paper_candidates)
-				# 统计实际影响对数量（paper_candidates包含标题行、影响对行和空行）
-				actual_pair_count = sum(1 for s in paper_candidates if s.startswith('- '))
-				self.logger.info(f"步骤0 论文候选检索: {actual_pair_count}条影响对 (来自{len([s for s in paper_candidates if s.startswith('论文:')])}篇论文)")
+			# 步骤0：初始候选生成 —— 优先因果图拓扑路径发现，论文库降为后备
+			rag_cfg = self._rag_get_config()
+			disc_cfg = rag_cfg.get('l0_graph_discovery', {}) if isinstance(rag_cfg, dict) else {}
+			l0_enabled = disc_cfg.get('enabled', True)
+			graph_candidate_chains = ""
+			graph_chains: List[str] = []
 
-			# 步骤1：依据设计文档+modules_config+论文候选先产出粗粒度影响对清单
+			if l0_enabled:
+				# 0a：LLM 抽取英文可量化变量概念（覆盖驱动/机制/结果，跨因果两端），用于图锚定
+				concepts: List[str] = []
+				metrics_prompt = (self.prompts or {}).get('extract_key_metrics_prompt')
+				if metrics_prompt:
+					try:
+						concept_resp = await self.generate_llm_response(
+							metrics_prompt.format(description_md=description_md)
+						)
+						parsed_concepts = parse_json_array(concept_resp)
+						concepts = [str(c).strip() for c in parsed_concepts if isinstance(c, str) and str(c).strip()]
+						concepts = concepts[:int(disc_cfg.get('max_concepts', 5))]
+						self.logger.info(f"步骤0 概念抽取: {concepts}")
+					except Exception as exc:
+						self.logger.warning(f"步骤0 概念抽取失败，将回退论文检索: {exc}")
+				# 0b：因果图拓扑路径发现
+				if concepts:
+					graph_chains = self._rag_discover_graph_chains(
+						concepts, top_k=int(disc_cfg.get('top_k_chains', 5))
+					)
+				if graph_chains:
+					graph_candidate_chains = "【因果图发现的候选传导链（优先级最高）】\n" + "\n".join(graph_chains)
+					self.logger.info(f"步骤0 图路径发现: {len(graph_chains)}条候选传导链")
+
+			# 论文库检索：L0 关闭、或图链条不足时作为后备补充
+			paper_candidates_context = ""
+			fallback_min = int(disc_cfg.get('fallback_min_chains', 3))
+			if (not l0_enabled) or (len(graph_chains) < fallback_min):
+				paper_candidates = self._rag_query_paper_candidates(description_md, top_k=3)
+				if paper_candidates:
+					paper_candidates_context = "【论文库检索到的参考影响对】\n" + "\n".join(paper_candidates)
+					# 统计实际影响对数量（paper_candidates包含标题行、影响对行和空行）
+					actual_pair_count = sum(1 for s in paper_candidates if s.startswith('- '))
+					self.logger.info(f"步骤0 论文候选检索(后备): {actual_pair_count}条影响对 (来自{len([s for s in paper_candidates if s.startswith('论文:')])}篇论文)")
+
+			# 步骤1：依据设计文档+modules_config+图链条+论文候选先产出粗粒度影响对清单
 			response = await self.generate_llm_response(pairs_prompt.format(
 				description_md=description_md,
 				modules_config_yaml=modules_config_yaml,
+				graph_candidate_chains=graph_candidate_chains,
 				paper_candidates_context=paper_candidates_context,
 			))
 			# print(f"[generate_influences] 影响对原始响应: {response}")
@@ -2242,7 +1269,7 @@ class CodeArchitectAgent(BaseAgent):
 			rag_prompt = (self.prompts or {}).get('enrich_influence_pairs_prompt')
 			resolve_prompt = (self.prompts or {}).get('resolve_influence_pair_params_prompt')
 			if structured_pairs and rag_prompt:
-				# 步骤2：并列检索 + 并列生成增强（2a直接证据 + 2b相关声明 + 2c调节变量论文）
+				# 步骤2：检索 + 生成增强（2a直接证据 + 2b相关声明 + 2c调节变量论文）
 				total_pairs = len(structured_pairs)
 				queried_pairs = 0
 				updated_pairs = 0
@@ -2262,53 +1289,93 @@ class CodeArchitectAgent(BaseAgent):
 						cause_module, cause_param, "→", effect_module, effect_param,
 					])).strip()
 
-					# 并列检索 2a/2b/2c
-					direct_evidence, related_evidence, moderator_papers = await asyncio.gather(
-						asyncio.to_thread(self._rag_query_causal_claims, query, 3),
-						asyncio.to_thread(self._rag_query_related_claims, cause_param or cause_module, effect_param or effect_module),
-						asyncio.to_thread(self._rag_query_moderator_papers, cause_param or cause_module, effect_param or effect_module),
-					)
+					# 检索 2a/2b/2c：2a/2b 都访问 causal_claims，串行；2c 访问 papers，与 2a/2b 并行
+					cfg = self._rag_get_config()
+					use_funnel = cfg.get('funnel_enabled', True)
 
-					# 构建简洁的RAG上下文（2a/2b 用 paper_edge_id 全局去重）
-					seen_eids: set[str] = set()
-					context_lines: List[str] = []
-					if direct_evidence:
-						context_lines.append("【直接证据】")
-						for eid, line in direct_evidence:
-							if eid and eid in seen_eids:
-								continue
-							if eid:
-								seen_eids.add(eid)
-							context_lines.append(line)
-					if related_evidence:
-						context_lines.append("\n【相关影响对】")
-						for eid, line in related_evidence:
-							if eid and eid in seen_eids:
-								continue
-							if eid:
-								seen_eids.add(eid)
-							context_lines.append(line)
-					if moderator_papers:
-						context_lines.append("\n【调节/中介变量论文】")
-						context_lines.extend(moderator_papers)
-					rag_context = "\n".join(context_lines)[:2500]
+					if use_funnel:
+						cache_hit = self._rag_cache_get(cause_param, effect_param)
+						if cache_hit is not None:
+							rag_context, counts = cache_hit
+							has_evidence = bool(rag_context)
+						else:
+							jel = self._rag_gate_jel(cause_param or cause_module, cfg['l1_jel'].get('top_n', 2)) \
+								if cfg.get('l1_jel', {}).get('enabled', True) else []
+							pool = self._rag_funnel_retrieve(
+								cause_param or cause_module,
+								effect_param or effect_module,
+								query,
+								jel,
+							)
+							rag_context, picked = self._rag_rank_and_fill(
+								pool,
+								cfg.get('priority_weights', {}),
+								cfg['budget'].get('max_chars', 2500),
+							)
+							counts = {
+								'direct': picked,
+								'related': len(pool) - picked,
+								'moderator': 0,
+								'jel': jel,
+							}
+							self._rag_cache_set(cause_param, effect_param, (rag_context, counts))
+							has_evidence = bool(rag_context)
+					else:
+						moderator_task = asyncio.create_task(asyncio.to_thread(
+							self._rag_query_moderator_papers, cause_param or cause_module, effect_param or effect_module
+						))
+						direct_evidence = await asyncio.to_thread(self._rag_query_causal_claims, query, 3)
+						related_evidence = await asyncio.to_thread(
+							self._rag_query_related_claims, cause_param or cause_module, effect_param or effect_module
+						)
+						moderator_papers = await moderator_task
 
-					has_evidence = bool(direct_evidence or related_evidence or moderator_papers)
+						# 测试输出：便于观察每个 pair 的三类检索结果
+						print(f"[generate_influences] 步骤2 Phase1 pair_id={pair_id} (2a直接证据:{len(direct_evidence)}条, 2b相关影响对:{len(related_evidence)}条, 2c调节论文:{len(moderator_papers)}条), query={query!r}, cause_module={cause_module!r}, effect_module={effect_module!r}")
+
+						# 构建简洁的RAG上下文（2a/2b 用 paper_edge_id 全局去重）
+						seen_eids: set[str] = set()
+						context_lines: List[str] = []
+						if direct_evidence:
+							context_lines.append("【直接证据】")
+							for eid, line in direct_evidence:
+								if eid and eid in seen_eids:
+									continue
+								if eid:
+									seen_eids.add(eid)
+								context_lines.append(line)
+						if related_evidence:
+							context_lines.append("\n【相关影响对】")
+							for eid, line in related_evidence:
+								if eid and eid in seen_eids:
+									continue
+								if eid:
+									seen_eids.add(eid)
+								context_lines.append(line)
+						if moderator_papers:
+							context_lines.append("\n【调节/中介变量论文】")
+							context_lines.extend(moderator_papers)
+						rag_context = "\n".join(context_lines)[:2500]
+						has_evidence = bool(direct_evidence or related_evidence or moderator_papers)
+						counts = {
+							'direct': len(direct_evidence),
+							'related': len(related_evidence),
+							'moderator': len(moderator_papers),
+						}
+
 					return {
 						'pair_id': pair_id,
 						'pair': pair,
 						'rag_context': rag_context,
 						'has_evidence': has_evidence,
-						'evidence_counts': {
-							'direct': len(direct_evidence),
-							'related': len(related_evidence),
-							'moderator': len(moderator_papers),
-						},
+						'evidence_counts': counts,
 					}
 
-				# Phase 1: 并列检索所有证据
-				self.logger.info(f"步骤2 Phase1: 并列检索 {total_pairs} 条影响对的RAG证据...")
-				evidence_results = await asyncio.gather(*[_retrieve_evidence(p) for p in structured_pairs])
+				# Phase 1: 顺序处理每条影响对（每对内部3个RAG查询仍并发），避免多个影响对同时触发HNSW索引冲突
+				self.logger.info(f"步骤2 Phase1: 顺序检索 {total_pairs} 条影响对的RAG证据...")
+				evidence_results = []
+				for pair in structured_pairs:
+					evidence_results.append(await _retrieve_evidence(pair))
 				queried_pairs = sum(1 for r in evidence_results if r['has_evidence'])
 				self.logger.info(f"步骤2 Phase1完成: {queried_pairs}/{total_pairs} 条触发RAG检索")
 
@@ -2503,6 +1570,21 @@ class CodeArchitectAgent(BaseAgent):
 		self.logger.info(f"步骤3: 并列生成 {len(structured_pairs)} 条 influence 块...")
 		block_results = await asyncio.gather(*[_generate_one_block(p) for p in structured_pairs])
 
+		# 前置声明：从磁盘 influence_pairs.json（原始 param）计算纯 cause 根驱动节点，
+		# 建立 {pair_id: slug}。与编码后阶段 3.45 读取同一份磁盘文件，保证 slug 一致。
+		pid_to_slug: Dict[int, str] = {}
+		try:
+			if os.path.exists(pairs_path):
+				with open(pairs_path, 'r', encoding='utf-8') as pf:
+					disk_pairs = json.load(pf)
+				if isinstance(disk_pairs, list):
+					pid_to_slug = exogenous_pair_id_to_slug(disk_pairs)
+			if pid_to_slug:
+				self.logger.info(f"步骤3.5 外生变量前置声明: 纯cause块 pair_id={sorted(pid_to_slug.keys())}")
+		except Exception as exc:
+			self.logger.warning(f"计算外生变量纯cause节点失败，跳过前置声明: {exc}")
+			pid_to_slug = {}
+
 		# 统一收集结果并写入 influences.yaml
 		for result in block_results:
 			pair_id = result['pair_id']
@@ -2518,6 +1600,18 @@ class CodeArchitectAgent(BaseAgent):
 				source_module = str(source.get('module') or '').strip()
 			else:
 				source_module = str(source or '').strip()
+
+			# 前置声明：若该块的 cause 是纯 cause 根驱动，将其来自 source 模块的输入
+			# 重定向到 context.exogenous.<slug>（原 path 降级为 fallback，保证回退兼容）。
+			try:
+				pid_key = int(pair_id) if pair_id is not None else None
+			except (TypeError, ValueError):
+				pid_key = None
+			if pid_key is not None and pid_key in pid_to_slug:
+				if apply_exogenous_source_override(block_data, pid_to_slug[pid_key], source_module):
+					self.logger.info(
+						f"  ↳ pair_id={pair_id} 已声明外生变量输入: context.exogenous.{pid_to_slug[pid_key]}"
+					)
 			identity = f"{source_module}->{target}:{name}"
 			filtered_influences = []
 			for existing in previous_yaml_doc.get('influences', []):
@@ -2560,172 +1654,7 @@ class CodeArchitectAgent(BaseAgent):
 			self.logger.info(f"✓ influences.yaml 已更新: {fpath}")
 		return fpath
 
-	def _rag_query_causal_claims(self, query_text: str, top_k: int = 3, max_distance: float = 1.0) -> List[Tuple[str, str]]:
-		query_text = (query_text or '').strip()
-		if not query_text:
-			return []
-		try:
-			chroma_client = chromadb.PersistentClient(path=self._rag_db_path)
-			collection = chroma_client.get_collection(name='causal_claims')
-		except Exception as exc:
-			self.logger.debug(f"RAG跳过：无法连接Chroma ({exc})")
-			return []
-		client = OpenAI(api_key=self._rag_api_key, base_url=self._rag_base_url)
-		embedding = self._rag_embed(client, query_text)
-		if not embedding:
-			return []
-		try:
-			results = collection.query(
-				query_embeddings=[embedding],
-				n_results=top_k,
-				include=['documents', 'metadatas', 'distances'],
-			)
-		except Exception as exc:
-			self.logger.debug(f"RAG查询失败: {exc}")
-			return []
-		documents = results.get('documents', [[]])[0]
-		metadatas = results.get('metadatas', [[]])[0]
-		distances = results.get('distances', [[]])[0]
-		formatted: List[Tuple[str, str]] = []
-		for doc, meta, dist in zip(documents, metadatas, distances):
-			if not doc or dist > max_distance:
-				continue
-			snippet = (doc[:600] + ('...' if len(doc) > 600 else '')).strip()
-			if meta:
-				snippet += f"\n(meta: {meta})"
-			snippet += f"\n(distance={dist})"
-			eid = (meta or {}).get('paper_edge_id', '')
-			formatted.append((eid, snippet))
-		return formatted
-	def _rag_query_paper_candidates(self, query_text: str, top_k: int = 3, max_distance: float = 1.0) -> List[str]:
-		"""从papers集合向量检索相关论文，提取候选影响对文本。
-		"""
-		query_text = (query_text or '').strip()
-		if not query_text:
-			return []
-		try:
-			chroma_client = chromadb.PersistentClient(path=self._rag_db_path)
-			collection = chroma_client.get_collection(name='papers')
-		except Exception:
-			return []
-		client = OpenAI(api_key=self._rag_api_key, base_url=self._rag_base_url)
-		embedding = self._rag_embed(client, query_text)
-		if not embedding:
-			return []
-		try:
-			results = collection.query(
-				query_embeddings=[embedding],
-				n_results=top_k,
-				include=['metadatas', 'distances'],
-			)
-		except Exception:
-			return []
-		metas = results.get('metadatas', [[]])[0]
-		dists = results.get('distances', [[]])[0]
 
-		formatted: List[str] = []
-		total_pairs = 0
-		for meta, dist in zip(metas, dists):
-			if not meta or dist > max_distance:
-				continue
-			title = meta.get('title', '')
-			year = meta.get('year', '')
-			claim_list = meta.get('claim_list', [])
-			if isinstance(claim_list, str):
-				try:
-					claim_list = json.loads(claim_list)
-				except Exception:
-					claim_list = []
-			if not claim_list:
-				continue
-
-			# 去重
-			seen: set[str] = set()
-			unique_claims: List[str] = []
-			for claim in claim_list:
-				if claim and claim not in seen:
-					seen.add(claim)
-					unique_claims.append(claim)
-
-			if unique_claims:
-				formatted.append(f"论文: {title} ({year}, distance={dist:.3f})")
-				for claim in unique_claims:
-					formatted.append(f"- {claim}")
-					total_pairs += 1
-				formatted.append("")
-
-		print(f"[RAG-papers] 从 {len([s for s in formatted if s.startswith('论文:')])} 篇论文提取 {total_pairs} 条候选影响对")
-		return formatted
-
-	def _rag_query_related_claims(self, cause: str, effect: str, max_per_side: int = 2) -> List[Tuple[str, str]]:
-		"""检索包含相同cause或相同effect的其他因果声明。"""
-		if not cause and not effect:
-			return []
-		try:
-			chroma_client = chromadb.PersistentClient(path=self._rag_db_path)
-			collection = chroma_client.get_collection(name='causal_claims')
-		except Exception:
-			return []
-		lines: List[Tuple[str, str]] = []
-		for field, value in [('cause', cause), ('effect', effect)]:
-			if not value:
-				continue
-			try:
-				res = collection.get(
-					where={field: {'$eq': value}},
-					limit=max_per_side,
-					include=['documents', 'metadatas'],
-				)
-				for doc, meta in zip(res.get('documents', []), res.get('metadatas', [])):
-					if not meta:
-						continue
-					c = meta.get('cause', '')
-					e = meta.get('effect', '')
-					if c == cause and e == effect:
-						continue
-					snippet = (doc or '')[:300]
-					eid = meta.get('paper_edge_id', '')
-					line = f"- {c} -> {e} | 方向:{meta.get('direction','')} 确定性:{meta.get('certainty','')} | {snippet}"
-					lines.append((eid, line))
-			except Exception:
-				continue
-		# print(f"[RAG-related] 检索到 {len(lines)} 条相关声明：\n" + "\n".join([l for _, l in lines[:5]]))
-		return lines
-
-	def _rag_query_moderator_papers(self, cause: str, effect: str, top_k: int = 2, max_distance: float = 1.0) -> List[str]:
-		"""检索可能包含调节/中介变量的论文。"""
-		query = f"{cause} {effect} mediating moderating interaction".strip()
-		if not query:
-			return []
-		try:
-			chroma_client = chromadb.PersistentClient(path=self._rag_db_path)
-			collection = chroma_client.get_collection(name='papers')
-		except Exception:
-			return []
-		client = OpenAI(api_key=self._rag_api_key, base_url=self._rag_base_url)
-		embedding = self._rag_embed(client, query)
-		if not embedding:
-			return []
-		try:
-			results = collection.query(
-				query_embeddings=[embedding],
-				n_results=top_k,
-				include=['documents', 'metadatas', 'distances'],
-			)
-		except Exception:
-			return []
-		docs = results.get('documents', [[]])[0]
-		metas = results.get('metadatas', [[]])[0]
-		dists = results.get('distances', [[]])[0]
-		lines = []
-		for doc, meta, dist in zip(docs, metas, dists):
-			if dist > max_distance:
-				continue
-			title = (meta or {}).get('title', '')
-			snippet = (doc or '')[:300]
-			lines.append(f"- {title} (distance={dist:.3f}): {snippet}")
-		# print(f"[RAG-moderator] 检索到 {len(lines)} 条论文：\n" + "\n".join(lines[:5]))
-		return lines
 
 	async def generate_config_file(self, config_filename, description_md, modules_config_yaml, previous_configs=None):
 		"""
@@ -2890,7 +1819,7 @@ class CodeArchitectAgent(BaseAgent):
 			# 确保 data.agent_profile_path 指向独立文件
 			data_cfg = sim_config.setdefault('data', {})
 			if isinstance(data_cfg, dict):
-				expected_path = f"config/{self.simulation_name}/agent_profile.yaml"
+				expected_path = f"projects/{self.simulation_name}/config/agent_profile.yaml"
 				if data_cfg.get('agent_profile_path') != expected_path:
 					data_cfg['agent_profile_path'] = expected_path
 					with open(sim_path, 'w', encoding='utf-8') as f:
@@ -2965,13 +1894,13 @@ class CodeArchitectAgent(BaseAgent):
 			for filename in os.listdir(self.config_dir):
 				if filename in PROJECT_FILE_MAP:
 					key = PROJECT_FILE_MAP[filename]
-					data_cfg[key] = f"config/{self.simulation_name}/{filename}"
+					data_cfg[key] = f"projects/{self.simulation_name}/config/{filename}"
 					matched_files.append(filename)
 
 			# 3.5 特殊：存在 agent_profile.yaml 时加入 agent_profile_path，
 			# 同时根据 agent_profile 里的 role 列表写入 role 级 prompts/actions 路径
 			if os.path.exists(os.path.join(self.config_dir, 'agent_profile.yaml')):
-				data_cfg['agent_profile_path'] = f"config/{self.simulation_name}/agent_profile.yaml"
+				data_cfg['agent_profile_path'] = f"projects/{self.simulation_name}/config/agent_profile.yaml"
 				matched_files.append('agent_profile.yaml')
 				try:
 					agent_profile_data = self._load_agent_profile_yaml(os.path.join(self.config_dir, 'agent_profile.yaml'))
@@ -2986,8 +1915,8 @@ class CodeArchitectAgent(BaseAgent):
 							role_name = str(extra.get('role') or agent_def.get('name') or '').strip()
 							if not role_name:
 								continue
-							data_cfg[f'{role_name}_prompt_path'] = f"config/{self.simulation_name}/prompts/{role_name}.yaml"
-							data_cfg[f'{role_name}_actions_path'] = f"config/{self.simulation_name}/actions/{role_name}.yaml"
+							data_cfg[f'{role_name}_prompt_path'] = f"projects/{self.simulation_name}/config/prompts/{role_name}.yaml"
+							data_cfg[f'{role_name}_actions_path'] = f"projects/{self.simulation_name}/config/actions/{role_name}.yaml"
 						# 清理旧的 resident_* 平铺键，避免根目录兼容文件继续被引用
 						for legacy_key in ('resident_prompt_path', 'resident_actions_path'):
 							if legacy_key in data_cfg:
@@ -3252,26 +2181,6 @@ class CodeArchitectAgent(BaseAgent):
 		except Exception as e:
 			return f"（读取 agent_profile.yaml 失败: {e}）"
 
-	def _read_relevant_api_docs(self, config_filename):
-		"""根据配置文件名读取相关接口文件（src/interfaces）。
-		
-		Args:
-			config_filename: 配置文件名
-		
-		Returns:
-			str: 格式化的接口文件内容字符串（精简版）
-		"""
-		config_to_modules = {
-			'simulation_config.yaml': ['time', 'map', 'population'],
-			'jobs_config.yaml': ['job_market', 'resident'],
-			'resident_actions.yaml': ['resident', 'social_network'],
-			'towns_data.json': ['towns', 'map'],
-			'government_prompts.yaml': ['government'],
-			'rebels_prompts.yaml': ['rebels'],
-			'residents_prompts.yaml': ['resident', 'social_network'],
-		}
-		relevant_modules = config_to_modules.get(config_filename, [])
-		return self._read_interface_docs_for_modules(relevant_modules, max_chars_per_file=1500)
 
 	async def _ask_user_retry_action(self, step_name, file_path=None):
 		"""当某个步骤达到最大重试次数后，询问用户是继续重试、重新生成还是放弃。
@@ -3334,646 +2243,9 @@ class CodeArchitectAgent(BaseAgent):
 			return 'abort'
 		return 'regenerate'
 
-	async def _extract_module_api_docs_from_error(self, error_traceback):
-		"""
-		从错误堆栈中提取相关模块和配置文件
-		使用LLM智能分析错误信息，判断需要哪些接口文件和配置文件
-		
-		Args:
-			error_traceback: 错误堆栈信息
-		
-		Returns:
-			tuple: (api_docs_str, config_files_dict)
-				- api_docs_str: 接口文件内容字符串
-				- config_files_dict: 配置文件内容字典 {文件名: 内容}
-		"""
-		def _camel_to_snake(name: str) -> str:
-			if not name:
-				return ""
-			# e.g. SocialNetwork -> social_network
-			s1 = re.sub(r'(.)([A-Z][a-z]+)', r'\1_\2', name)
-			return re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
 
-		def _normalize_module_token(token: str) -> str:
-			"""将 token（可能是文件名/模块名/CamelCase/旧md名）归一化为 module_name（如 map, social_network）。"""
-			base = (token or "").strip()
-			if not base:
-				return ""
-			# 去扩展名
-			base = re.sub(r'\.(py|md|txt|yaml|yml)$', '', base, flags=re.IGNORECASE)
-			# 去 i 前缀（接口文件常见）
-			if base.startswith('i') and len(base) > 1 and base[1].isalpha() and base[1].islower():
-				base = base[1:]
-			# CamelCase -> snake_case
-			if re.match(r'^[A-Z][A-Za-z0-9]*$', base):
-				base = _camel_to_snake(base)
-			return base.strip().lower()
 
-		# 扫描 src/interfaces，动态生成“模块->接口文件”索引
-		interfaces_dir = self._interfaces_dir()
-		available_iface_files: List[str] = []
-		if os.path.isdir(interfaces_dir):
-			try:
-				available_iface_files = sorted(
-					[f for f in os.listdir(interfaces_dir) if f.startswith('i') and f.endswith('.py')]
-				)
-			except Exception:
-				available_iface_files = []
-
-		module_mapping_str = "\n".join(
-			[f"- {f[1:-3]}: {f}" for f in available_iface_files]
-		) or "（未找到接口文件）"
-		
-		# 读取配置文件和提示词文件列表
-		config_files_list = ""
-		available_config_files = []
-		if os.path.exists(self.config_dir):
-			try:
-				files = os.listdir(self.config_dir)
-				available_config_files = [f for f in files if os.path.isfile(os.path.join(self.config_dir, f))]
-				if available_config_files:
-					config_files_list = "配置目录中的文件：\n" + "\n".join([f"- {f}" for f in sorted(available_config_files)])
-				else:
-					config_files_list = "（配置目录为空）"
-			except Exception as e:
-				self.logger.warning(f"读取配置目录失败: {e}")
-				config_files_list = "（无法读取配置目录）"
-		else:
-			config_files_list = "（配置目录不存在）"
-		
-		# 使用LLM分析错误信息
-		prompt = self.prompts['analyze_error_modules_prompt'].format(
-			error_traceback=error_traceback,
-			module_mapping=module_mapping_str,
-			config_files_list=config_files_list
-		)
-		
-		response = await self.generate_llm_response(prompt)
-		relevant_api_files = []
-		relevant_config_files = []
-		
-		if response:
-			# 尝试从LLM响应中提取JSON对象
-			json_match = re.search(r'\{[\s\S]*?\}', response)
-			if json_match:
-				try:
-					result = json.loads(json_match.group(0))
-					relevant_api_files = result.get('api_docs', [])
-					relevant_config_files = result.get('config_files', [])
-					self.logger.info(f"✓ LLM分析识别到 {len(relevant_api_files)} 个接口文件: {relevant_api_files}")
-					self.logger.info(f"✓ LLM分析识别到 {len(relevant_config_files)} 个配置文件: {relevant_config_files}")
-				except json.JSONDecodeError as e:
-					self.logger.warning(f"解析LLM返回的JSON失败: {e}")
-		else:
-			self.logger.warning("LLM返回空响应，使用兜底方案")
-		
-		# 兜底方案：如果LLM分析失败，使用正则匹配（从类名推断模块名）
-		if not relevant_api_files:
-			module_pattern = r"'(\w+)'\s+object\s+has\s+no\s+attribute"
-			matches = re.findall(module_pattern, error_traceback)
-			relevant_api_files = [_normalize_module_token(m) for m in matches if _normalize_module_token(m)]
-			if relevant_api_files:
-				self.logger.info(f"✓ 正则匹配识别到 {len(relevant_api_files)} 个接口文件: {relevant_api_files}")
-		
-		# 读取相关模块的接口文件（按需在 interfaces 目录中动态查找）
-		api_docs_str = ""
-		loaded_files: set[str] = set()
-		for token in set(relevant_api_files):  # 去重
-			module_name = _normalize_module_token(token)
-			if not module_name:
-				continue
-			for iface_path in self._find_interface_files(module_name):
-				iface_file = os.path.basename(iface_path)
-				if iface_file in loaded_files:
-					continue
-				loaded_files.add(iface_file)
-				try:
-					with open(iface_path, 'r', encoding='utf-8') as f:
-						content = f.read()
-					api_docs_str += f"\n## {module_name} 模块接口 ({iface_file})\n{content}\n"
-					self.logger.info(f"✓ 已加载接口文件: {iface_file} (module={module_name})")
-				except Exception as e:
-					self.logger.warning(f"读取接口文件失败 {iface_file}: {e}")
-		
-		# 读取相关的配置文件
-		config_files_dict = {}
-		for config_file in set(relevant_config_files):  # 去重
-			# 验证文件确实存在于可用列表中
-			if config_file in available_config_files:
-				config_path = os.path.join(self.config_dir, config_file)
-				try:
-					with open(config_path, 'r', encoding='utf-8') as f:
-						content = f.read()
-						config_files_dict[config_file] = content
-						self.logger.info(f"✓ 已读取配置文件: {config_file}")
-				except Exception as e:
-					self.logger.warning(f"读取配置文件失败 {config_file}: {e}")
-			else:
-				self.logger.warning(f"配置文件不在可用列表中: {config_file}")
-		
-		return api_docs_str, config_files_dict
-
-	async def _handle_file_not_found_error(self, error_traceback, config_path):
-		"""
-		处理 FileNotFoundError
-		"""
-		self.logger.info("处理 FileNotFoundError...")
-		# 从错误堆栈中解析文件路径
-		match = re.search(r"FileNotFoundError: \[Errno 2\] No such file or directory: '(.+?)'", error_traceback)
-		if not match:
-			return False
-
-		file_path = match.group(1)
-		self.logger.info(f"检测到缺失文件: {file_path}")
-
-		# 检查文件是否真的不存在
-		if os.path.exists(file_path):
-			self.logger.info(f"文件 {file_path} 实际存在，跳过处理。")
-			return False
-		
-		# 判断文件类型并调用相应函数
-		description_md = ""
-		modules_config_yaml = ""
-		config_files = {}
-		if config_path:
-			description_md_path = os.path.join(os.path.dirname(config_path), 'description.md')
-			modules_config_yaml_path = os.path.join(os.path.dirname(config_path), 'modules_config.yaml')
-			with open(description_md_path, 'r', encoding='utf-8') as f:
-				description_md = f.read()
-			if os.path.exists(modules_config_yaml_path):
-				with open(modules_config_yaml_path, 'r', encoding='utf-8') as f:
-					modules_config_yaml = f.read()
-					config_files['modules_config.yaml'] = modules_config_yaml
-		filename = os.path.basename(file_path)
-		if 'prompt' in filename:
-			await self.generate_role_files_from_agent_profile(description_md, config_files)
-		else:
-			await self.generate_config_file(filename, description_md, modules_config_yaml)
-		
-		return True
-
-	async def fix_runtime_errors(self, error_message, error_traceback, main_file_path, simulator_file_path, config_path, max_attempts=3):
-		"""
-		运行时错误修复函数 - 使用增量修改方式
-		支持同时修复 main 和 simulator 文件
-		
-		Args:
-			error_message: 错误信息
-			error_traceback: 完整的错误堆栈
-			main_file_path: main文件路径
-			simulator_file_path: simulator文件路径
-			max_attempts: 最大修复尝试次数
-		
-		Returns:
-			bool: 是否修复成功
-		"""
-		self.logger.info("🔧 开始修复运行时错误...")
-
-		# 首先检查是否是 FileNotFoundError
-		if "FileNotFoundError" in error_message:
-			if await self._handle_file_not_found_error(error_traceback, config_path):
-				self.logger.info("✓ 已成功处理 FileNotFoundError 并生成了缺失文件。")
-				return True # 假设文件生成后问题就解决了，直接返回成功
-
-		
-		# 读取当前代码
-		with open(main_file_path, 'r', encoding='utf-8') as f:
-			main_content = f.read()
-		with open(simulator_file_path, 'r', encoding='utf-8') as f:
-			simulator_content = f.read()
-		
-		# 从错误堆栈中提取相关模块的接口文件和配置文件（使用LLM智能分析）
-		module_interface_docs, config_files_dict = await self._extract_module_api_docs_from_error(error_traceback)
-
-		# config_files_str为所有相关配置文件的具体内容
-		config_files_str = ""
-		if config_files_dict:
-			config_files_str = "\n相关配置文件：\n"
-			for filename, content in config_files_dict.items():
-				config_files_str += f"\n{'='*60}\n"
-				config_files_str += f"配置文件: {filename}\n"
-				config_files_str += f"{'='*60}\n{content}\n"
-		
-		for attempt in range(1, max_attempts + 1):
-			self.logger.info(f"第 {attempt}/{max_attempts} 次修复尝试...")
-			
-			# 提示词
-			prompt = self.prompts['fix_runtime_errors_prompt'].format(
-				error_traceback=error_traceback,
-				main_file_path=main_file_path,
-				main_content=main_content,
-				simulator_file_path=simulator_file_path,
-				simulator_content=simulator_content,
-				module_interface_docs=module_interface_docs,
-				config_files_str=config_files_str
-			)
-			
-			response = await self.generate_llm_response(prompt)
-			if not response:
-				self.logger.error("LLM未返回响应")
-				continue
-			
-			# 尝试应用修复
-			if self._apply_runtime_fix(response, main_file_path, simulator_file_path):
-				self.logger.info(f"✓ 修复完成")
-				return True
-			else:
-				self.logger.warning(f"⚠️ 第 {attempt} 次修复失败")
-		
-		self.logger.error("❌ 修复失败")
-		return False
 	
-	def _apply_runtime_fix(self, response, main_file_path, simulator_file_path):
-		"""
-		应用运行时错误修复（仅支持增量修改）
-		
-		只支持JSON增量修改格式，不支持完整代码块替换。
-		如果LLM返回的不是JSON增量修改格式，则报错。
-		
-		Args:
-			response: LLM返回的修复内容
-			main_file_path: main文件路径
-			simulator_file_path: simulator文件路径
-		
-		Returns:
-			bool: 是否成功应用修复
-		"""
-		# 只支持策略：JSON增量修改
-		# 查找带有文件标记的JSON块
-		main_json_pattern = r'```json\s*#\s*===\s*MAIN\s*FILE\s*===\s*(\{[\s\S]*?\})\s*```'
-		main_json_match = re.search(main_json_pattern, response, re.DOTALL | re.IGNORECASE)
-		
-		# 提取 SIMULATOR FILE 的JSON修改
-		simulator_json_pattern = r'```json\s*#\s*===\s*SIMULATOR\s*FILE\s*===\s*(\{[\s\S]*?\})\s*```'
-		simulator_json_match = re.search(simulator_json_pattern, response, re.DOTALL | re.IGNORECASE)
-		
-		# 提取 CONFIG FILES 的JSON修改
-		config_json_pattern = r'```json\s*#\s*===\s*CONFIG\s*FILES\s*===\s*(\{[\s\S]*?\})\s*```'
-		config_json_match = re.search(config_json_pattern, response, re.DOTALL | re.IGNORECASE)
 
 
-		# 如果没有找到带注释的JSON块，尝试通用匹配并根据内容判断类型
-		if not (main_json_match or simulator_json_match or config_json_match):
-			generic_json_pattern = r'```json\s*(\{[\s\S]*?\})\s*```'
-			generic_json_matches = re.finditer(generic_json_pattern, response, re.DOTALL)
-			
-			for match in generic_json_matches:
-				try:
-					json_str = match.group(1)
-					parsed_json = json.loads(json_str)
-					if "functions" in parsed_json and not main_json_match:
-						main_json_match = match
-						self.logger.info("通过内容识别到 MAIN FILE JSON")
-					elif "methods" in parsed_json and not simulator_json_match:
-						simulator_json_match = match
-						self.logger.info("通过内容识别到 SIMULATOR FILE JSON")
-					elif "config_files" in parsed_json and not config_json_match:
-						config_json_match = match
-						self.logger.info("通过内容识别到 CONFIG FILES JSON")
-				except json.JSONDecodeError:
-					continue
 
-		main_fixed = False
-		simulator_fixed = False
-		config_fixed = False
-		
-		# 应用main文件的增量修改
-		if main_json_match:
-			try:
-				json_content = main_json_match.group(1)
-				json_block = f"```json\n{json_content}\n```"
-				if self._apply_code_changes(main_file_path, json_block, "main"):
-					self.logger.info("✓ 已修复 main 文件（增量修改）")
-					main_fixed = True
-				else:
-					self.logger.error("❌ 应用main文件增量修改失败")
-			except Exception as e:
-				self.logger.error(f"❌ 应用main文件修复失败: {e}")
-		
-		# 应用simulator文件的增量修改
-		if simulator_json_match:
-			try:
-				json_content = simulator_json_match.group(1)
-				# 构造完整的JSON代码块供_apply_code_changes处理
-				json_block = f"```json\n{json_content}\n```"
-				if self._apply_code_changes(simulator_file_path, json_block, "simulator"):
-					self.logger.info("✓ 已修复 simulator 文件（增量修改）")
-					simulator_fixed = True
-				else:
-					self.logger.error("❌ 应用simulator文件增量修改失败")
-			except Exception as e:
-				self.logger.error(f"❌ 应用simulator文件修复失败: {e}")
-		
-		if config_json_match:
-			self.logger.info(f"尝试解析配置文件JSON内容：{config_json_match.group(1)}")
-			try:
-				config_json = json.loads(config_json_match.group(1))
-				files_to_modify = config_json.get('config_files', [])
-				config_fixed = True
-				for file_info in files_to_modify:
-					file_name = file_info.get('file_name')
-					modifications = file_info.get('modifications', [])
-					file_path = os.path.join(self.config_dir, file_name)
-					if not os.path.exists(file_path):
-						self.logger.warning(f"配置/提示词文件不存在，将基于 modifications 创建: {file_path}")
-					result = self._apply_modifications(file_path, modifications, create_if_missing=True)
-					if not result or not result.get('changes'):
-						config_fixed = False
-			except Exception as e:
-				self.logger.error(f"❌ 应用配置文件修复失败: {e}")
-				config_fixed = False
-
-		# 新增：配置文件完整重写模式（用于修复YAML/JSON语法错误）
-		rewrite_fixed = False
-		rewrite_yaml_pattern = r'```yaml\s*#\s*===\s*REWRITE\s*FILE:\s*(.+?)\s*===\s*([\s\S]*?)```'
-		rewrite_json_pattern = r'```json\s*#\s*===\s*REWRITE\s*FILE:\s*(.+?)\s*===\s*([\s\S]*?)```'
-
-		for pattern in [rewrite_yaml_pattern, rewrite_json_pattern]:
-			for match in re.finditer(pattern, response, re.DOTALL | re.IGNORECASE):
-				file_name = match.group(1).strip()
-				new_content = match.group(2).strip()
-				file_path = os.path.join(self.config_dir, file_name)
-
-				# 先验证新内容语法
-				try:
-					if file_path.endswith(('.yaml', '.yml')):
-						yaml.safe_load(new_content)
-					elif file_path.endswith('.json'):
-						json.loads(new_content)
-
-					with open(file_path, 'w', encoding='utf-8') as f:
-						f.write(new_content + '\n')
-					rewrite_fixed = True
-					self.logger.info(f"✓ 已重写配置文件: {file_name}")
-				except Exception as e:
-					self.logger.error(f"❌ 重写的配置文件语法仍错误或未通过验证: {file_name}, {e}")
-
-		# 如果成功应用了增量修改或重写，返回成功
-		if main_fixed or simulator_fixed or config_fixed or rewrite_fixed:
-			return True
-
-		# 所有策略都失败，直接报错
-		self.logger.error("❌ 未能从响应中提取有效的JSON增量修改内容")
-		self.logger.debug(f"LLM响应预览: {response[:500]}")
-		return False
-
-	async def modify_file_sequentially(self, diagnosis_path, config_dir, design_doc=""):
-		"""
-		根据 diagnosis_path 路径依次修改配置文件或代码文件。
-		diagnosis_path: 包含诊断结果的 JSON 文件路径
-		"""
-		diagnosis = None
-		if not diagnosis_path or not os.path.exists(diagnosis_path):
-			self.logger.error(f"诊断文件不存在: {diagnosis_path}")
-			return []
-		try:
-			with open(diagnosis_path, 'r', encoding='utf-8') as f:
-				diagnosis_content = f.read()
-			diagnosis = json.loads(diagnosis_content)
-		except Exception as e:
-			self.logger.error(f"诊断文件解析失败: {e}")
-			return []
-
-		files_to_modify = diagnosis.get('files_to_modify', [])
-		if not files_to_modify:
-			self.logger.info("无需修改任何文件")
-			return []
-
-		results = []
-		for file_info in files_to_modify:
-			file_name = file_info.get('file_name')
-			file_type = file_info.get('file_type')
-			reason = file_info.get('modification', '') # Changed from 'reason'
-
-			self.logger.info(f"正在处理文件 : {file_name} (类型: {file_type})")
-			self.logger.info(f"修改原因: {reason}")
-
-			if file_type == 'simulator':
-				simulator_file_name = f'simulator_{self.simulation_name}.py'
-				file_path = os.path.join(self.simulator_output_dir, simulator_file_name)
-			else:
-				file_path = os.path.join(config_dir, file_name)
-					
-			if not os.path.exists(file_path):
-				self.logger.warning(f"文件不存在: {file_path}")
-				continue
-
-			# 读取
-			with open(file_path, 'r', encoding='utf-8') as f:
-				current_content = f.read()
-
-			if file_type == 'simulator':
-				# 使用专门为修改代码设计的prompt
-				prompt = self.prompts['generate_simulator_modifications_prompt'].format(
-					diagnosis_result=json.dumps(file_info, ensure_ascii=False),
-					current_code=current_content[:8000], # 代码可以给多一点
-					design_doc=design_doc
-				)
-				response = await self.generate_llm_response(prompt)
-				# 调用 apply_code_changes
-				if response:
-					result = self._apply_code_changes(file_path, response, "simulator")
-					results.append({'file_name': simulator_file_name, 'result': 'success' if result else 'failed'})
-					if result:
-						self.logger.info(f"✓ {simulator_file_name} 已修改")
-					else:
-						self.logger.error(f"✗ {simulator_file_name} 修改失败")
-
-			else: # config or prompt files
-				# 生成修改方案
-				prompt = self.prompts['generate_config_modifications_prompt'].format(
-					diagnosis_result=json.dumps(file_info, ensure_ascii=False),
-					current_config=current_content[:5000],
-					design_doc=design_doc
-				)
-
-				response = await self.generate_llm_response(prompt)
-
-				# 解析并应用修改
-				json_match = re.search(r'```json\s*(\{[\s\S]*?\})\s*```', response, re.DOTALL)
-				if json_match:
-					try:
-						modifications = json.loads(json_match.group(1))
-						modification_list = modifications.get('modifications', [])
-
-						if modification_list:
-							result = self._apply_modifications(file_path, modification_list)
-							results.append({'file_name': file_name, 'result': result})
-							self.logger.info(f"✓ {file_name} 已修改")
-
-					except json.JSONDecodeError as e:
-						self.logger.error(f"解析失败 {file_name}: {e}")
-
-		return results
-
-	def _apply_modifications(self, file_path, modifications, create_if_missing=False):
-		"""
-		精确修改文件中的指定参数，保持文件结构不变。
-		支持 yaml/json/文本三种类型的参数替换。
-		支持通过点分路径（e.g. 'a.b.c'）进行深层嵌套修改和新增。
-
-		Args:
-			create_if_missing: 文件不存在时，根据 modifications 创建新文件（仅对 yaml/json 有效）
-		"""
-		changes = []
-		# 文件不存在时，根据 create_if_missing 初始化空结构
-		if not os.path.exists(file_path):
-			if not create_if_missing:
-				return {'changes': [], 'error': f'文件不存在: {file_path}'}
-			self.logger.info(f"基于 modifications 创建新文件: {file_path}")
-			original_content = "{}" if file_path.endswith('.json') else ""
-			# yaml 用空字符串，yaml.safe_load('') -> None，下方会处理
-		else:
-			# 备份原文件
-			backup_path = file_path + f'.backup'
-			shutil.copy(file_path, backup_path)
-			with open(file_path, 'r', encoding='utf-8') as f:
-				original_content = f.read()
-
-		def _set_nested_value(data_dict, path, value):
-			keys = path.split('.')
-			temp_dict = data_dict
-			for key in keys[:-1]:
-				# 如果路径中的某个键对应的值不是字典，就创建一个新字典
-				if not isinstance(temp_dict.get(key), dict):
-					temp_dict[key] = {}
-				temp_dict = temp_dict[key]
-			
-			last_key = keys[-1]
-			old_value = temp_dict.get(last_key)
-			temp_dict[last_key] = value
-			return old_value
-
-		# YAML 文件
-		if file_path.endswith(('.yaml', '.yml')):
-			try:
-				data = yaml.safe_load(original_content)
-			except yaml.YAMLError as e:
-				self.logger.error(f"配置文件已损坏，无法应用参数级修改: {file_path}, {e}")
-				return {'changes': [], 'error': f'配置文件语法已损坏，需重写修复: {e}'}
-			if data is None:
-				data = {}
-			for mod in modifications:
-				param = mod.get('parameter')
-				new_value = mod.get('value')
-				if param:
-					old_value = _set_nested_value(data, param, new_value)
-					changes.append(f"{param}: {old_value} -> {new_value}")
-			with open(file_path, 'w', encoding='utf-8') as f:
-				yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
-		# JSON 文件
-		elif file_path.endswith('.json'):
-			data = json.loads(original_content) if original_content.strip() else {}
-			for mod in modifications:
-				param = mod.get('parameter')
-				new_value = mod.get('value')
-				if param:
-					old_value = _set_nested_value(data, param, new_value)
-					changes.append(f"{param}: {old_value} -> {new_value}")
-			with open(file_path, 'w', encoding='utf-8') as f:
-				json.dump(data, f, indent=2, ensure_ascii=False)
-		# 纯文本文件（如提示词）
-		else:
-			content = original_content
-			for mod in modifications:
-				old_text = mod.get('parameter')
-				new_text = mod.get('value')
-				if old_text in content:
-					content = content.replace(old_text, new_text)
-					changes.append(f"已替换文本片段")
-			with open(file_path, 'w', encoding='utf-8') as f:
-				f.write(content)
-
-		return {'changes': changes}
-
-	async def apply_user_adjustment(self, requirements_text):
-		"""
-		应用用户的机制调整需求
-		
-		Args:
-			requirements_text: 格式化的需求字符串 ("1. 需求1\n2. 需求2")
-		
-		Returns:
-			bool: 是否成功应用
-		"""
-		self.logger.info(f"应用用户调整:\n{requirements_text}")
-		
-		try:
-			# 读取当前代码文件
-			simulator_path = None
-			main_path = None
-			
-			# 查找 simulator 和 main 文件
-			if os.path.exists(self.simulator_output_dir):
-				simulator_file = f'simulator_{self.simulation_name}.py'
-				simulator_path = os.path.join(self.simulator_output_dir, simulator_file)
-			
-			if os.path.exists(self.main_output_dir):
-				main_file = f'main_{self.simulation_name}.py'
-				main_path = os.path.join(self.main_output_dir, main_file)
-			
-			if not simulator_path or not os.path.exists(simulator_path):
-				self.logger.error(f"Simulator文件不存在: {simulator_path}")
-				return False
-				
-			if not main_path or not os.path.exists(main_path):
-				self.logger.error(f"Main文件不存在: {main_path}")
-				return False
-			
-			# 读取代码内容
-			with open(simulator_path, 'r', encoding='utf-8') as f:
-				simulator_content = f.read()
-			with open(main_path, 'r', encoding='utf-8') as f:
-				main_content = f.read()
-			
-			# 读取配置文件
-			configs = {}
-			if os.path.exists(self.config_dir):
-				for filename in os.listdir(self.config_dir):
-					if filename.endswith(('.yaml', '.yml', '.json', '.md')):
-						file_path = os.path.join(self.config_dir, filename)
-						try:
-							with open(file_path, 'r', encoding='utf-8') as f:
-								configs[filename] = f.read()
-						except Exception as e:
-							self.logger.warning(f"读取配置文件失败 {filename}: {e}")
-			
-			# 构建上下文
-			code_files_context = f"=== Simulator文件 ({simulator_path}) ===\n{simulator_content}\n\n"
-			code_files_context += f"=== Main文件 ({main_path}) ===\n{main_content}\n\n"
-			
-			config_files_context = ""
-			for filename, content in configs.items():
-				config_files_context += f"=== {filename} ===\n{content[:3000]}\n\n"  # 限制配置文件长度
-			
-			# 构建提示词
-			prompt = self.prompts['apply_user_adjustment_prompt'].format(
-				requirements_text=requirements_text,
-				code_files=code_files_context,
-				config_files=config_files_context
-			)
-			
-			# 调用LLM生成增量修改
-			self.logger.info("调用LLM生成增量修改方案")
-			response = await self.generate_llm_response(prompt)
-			
-			if not response:
-				self.logger.error("LLM未返回响应")
-				return False
-			
-			# 使用 _apply_runtime_fix 应用修改
-			self.logger.info("应用增量修改")
-			success = self._apply_runtime_fix(response, main_path, simulator_path)
-			
-			if success:
-				self.logger.info("✓ 用户调整应用成功")
-			else:
-				self.logger.error("❌ 用户调整应用失败")
-			
-			return success
-			
-		except Exception as e:
-			self.logger.error(f"应用用户调整失败: {e}")
-			import traceback
-			self.logger.error(traceback.format_exc())
-			return False

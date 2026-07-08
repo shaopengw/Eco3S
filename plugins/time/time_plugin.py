@@ -31,12 +31,32 @@ class DefaultTimePlugin(Time, BasePlugin):
         self.logger = context.logger
         self.config = context.config
 
-        # 从配置中读取时间参数，如果没有则使用构造函数的默认值
-        start_time = self.config.get('simulation', {}).get('start_year', self._start_time_param)
-        total_steps = self.config.get('simulation', {}).get('total_years', self._total_steps_param)
+        simulation_cfg = self.config.get('simulation', {})
+
+        # 从配置中读取起始时间，支持 start_year / start_time
+        start_time = simulation_cfg.get('start_year')
+        if start_time is None:
+            start_time = simulation_cfg.get('start_time')
+        if start_time is None:
+            start_time = self._start_time_param
+
+        # 从配置中读取总时间步数，支持多种字段名
+        # 优先级：total_steps > total_years > total_quarters > total_months > total_days > total_hours
+        total_steps = simulation_cfg.get('total_steps')
+        if total_steps is None:
+            total_steps = simulation_cfg.get('total_years')
+        if total_steps is None:
+            for key in ('total_quarters', 'total_months', 'total_days', 'total_hours'):
+                total_steps = simulation_cfg.get(key)
+                if total_steps is not None:
+                    break
+        if total_steps is None:
+            total_steps = self._total_steps_param
 
         # 重新初始化 Time 业务状态
         Time.__init__(self, start_time=start_time, total_steps=total_steps)
+
+        self.logger.info(f"DefaultTimePlugin 初始化完成 (start={self.start_time}, steps={self.total_steps})")
 
     # ===== BasePlugin 生命周期方法 =====
 

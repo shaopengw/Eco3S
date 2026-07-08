@@ -1,30 +1,5 @@
 [
-  {
-    "rank": "高级官员",
-    "personality": "刻薄、势利"
-  },
-  {
-    "rank": "普通官员",
-    "personality": "世故、刻薄",
-    "function": "漕运",
-    "faction": "海运派"
-  },
-  {
-    "rank": "普通官员",
-    "personality": "圆滑、忠厚",
-    "function": "行政",
-    "faction": "海运派"
-  },
-  {
-    "rank": "普通官员",
-    "personality": "狭隘、迷信",
-    "function": "经济管理",
-    "faction": "海运派"
-  },
-  {
-    "rank": "普通官员",
-    "personality": "勤恳、迷信",
-    "function": "军事",
-    "faction": "河运派"
-  }
+  {"rank": "高级官员", "personality": "严谨"},
+  {"rank": "普通官员", "personality": "温和", "function": "财政", "faction": "改革派"},
+  {"rank": "普通官员", "personality": "果断", "function": "贸易", "faction": "保守派"}
 ]

@@ -1,0 +1,80 @@
+# BaseAgent 角色提示词模板文件
+# 本文件用于指导大模型生成新模拟场景的角色提示词（entity_type=baseagent）
+#
+# 适用场景：
+#   brand_headquarters、assembly_plant、component_supplier 等非居民实体，
+#   它们不需要居民特有的人格/满意度/健康/就业等属性，而是由项目定制的 profile 属性驱动。
+#
+# 模板变量来源说明：
+#   1. profile 属性：agent_profile.yaml 中 attributes 定义的字段自动注入，
+#      例如 {brand_value}、{capacity}、{country} 等
+#   2. extra 字段：agent_profile.yaml 中 extra 下的字段也自动注入，
+#      例如 {role}、{headquarters_country} 等
+#   3. 调用方注入：模拟器在 decide_action_by_llm() 时透传的参数，
+#      例如 {current_period}、{basic_living_cost} 等
+#   4. 自动注入：available_actions_section（可用行动列表）、
+#      action_{key}_name / action_{key}_desc / action_{key}_params_str
+#
+# 注意：BaseAgent 使用 str.format() 渲染，缺失的键会直接抛 KeyError，
+# 务必确保模板中使用的所有变量都能被提供。
+
+# 角色系统消息
+# 描述：定义角色的身份、职责和关键属性
+# 必须包含的变量：视具体角色而定，{profile_vars_doc} 是通用画像文档占位符
+# 输出要求：明确角色身份、核心目标和关键约束
+system_message: |
+  你是一个{role}。
+  当前你的关键属性：
+  {profile_vars_doc}
+
+# 决策提示词（新版标准 key）
+# 描述：引导角色在当前情境下做出决策
+# 必须包含的变量：视具体角色需求而定，建议至少包含当前周期/状态信息
+# 输出要求：引导 LLM 分析形势并输出决策
+# 常见变量示例：
+#   - {current_period}：当前模拟周期（由模拟器传入）
+#   - {available_actions_section}：可用行动选项列表（自动注入）
+#   - 各 profile 属性字段
+decision_prompt: |
+  当前模拟周期：{current_period}
+  你的角色：{role}
+
+  当前状态：
+  {profile_vars_doc}
+
+  请根据当前形势做出决策，分析各选项的利弊，选择最优行动。
+  {available_actions_section}
+
+# 决策提示词（旧版 key，向后兼容）
+# 描述：与 decision_prompt 作用相同
+decide_action_prompt: |
+  当前模拟周期：{current_period}
+  你的角色：{role}
+
+  当前状态：
+  {profile_vars_doc}
+
+  请根据当前形势做出决策。
+  {available_actions_section}
+
+# 决策JSON格式提示
+# 描述：引导角色以JSON格式返回决策结果
+# 必须包含的变量：各 action 所需参数字段
+# 输出要求：严格JSON格式
+# 注意：所有JSON花括号必须用双括号（{{ 和 }}），只有变量占位符保留单括号。
+decision_json: |
+  请严格按照以下JSON格式返回你的决策：
+  {{"select": 选择的行动ID, "reason": "决策理由"{speech}}}
+
+# 信息接收提示
+# 描述：引导角色对接收到的信息做出回应
+# 必须包含的变量：{message_content}
+# 输出要求：一句简短的口语化回应
+receive_information_prompt: |
+  你收到了一条消息：[{message_content}]
+  请根据你的身份和立场，发表一句简短回应。
+
+# 决策JSON格式提示（旧版 key，向后兼容）
+decide_action_json: |
+  返回JSON格式：
+  {{"select": 选择的行动ID, "reason": "决策理由"{speech}}}

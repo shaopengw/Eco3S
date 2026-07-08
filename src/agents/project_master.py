@@ -1,8 +1,11 @@
 
 from src.utils.custom_logger import CustomLogger
+from src.utils.influence_test_runner import InfluencePreflight
+from src.utils.ai_system_config import get_retries
 from .shared_imports import *
 from .sim_architect import SimArchitectAgent
-from .code_architect import CodeArchitectAgent
+from .code_architect import CodeArchitectAgent, extract_exogenous_nodes
+from .code_fixer import CodeFixerAgent
 from .research_analyst import ResearchAnalystAgent
 from .mechanism_interpreter import MechanismInterpreterAgent
 
@@ -10,6 +13,14 @@ class ProjectMasterAgent(BaseAgent):
     """
     项目管理师Agent，继承BaseAgent，负责协调整个实验流程，调用其他agent并进行质量控制。
     """
+
+    # 冒烟测试使用的最小规模参数：population=5, years=2
+    SMOKE_TEST_POPULATION = 5
+    SMOKE_TEST_YEARS = 2
+
+    # 支持的时间步数字段名（按优先级排序）
+    TIME_STEP_KEYS = ['total_steps', 'total_years', 'total_quarters', 'total_months', 'total_days', 'total_hours']
+
     def __init__(self, agent_id, docs_dir, config_template_dir, web_mode=False, session_callback=None, session=None):
         super().__init__(agent_id, group_type='project_master', window_size=5)
         self.docs_dir = docs_dir
@@ -17,7 +28,8 @@ class ProjectMasterAgent(BaseAgent):
         self.current_project_dir = None
         self.current_config_dir = None
         self.current_simulation_name = None
-        self.max_regeneration_attempts = 3
+        self.retries = get_retries()
+        self.max_regeneration_attempts = self.retries['regeneration']
         self.logger = CustomLogger('project_master').logger
         self.web_mode = web_mode  # Web模式标志
         self.session = session  # 存储session对象
@@ -26,6 +38,7 @@ class ProjectMasterAgent(BaseAgent):
         
         # 子Agent实例（延迟初始化）
         self.code_architect = None
+        self.code_fixer = None
         self.mechanism_interpreter = None
         
         # 加载提示词配置
@@ -36,7 +49,7 @@ class ProjectMasterAgent(BaseAgent):
         self.system_message = self.prompts['system_message']
     
     def _is_small_scale_config(self, config_path: str) -> bool:
-        """判断配置是否为原型小规模（pop=5, steps/years=1）。"""
+        """判断配置是否为原型小规模（pop=5, years/steps=2）——即冒烟测试规模。"""
         if not config_path or not os.path.exists(config_path):
             return False
         try:
@@ -50,18 +63,141 @@ class ProjectMasterAgent(BaseAgent):
             if isinstance(time_cfg, dict):
                 steps = time_cfg.get('total_steps')
             if steps is None:
-                steps = simulation_cfg.get('total_years')
+                for key in self.TIME_STEP_KEYS:
+                    if key in simulation_cfg:
+                        steps = simulation_cfg[key]
+                        break
 
-            return pop == 5 and steps == 1
+            try:
+                pop = int(pop)
+            except (TypeError, ValueError):
+                return False
+            try:
+                steps = int(steps)
+            except (TypeError, ValueError):
+                return False
+
+            return pop == self.SMOKE_TEST_POPULATION and steps == self.SMOKE_TEST_YEARS
         except Exception as e:
             self.logger.warning(f"检查小规模配置失败: {e}")
             return False
 
+    def _get_simulation_scale(self, config_path: str) -> dict:
+        """读取 simulation_config.yaml 中的人口和时间规模。
+
+        Returns:
+            dict: {'population': int or None, 'years': int or None, 'time_key': str or None, 'error': str or None}
+        """
+        if not config_path:
+            return {'population': None, 'years': None, 'time_key': None, 'error': 'config_path 为空'}
+        if not os.path.exists(config_path):
+            return {'population': None, 'years': None, 'time_key': None, 'error': f'配置文件不存在: {config_path}'}
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config_data = yaml.safe_load(f) or {}
+
+            if not isinstance(config_data, dict):
+                return {'population': None, 'years': None, 'time_key': None, 'error': '配置文件根节点不是字典'}
+
+            simulation_cfg = config_data.get('simulation', {}) or {}
+            if not isinstance(simulation_cfg, dict):
+                return {'population': None, 'years': None, 'time_key': None, 'error': 'simulation 段不是字典'}
+
+            pop = simulation_cfg.get('initial_population')
+            if pop is None:
+                return {'population': None, 'years': None, 'time_key': None, 'error': '缺少 simulation.initial_population'}
+            try:
+                pop = int(pop)
+            except (TypeError, ValueError):
+                return {'population': None, 'years': None, 'time_key': None, 'error': f'simulation.initial_population 不是整数: {pop!r}'}
+
+            steps = None
+            time_key = None
+            time_cfg = simulation_cfg.get('time')
+            if isinstance(time_cfg, dict):
+                steps = time_cfg.get('total_steps')
+                if steps is not None:
+                    time_key = 'time.total_steps'
+            if steps is None:
+                for key in self.TIME_STEP_KEYS:
+                    if key in simulation_cfg:
+                        steps = simulation_cfg[key]
+                        time_key = key
+                        break
+
+            if steps is None:
+                return {'population': pop, 'years': None, 'time_key': None, 'error': f'缺少时间步数字段（支持的字段: {self.TIME_STEP_KEYS} 或 simulation.time.total_steps）'}
+            try:
+                steps = int(steps)
+            except (TypeError, ValueError):
+                return {'population': pop, 'years': None, 'time_key': time_key, 'error': f'时间步数不是整数: {steps!r}'}
+
+            return {'population': pop, 'years': steps, 'time_key': time_key, 'error': None}
+        except Exception as e:
+            return {'population': None, 'years': None, 'time_key': None, 'error': f'读取配置文件异常: {e}'}
+
+    def _set_simulation_scale(self, config_path: str, population: int, years: int, time_key: str = None) -> bool:
+        """设置 simulation_config.yaml 中的人口和时间规模。
+
+        兼容多种配置风格：
+        - simulation.time.total_steps
+        - simulation.total_years
+        - simulation.total_steps
+        - simulation.total_quarters 等
+        """
+        if not config_path or not os.path.exists(config_path):
+            return False
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config_data = yaml.safe_load(f) or {}
+
+            if not isinstance(config_data, dict):
+                return False
+
+            simulation_cfg = config_data.setdefault('simulation', {})
+            if not isinstance(simulation_cfg, dict):
+                simulation_cfg = {}
+                config_data['simulation'] = simulation_cfg
+
+            simulation_cfg['initial_population'] = int(population)
+
+            # 优先使用指定的时间字段
+            if time_key and time_key.startswith('time.') and '.' in time_key:
+                _, sub_key = time_key.split('.', 1)
+                time_cfg = simulation_cfg.setdefault('time', {})
+                if isinstance(time_cfg, dict):
+                    time_cfg[sub_key] = int(years)
+                else:
+                    simulation_cfg['total_years'] = int(years)
+            elif time_key and time_key in simulation_cfg:
+                simulation_cfg[time_key] = int(years)
+            else:
+                # 自动查找已有字段，没有则默认 total_years
+                time_cfg = simulation_cfg.get('time')
+                if isinstance(time_cfg, dict) and 'total_steps' in time_cfg:
+                    time_cfg['total_steps'] = int(years)
+                else:
+                    for key in self.TIME_STEP_KEYS:
+                        if key in simulation_cfg:
+                            simulation_cfg[key] = int(years)
+                            break
+                    else:
+                        simulation_cfg['total_years'] = int(years)
+
+            with open(config_path, 'w', encoding='utf-8') as f:
+                yaml.dump(config_data, f, allow_unicode=True, default_flow_style=False)
+
+            self.logger.info(f"✓ 已设置实验规模: pop={population}, years={years}")
+            return True
+        except Exception as e:
+            self.logger.error(f"设置实验规模失败: {e}")
+            return False
+
     def _scale_up_simulation_config(self, config_path: str, target_population: int = 100, target_steps: int = 10) -> bool:
-        """将原型配置放大到可评估规模。
+        """将原型配置放大到可评估规模（兼容旧逻辑，默认 pop=100, steps=10）。
 
         - initial_population -> target_population
-        - simulation.time.total_steps 或 simulation.total_years -> target_steps
+        - simulation.time.total_steps / simulation.total_* -> target_steps
         """
         if not config_path or not os.path.exists(config_path):
             return False
@@ -84,8 +220,13 @@ class ProjectMasterAgent(BaseAgent):
             if isinstance(time_cfg, dict) and 'total_steps' in time_cfg:
                 time_cfg['total_steps'] = int(target_steps)
             else:
-                # 默认使用 total_years 作为时间步/周期配置
-                simulation_cfg['total_years'] = int(target_steps)
+                for key in self.TIME_STEP_KEYS:
+                    if key in simulation_cfg:
+                        simulation_cfg[key] = int(target_steps)
+                        break
+                else:
+                    # 默认使用 total_years 作为时间步/周期配置
+                    simulation_cfg['total_years'] = int(target_steps)
 
             with open(config_path, 'w', encoding='utf-8') as f:
                 yaml.dump(config_data, f, allow_unicode=True, default_flow_style=False)
@@ -95,7 +236,140 @@ class ProjectMasterAgent(BaseAgent):
         except Exception as e:
             self.logger.error(f"放大实验规模失败: {e}")
             return False
-        
+
+    def _validate_smoke_test_result(self, stdout: str, stderr: str) -> tuple[bool, str]:
+        """对最小规模（冒烟测试）的运行结果做更严格的校验。
+
+        校验项：
+        1. stdout/stderr 中不含 "ERROR" 关键字（不区分大小写）。
+        2. 找到最新结果文件（CSV/JSON）且不为空。
+        3. 结果中至少存在一个数值列出现非零值。
+
+        注：结果数据是否发生变化不在此校验，交由后续步骤判断。
+
+        Returns:
+            (is_valid, error_message)
+        """
+        # 1. 检查输出中是否有 ERROR
+        combined_output = (stdout or '') + '\n' + (stderr or '')
+        if 'ERROR' in combined_output.upper():
+            return False, "程序输出中包含 ERROR 关键字"
+
+        # 2. 找到最新结果文件
+        latest_file = self._get_latest_result_file()
+        if not latest_file:
+            return False, "未找到结果文件"
+
+        # 3. 读取并检查结果数据
+        try:
+            if latest_file.endswith('.csv'):
+                import csv
+                with open(latest_file, 'r', encoding='utf-8', errors='replace') as f:
+                    reader = csv.DictReader(f)
+                    if reader.fieldnames is None:
+                        return False, "结果文件没有表头"
+                    rows = list(reader)
+
+                if not rows:
+                    return False, "结果文件数据为空"
+
+                # 识别数值列（排除时间/ID/名称等非数值列）
+                numeric_fields = []
+                skip_keywords = {'time', 'year', 'step', 'id', 'name', 'timestamp', 'date', 'pid'}
+                for field in reader.fieldnames:
+                    if not field:
+                        continue
+                    if any(kw in field.lower() for kw in skip_keywords):
+                        continue
+                    try:
+                        float(rows[0].get(field, '') or 0)
+                        numeric_fields.append(field)
+                    except (ValueError, TypeError):
+                        continue
+
+                if not numeric_fields:
+                    return False, "结果文件中未找到可检查的数值列"
+
+                # 检查是否有非零值
+                has_nonzero = False
+                for row in rows:
+                    for field in numeric_fields:
+                        try:
+                            if float(row.get(field, '') or 0) != 0:
+                                has_nonzero = True
+                                break
+                        except (ValueError, TypeError):
+                            continue
+                    if has_nonzero:
+                        break
+
+                if not has_nonzero:
+                    return False, "结果数据所有数值列均为 0，可能存在 LLM 无行为或逻辑未执行"
+
+            elif latest_file.endswith('.json'):
+                with open(latest_file, 'r', encoding='utf-8', errors='replace') as f:
+                    data = json.load(f)
+
+                if isinstance(data, list):
+                    if not data:
+                        return False, "结果文件为空"
+                    # 简单检查：至少有一个 dict 值非零
+                    has_nonzero = False
+                    for item in data:
+                        if isinstance(item, dict):
+                            for key, value in item.items():
+                                try:
+                                    if float(value) != 0:
+                                        has_nonzero = True
+                                except (ValueError, TypeError):
+                                    continue
+                    if not has_nonzero:
+                        return False, "结果数据所有数值均为 0"
+                elif isinstance(data, dict):
+                    # 简单检查：至少有一个数值非零
+                    has_nonzero = False
+                    for value in data.values():
+                        try:
+                            if float(value) != 0:
+                                has_nonzero = True
+                                break
+                        except (ValueError, TypeError):
+                            continue
+                    if not has_nonzero:
+                        return False, "结果数据所有数值均为 0"
+                else:
+                    return False, "结果文件格式不支持"
+            else:
+                return False, f"不支持的结果文件格式: {os.path.splitext(latest_file)[1]}"
+
+        except Exception as e:
+            self.logger.warning(f"读取结果文件失败: {e}")
+            return False, f"读取结果文件失败: {e}"
+
+        return True, ""
+
+    async def _ensure_code_fixer(self):
+        """延迟初始化并返回 CodeFixerAgent 实例。"""
+        if not self.code_fixer:
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            project_dir = os.path.join(project_root, 'projects', self.current_simulation_name)
+            simulator_dir = os.path.join(project_root, 'src', 'simulation')
+            os.makedirs(simulator_dir, exist_ok=True)
+
+            self.code_fixer = CodeFixerAgent(
+                agent_id='code_fixer_001',
+                simulator_output_dir=simulator_dir,
+                main_output_dir=project_dir,
+                docs_dir=self.docs_dir,
+                config_dir=self.current_config_dir,
+                config_template_dir=self.config_template_dir,
+                simulation_name=self.current_simulation_name,
+                simulation_type=getattr(self, 'current_simulation_type', 'decision'),
+                session=self.session,
+                auto_mode=self.auto_mode,
+            )
+        return self.code_fixer
+
     def _check_step_completion(self, step_name, check_files):
         """检查步骤是否已完成（所有必需文件都存在）
         
@@ -205,27 +479,36 @@ class ProjectMasterAgent(BaseAgent):
 
     def _get_latest_result_file(self):
         """
-        查找 self.current_project_dir 下最新的结果文件。
+        查找实验输出（结果）目录下最新的结果文件。
+
+        结果统一存放在 projects/<name>/history/ 下的时间戳子目录中，
+        因此只在 history 目录内递归查找数据文件，避免误读 config/ 下的
+        配置文件（如 towns_data.json）或 backups/、__pycache__ 等无关目录。
         """
-        subdirs = [os.path.join(self.current_project_dir, d) for d in os.listdir(self.current_project_dir) if os.path.isdir(os.path.join(self.current_project_dir, d))]
-        
-        # 遍历所有子目录，找到包含结果文件的目录
+        history_dir = os.path.join(self.current_project_dir, 'history')
+        if not os.path.isdir(history_dir):
+            self.logger.warning(f"❌ 实验输出目录不存在: {history_dir}")
+            return None
+
+        # 仅识别真正的结果数据文件，排除日志/图片等
         all_result_files = []
-        for subdir in subdirs:
-            try:
-                result_files = [os.path.join(subdir, f) for f in os.listdir(subdir) if f.endswith(('.json', '.csv'))]
-                all_result_files.extend(result_files)
-            except Exception as e:
-                self.logger.warning(f"无法读取目录 {subdir}: {e}")
-                continue
-        
-        # 如果找到了结果文件，返回最新的一个
+        for root, dirs, files in os.walk(history_dir):
+            # 跳过绘图结果目录
+            dirs[:] = [d for d in dirs if d != 'plot_results']
+            for f in files:
+                if not f.endswith(('.json', '.csv')):
+                    continue
+                # 排除日志文件（如 complete_*.log 误命名等）
+                if f.endswith('.log'):
+                    continue
+                all_result_files.append(os.path.join(root, f))
+
         if all_result_files:
             latest_file = max(all_result_files, key=os.path.getmtime)
             self.logger.info(f"找到结果文件: {latest_file}")
             return latest_file
-        
-        self.logger.warning("❌ 未找到任何结果文件")
+
+        self.logger.warning(f"❌ 未在实验输出目录中找到任何结果文件: {history_dir}")
         return None
 
     async def parse_user_requirement(self, requirement_text, user_specified_type=None):
@@ -240,7 +523,7 @@ class ProjectMasterAgent(BaseAgent):
             requirement_text=requirement_text
         )
 
-        max_attempts = 3
+        max_attempts = 5
         for attempt in range(1, max_attempts + 1):
             response = await self.generate_llm_response(prompt)
             try:
@@ -273,26 +556,40 @@ class ProjectMasterAgent(BaseAgent):
     async def initialize_project(self, simulation_name):
         """
         创建项目文件夹结构。
-        配置文件放在 config/[模拟名称] 文件夹下。
+        所有生成产物统一放在 projects/[模拟名称]/ 下。
         """
         # 项目根目录（Eco3S项目根目录）
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        
-        # 创建 config/[模拟名称] 文件夹
-        config_dir = os.path.join(project_root, 'config', simulation_name)
-        os.makedirs(config_dir, exist_ok=True)
-        
-        # 创建实验数据文件夹（仅创建 simulation_type 级别目录，具体实验目录由 SimulationContext 运行时自动生成）
-        history_dir = os.path.join(project_root, 'history', simulation_name)
-        os.makedirs(history_dir, exist_ok=True)
 
-        self.current_project_dir = history_dir
+        # 创建 projects/[模拟名称]/ 文件夹
+        project_dir = os.path.join(project_root, 'projects', simulation_name)
+        config_dir = os.path.join(project_dir, 'config')
+        history_dir = os.path.join(project_dir, 'history')
+        backups_dir = os.path.join(project_dir, 'backups')
+        os.makedirs(project_dir, exist_ok=True)
+        os.makedirs(config_dir, exist_ok=True)
+        os.makedirs(history_dir, exist_ok=True)
+        os.makedirs(backups_dir, exist_ok=True)
+
+        # 首次使用时，复制 entrypoints/shared_imports.py 到 projects/shared_imports.py
+        shared_imports_src = os.path.join(project_root, 'entrypoints', 'shared_imports.py')
+        shared_imports_dst = os.path.join(project_root, 'projects', 'shared_imports.py')
+        if os.path.exists(shared_imports_src) and not os.path.exists(shared_imports_dst):
+            try:
+                import shutil
+                shutil.copy2(shared_imports_src, shared_imports_dst)
+                self.logger.info(f"已复制共享导入文件: {shared_imports_dst}")
+            except Exception as e:
+                self.logger.warning(f"复制 shared_imports.py 失败: {e}")
+
+        self.current_project_dir = project_dir
         self.current_config_dir = config_dir
         self.current_simulation_name = simulation_name
+        self.logger.info(f"项目文件夹已创建: {project_dir}")
         self.logger.info(f"配置文件夹已创建: {config_dir}")
         self.logger.info(f"实验文件夹已创建: {history_dir}")
-        
-        return history_dir
+
+        return project_dir
 
     async def run_design_phase(self, original_requirement, requirement_dict, previous_version=None, user_feedback=None):
         """
@@ -547,6 +844,369 @@ class ProjectMasterAgent(BaseAgent):
             'simulation_type': simulation_type
         }
 
+    async def _run_exogenous_variable_generation(self, design_results=None, coding_results=None) -> bool:
+        """阶段 3.45：外生变量序列生成。
+
+        编码完成后执行：从 influence_pairs.json 提取「只作为 cause、从不作为 effect」
+        的根驱动参数，由 LLM 依据设计文档生成随时间变化的序列写入 CSV，
+        并把数据路径写入 simulation_config.yaml，使仿真每步直接读取外生值，
+        让下游因果链产生更明显的可观察变化。
+
+        失败/无外生变量时返回 True（流程继续，influences 经 fallback 回退内部计算）。
+        """
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        config_dir = self.current_config_dir or os.path.join(
+            project_root, 'projects', self.current_simulation_name, 'config'
+        )
+        pairs_path = os.path.join(config_dir, 'influence_pairs.json')
+        sim_config_path = os.path.join(config_dir, 'simulation_config.yaml')
+
+        # 外生序列输出路径固定，先检测文件是否存在：已存在则询问是否跳过，
+        # 避免在文件已存在时仍进行无谓的节点识别与 LLM 序列生成。
+        exo_dir = os.path.join(project_root, 'projects', self.current_simulation_name, 'experiment_dataset')
+        csv_path = os.path.join(exo_dir, 'exogenous.csv')
+        rel_path = f"projects/{self.current_simulation_name}/experiment_dataset/exogenous.csv"
+
+        if os.path.exists(csv_path):
+            if not self._check_step_completion('外生变量序列生成', [csv_path]):
+                # 用户选择跳过：确保 config 仍指向现有文件
+                self._patch_simulation_config_exogenous(sim_config_path, rel_path)
+                self.logger.info(f"✓ 使用已存在的外生变量序列: {csv_path}")
+                return True
+
+        # 文件不存在或用户选择重新生成：开始识别外生变量并生成序列
+        if not os.path.exists(pairs_path):
+            self.logger.info("未找到 influence_pairs.json，跳过外生变量生成")
+            return True
+
+        try:
+            with open(pairs_path, 'r', encoding='utf-8') as f:
+                pairs = json.load(f)
+        except Exception as exc:
+            self.logger.warning(f"读取 influence_pairs.json 失败，跳过外生变量生成: {exc}")
+            return True
+
+        nodes = extract_exogenous_nodes(pairs if isinstance(pairs, list) else [])
+        if not nodes:
+            self.logger.info("influence_pairs.json 中无纯 cause 根驱动节点，跳过外生变量生成")
+            return True
+
+        self.logger.info(f"识别到 {len(nodes)} 个外生变量（纯 cause 根驱动）: {[n['slug'] for n in nodes]}")
+
+        # 总时间步数
+        scale = self._get_simulation_scale(sim_config_path)
+        total_steps = scale.get('years')
+        if not isinstance(total_steps, int) or total_steps <= 0:
+            total_steps = 20
+            self.logger.warning(f"无法读取总时间步数，外生序列长度回退为默认 {total_steps}")
+
+        # 设计文档
+        description_md = ""
+        description_path = os.path.join(config_dir, 'description.md')
+        if os.path.exists(description_path):
+            try:
+                with open(description_path, 'r', encoding='utf-8') as f:
+                    description_md = f.read()
+            except Exception:
+                description_md = ""
+
+        # 确保输出目录存在
+        try:
+            os.makedirs(exo_dir, exist_ok=True)
+        except Exception as exc:
+            self.logger.warning(f"创建外生数据目录失败: {exc}")
+            return True
+
+        # --- 尝试加载真实数据 ---
+        catalog = None
+        catalog_dir = os.path.join(project_root, 'experiment_dataset', 'data_catalog')
+        if os.path.isdir(catalog_dir):
+            try:
+                from src.environment.real_world_data import RealWorldCatalog
+                catalog = RealWorldCatalog(catalog_dir)
+                if not catalog.load():
+                    catalog = None
+            except Exception as exc:
+                self.logger.info(f"真实数据目录加载跳过（不影响流程）: {exc}")
+
+        # --- 逐个生成序列（真实数据优先，LLM fallback） ---
+        data: Dict[str, List[float]] = {}
+
+        if catalog is not None:
+            from src.environment.real_world_data import ExogenousMapper, ExogenousSeriesBuilder
+
+            mapper = ExogenousMapper(os.path.join(catalog_dir, 'indicator_registry.yaml'))
+            if self.code_architect:
+                mapper.set_llm_callback(self.code_architect.generate_llm_response)
+            builder = ExogenousSeriesBuilder(catalog)
+
+            for node in nodes:
+                real_used = False
+                try:
+                    mapping = await mapper.map_node(node, description_md)
+                    direction, _ = self._lookup_pair_direction(pairs, node)
+
+                    if mapping.match_type == 'use_indicator' and mapping.indicator_codes:
+                        series = builder.build_series(
+                            mapping.indicator_codes[0], total_steps,
+                            direction=direction,
+                        )
+                        if series and len(series) >= max(2, total_steps // 2):
+                            data[node['slug']] = series
+                            self.logger.info(f"  ✓ {node['slug']}: 使用真实数据 [{mapping.indicator_codes[0]}]")
+                            real_used = True
+
+                    elif mapping.match_type == 'context_indicators' and mapping.indicator_codes:
+                        ctx = builder.build_context(mapping.indicator_codes)
+                        ctx_summary = "; ".join(
+                            f"{k}: [{', '.join(str(round(vv,2)) for vv in vs[:5])}...]"
+                            for k, vs in ctx.items()
+                        ) if ctx else ""
+                        if ctx_summary:
+                            # 用本地变量临时扩展上下文，不影响 description_md 原值
+                            prompt_with_context = description_md + f"\n\n【真实数据参考】\n{ctx_summary}"
+                            self.logger.info(f"  → {node['slug']}: 添加 {len(mapping.indicator_codes)} 个真实指标作为 LLM 上下文")
+                            direction, effect_size = self._lookup_pair_direction(pairs, node)
+                            series = await self._generate_exogenous_series(
+                                node, prompt_with_context, total_steps, direction, effect_size
+                            )
+                        else:
+                            direction, effect_size = self._lookup_pair_direction(pairs, node)
+                            series = await self._generate_exogenous_series(
+                                node, description_md, total_steps, direction, effect_size
+                            )
+                        data[node['slug']] = series
+                        real_used = True
+                except Exception as exc:
+                    self.logger.info(f"  → {node['slug']}: 数据映射异常 ({exc})，走 LLM 生成")
+
+                if not real_used:
+                    direction, effect_size = self._lookup_pair_direction(pairs, node)
+                    series = await self._generate_exogenous_series(
+                        node, description_md, total_steps, direction, effect_size
+                    )
+                    data[node['slug']] = series
+        else:
+            # 无真实数据目录：走原 LLM 生成路径
+            for node in nodes:
+                direction, effect_size = self._lookup_pair_direction(pairs, node)
+                series = await self._generate_exogenous_series(
+                    node, description_md, total_steps, direction, effect_size
+                )
+                data[node['slug']] = series
+
+        if not self._save_exogenous_csv(data, csv_path):
+            return True
+
+        # 回填 simulation_config.yaml：data.exogenous_data_path（相对项目根目录）
+        self._patch_simulation_config_exogenous(sim_config_path, rel_path)
+
+        self.logger.info(f"✓ 外生变量序列已生成: {csv_path}（{len(data)} 个变量 × {total_steps} 步）")
+        return True
+
+    def _lookup_pair_direction(self, pairs, node) -> tuple:
+        """从 pairs 中找到以该 node 为 cause 的代表性影响对，返回 (direction, effect_size)。"""
+        for p in pairs or []:
+            if not isinstance(p, dict):
+                continue
+            c = p.get('cause') or {}
+            if str(c.get('module') or '').strip() == node['module'] and \
+               str(c.get('param') or '').strip() == node['param']:
+                return str(p.get('direction') or '').strip().lower(), str(p.get('effect_size') or '').strip()
+        return '', ''
+
+    async def _generate_exogenous_series(self, node, description_md, total_steps, direction, effect_size) -> List[float]:
+        """调用 LLM 为单个外生变量生成长度=total_steps 的时间序列。
+
+        解析失败 / 数值异常时回退为基于 direction 的单调斜坡，保证流程不中断。
+        """
+        desc_summary = (description_md or "")[:2000]
+        prompt = (
+            "你是仿真外生变量设计专家。请为下面这个『外生变量（因果链的根驱动参数，"
+            "只作为原因、不被其它因素影响）』生成一条随时间步变化的数值序列。\n\n"
+            f"- 所属模块: {node['module']}\n"
+            f"- 参数含义: {node['param']}\n"
+            f"- 该参数对下游的影响方向: {direction or '未指定'}\n"
+            f"- 效应大小: {effect_size or '未指定'}\n"
+            f"- 总时间步数: {total_steps}\n\n"
+            f"【仿真设计文档摘要】\n{desc_summary}\n\n"
+            "要求：\n"
+            f"1. 恰好输出 {total_steps} 个数值，用英文逗号分隔，全部在同一行。\n"
+            "2. 数值应体现该根驱动随时间的合理演化（如政策实施期可阶梯/线性推进、"
+            "外部冲击可在某步骤后跃变），变化要足够明显以驱动下游产生可观察的变化。\n"
+            "3. 数值量纲要贴合参数语义，正负、范围合理。\n"
+            "4. 只返回这一行数值，不要任何解释、表头或代码块。"
+        )
+        raw = None
+        try:
+            raw = await self.code_architect.generate_llm_response(prompt)
+        except Exception as exc:
+            self.logger.warning(f"外生变量 {node['slug']} LLM 生成失败，使用回退序列: {exc}")
+
+        series = self._parse_number_series(raw) if raw else []
+        if len(series) >= total_steps:
+            series = series[:total_steps]
+        elif series:
+            # 不足则用末值补齐
+            series = series + [series[-1]] * (total_steps - len(series))
+        else:
+            series = self._fallback_series(total_steps, direction)
+            self.logger.info(f"外生变量 {node['slug']} 使用回退斜坡序列")
+        return series
+
+    @staticmethod
+    def _parse_number_series(text: str) -> List[float]:
+        """从 LLM 文本中解析逗号/空白分隔的数值序列。"""
+        import re as _re
+        if not text:
+            return []
+        # 去掉可能的代码块围栏
+        text = text.replace('```', ' ')
+        tokens = _re.findall(r'-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?', text)
+        out: List[float] = []
+        for t in tokens:
+            try:
+                out.append(round(float(t), 6))
+            except ValueError:
+                continue
+        return out
+
+    @staticmethod
+    def _fallback_series(total_steps: int, direction: str) -> List[float]:
+        """回退序列：基于影响方向生成单调斜坡（0→1 线性），decrease 时反向。"""
+        n = max(1, int(total_steps))
+        if n == 1:
+            return [1.0]
+        ramp = [round(i / (n - 1), 6) for i in range(n)]
+        if direction == 'decrease':
+            ramp = list(reversed(ramp))
+        return ramp
+
+    def _save_exogenous_csv(self, data: Dict[str, List[float]], output_path: str) -> bool:
+        """写多列带表头 CSV：每列一个外生变量，每行一个时间步。"""
+        import csv as _csv
+        if not data:
+            self.logger.info("外生变量数据为空，不写文件")
+            return False
+        keys = list(data.keys())
+        n_rows = max((len(v) for v in data.values()), default=0)
+        try:
+            with open(output_path, 'w', encoding='utf-8', newline='') as f:
+                writer = _csv.writer(f)
+                writer.writerow(keys)
+                for i in range(n_rows):
+                    row = []
+                    for k in keys:
+                        col = data[k]
+                        row.append(col[i] if i < len(col) else (col[-1] if col else 0.0))
+                    writer.writerow(row)
+            return True
+        except Exception as exc:
+            self.logger.warning(f"写入 exogenous.csv 失败: {exc}")
+            return False
+
+    def _patch_simulation_config_exogenous(self, sim_config_path: str, rel_path: str) -> bool:
+        """把 data.exogenous_data_path 写入 simulation_config.yaml。"""
+        if not os.path.exists(sim_config_path):
+            self.logger.warning("simulation_config.yaml 不存在，无法写入 exogenous_data_path")
+            return False
+        try:
+            with open(sim_config_path, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f) or {}
+            if not isinstance(config, dict):
+                return False
+            data_cfg = config.setdefault('data', {})
+            if not isinstance(data_cfg, dict):
+                config['data'] = data_cfg = {}
+            data_cfg['exogenous_data_path'] = rel_path
+            with open(sim_config_path, 'w', encoding='utf-8') as f:
+                yaml.safe_dump(config, f, allow_unicode=True, sort_keys=False)
+            self.logger.info(f"✓ 已写入 simulation_config.yaml: data.exogenous_data_path = {rel_path}")
+            return True
+        except Exception as exc:
+            self.logger.warning(f"写入 exogenous_data_path 失败: {exc}")
+            return False
+
+    async def _run_influence_preflight(self, max_fix_attempts: int = 3) -> bool:
+        """阶段 3.4：Influence 机制预检。
+
+        在冒烟测试/正式运行之前，用虚拟数据跑一轮 influences.yaml，
+        高置信问题（模块名缺失导致静默跳过、expr 引用未定义变量、非有限值等）
+        直接触发 code_fixer.run_optimization_session 修复，最多 max_fix_attempts 轮。
+
+        Returns:
+            True 表示通过预检或无需预检；False 表示修复后仍不通过，应终止工作流。
+        """
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        config_dir = self.current_config_dir or os.path.join(
+            project_root, 'projects', self.current_simulation_name, 'config'
+        )
+        simulator_path = os.path.join(
+            project_root, 'projects', self.current_simulation_name, 'simulator.py'
+        )
+        influences_path = os.path.join(config_dir, 'influences.yaml')
+
+        if not os.path.exists(influences_path):
+            self.logger.info("未找到 influences.yaml，跳过 influence 预检")
+            return True
+
+        self.logger.info("=" * 50)
+        self.logger.info("阶段 3.4: Influence 机制预检（虚拟数据）")
+        self.logger.info("=" * 50)
+
+        design_doc = ""
+        description_path = os.path.join(config_dir, 'description.md')
+        if os.path.exists(description_path):
+            with open(description_path, 'r', encoding='utf-8') as f:
+                design_doc = f.read()
+
+        for attempt in range(1, max_fix_attempts + 1):
+            preflight = InfluencePreflight.from_project_dir(config_dir, simulator_path)
+            result = preflight.run()
+
+            if result.get('ok'):
+                self.logger.info(f"✓ influence 预检通过（第 {attempt} 轮）")
+                return True
+
+            # 构建 CodeFixer 可消费的评估报告
+            evaluation_report = InfluencePreflight.to_evaluation_report(result)
+            self.logger.warning(
+                f"⚠️ influence 预检发现 {len(result.get('silent_skip', []))} 个静默跳过、"
+                f"{len(result.get('broken_influence', []))} 个影响函数异常、"
+                f"{len(result.get('non_finite', []))} 个非有限值"
+            )
+            self.logger.debug(f"预检诊断详情:\n{evaluation_report}")
+
+            if attempt >= max_fix_attempts:
+                self.logger.error(
+                    f"❌ influence 预检连续 {max_fix_attempts} 轮未通过，终止工作流"
+                )
+                return False
+
+            self.logger.info(
+                f"调用 CodeFixer 修复 influence 问题（第 {attempt}/{max_fix_attempts} 轮）..."
+            )
+            code_fixer = await self._ensure_code_fixer()
+            optimization = await code_fixer.run_optimization_session(
+                evaluation_report=evaluation_report,
+                design_doc=design_doc,
+                interactive=False,
+            )
+
+            solved = optimization.get('optimization_passed') or optimization.get('success')
+            if not solved:
+                self.logger.warning(
+                    f"⚠️ CodeFixer 本轮未能解决问题（优化会话 success={optimization.get('success')}）"
+                )
+
+        # 再跑最后一次确定是否通过
+        final = InfluencePreflight.from_project_dir(config_dir, simulator_path).run()
+        if final.get('ok'):
+            self.logger.info("✓ influence 预检最终通过")
+            return True
+        self.logger.error("❌ influence 预检最终仍不通过，终止工作流")
+        return False
+
     async def run_coding_phase(self, design_results, previous_version=None, user_feedback=None):
         """
         运行编码阶段，调用 CodeArchitectAgent。
@@ -565,25 +1225,23 @@ class ProjectMasterAgent(BaseAgent):
         
         # 项目根目录
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        
-        # simulator文件放在src/simulation文件夹下
+
+        # simulator 文件现在统一放在项目目录下
+        project_dir = os.path.join(project_root, 'projects', self.current_simulation_name)
         simulator_dir = os.path.join(project_root, 'src', 'simulation')
         os.makedirs(simulator_dir, exist_ok=True)
-        
-        # main文件放在entrypoints文件夹下
-        entrypoints_dir = os.path.join(project_root, 'entrypoints')
-        os.makedirs(entrypoints_dir, exist_ok=True)
-        
+
         # 获取模拟类型
         simulation_type = design_results.get('simulation_type', 'decision')  # 默认为决策型
+        self.current_simulation_type = simulation_type
         self.logger.info(f"编码阶段使用模拟类型: {simulation_type}")
-        
+
         # 创建或复用 CodeArchitectAgent 实例
         if not self.code_architect:
             self.code_architect = CodeArchitectAgent(
                 agent_id='code_architect_001',
                 simulator_output_dir=simulator_dir,
-                main_output_dir=entrypoints_dir,
+                main_output_dir=project_dir,
                 docs_dir=self.docs_dir,
                 config_dir=self.current_config_dir,
                 config_template_dir=self.config_template_dir,
@@ -592,43 +1250,40 @@ class ProjectMasterAgent(BaseAgent):
                 session=self.session,  # 传递session对象
                 auto_mode=self.auto_mode,
             )
-        
+
         coder = self.code_architect
-        
+
         # 检查编码阶段是否已完成（所有必需文件都存在）
-        simulator_file_path = os.path.join(simulator_dir, f'simulator_{self.current_simulation_name}.py')
-        main_file_path = os.path.join(entrypoints_dir, f'main_{self.current_simulation_name}.py')
-        
+        simulator_file_path = os.path.join(project_dir, 'simulator.py')
+
         required_files = [
             simulator_file_path,
-            main_file_path,
             os.path.join(self.current_config_dir, 'simulation_config.yaml'),
             os.path.join(self.current_config_dir, 'jobs_config.yaml'),
             os.path.join(self.current_config_dir, 'influences.yaml'),
             os.path.join(self.current_config_dir, 'resident_actions.yaml'),
             os.path.join(self.current_config_dir, 'towns_data.json'),
         ]
-        
+
         # 如果所有文件都存在，询问是否跳过
         if not self._check_step_completion("编码阶段", required_files):
             # 用户选择跳过，读取现有文件并返回
             self.logger.info("跳过编码阶段，使用现有文件")
-            
+
             # 收集所有现有文件
-            config_files = [f for f in required_files[2:] if os.path.exists(f)]
+            config_files = [f for f in required_files[1:] if os.path.exists(f)]
             prompt_files = []
             for prompt_file in ['government_prompts.yaml', 'rebels_prompts.yaml', 'residents_prompts.yaml']:
                 pf_path = os.path.join(self.current_config_dir, prompt_file)
                 if os.path.exists(pf_path):
                     prompt_files.append(pf_path)
-            
+
             return {
                 'status': 'success',
                 'simulator_files': [simulator_file_path],
-                'main_files': [main_file_path],
                 'config_files': config_files,
                 'prompt_files': prompt_files,
-                'all_files': [simulator_file_path, main_file_path] + config_files + prompt_files
+                'all_files': [simulator_file_path] + config_files + prompt_files
             }
         
         # 准备上下文（包含上一版本和用户反馈）
@@ -640,13 +1295,7 @@ class ProjectMasterAgent(BaseAgent):
                 if os.path.exists(prev_sim_path):
                     with open(prev_sim_path, 'r', encoding='utf-8') as f:
                         context_suffix += f"Simulator代码:\n{f.read()[:2000]}...(已截断)\n\n"
-            
-            if previous_version.get('main_files'):
-                prev_main_path = previous_version['main_files'][0]
-                if os.path.exists(prev_main_path):
-                    with open(prev_main_path, 'r', encoding='utf-8') as f:
-                        context_suffix += f"Main代码:\n{f.read()[:2000]}...(已截断)\n\n"
-            
+
             context_suffix += f"=== 用户反馈 ===\n{user_feedback}\n"
         
         description_with_context = design_results['description_md'] + context_suffix
@@ -725,50 +1374,8 @@ class ProjectMasterAgent(BaseAgent):
                     self.logger.warning("Simulator函数补完失败，保持原文件")
                 break
 
-        # === 步骤3: 生成main入口文件完整代码 ===
-        self.logger.info("步骤 3: 生成main入口文件完整代码")
-        main_result = await coder.generate_main_file(
-            description_with_context,
-            simulator_file_path
-        )
-        
-        # 解包返回值：(文件路径列表, 是否跳过)
-        if isinstance(main_result, tuple):
-            main_files, main_skipped = main_result
-        else:
-            # 兼容旧版本返回值（只有文件列表）
-            main_files = main_result
-            main_skipped = False
-        
-        if not main_files:
-            self.logger.error("生成main文件失败")
-            return {'status': 'failed', 'reason': 'main file generation failed'}
-        
-        main_file_path = main_files[0]
-        if main_skipped:
-            self.logger.info(f"Main文件已跳过（使用现有文件）: {main_file_path}")
-        else:
-            self.logger.info(f"Main文件已生成: {main_file_path}")
-        
-        # === 步骤4: 检查并补完main函数 ===
-        self.logger.info("步骤 4: 检查并补完main函数实现")
-        modules_config_yaml = self._read_modules_config()
-        refined_main = await coder.refine_main_functions(
-            main_file_path,
-            simulator_file_path,
-            description_with_context,
-            modules_config_yaml,
-            main_skipped=main_skipped  # 传递跳过标记
-        )
-        
-        if refined_main:
-            self.logger.info("Main函数已补完")
-        else:
-            self.logger.warning("Main函数补完失败，保持原文件")
-        
-
-        # === 步骤5: 生成配置文件（按顺序，每次一个） ===
-        self.logger.info("步骤 5: 生成配置文件")
+        # === 步骤3: 生成配置文件（按顺序，每次一个） ===
+        self.logger.info("步骤 3: 生成配置文件")
         config_files = []
         previous_configs = {}
 
@@ -902,54 +1509,46 @@ class ProjectMasterAgent(BaseAgent):
         coding_results = {
             'status': 'success',
             'simulator_files': simulator_files,
-            'main_files': main_files,
             'config_files': config_files,
             'prompt_files': prompt_files,
-            'all_files': simulator_files + main_files + config_files + prompt_files
+            'all_files': simulator_files + config_files + prompt_files
         }
 
         self.logger.info("编码阶段完成")
         self.logger.info(f"共生成 {len(coding_results['all_files'])} 个文件")
-        
+
         return coding_results
 
     async def run_simulation(self, coding_results, max_fix_attempts=10):
         """
         运行模拟程序，如果出错则自动调用编码师进行纠错。
-        
-        Args:
-            coding_results: 编码阶段的结果
-            max_fix_attempts: 最大修复尝试次数
-        
-        Returns:
-            bool: True表示成功，False表示失败
         """
         self.logger.info("=" * 50)
         self.logger.info("运行模拟程序")
         self.logger.info("=" * 50)
-        
+
         # 获取文件路径
-        main_files = coding_results.get('main_files', [])
         simulator_files = coding_results.get('simulator_files', [])
-        
-        if not main_files or not simulator_files:
-            self.logger.error("❌ 缺少必要的文件（main或simulator）")
+
+        if not simulator_files:
+            self.logger.error("❌ 缺少必要的 simulator 文件")
             return False
-        
-        main_file_path = main_files[0]
+
         simulator_file_path = simulator_files[0]
-        
+
+        # 可选的自定义 main.py
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        project_dir = os.path.join(project_root, 'projects', self.current_simulation_name)
+        main_file_path = os.path.join(project_dir, 'main.py')
+        main_file_path = main_file_path if os.path.exists(main_file_path) else None
+
         # 获取模拟名称
         simulation_name = self.current_simulation_name
-        
+
         # 构建运行命令
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        config_path = os.path.join(project_root, 'config', simulation_name, 'simulation_config.yaml')
-        
-        # 使用相对路径
-        main_file_rel = os.path.relpath(main_file_path, project_root)
-        run_command = f'python {main_file_rel} --config_path config/{simulation_name}/simulation_config.yaml'
-        
+        config_path = os.path.join(project_root, 'projects', simulation_name, 'config', 'simulation_config.yaml')
+        run_command = f'python run_project.py --project {simulation_name}'
+
         self.logger.info(f"运行命令: {run_command}")
         self.logger.info(f"工作目录: {project_root}")
         
@@ -996,30 +1595,31 @@ class ProjectMasterAgent(BaseAgent):
                         if attempt < max_fix_attempts:
                             self.logger.info(f"\n🔧 调用编码师Agent进行诊断和修复...")
                             
-                            # 调用编码师的纠错函数
-                            fixed = await self.code_architect.fix_runtime_errors(
+                            # 调用代码修复Agent的纠错函数
+                            code_fixer = await self._ensure_code_fixer()
+                            fixed = await code_fixer.fix_runtime_errors(
                                 error_message=error_message,
                                 error_traceback=f"标准输出:\n{result.stdout}\n\n标准错误:\n{result.stderr}",
                                 main_file_path=main_file_path,
                                 simulator_file_path=simulator_file_path,
                                 config_path=config_path,
-                                max_attempts=3
+                                max_attempts=5
                             )
                             
                             if fixed:
                                 self.logger.info("✓ 编码师已完成修复，准备重新运行...")
-                                continue  # 重新运行
                             else:
-                                self.logger.error("❌ 编码师修复失败")
-                            return False
+                                # 修复未成功：不立即终止，继续下一次尝试，给修复Agent更多机会
+                                self.logger.warning(f"⚠️ 第 {attempt} 次修复未成功，将进行下一次尝试...")
+                            continue  # 重新运行
                         else:
                             self.logger.error("❌ 已达到最大运行尝试次数")
-                        return False
-                    
+                            return False
+
                     self.logger.info("✅ 程序运行成功！")
                     self.logger.info(f"输出:\n{result.stdout}")
 
-                    # 检查是否是小规模测试（人口=5，步数=1）
+                    # 检查是否是小规模冒烟测试（人口=5，年数=2）
                     is_small_scale = False
                     try:
                         if os.path.exists(config_path):
@@ -1027,23 +1627,62 @@ class ProjectMasterAgent(BaseAgent):
                                 config_data = yaml.safe_load(f)
                                 # Check population
                                 pop = config_data.get('simulation', {}).get('initial_population')
-                                # Check steps
-                                steps = config_data.get('simulation', {}).get('time', {}).get('total_steps')
+                                # Check steps/years
+                                simulation_cfg = config_data.get('simulation', {}) or {}
+                                time_cfg = simulation_cfg.get('time')
+                                steps = time_cfg.get('total_steps') if isinstance(time_cfg, dict) else None
                                 if steps is None:
-                                    steps = config_data.get('simulation', {}).get('total_years')
-                                print(f"实验结束：pop={pop}, steps={steps}")
-                                if pop == 5 and steps == 1:
+                                    for key in self.TIME_STEP_KEYS:
+                                        if key in simulation_cfg:
+                                            steps = simulation_cfg[key]
+                                            break
+                                try:
+                                    pop = int(pop)
+                                except (TypeError, ValueError):
+                                    pop = None
+                                try:
+                                    steps = int(steps)
+                                except (TypeError, ValueError):
+                                    steps = None
+                                print(f"实验结束：pop={pop}, years={steps}")
+                                if pop == self.SMOKE_TEST_POPULATION and steps == self.SMOKE_TEST_YEARS:
                                     is_small_scale = True
                     except Exception as e:
                         self.logger.warning(f"检查配置文件是否为小规模测试时出错: {e}")
-                    
+
                     if is_small_scale:
+                        # 对冒烟测试做更严格的校验：ERROR、结果非空、非零、有变化
+                        valid, validation_error = self._validate_smoke_test_result(result.stdout, result.stderr)
+                        if not valid:
+                            self.logger.error(f"❌ 冒烟测试校验失败: {validation_error}")
+
+                            if attempt < max_fix_attempts:
+                                self.logger.info(f"\n🔧 调用编码师Agent进行诊断和修复...")
+
+                                code_fixer = await self._ensure_code_fixer()
+                                fixed = await code_fixer.fix_runtime_errors(
+                                    error_message=f"冒烟测试校验失败: {validation_error}",
+                                    error_traceback=f"标准输出:\n{result.stdout}\n\n标准错误:\n{result.stderr}",
+                                    main_file_path=main_file_path,
+                                    simulator_file_path=simulator_file_path,
+                                    config_path=config_path,
+                                    max_attempts=5
+                                )
+
+                                if fixed:
+                                    self.logger.info("✓ 编码师已完成修复，准备重新运行...")
+                                else:
+                                    # 修复未成功：继续下一次尝试，给修复Agent更多机会
+                                    self.logger.warning(f"⚠️ 第 {attempt} 次修复未成功，将进行下一次尝试...")
+                                continue
+                            return False
+
                         print(f"\n{'='*60}")
-                        print("原型测试（小规模）已完成！")
+                        print("冒烟测试（最小规模）已完成！")
                         print(f"{'='*60}")
-                        # 返回特殊标记，表示原型测试完成
+                        # 返回特殊标记，表示冒烟测试完成
                         return 'small_scale_completed'
-                    
+
                     return True
                                 
 
@@ -1060,23 +1699,23 @@ class ProjectMasterAgent(BaseAgent):
                         # 获取完整的错误堆栈
                         error_traceback = result.stderr if result.stderr else result.stdout
                         
-                        # 调用编码师的纠错函数
-                        fixed = await self.code_architect.fix_runtime_errors(
+                        # 调用代码修复Agent的纠错函数
+                        code_fixer = await self._ensure_code_fixer()
+                        fixed = await code_fixer.fix_runtime_errors(
                             error_message=error_message,
                             error_traceback=error_traceback,
                             main_file_path=main_file_path,
                             simulator_file_path=simulator_file_path,
                             config_path=config_path,
-                            max_attempts=3  # 编码师内部的修复尝试次数
+                            max_attempts=5  # 修复Agent内部的修复尝试次数
                         )
                         
                         if fixed:
                             self.logger.info("✓ 编码师已完成修复，准备重新运行...")
                         else:
-                            self.logger.error("❌ 编码师修复失败")
-                            if attempt == max_fix_attempts - 1:
-                                self.logger.error("已达到最大修复次数，停止尝试")
-                            return False
+                            # 修复未成功：不立即终止，继续下一次尝试，给修复Agent
+                            # （含其内部多次重试）更多机会，直到用尽 max_fix_attempts
+                            self.logger.warning(f"⚠️ 第 {attempt} 次修复未成功，将进行下一次尝试...")
                     else:
                         self.logger.error("❌ 已达到最大运行尝试次数")
                         return False
@@ -1131,7 +1770,59 @@ class ProjectMasterAgent(BaseAgent):
         if os.path.exists(design_doc_path):
             with open(design_doc_path, 'r', encoding='utf-8') as f:
                 design_doc = f.read()
-        
+
+        # === 确定性硬检查阶段（无 LLM）：第一个命中即跳过 LLM 评估、直接技能驱动修复 ===
+        hard_checks = [
+            (analyst.check_resident_activity(),
+             'docs/code_fixer_skills/skill_agent_behavior_abnormal.md'),
+            (analyst.check_metrics_variation(simulation_results_path),
+             'docs/code_fixer_skills/skill_metrics_constant_zero.md'),
+        ]
+        for check_result, skill in hard_checks:
+            if not check_result.get('is_problem'):
+                continue
+
+            reason = check_result.get('reason', '')
+            self.logger.warning(f"⚠️ 硬检查命中：{reason} → 跳过 LLM 评估，技能驱动修复（{skill}）")
+
+            # 硬编码一句话报告，保持文件/Web 流程一致
+            report = f"## 评估结果\n状态：NEED_ADJUSTMENT\n\n原因（确定性硬检查）：{reason}\n"
+            report_path = os.path.normpath(
+                os.path.join(os.path.dirname(simulation_results_path), '..', 'evaluation_report.md'))
+            try:
+                with open(report_path, 'w', encoding='utf-8') as f:
+                    f.write(report)
+            except Exception as e:
+                self.logger.warning(f"写入硬检查报告失败（不中断）: {e}")
+
+            if self.web_mode and self.session:
+                self.session['pending_evaluation_report'] = report
+                self.session['pending_design_doc'] = design_doc
+                self.session['pending_skill_files'] = [skill]
+                self.session['pending_problem_summary'] = reason
+                self.session['pending_problem_detail'] = check_result.get('detail')
+                return {
+                    'evaluation_report': report,
+                    'needs_adjustment': True,
+                    'waiting_user_confirmation': True,
+                    'optimization_completed': False
+                }
+
+            code_fixer = await self._ensure_code_fixer()
+            session_result = await code_fixer.run_skill_guided_session(
+                problem_summary=reason,
+                skill_files=[skill],
+                detail=check_result.get('detail'),
+                design_doc=design_doc
+            )
+            return {
+                'evaluation_report': report,
+                'needs_adjustment': True,
+                'optimization_session_result': session_result,
+                'optimization_passed': session_result.get('optimization_passed', False),
+                'optimization_completed': False
+            }
+
         # === 步骤 1: 评估模拟结果 ===
         self.logger.info("步骤 1: 评估模拟结果是否符合预期趋势")
         evaluation_report = await analyst.evaluate_simulation(
@@ -1142,37 +1833,47 @@ class ProjectMasterAgent(BaseAgent):
         
         # 判断是否需要调整
         needs_adjustment = 'NEED_ADJUSTMENT' in evaluation_report.upper()
-        
+
         if needs_adjustment:
-            self.logger.info("⚠️  结果不符合预期，开始诊断配置问题...")
-            
-            # === 步骤 2: 诊断配置问题 ===
-            self.logger.info("步骤 2: 诊断需要修改哪些配置或提示词")
-            diagnosis_path = await analyst.diagnose_config_issues(
-                evaluation_report,
-                design_doc=design_doc
+            self.logger.info("⚠️  结果不符合预期，启动 CodeFixerAgent 优化...")
+
+            # Web 模式：先等待前端确认，再启动优化会话
+            if self.web_mode and self.session:
+                self.session['pending_evaluation_report'] = evaluation_report
+                self.session['pending_design_doc'] = design_doc
+                # 报告驱动路径：清除可能残留的硬检查技能标记，避免误走技能驱动分支
+                self.session['pending_skill_files'] = None
+                self.session['pending_problem_summary'] = None
+                self.session['pending_problem_detail'] = None
+                return {
+                    'evaluation_report': evaluation_report,
+                    'needs_adjustment': True,
+                    'waiting_user_confirmation': True,
+                    'optimization_completed': False
+                }
+
+            code_fixer = await self._ensure_code_fixer()
+            session_result = await code_fixer.run_optimization_session(
+                evaluation_report=evaluation_report,
+                design_doc=design_doc,
+                interactive=not self.auto_mode
             )
-            self.logger.info("诊断结果已生成")
-            
-            # === 步骤 3: 依次修改文件 ===
-            self.logger.info("步骤 3: 根据诊断结果依次修改配置文件")
-            
-            # 检查是否是自动模式
-            # 读取诊断结果
-            with open(diagnosis_path, 'r', encoding='utf-8') as f:
-                diagnosis_result = json.load(f)
-            
-            self.logger.info(f"\n{'='*60}")
-            self.logger.info(f"检测到配置需要调整，等待用户确认")
-            self.logger.info(f"{'='*60}")
-            
-            # 返回结果，等待用户确认
+
+            optimization_passed = session_result.get('optimization_passed', False)
+            if optimization_passed:
+                self.logger.info("✓ 本轮优化通过问题解决检查，将进入下一轮运行与评估以确认效果")
+            else:
+                self.logger.warning(f"⚠️ 本轮优化未通过问题解决检查: {session_result.get('solved', {})}")
+
             return {
                 'evaluation_report': evaluation_report,
                 'needs_adjustment': True,
-                'diagnosis_path': diagnosis_path,
-                'diagnosis_result': diagnosis_result,
-                'waiting_user_confirmation': True  # 标记等待用户确认
+                'optimization_session_result': session_result,
+                'optimization_passed': optimization_passed,
+                # 完成与否不由"本轮是否改了文件"决定：本轮无论是否通过解决检查，
+                # 都需要下一轮重新运行+评估来确认结果是否真正符合预期，因此这里恒为 False，
+                # 迫使外层进入下一轮。真正的"完成"由后续某轮评估返回 needs_adjustment=False 触发。
+                'optimization_completed': False
             }
         else:
             self.logger.info("✓ 结果符合预期，无需调整")
@@ -1181,45 +1882,70 @@ class ProjectMasterAgent(BaseAgent):
                 'needs_adjustment': False,
                 'optimization_completed': True
             }
-    
-    async def apply_optimization_adjustments(self, diagnosis_path, design_doc=None):
+
+    async def apply_optimization_adjustments(self, diagnosis_path=None, design_doc=None):
         """
-        应用优化调整，根据诊断结果修改配置文件
-        
-        Args:
-            diagnosis_path: 诊断结果文件路径
-            design_doc: 设计文档内容（可选）
-        
-        Returns:
-            dict: 修改结果
+        应用优化调整：启动 CodeFixerAgent 优化会话。
+        在 Web 流程中，由前端确认后调用；在 CLI 流程中已由 run_evaluation_and_optimization_phase 直接完成。
         """
-        self.logger.info("="*50)
+        self.logger.info("=" * 50)
         self.logger.info("开始应用优化调整")
-        self.logger.info("="*50)
-        
-        coder = self.code_architect
-        
-        # 依次修改文件
-        modification_results = await coder.modify_file_sequentially(
-            diagnosis_path,
-            self.current_config_dir,
-            design_doc=design_doc
-        )
-        
-        if modification_results:
-            self.logger.info(f"✓ 已完成 {len(modification_results)} 个文件的修改")
-            return {
-                'success': True,
-                'modification_results': modification_results,
-                'message': f'成功修改了 {len(modification_results)} 个文件'
-            }
-        else:
-            self.logger.warning("未成功修改任何文件")
+        self.logger.info("=" * 50)
+
+        evaluation_report = None
+        pending_skill_files = None
+        pending_problem_summary = None
+        pending_problem_detail = None
+        if self.session:
+            evaluation_report = self.session.get('pending_evaluation_report')
+            design_doc = design_doc or self.session.get('pending_design_doc', '')
+            pending_skill_files = self.session.get('pending_skill_files')
+            pending_problem_summary = self.session.get('pending_problem_summary')
+            pending_problem_detail = self.session.get('pending_problem_detail')
+
+        if not evaluation_report:
+            self.logger.warning("未找到待处理的评估报告，无法启动优化会话")
             return {
                 'success': False,
                 'modification_results': [],
-                'message': '未成功修改任何文件'
+                'message': '未找到待处理的评估报告'
             }
+
+        code_fixer = await self._ensure_code_fixer()
+        if pending_skill_files:
+            # 硬检查命中路径：用硬编码 skill 直接驱动，不走 LLM 路由
+            session_result = await code_fixer.run_skill_guided_session(
+                problem_summary=pending_problem_summary or '确定性硬检查命中',
+                skill_files=pending_skill_files,
+                detail=pending_problem_detail,
+                design_doc=design_doc
+            )
+        else:
+            session_result = await code_fixer.run_optimization_session(
+                evaluation_report=evaluation_report,
+                design_doc=design_doc,
+                interactive=False
+            )
+
+        # 消费完毕，清理本轮待处理标记，避免残留影响下一轮
+        if self.session:
+            for key in ('pending_skill_files', 'pending_problem_summary', 'pending_problem_detail'):
+                self.session.pop(key, None)
+
+        success = session_result.get('success', False)
+        if success:
+            self.logger.info(f"✓ 优化会话完成，修改 {len(session_result.get('modification_results', []))} 个文件")
+        else:
+            self.logger.warning("优化会话未成功完成")
+
+        return {
+            'success': success,
+            'optimization_passed': session_result.get('optimization_passed', False),
+            'solved': session_result.get('solved', {}),
+            'modification_results': session_result.get('modification_results', []),
+            'message': '优化会话完成',
+            'session_result': session_result
+        }
 
 
 
@@ -1253,37 +1979,112 @@ class ProjectMasterAgent(BaseAgent):
         # 3. 编码阶段
         self.logger.info("\n阶段 3: 代码生成")
         coding_results = await self.run_coding_phase(design_results)
-        
+
+        # 3.45 外生变量序列生成：提取纯 cause 根驱动，生成随时间变化的数据文件供运行时读取
+        self.logger.info("\n阶段 3.45: 外生变量序列生成")
+        if not await self._run_exogenous_variable_generation(design_results, coding_results):
+            self.logger.warning("外生变量生成未完成，influences 将经 fallback 回退内部计算，流程继续")
+
+        # 3.4 Influence 机制预检：用虚拟数据验证 influences.yaml 是否真的会静默跳过 / 报错
+        if not await self._run_influence_preflight(max_fix_attempts=self.retries['influence_preflight']):
+            self.auto_mode = False
+            return {
+                'status': 'failed',
+                'phase': 'influence_preflight',
+                'project_dir': project_dir,
+                'design_results': design_results,
+                'coding_results': coding_results,
+                'optimization_history': []
+            }
+
+        # 3.5 冒烟测试：先用最小规模 p=5, y=2 验证代码可运行
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        config_path = os.path.join(project_root, 'projects', self.current_simulation_name, 'config', 'simulation_config.yaml')
+        original_scale = self._get_simulation_scale(config_path)
+        can_restore_scale = (
+            original_scale.get('population') is not None
+            and original_scale.get('years') is not None
+        )
+        needs_smoke_test = (
+            can_restore_scale
+            and (
+                original_scale.get('population') != self.SMOKE_TEST_POPULATION
+                or original_scale.get('years') != self.SMOKE_TEST_YEARS
+            )
+        )
+
+        if not can_restore_scale:
+            error_detail = original_scale.get('error') or '未知原因'
+            self.logger.warning(f"⚠️ 无法读取原始设定规模，跳过冒烟测试，直接进入正式运行。原因: {error_detail}")
+        elif needs_smoke_test:
+            self.logger.info("\n" + "=" * 50)
+            self.logger.info("阶段 3.5: 冒烟测试（最小规模 p=5, y=2）")
+            self.logger.info("=" * 50)
+            self.logger.info(
+                f"原始设定规模: pop={original_scale.get('population')}, "
+                f"years={original_scale.get('years')}"
+            )
+
+            if self._set_simulation_scale(config_path, self.SMOKE_TEST_POPULATION, self.SMOKE_TEST_YEARS):
+                self.logger.info("开始以最小规模运行，确认代码无报错...")
+                smoke_result = await self.run_simulation(coding_results, max_fix_attempts=self.retries['smoke_test'])
+
+                if smoke_result != 'small_scale_completed' and not smoke_result:
+                    self.logger.error("❌ 冒烟测试失败，工作流程终止")
+                    self.auto_mode = False
+                    return {
+                        'status': 'failed',
+                        'phase': 'smoke_test',
+                        'project_dir': project_dir,
+                        'design_results': design_results,
+                        'coding_results': coding_results,
+                        'optimization_history': []
+                    }
+
+                # 恢复原始设定规模
+                self.logger.info("✓ 冒烟测试通过，恢复原始设定规模...")
+                self._set_simulation_scale(
+                    config_path,
+                    original_scale.get('population'),
+                    original_scale.get('years'),
+                    time_key=original_scale.get('time_key')
+                )
+            else:
+                self.logger.error("❌ 无法设置冒烟测试规模，工作流程终止")
+                self.auto_mode = False
+                return {
+                    'status': 'failed',
+                    'phase': 'smoke_test_setup',
+                    'project_dir': project_dir,
+                    'design_results': design_results,
+                    'coding_results': coding_results,
+                    'optimization_history': []
+                }
+        else:
+            self.logger.info("\n阶段 3.5: 当前设定规模已是冒烟测试规模，跳过额外冒烟测试")
+
         # 4-5. 运行模拟和评估优化循环
         optimization_history = []
         for iteration in range(1, max_iterations + 1):
             # 阶段 4: 运行模拟
             self.logger.info(f"\n阶段 4: 运行模拟 (第 {iteration} 轮)")
-            simulation_successful = await self.run_simulation(coding_results, max_fix_attempts=10)
-            
-            # 自动模式：原型小规模跑通一次后，自动放大规模并重新实验
+            simulation_successful = await self.run_simulation(coding_results, max_fix_attempts=self.retries['full_run'])
+
+            # 自动模式：若返回 small_scale_completed 且当前仍为小规模配置，
+            # 说明原始设定规模就是最小规模，无需再放大，直接进入评估。
             if (
                 self.auto_mode
                 and simulation_successful == 'small_scale_completed'
                 and not self._auto_scaled_up_after_prototype
             ):
-                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                simulation_name = self.current_simulation_name
-                config_path = os.path.join(project_root, 'config', simulation_name, 'simulation_config.yaml')
-
-                # 仅当确实还是小规模配置时才放大
                 if self._is_small_scale_config(config_path):
-                    self.logger.info("原型测试成功，自动放大模拟人数与时间步以获得可评估结果...")
-                    if self._scale_up_simulation_config(config_path, target_population=100, target_steps=10):
-                        self._auto_scaled_up_after_prototype = True
-                        simulation_successful = await self.run_simulation(coding_results, max_fix_attempts=10)
-                    else:
-                        self.logger.error("❌ 自动放大规模失败，工作流程终止")
-                        break
-                else:
-                    # 配置已不再是小规模（可能被外部修改），直接继续
+                    self.logger.info("当前规模即为最小规模，直接进行评估...")
                     self._auto_scaled_up_after_prototype = True
-            
+                else:
+                    # 理论上不会到达此处：冒烟测试后已恢复原始规模
+                    self.logger.warning("⚠️ 运行结果标记为小规模，但配置已不是小规模，继续评估")
+                    self._auto_scaled_up_after_prototype = True
+
             if not simulation_successful:
                 self.logger.error("❌ 模拟运行失败，工作流程终止")
                 break
@@ -1380,11 +2181,11 @@ class ProjectMasterAgent(BaseAgent):
     
     async def apply_mechanism_adjustments(self, requirements_text):
         """
-        应用机制调整，调用CodeArchitectAgent进行具体的代码修改
-        
+        应用机制调整，调用CodeFixerAgent进行具体的代码修改
+
         Args:
             requirements_text: 格式化的需求字符串
-        
+
         Returns:
             bool: 是否成功应用
         """
@@ -1392,18 +2193,16 @@ class ProjectMasterAgent(BaseAgent):
         self.logger.info(f"需求内容:\n{requirements_text}")
         
         try:
-            # 确保CodeArchitectAgent已初始化
-            if not self.code_architect:
-                self.logger.error("CodeArchitectAgent未初始化")
-                return False
-            
-            # 直接将需求文本传给CodeArchitectAgent处理
+            # 确保代码修复Agent已初始化
+            code_fixer = await self._ensure_code_fixer()
+
+            # 直接将需求文本传给代码修复Agent处理
             print(f"\n{'='*80}")
-            print("将需求发送给编码师Agent进行实现...")
+            print("将需求发送给代码修复Agent进行实现...")
             print(f"{'='*80}")
-            
-            # 调用CodeArchitectAgent的apply_user_adjustment方法
-            success = await self.code_architect.apply_user_adjustment(
+
+            # 调用CodeFixerAgent的apply_user_adjustment方法
+            success = await code_fixer.apply_user_adjustment(
                 requirements_text=requirements_text
             )
             
@@ -1604,8 +2403,12 @@ class ProjectMasterAgent(BaseAgent):
                 print(f"\n✓ 生成的文件:")
                 if coding_results.get('simulator_files'):
                     print(f"  - Simulator: {coding_results['simulator_files'][0]}")
-                if coding_results.get('main_files'):
-                    print(f"  - Main: {coding_results['main_files'][0]}")
+                main_py_path = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                    'projects', self.current_simulation_name, 'main.py'
+                )
+                if os.path.exists(main_py_path):
+                    print(f"  - Main (自定义hook): {main_py_path}")
                 if coding_results.get('config_files'):
                     print(f"  - 配置文件 ({len(coding_results['config_files'])}个):")
                     for cfg in coding_results['config_files']:
@@ -1614,7 +2417,7 @@ class ProjectMasterAgent(BaseAgent):
                     print(f"  - 提示词文件 ({len(coding_results['prompt_files'])}个):")
                     for pf in coding_results['prompt_files']:
                         print(f"    * {os.path.basename(pf)}")
-                
+
                 print(f"\n✓ 总计生成 {len(coding_results.get('all_files', []))} 个文件")
             
             # 等待用户反馈
@@ -1656,7 +2459,115 @@ class ProjectMasterAgent(BaseAgent):
                 print(f"\n收到反馈，重新生成代码... (版本 {coding_version + 1})")
                 self.logger.info(f"用户反馈: {user_input}")
                 self.logger.info("重新执行编码阶段")
-        
+
+        # 阶段 3.45: 外生变量序列生成
+        self.logger.info("\n阶段 3.45: 外生变量序列生成")
+        if not await self._run_exogenous_variable_generation():
+            self.logger.warning("外生变量生成未完成，influences 将经 fallback 回退内部计算，流程继续")
+
+        # 阶段 3.4: Influence 机制预检（虚拟数据）
+        if not await self._run_influence_preflight(max_fix_attempts=self.retries['influence_preflight']):
+            self.logger.error("❌ Influence 预检失败，工作流程终止")
+            return {
+                'status': 'failed',
+                'phase': 'influence_preflight',
+                'project_dir': project_dir,
+                'config_dir': self.current_config_dir,
+                'design_results': design_results,
+                'coding_results': coding_results,
+                'optimization_history': [],
+                'history': phase_history
+            }
+
+        # 阶段 3.5: 冒烟测试（最小规模 p=5, y=2）
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        config_path = os.path.join(project_root, 'projects', self.current_simulation_name, 'config', 'simulation_config.yaml')
+        original_scale = self._get_simulation_scale(config_path)
+        can_restore_scale = (
+            original_scale.get('population') is not None
+            and original_scale.get('years') is not None
+        )
+        needs_smoke_test = (
+            can_restore_scale
+            and (
+                original_scale.get('population') != self.SMOKE_TEST_POPULATION
+                or original_scale.get('years') != self.SMOKE_TEST_YEARS
+            )
+        )
+
+        if not can_restore_scale:
+            error_detail = original_scale.get('error') or '未知原因'
+            print(f"\n⚠️ 无法读取原始设定规模，跳过冒烟测试，直接进入正式运行。原因: {error_detail}")
+            self.logger.warning(f"无法读取原始设定规模，跳过冒烟测试，直接进入正式运行。原因: {error_detail}")
+        elif needs_smoke_test:
+            print("\n" + "=" * 80)
+            print("阶段 3.5: 冒烟测试（最小规模 p=5, y=2）")
+            print("=" * 80)
+            print(f"原始设定规模: pop={original_scale.get('population')}, years={original_scale.get('years')}")
+            print("将临时以最小规模运行，确认代码无报错后恢复原始规模...")
+            self.logger.info("\n阶段 3.5: 冒烟测试（最小规模 p=5, y=2）")
+            self.logger.info(
+                f"原始设定规模: pop={original_scale.get('population')}, "
+                f"years={original_scale.get('years')}"
+            )
+
+            if self._set_simulation_scale(config_path, self.SMOKE_TEST_POPULATION, self.SMOKE_TEST_YEARS):
+                print("\n开始冒烟测试...")
+                self.logger.info("开始冒烟测试...")
+
+                # 冒烟测试：每轮最多尝试 5 次（含自动纠错），失败则询问用户是否重试
+                smoke_result = await self.run_simulation(coding_results, max_fix_attempts=self.retries['smoke_test'])
+                while smoke_result != 'small_scale_completed' and not smoke_result:
+                    print("\n❌ 冒烟测试失败（已尝试 5 次）")
+                    self.logger.warning("冒烟测试失败（已尝试 5 次）")
+                    print("是否重新运行冒烟测试？")
+                    print("  - 输入 'yes' 或 'y' 重新运行（再尝试 5 次）")
+                    print("  - 按 Enter 或输入其他内容终止工作流程")
+                    retry_input = input("\n您的选择: ").strip().lower()
+                    if retry_input in ['yes', 'y']:
+                        print("\n重新运行冒烟测试...")
+                        self.logger.info("用户选择重试冒烟测试")
+                        smoke_result = await self.run_simulation(coding_results, max_fix_attempts=self.retries['smoke_test'])
+                        continue
+
+                    print("\n❌ 冒烟测试失败，工作流程终止")
+                    self.logger.error("冒烟测试失败，工作流程终止")
+                    return {
+                        'status': 'failed',
+                        'phase': 'smoke_test',
+                        'project_dir': project_dir,
+                        'config_dir': self.current_config_dir,
+                        'design_results': design_results,
+                        'coding_results': coding_results,
+                        'optimization_history': [],
+                        'history': phase_history
+                    }
+
+                print("\n✓ 冒烟测试通过，恢复原始设定规模...")
+                self.logger.info("冒烟测试通过，恢复原始设定规模")
+                self._set_simulation_scale(
+                    config_path,
+                    original_scale.get('population'),
+                    original_scale.get('years'),
+                    time_key=original_scale.get('time_key')
+                )
+            else:
+                print("\n❌ 无法设置冒烟测试规模，工作流程终止")
+                self.logger.error("无法设置冒烟测试规模，工作流程终止")
+                return {
+                    'status': 'failed',
+                    'phase': 'smoke_test_setup',
+                    'project_dir': project_dir,
+                    'config_dir': self.current_config_dir,
+                    'design_results': design_results,
+                    'coding_results': coding_results,
+                    'optimization_history': [],
+                    'history': phase_history
+                }
+        else:
+            print("\n阶段 3.5: 当前设定规模已是冒烟测试规模，跳过额外冒烟测试")
+            self.logger.info("当前设定规模已是冒烟测试规模，跳过额外冒烟测试")
+
         # ============ 阶段 4-5: 运行模拟和评估优化循环 ============
         print("\n" + "=" * 80)
         print("阶段 4-5: 运行模拟和评估优化循环")
@@ -1664,7 +2575,7 @@ class ProjectMasterAgent(BaseAgent):
         self.logger.info("\n阶段 4-5: 运行模拟和评估优化循环")
         
         optimization_history = []
-        max_iterations = 3
+        max_iterations = 10
         
         for iteration in range(1, max_iterations + 1):
             print(f"\n{'='*60}")
@@ -1692,30 +2603,30 @@ class ProjectMasterAgent(BaseAgent):
                 print("\n开始运行模拟...")
                 self.logger.info(f"开始第 {iteration} 轮模拟运行")
                 
-                sim_result = await self.run_simulation(coding_results, max_fix_attempts=10)
+                sim_result = await self.run_simulation(coding_results, max_fix_attempts=self.retries['full_run'])
                 
-                # 检查是否是原型测试完成
+                # 检查是否是冒烟测试完成
                 if sim_result == 'small_scale_completed':
-                    print("\n✅ 原型测试运行成功！")
-                    self.logger.info(f"第 {iteration} 轮原型测试运行成功")
-                    
+                    print("\n✅ 冒烟测试运行成功！")
+                    self.logger.info(f"第 {iteration} 轮冒烟测试运行成功")
+
                     # 提供机制解释与调整选项
                     while True:
                         print("\n请选择下一步操作：")
                         print("  - 输入 'adjust' 进入机制解释与调整会话")
-                        print("  - 输入 'continue' 继续进行大规模测试")
+                        print("  - 输入 'continue' 继续使用设定规模运行")
                         print("  - 输入 'quit' 退出")
-                        
+
                         next_action = input("\n您的选择: ").strip().lower()
-                        
+
                         if next_action == 'adjust':
                             # 进入机制解释与调整会话
                             print("\n进入机制解释与调整会话...")
                             self.logger.info("用户选择进入机制解释与调整会话")
-                            
+
                             try:
                                 requirements_text = await self.run_mechanism_interpretation_session(coding_results)
-                                
+
                                 if requirements_text:
                                     # 显示需求内容
                                     print("\n" + "="*80)
@@ -1723,36 +2634,36 @@ class ProjectMasterAgent(BaseAgent):
                                     print("="*80)
                                     print(requirements_text)
                                     print("="*80)
-                                    
+
                                     # 询问是否应用调整
                                     print("\n是否应用这些调整？")
                                     print("  - 输入 'yes' 或 'y' 应用调整")
                                     print("  - 输入其他内容取消")
-                                    
+
                                     apply_input = input("\n您的选择: ").strip().lower()
-                                    
+
                                     if apply_input in ['yes', 'y']:
                                         print("\n开始应用调整...")
                                         self.logger.info("开始应用机制调整")
-                                        
+
                                         apply_success = await self.apply_mechanism_adjustments(requirements_text)
-                                        
+
                                         if apply_success:
                                             print(f"\n✓ 调整应用完成")
                                             self.logger.info("机制调整完成")
-                                            
-                                            # 询问是否重新运行小规模测试
-                                            print("\n调整已应用，是否重新运行小规模测试验证？")
-                                            print("  - 输入 'yes' 或 'y' 重新运行小规模测试")
+
+                                            # 询问是否重新运行冒烟测试
+                                            print("\n调整已应用，是否重新运行冒烟测试验证？")
+                                            print("  - 输入 'yes' 或 'y' 重新运行冒烟测试")
                                             print("  - 按Enter继续选择下一步操作")
-                                            
+
                                             retest_input = input("\n您的选择: ").strip().lower()
                                             if retest_input in ['yes', 'y']:
-                                                print("\n重新运行小规模测试...")
-                                                sim_result = await self.run_simulation(coding_results, max_fix_attempts=10)
+                                                print("\n重新运行冒烟测试...")
+                                                sim_result = await self.run_simulation(coding_results, max_fix_attempts=self.retries['full_run'])
                                                 if sim_result != 'small_scale_completed':
                                                     if sim_result:
-                                                        print("\n⚠️ 调整后运行成功，但不是小规模测试")
+                                                        print("\n⚠️ 调整后运行成功，但不是冒烟测试规模")
                                                     else:
                                                         print("\n❌ 调整后运行失败")
                                                         simulation_successful = False
@@ -1766,32 +2677,37 @@ class ProjectMasterAgent(BaseAgent):
                                 else:
                                     print("\n✓ 机制解释与调整会话结束，未收集到调整需求")
                                     self.logger.info("机制解释与调整会话结束，未收集到调整需求")
-                                    
+
                             except Exception as e:
                                 print(f"\n❌ 机制解释与调整失败: {e}")
                                 self.logger.error(f"机制解释与调整失败: {e}")
                                 import traceback
                                 self.logger.error(traceback.format_exc())
-                                
+
                         elif next_action == 'continue':
-                            # 继续进行大规模测试
-                            print("\n准备进行大规模测试...")
-                            print("请输入大规模测试参数:")
+                            # 继续使用设定规模运行
+                            print("\n准备使用设定规模运行...")
+                            print("请输入运行参数（按Enter使用原始设定规模）:")
                             try:
-                                new_pop = int(input("人口数量 (默认300): ") or "300")
-                                new_steps = int(input("模拟时间步 (默认50): ") or "50")
-                                
+                                default_pop = original_scale.get('population') if original_scale.get('population') is not None else 300
+                                default_steps = original_scale.get('years') if original_scale.get('years') is not None else 50
+                                new_pop_input = input(f"人口数量 (默认{default_pop}): ").strip()
+                                new_steps_input = input(f"模拟时间步 (默认{default_steps}): ").strip()
+                                new_pop = int(new_pop_input) if new_pop_input else default_pop
+                                new_steps = int(new_steps_input) if new_steps_input else default_steps
+
                                 # 更新配置文件
                                 config_path = os.path.join(
                                     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                                    'config',
+                                    'projects',
                                     self.current_simulation_name,
+                                    'config',
                                     'simulation_config.yaml'
                                 )
-                                
+
                                 with open(config_path, 'r', encoding='utf-8') as f:
                                     config_data = yaml.safe_load(f)
-                                
+
                                 # 递归更新函数
                                 def update_steps_recursively(data, steps):
                                     if isinstance(data, dict):
@@ -1807,35 +2723,35 @@ class ProjectMasterAgent(BaseAgent):
                                 # Update population
                                 if 'simulation' not in config_data: config_data['simulation'] = {}
                                 config_data['simulation']['initial_population'] = new_pop
-                                
+
                                 # Also update agents count if it exists
                                 if 'agents' in config_data and 'resident_agents' in config_data['agents']:
                                     config_data['agents']['resident_agents']['count'] = new_pop
 
                                 # Recursively update steps
                                 update_steps_recursively(config_data, new_steps)
-                                
+
                                 with open(config_path, 'w', encoding='utf-8') as f:
                                     yaml.dump(config_data, f, allow_unicode=True)
-                                
+
                                 self.logger.info(f"配置文件已更新: 人口={new_pop}, 时间步={new_steps}")
-                                print("\n开始大规模测试...")
-                                
+                                print("\n开始使用设定规模运行...")
+
                                 # 重新运行模拟
-                                sim_result = await self.run_simulation(coding_results, max_fix_attempts=10)
+                                sim_result = await self.run_simulation(coding_results, max_fix_attempts=self.retries['full_run'])
                                 if sim_result and sim_result != 'small_scale_completed':
                                     simulation_successful = True
-                                    print("\n✅ 大规模测试运行成功！")
-                                    self.logger.info(f"第 {iteration} 轮大规模测试运行成功")
+                                    print("\n✅ 设定规模运行成功！")
+                                    self.logger.info(f"第 {iteration} 轮设定规模运行成功")
                                     break
                                 else:
                                     simulation_successful = False
-                                    print("\n❌ 大规模测试运行失败")
-                                    self.logger.error(f"第 {iteration} 轮大规模测试运行失败")
+                                    print("\n❌ 设定规模运行失败")
+                                    self.logger.error(f"第 {iteration} 轮设定规模运行失败")
                                     break
-                                    
+
                             except ValueError:
-                                self.logger.error("输入的参数无效，取消大规模测试")
+                                self.logger.error("输入的参数无效，取消设定规模运行")
                                 simulation_successful = False
                                 break
                                 
@@ -1887,12 +2803,15 @@ class ProjectMasterAgent(BaseAgent):
                     self.logger.info("无需进一步调整")
                     break
                 else:
-                    print("\n⚠️  结果需要调整，准备下一轮优化...")
+                    if evaluation_results.get('optimization_passed', False):
+                        print("\n✓ 本轮优化已通过问题解决检查，需重新运行+评估确认效果...")
+                    else:
+                        print("\n⚠️  本轮优化未通过问题解决检查，将再次尝试...")
                     if iteration >= max_iterations:
                         print(f"\n已达到最大迭代次数 ({max_iterations})，停止优化")
                         self.logger.info("达到最大迭代次数")
                         break
-                    
+
                     # 询问用户是否继续
                     print(f"\n是否继续第 {iteration + 1} 轮优化？")
                     print("  - 输入 'ok' 或 'yes' 继续")

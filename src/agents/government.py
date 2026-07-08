@@ -1,6 +1,7 @@
 from .shared_imports import *
 from ..utils.logger import LogManager
 from .agent_group import AgentGroup
+from typing import Callable
 from src.interfaces import (
     IOrdinaryGovernmentAgent,
     IHighRankingGovernmentAgent,
@@ -13,8 +14,46 @@ load_dotenv()
 _MAINTAIN_EMPLOYMENT_RATE = 0.05
 
 
+class _SafeFormatDict(dict):
+    """format_map 安全字典：缺失键填充占位提示，避免 KeyError。"""
+    def __missing__(self, key):
+        return f"[未提供:{key}]"
+
+
+def _build_member_template_vars(member, base_vars):
+    """合并成员 profile 与基础变量，供系统消息模板安全 format。
+
+    优先级：base_vars（显式传入的固定字段）> profile 字段。
+    额外提供 profile_vars_doc（动态画像说明文本），与 resident 模板对齐。
+    """
+    merged = {}
+    profile = getattr(member, "profile", None)
+    if isinstance(profile, dict):
+        merged.update(profile)
+    merged.update({k: v for k, v in base_vars.items() if v is not None})
+    # 动态画像变量文档（BaseAgent 提供），供模板 {profile_vars_doc} 使用
+    try:
+        merged.setdefault("profile_vars_doc", member._build_profile_vars_doc())
+    except Exception:
+        merged.setdefault("profile_vars_doc", "")
+    return merged
+
+
 def _calc_maintain_employment_cost(salary: float) -> float:
     return salary * _MAINTAIN_EMPLOYMENT_RATE
+
+
+def _member_getattr(obj, name: str):
+    """成员通用 __getattr__：类上不存在的属性回退到 profile 读取。
+
+    仅在常规属性查找失败时被调用，故不会遮蔽真实属性。
+    """
+    if name.startswith("_") or name in ("profile", "attr", "set_attr"):
+        raise AttributeError(f"'{type(obj).__name__}' object has no attribute '{name}'")
+    profile = obj.__dict__.get("profile")
+    if isinstance(profile, dict) and name in profile:
+        return profile[name]
+    raise AttributeError(f"'{type(obj).__name__}' object has no attribute '{name}'")
 
 class OrdinaryGovernmentAgent(AgentGroup.DiscussionMemberAgentBase, IOrdinaryGovernmentAgent):
     def __init__(self, agent_id, government, shared_pool):
@@ -28,6 +67,9 @@ class OrdinaryGovernmentAgent(AgentGroup.DiscussionMemberAgentBase, IOrdinaryGov
         self.system_message = None
         self.government_log = self.government.government_log
 
+    def __getattr__(self, name: str):
+        return _member_getattr(self, name)
+
     def get_memory_role_name(self) -> str:
         return "普通政府官员"
 
@@ -36,10 +78,17 @@ class OrdinaryGovernmentAgent(AgentGroup.DiscussionMemberAgentBase, IOrdinaryGov
 
     def update_system_message(self):
         """
-        更新系统提示词，包含居民当前的状态信息
+        更新系统提示词。基础字段 function/faction/personality 之外，
+        自动注入 profile 中的所有自定义画像字段，模板可直接引用。
         """
-        self.system_message = self.government.prompts['ordinary_government_agent_system_message'].format(
-            function=self.function, faction=self.faction, personality=self.personality)
+        base_vars = {
+            "function": self.function,
+            "faction": self.faction,
+            "personality": self.personality,
+        }
+        template_vars = _build_member_template_vars(self, base_vars)
+        self.system_message = self.government.prompts['ordinary_government_agent_system_message'].format_map(
+            _SafeFormatDict(template_vars))
 
     def get_current_situation_prompt(self, maintain_employment_cost):
         # 检查是否有运输经济模块
@@ -137,14 +186,20 @@ class HighRankingGovernmentAgent(AgentGroup.DiscussionLeaderAgentBase, IHighRank
         self.personality = None  # 人物性格
         self.government_log = self.government.government_log
 
+    def __getattr__(self, name: str):
+        return _member_getattr(self, name)
+
     def get_logger(self):
         return self.government_log
-    
+
     def update_system_message(self):
         """
-        更新系统提示词，包含居民当前的状态信息
+        更新系统提示词。注入 personality 及 profile 中的自定义画像字段。
         """
-        self.system_message = self.government.prompts['high_ranking_government_agent_system_message'].format(personality=self.personality)
+        base_vars = {"personality": self.personality}
+        template_vars = _build_member_template_vars(self, base_vars)
+        self.system_message = self.government.prompts['high_ranking_government_agent_system_message'].format_map(
+            _SafeFormatDict(template_vars))
 
     async def summarize_discussion_for_voting(self, summary, salary):
         """
@@ -252,7 +307,40 @@ class Government(AgentGroup, IGovernment):
         self._transport_economy = transport_economy  # 运输经济模型引用
         self._influence_registry = influence_registry
         self.government_log = self.group_log
-    
+
+        # 决策执行器注册表：key 为决策 JSON 中的字段名，value 为处理函数。
+        # 处理函数签名：handler(value, decision_data, simulator_context) -> None
+        # 项目可通过 register_decision_handler 注册专有动作，无需修改通用插件。
+        self._decision_handlers: Dict[str, Callable] = {}
+
+    def register_decision_handler(self, key: str, handler: Callable) -> None:
+        """注册一个决策字段处理器。"""
+        self._decision_handlers[key] = handler
+
+    def unregister_decision_handler(self, key: str) -> None:
+        """注销一个决策字段处理器。"""
+        self._decision_handlers.pop(key, None)
+
+    def _parse_decision_to_dict(self, decision: Any) -> Dict[str, Any]:
+        """把决策文本或 dict 统一解析为 dict。"""
+        if decision is None:
+            return {}
+        if isinstance(decision, dict):
+            return decision
+        if isinstance(decision, str):
+            try:
+                return json.loads(decision)
+            except json.JSONDecodeError:
+                pass
+            # 尝试从文本中提取 JSON
+            matches = re.findall(r'\{[^{}]*\}', str(decision))
+            for match in matches:
+                try:
+                    return json.loads(match)
+                except json.JSONDecodeError:
+                    continue
+        return {}
+
     # 实现 IGovernment 接口的 property
     @property
     def map(self):
@@ -454,23 +542,23 @@ class Government(AgentGroup, IGovernment):
     def apply_influences(self, target_name: str, context: Optional[Dict[str, Any]] = None) -> None:
         """
         应用所有注册的影响函数到指定目标
-        
+
         :param target_name: 目标名称（如 'tax_rate'）
         :param context: 上下文字典，包含影响函数所需的所有数据
         """
         if self._influence_registry is None:
             return
-        
+
         # 如果没有提供上下文，创建默认上下文
         if context is None:
             context = {}
-        
+
         # 确保上下文中包含 government 对象本身
         context['government'] = self
-        
+
         # 获取所有影响该目标的影响函数
         influences = self._influence_registry.get_influences(target_name)
-        
+
         # 应用每个影响函数
         for influence in influences:
             try:
@@ -480,6 +568,79 @@ class Government(AgentGroup, IGovernment):
                     pass
             except Exception as e:
                 self.government_log.error(f"应用影响函数失败 ({influence.source}->{target_name}:{influence.name}): {e}")
+
+    async def execute_group_turn(self, agents: Dict[int, Any], simulator_context: Optional[Any] = None) -> None:
+        """政府群体一轮决策并作用于世界的通用入口。
+
+        由 BaseSimulator.execute_group_agent_actions 在每回合调用。
+        默认实现：
+        1. 从 simulator_context 计算 group_param（salary）；
+        2. 调用 orchestrate_group_decision 收集官员 LLM 决策；
+        3. 调用 apply_decision 将决策作用于世界。
+
+        具体决策→作用的映射由 apply_decision 负责。子类/项目可覆写
+        apply_decision 以接入不同领域（如 TEOG 运河、federal 住房金融）。
+        """
+        if not agents:
+            return
+
+        # 计算决策参数：优先使用 simulator_context 提供的 salary 计算能力
+        group_param = 0
+        if simulator_context is not None and hasattr(simulator_context, "calculate_total_salaries"):
+            try:
+                _, group_param = simulator_context.calculate_total_salaries()
+            except Exception as e:
+                self.government_log.warning(f"计算政府决策参数失败，使用默认值 0: {e}")
+
+        decision = await self.orchestrate_group_decision(
+            agents=agents,
+            group_param=group_param,
+            group_type="government",
+            ordinary_type=OrdinaryGovernmentAgent,
+            leader_type=HighRankingGovernmentAgent,
+            info_officer_types=(InformationOfficer,),
+        )
+
+        if decision:
+            self.government_log.info(f"政府群体决策：{decision}")
+            self.apply_decision(decision, simulator_context=simulator_context)
+
+    def apply_decision(self, decision: Any, simulator_context: Optional[Any] = None) -> None:
+        """将政府群体决策作用于世界。
+
+        默认实现：
+        1. 解析决策为 dict；
+        2. 若项目通过 ``register_decision_handler`` 注册了处理器，则按 key 调用；
+        3. 未注册任何处理器时，仅记录决策内容。
+
+        项目特定插件/Simulator 应注册处理器，把决策映射到具体状态变更
+        （如 adjust_tax_rate、agency_purchase_shock 等），避免把项目专有逻辑
+        写死在通用政府插件里。
+        """
+        decision_data = self._parse_decision_to_dict(decision)
+        if not decision_data:
+            self.government_log.warning(f"政府决策无法解析：{decision}")
+            return
+
+        if self._decision_handlers:
+            for key, handler in self._decision_handlers.items():
+                if key in decision_data:
+                    try:
+                        handler(
+                            decision_data[key],
+                            decision_data,
+                            simulator_context=simulator_context,
+                        )
+                        self.government_log.info(
+                            f"政府执行决策 - {key}: {decision_data[key]}"
+                        )
+                    except Exception as e:
+                        self.government_log.error(
+                            f"政府决策处理器 {key} 执行失败: {e}"
+                        )
+        else:
+            self.government_log.info(f"政府决策已记录：{decision_data}")
+
 
 class government_SharedInformationPool(AgentGroup.SharedInformationPoolBase, IGovernmentSharedInformationPool):
     def __init__(self, max_discussions: int = 5):

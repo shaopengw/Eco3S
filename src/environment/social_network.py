@@ -13,6 +13,13 @@ from src.interfaces import IHeterogeneousGraph, IHypergraph, ISocialNetwork
 import warnings
 import pandas as pd
 warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning, module="hypernetx")
+# 忽略 hypernetx 内部触发的 pandas FutureWarning（dtype 不兼容，非致命）
+warnings.filterwarnings("ignore", category=FutureWarning, module=r"hypernetx.*")
+warnings.filterwarnings(
+    "ignore",
+    category=FutureWarning,
+    message=r".*Setting an item of incompatible dtype is deprecated.*",
+)
 
 class HeterogeneousGraph(IHeterogeneousGraph):
     """
@@ -643,16 +650,34 @@ class SocialNetwork(ISocialNetwork):
             else:
                 # 中小规模网络：正常显示超图
                 font_size = max(6, 16 / (1 + np.log(num_nodes)))
-                hnx.draw(self.hyper_graph.hypergraph, 
-                        with_node_labels=(num_nodes <= 500),
-                        node_labels_kwargs={'fontsize': font_size})
-            
+                try:
+                    hnx.draw(self.hyper_graph.hypergraph,
+                            with_node_labels=(num_nodes <= 500),
+                            node_labels_kwargs={'fontsize': font_size})
+                except Exception as e:
+                    print(f"[可视化] 超图绘制失败（{e}），跳过超图")
+
             ax2.set_title("超图", pad=20, fontsize=16, fontweight='bold', fontfamily='SimHei')
             
             # 保存高清图片
             current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
             save_path = os.path.join(save_dir, f"social_network_{current_time}.png")
-            plt.savefig(save_path, dpi=300, bbox_inches='tight', pad_inches=0.5)
+            try:
+                plt.savefig(save_path, dpi=300, bbox_inches='tight', pad_inches=0.5)
+            except ValueError as e:
+                # hnx.draw 在退化超边（空/单节点超边）下会挂上一个 offsets 为空的一维集合，
+                # 该集合在 savefig 真正渲染时才抛 "Expected 2-dimensional array"。
+                # 这里清掉超图那一侧的坐标轴，只保存社交图。
+                print(f"[可视化] 渲染超图失败（{e}），仅保存社交图")
+                ax2.cla()
+                ax2.text(0.5, 0.5, '超图渲染失败，已跳过',
+                         ha='center', va='center', fontsize=14,
+                         bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+                ax2.set_xlim(0, 1)
+                ax2.set_ylim(0, 1)
+                ax2.axis('off')
+                ax2.set_title("超图", pad=20, fontsize=16, fontweight='bold', fontfamily='SimHei')
+                plt.savefig(save_path, dpi=300, bbox_inches='tight', pad_inches=0.5)
             print(f"社交网络图已保存至：{save_path}")
             
             plt.close(fig)
@@ -730,7 +755,7 @@ class SocialNetwork(ISocialNetwork):
                     # 过滤掉 location 为 None 或无效的居民
                     valid_pairs = []
                     for r in area_remaining:
-                        loc = residents[r].location
+                        loc = getattr(residents[r], 'location', None)
                         if loc is not None and isinstance(loc, (tuple, list)) and len(loc) >= 2:
                             valid_pairs.append((r, loc))
 
@@ -802,31 +827,28 @@ class SocialNetwork(ISocialNetwork):
                     self.add_relation(resident_id, colleague_id, "colleague")
             
             # 建立同乡关系
-            x, y = new_residents[resident_id].location
-            area_key = (x // 20, y // 20)
-            hometown_group_id = f"hometown_{area_key[0]}_{area_key[1]}"
-            # 添加到对应的同乡群组
-            self.add_group(hometown_group_id, [resident_id])
+            location = getattr(new_residents[resident_id], 'location', None)
+            if location is not None and isinstance(location, (tuple, list)) and len(location) >= 2:
+                x, y = location
+                area_key = (x // 20, y // 20)
+                hometown_group_id = f"hometown_{area_key[0]}_{area_key[1]}"
+                # 添加到对应的同乡群组
+                self.add_group(hometown_group_id, [resident_id])
 
-            # 在同乡中寻找现有的家族
-            area_families = []
-            for edge in self.hyper_graph.get_node_hyperedges(resident_id):
-                if edge.startswith("family_"):
-                    area_families.append(edge)
-            
-            # 如果同乡中有家族，随机选择一个加入（80%概率）
-            joined_family = False
-            if area_families and random.random() < 0.8:
-                chosen_family = random.choice(list(set(area_families)))
-                # 将新居民添加到选中的家族中
-                self.add_group(chosen_family, [resident_id])
-                joined_family = True
-            
-            # # 如果没有加入任何家族，创建单人家族
-            # if not joined_family:
-            #     family_id = len([edge for edge in self.hyper_graph.get_hyperedges() if edge.startswith("family_")])
-            #     family_group_id = f"family_{family_id}"
-            #     self.add_group(family_group_id, [resident_id])
+                # 在同乡中寻找现有的家族
+                area_families = []
+                for edge in self.hyper_graph.get_node_hyperedges(resident_id):
+                    if edge.startswith("family_"):
+                        area_families.append(edge)
+
+                # 如果同乡中有家族，随机选择一个加入（80%概率）
+                if area_families and random.random() < 0.8:
+                    chosen_family = random.choice(list(set(area_families)))
+                    # 将新居民添加到选中的家族中
+                    self.add_group(chosen_family, [resident_id])
+                    joined_family = True
+            else:
+                joined_family = False
 
     def calculate_speech_probability(self, node_id) -> float:
         """

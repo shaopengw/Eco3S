@@ -101,8 +101,8 @@ generate_agent_profile_prompt: |
 
   ```yaml
   agents:
-    - name: <角色标识，如 resident / government / consumer>
-      entity_type: resident    # resident | government | rebels，见要求说明
+    - name: <角色标识，如 consumer / enterprise / official>
+      entity_type: baseagent    # baseagent | resident | government | rebels
       attributes:
         - name: <属性名>
           type: choice          # choice：离散选择型
@@ -127,19 +127,28 @@ generate_agent_profile_prompt: |
           action: <修正动作>
       extra:                    # 静态属性，不参与随机生成
         role: <角色名>          # 用于 prompts/actions 文件命名
+        # baseagent 如需自主决策并影响宏观状态，可配 decision_effectors
+        # 示例：
+        # decision_effectors:
+        #   output_change: {{target: output_level, mode: relative_percent}}
+        #   capacity_change: {{target: capacity_utilization, mode: absolute_points, scale: 0.01}}
   computed_descriptions:
     <分组名>:
       - "<描述文本>"
   ```
 
   要求：
-  1. entity_type 可选：resident（居民个体，默认值）、government（政府主体）、rebels（叛军主体）。
-     - resident：个体级 Agent，每人拥有独立的随机生成画像，适用于大多数模拟角色。
-     - government / rebels：组织级实体，内部有层级结构（领袖 + 成员），适用于需要群体行为的场景。
-  2. 用 extra.role 区分具体角色名（如 consumer、government_official 等）。
+  1. entity_type 选择规则（按匹配度优先）：
+     - **baseagent（默认值）**：通用决策主体。如果角色不是明确的人类、政府或叛军，就使用此类型。例如 consumer、enterprise、farmer、merchant 等。
+     - **resident**：明确的人类个体，具有就业、收入、健康、满意度、城镇生活等属性。
+     - **government**：政府/统治主体，需要主动制定政策、征税、投资、管理公共事务。
+     - **rebels**：叛军/反抗组织，需要主动进行反抗、煽动、组织行动。
+     判断方法：如果角色描述中不包含 resident / government / rebels 的核心特征，一律使用 baseagent。
+  2. 用 extra.role 区分具体角色名（如 consumer、enterprise、government_official 等）。
   3. composite 类型必须直接列出候选词（words），不要引用外部文件路径；候选词数量应不少于 count。
   4. 所有属性名称、取值范围必须与设计文档一致。
-  5. 直接输出严格 YAML 格式，不要加代码块标记或额外解释。
+  5. baseagent 角色若需要 LLM 决策：在 extra 中声明 decision_effectors，字段名与 prompts/{{role}}.yaml 的 decision_json 返回字段一致；target 为画像属性名或 simulator.状态名；mode 可选 relative_percent / absolute_points / set / add；必要时用 scale 做单位转换。
+  6. 直接输出严格 YAML 格式，不要加代码块标记或额外解释。
 
 generate_agent_profile_with_feedback_prompt: |
   请根据设计文档中「智能体与行为」的描述、模块配置和用户反馈，重新生成或修正 Agent 的角色定义与画像配置。
@@ -161,7 +170,7 @@ generate_agent_profile_with_feedback_prompt: |
   ```yaml
   agents:
     - name: <角色标识>
-      entity_type: resident    # resident | government | rebels，见要求说明
+      entity_type: baseagent    # baseagent | resident | government | rebels
       attributes:
         - name: <属性名>
           type: choice | range | composite
@@ -173,16 +182,25 @@ generate_agent_profile_with_feedback_prompt: |
           action: <修正动作>
       extra:
         role: <角色名>          # 用于 prompts/actions 文件命名
+        # baseagent 如需自主决策并影响宏观状态，可配 decision_effectors
+        # 示例：
+        # decision_effectors:
+        #   output_change: {{target: output_level, mode: relative_percent}}
+        #   capacity_change: {{target: capacity_utilization, mode: absolute_points, scale: 0.01}}
   computed_descriptions:
     <属性值到自然语言描述的映射>
   ```
 
   要求：
-  1. entity_type 可选：resident（居民个体，默认值）、government（政府主体）、rebels（叛乱主体）。规则同前。
-     - resident：个体级 Agent，每人拥有独立的随机生成画像，适用于大多数模拟角色。
-     - government / rebels：组织级实体，内部有层级结构（领袖 + 成员），适用于需要群体行为的场景。
+  1. entity_type 选择规则（按匹配度优先）：
+     - **baseagent（默认值）**：通用决策主体。只要角色不是明确的人类居民、政府或叛军，就使用此类型。
+     - **resident**：明确的人类居民个体，具有就业、收入、健康、满意度、城镇生活等属性。
+     - **government**：政府/统治主体，需要主动制定政策、征税、投资、管理公共事务。
+     - **rebels**：叛军/反抗组织，需要主动进行反抗、煽动、组织行动。
+     判断方法：如果角色描述中不包含 resident / government / rebels 的核心特征，一律使用 baseagent。
   2. 利用 extra.role 区分具体角色名。
   3. composite 类型必须直接列出候选词（words），不要引用外部文件路径；候选词数量应不少于 count。
   4. 根据用户反馈对上一版本进行修正，保持其他部分不变。
   5. 所有属性名称、取值范围必须与设计文档一致。
-  6. 输出严格 YAML 格式，直接返回 YAML 内容，不要加 ```yaml 代码块标记或额外解释。
+  6. baseagent 角色若需要 LLM 决策：在 extra 中声明 decision_effectors，字段名与 prompts/{{role}}.yaml 的 decision_json 返回字段一致；target 为画像属性名或 simulator.状态名；mode 可选 relative_percent / absolute_points / set / add；必要时用 scale 做单位转换。
+  7. 输出严格 YAML 格式，直接返回 YAML 内容，不要加 ```yaml 代码块标记或额外解释。

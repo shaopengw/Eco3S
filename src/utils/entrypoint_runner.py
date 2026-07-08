@@ -590,28 +590,44 @@ async def orchestrate_runtime_modules_init(
                 _param_names: Tuple[str, ...] = tuple(param_names),
                 _done_token: str = done_token,
             ) -> Dict[str, Any]:
-                kwargs: Dict[str, Any] = {}
-                for p in _param_names:
+                def _resolve(p: str) -> Any:
                     if p == "config":
-                        kwargs[p] = state.get("config")
-                        continue
+                        return state.get("config")
                     if p == "plugin_registry":
-                        kwargs[p] = state.get("plugin_registry")
-                        continue
-
+                        return state.get("plugin_registry")
                     if p in state:
-                        kwargs[p] = state[p]
-                        continue
+                        return state[p]
 
                     # 支持 <module>_service 取依赖模块的 service
                     if p.endswith("_service"):
                         base = p[: -len("_service")]
                         base_obj = state.get(base)
                         if base_obj is not None and getattr(base_obj, "service", None) is not None:
-                            kwargs[p] = getattr(base_obj, "service")
-                            continue
+                            return getattr(base_obj, "service")
+
+                    # 仍未找到时，从 config 中解析参数值。
+                    # 运行期初始化方法（如 initialize_preference_distribution）
+                    # 经常需要从 simulation/data 等配置段读取标量参数，而不是等待
+                    # 某个模块产出同名状态。这里优先在 config 顶层、simulation、
+                    # data 段查找，避免把配置缺参误判为依赖缺失。
+                    cfg = state.get("config") or {}
+                    if p in cfg:
+                        return cfg[p]
+                    sim_cfg = cfg.get("simulation") or {}
+                    if p in sim_cfg:
+                        return sim_cfg[p]
+                    data_cfg = cfg.get("data") or {}
+                    if p in data_cfg:
+                        return data_cfg[p]
+
+                    # 兜底：按点分路径在整棵配置树中查找（兼容少量嵌套参数）
+                    dotted = _get_cfg(cfg, p)
+                    if dotted is not None:
+                        return dotted
 
                     raise RuntimeInitError(f"自动初始化参数无法满足: {_method.__qualname__} 缺少参数 '{p}'")
+
+                kwargs: Dict[str, Any] = {p: _resolve(p) for p in _param_names}
 
                 await _maybe_await(_method(**kwargs))
                 return {_done_token: True}
@@ -712,6 +728,101 @@ async def orchestrate_runtime_modules_init(
 
 # ==================== 通用 DI 构建器（动态模块初始化） ====================
 
+def _load_agent_profile_config(config: dict) -> Optional[dict]:
+    """加载 agent_profile 配置（优先内联，其次文件路径）。
+
+    返回解析后的字典；若无配置返回 None。供 government/rebellion 成员的
+    配置驱动生成使用。
+    """
+    if not isinstance(config, dict):
+        return None
+
+    # 1. 内联配置
+    for key in ("agent_profile", "resident_profile"):
+        if key in config and isinstance(config[key], dict):
+            return config[key]
+
+    # 2. 文件路径
+    data_cfg = config.get("data") or {}
+    profile_path = data_cfg.get("agent_profile_path")
+    if profile_path and os.path.exists(profile_path):
+        with open(profile_path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f)
+
+    return None
+
+
+def _apply_group_attributes(group_obj: Any, agent_def: dict, logger: logging.Logger) -> None:
+    """将 agent_profile 中可选的 group_attributes 注入群体对象。
+
+    用于让 government/rebellion 的群组级初始状态（如 budget、military_strength /
+    strength、resources、tax_rate）也可由配置驱动。仅设置群体对象上已存在的属性，
+    避免误建无效字段。
+    """
+    group_attrs = agent_def.get("group_attributes")
+    if not isinstance(group_attrs, dict):
+        return
+    for key, value in group_attrs.items():
+        if hasattr(group_obj, key):
+            try:
+                setattr(group_obj, key, value)
+            except Exception as e:
+                logger.warning(f"group_attributes 注入失败 {key}={value}: {e}")
+        else:
+            logger.warning(f"group_attributes 跳过未知属性: {key}")
+
+
+def _accepts_group_agents(simulator_class: type) -> bool:
+    """检查 simulator_class.__init__ 是否显式接受 group_agents 参数。"""
+    try:
+        sig = inspect.signature(simulator_class.__init__)
+        return "group_agents" in sig.parameters
+    except Exception:
+        return False
+
+
+def _resolve_group_count(
+    agent_profile: Optional[Dict[str, Any]],
+    agent_def: Dict[str, Any],
+    config: Dict[str, Any],
+) -> int:
+    """根据 agent_profile 与 simulation 配置，推导插件管理群体的成员数量。
+
+    优先级：
+    1. agent_def 自含的 ranks / count
+    2. simulation.group_counts 中按 name 或 entity_type 指定的数量
+    3. _compute_agent_counts 按 initial_population 的分配结果
+
+    这样用户既可以在 agent_profile 里精确描述群体结构，也可以在
+    simulation_config.yaml 里用 group_counts 快速指定各类群体数量。
+    """
+    # 1) 显式 ranks / count 已足够自描述
+    if agent_def.get("ranks") or isinstance(agent_def.get("count"), int):
+        return 0
+
+    from src.agents.agent_generator import _compute_agent_counts
+
+    agents_def = agent_profile.get("agents", []) if isinstance(agent_profile, dict) else []
+    initial_population = (config.get("simulation") or {}).get("initial_population", 0)
+    entity_type = agent_def.get("entity_type")
+    name = agent_def.get("name", "")
+
+    # 2) simulation.group_counts 配置（支持按 name 或 entity_type）
+    group_counts = ((config.get("simulation") or {}).get("group_counts") or {})
+    if isinstance(group_counts, dict):
+        explicit_count = group_counts.get(name)
+        if explicit_count is None and entity_type:
+            explicit_count = group_counts.get(entity_type)
+        if isinstance(explicit_count, int) and explicit_count >= 0:
+            return explicit_count
+
+    # 3) 回退到人口平摊
+    if not agents_def or initial_population <= 0:
+        return 0
+    counts = _compute_agent_counts(agents_def, initial_population)
+    return counts.get(name, 0)
+
+
 async def build_simulator_via_di(
     *,
     config: dict,
@@ -760,7 +871,161 @@ async def build_simulator_via_di(
         "config": config,
     }
 
-    # 社交网络可视化（如存在）
+    # 统一群体 agent 容器（新架构 BaseSimulator 子类使用）
+    group_agents: Dict[str, Dict[str, Any]] = {}
+
+    # 动态初始化 government 模块（如启用且已加载）
+    if enable_government and "government" in runtime_state.modules:
+        runner_logger.info("正在初始化 government 模块...")
+        from src.agents.agent_group import AgentGroup
+        import src.agents.government as government_agents
+        from src.agents.agent_generator import find_group_agent_def, generate_group_profiles
+
+        government_plugin = require_module(runtime_state.plugin_registry, "government")
+        government_obj = getattr(government_plugin, "service", None) or government_plugin
+
+        gov_rank_factories = {
+            "普通官员": lambda agent_id, gov, pool: government_agents.OrdinaryGovernmentAgent(
+                agent_id=agent_id, government=gov, shared_pool=pool
+            ),
+            "高级官员": lambda agent_id, gov, pool: government_agents.HighRankingGovernmentAgent(
+                agent_id=agent_id, government=gov, shared_pool=pool
+            ),
+        }
+
+        def _init_gov_agent(official, data):
+            # 整份画像灌入 profile，固定字段保留为兼容默认
+            if isinstance(getattr(official, "profile", None), dict):
+                official.profile.update(data)
+            official.personality = data.get("personality", "")
+            if data.get("rank") == "普通官员":
+                official.function = data.get("function")
+                official.faction = data.get("faction")
+
+        gov_common_kwargs = dict(
+            group_obj=government_obj,
+            rank_factories=gov_rank_factories,
+            shared_pool_factory=government_agents.government_SharedInformationPool,
+            init_agent=_init_gov_agent,
+            add_info_officer=lambda agent_id, gov, pool: government_agents.InformationOfficer(
+                agent_id=agent_id, government=gov, shared_pool=pool
+            ),
+            validate_types=(
+                government_agents.OrdinaryGovernmentAgent,
+                government_agents.HighRankingGovernmentAgent,
+                government_agents.InformationOfficer,
+            ),
+        )
+
+        # 优先：agent_profile 配置驱动生成（内存桥接，不落盘）
+        agent_profile = _load_agent_profile_config(config)
+        gov_def = find_group_agent_def(agent_profile, "government")
+        if gov_def is not None:
+            runner_logger.info("government 使用 agent_profile 配置驱动生成成员画像")
+            _apply_group_attributes(government_obj, gov_def, runner_logger)
+            gov_count = _resolve_group_count(agent_profile, gov_def, config)
+            gov_profiles = generate_group_profiles("government", gov_def, fallback_count=gov_count)
+            government_officials, _, _ = await AgentGroup.generate_agents_from_info_list(
+                gov_profiles, **gov_common_kwargs
+            )
+        else:
+            government_info_path = (config.get("data") or {}).get("government_info_path")
+            government_officials, _, _ = await AgentGroup.generate_agents_from_info_json(
+                government_info_path, **gov_common_kwargs
+            )
+        simulator_kwargs["government_officials"] = government_officials
+        group_agents["government"] = {
+            "agents": government_officials,
+            "ordinary_type": government_agents.OrdinaryGovernmentAgent,
+            "leader_type": government_agents.HighRankingGovernmentAgent,
+            "info_officer_types": (government_agents.InformationOfficer,),
+        }
+
+    # 动态初始化 rebellion 模块（如启用且已加载）
+    if enable_rebellion and "rebellion" in runtime_state.modules:
+        runner_logger.info("正在初始化 rebellion 模块...")
+        from src.agents.agent_group import AgentGroup
+        import src.agents.rebels as rebels_agents_module
+        from src.agents.agent_generator import find_group_agent_def, generate_group_profiles
+
+        rebellion_plugin = require_module(runtime_state.plugin_registry, "rebellion")
+        rebellion_obj = getattr(rebellion_plugin, "service", None) or rebellion_plugin
+
+        reb_rank_factories = {
+            "普通叛军": lambda agent_id, reb, pool: rebels_agents_module.OrdinaryRebel(
+                agent_id=agent_id, rebellion=reb, shared_pool=pool
+            ),
+            "叛军头子": lambda agent_id, reb, pool: rebels_agents_module.RebelLeader(
+                agent_id=agent_id, rebellion=reb, shared_pool=pool
+            ),
+        }
+
+        def _init_reb_agent(rebel, data):
+            if isinstance(getattr(rebel, "profile", None), dict):
+                rebel.profile.update(data)
+            rebel.personality = data.get("personality", "")
+            if data.get("rank") == "普通叛军":
+                rebel.role = data.get("role")
+
+        reb_common_kwargs = dict(
+            group_obj=rebellion_obj,
+            rank_factories=reb_rank_factories,
+            shared_pool_factory=rebels_agents_module.RebelsSharedInformationPool,
+            init_agent=_init_reb_agent,
+            add_info_officer=lambda agent_id, reb, pool: rebels_agents_module.InformationOfficer(
+                agent_id=agent_id, rebellion=reb, shared_pool=pool
+            ),
+            validate_types=(
+                rebels_agents_module.OrdinaryRebel,
+                rebels_agents_module.RebelLeader,
+                rebels_agents_module.InformationOfficer,
+            ),
+        )
+
+        agent_profile = _load_agent_profile_config(config)
+        reb_def = find_group_agent_def(agent_profile, "rebels")
+        if reb_def is not None:
+            runner_logger.info("rebellion 使用 agent_profile 配置驱动生成成员画像")
+            _apply_group_attributes(rebellion_obj, reb_def, runner_logger)
+            reb_count = _resolve_group_count(agent_profile, reb_def, config)
+            reb_profiles = generate_group_profiles("rebels", reb_def, fallback_count=reb_count)
+            rebels_agents, _, _ = await AgentGroup.generate_agents_from_info_list(
+                reb_profiles, **reb_common_kwargs
+            )
+        else:
+            rebellion_info_path = (config.get("data") or {}).get("rebellion_info_path")
+            rebels_agents, _, _ = await AgentGroup.generate_agents_from_info_json(
+                rebellion_info_path, **reb_common_kwargs
+            )
+        simulator_kwargs["rebels_agents"] = rebels_agents
+        group_agents["rebellion"] = {
+            "agents": rebels_agents,
+            "ordinary_type": rebels_agents_module.OrdinaryRebel,
+            "leader_type": rebels_agents_module.RebelLeader,
+            "info_officer_types": (rebels_agents_module.InformationOfficer,),
+        }
+
+    # 创建影响管理器，并绑定全局 InfluenceRegistry 的执行顺序
+    influence_manager = InfluenceManager(
+        logger=logging.getLogger("influences"),
+        influence_registry=influence_registry,
+    )
+    if influence_registry is not None:
+        registry_order = getattr(influence_registry, "execution_order", None)
+        if registry_order:
+            influence_manager.set_execution_order(list(registry_order))
+    simulator_kwargs["influence_manager"] = influence_manager
+
+    # 新架构 BaseSimulator 子类统一通过 group_agents 接收插件群体
+    if group_agents and _accepts_group_agents(simulator_class):
+        simulator_kwargs["group_agents"] = group_agents
+        runner_logger.info(f"已注入群体 agent: {list(group_agents.keys())}")
+
+    runner_logger.info(f"正在构建 {simulator_class.__name__} 实例...")
+    simulator = simulator_class(**simulator_kwargs)
+
+    # 社交网络可视化（如存在）：在 Simulator 初始化完成后再调用，
+    # 这样初始居民已经通过 integrate_new_residents 加入社交网络，不会误报空图。
     social_network = runtime_state.social_network
     if social_network:
         try:
@@ -771,88 +1036,6 @@ async def build_simulator_via_di(
             social_network.plot_degree_distribution()
         except Exception as e:
             runner_logger.warning(f"社交网络节点度分布可视化失败：{e}")
-
-    # 动态初始化 government 模块（如启用且已加载）
-    if enable_government and "government" in runtime_state.modules:
-        runner_logger.info("正在初始化 government 模块...")
-        from src.agents.agent_group import AgentGroup
-        import src.agents.government as government_agents
-
-        government_plugin = require_module(runtime_state.plugin_registry, "government")
-        government_obj = getattr(government_plugin, "service", None) or government_plugin
-
-        government_info_path = (config.get("data") or {}).get("government_info_path")
-        government_officials, _, _ = await AgentGroup.generate_agents_from_info_json(
-            government_info_path,
-            group_obj=government_obj,
-            rank_factories={
-                "普通官员": lambda agent_id, gov, pool: government_agents.OrdinaryGovernmentAgent(
-                    agent_id=agent_id, government=gov, shared_pool=pool
-                ),
-                "高级官员": lambda agent_id, gov, pool: government_agents.HighRankingGovernmentAgent(
-                    agent_id=agent_id, government=gov, shared_pool=pool
-                ),
-            },
-            shared_pool_factory=government_agents.government_SharedInformationPool,
-            init_agent=lambda official, data: (
-                setattr(official, "personality", data["personality"]),
-                setattr(official, "function", data["function"]) if data.get("rank") == "普通官员" else None,
-                setattr(official, "faction", data["faction"]) if data.get("rank") == "普通官员" else None,
-            ),
-            add_info_officer=lambda agent_id, gov, pool: government_agents.InformationOfficer(
-                agent_id=agent_id, government=gov, shared_pool=pool
-            ),
-            validate_types=(
-                government_agents.OrdinaryGovernmentAgent,
-                government_agents.HighRankingGovernmentAgent,
-                government_agents.InformationOfficer,
-            ),
-        )
-        simulator_kwargs["government_officials"] = government_officials
-
-    # 动态初始化 rebellion 模块（如启用且已加载）
-    if enable_rebellion and "rebellion" in runtime_state.modules:
-        runner_logger.info("正在初始化 rebellion 模块...")
-        from src.agents.agent_group import AgentGroup
-        import src.agents.rebels as rebels_agents_module
-
-        rebellion_plugin = require_module(runtime_state.plugin_registry, "rebellion")
-        rebellion_obj = getattr(rebellion_plugin, "service", None) or rebellion_plugin
-
-        rebellion_info_path = (config.get("data") or {}).get("rebellion_info_path")
-        rebels_agents, _, _ = await AgentGroup.generate_agents_from_info_json(
-            rebellion_info_path,
-            group_obj=rebellion_obj,
-            rank_factories={
-                "普通叛军": lambda agent_id, reb, pool: rebels_agents_module.OrdinaryRebel(
-                    agent_id=agent_id, rebellion=reb, shared_pool=pool
-                ),
-                "叛军头子": lambda agent_id, reb, pool: rebels_agents_module.RebelLeader(
-                    agent_id=agent_id, rebellion=reb, shared_pool=pool
-                ),
-            },
-            shared_pool_factory=rebels_agents_module.RebelsSharedInformationPool,
-            init_agent=lambda rebel, data: (
-                setattr(rebel, "personality", data["personality"]),
-                setattr(rebel, "role", data["role"]) if data.get("rank") == "普通叛军" else None,
-            ),
-            add_info_officer=lambda agent_id, reb, pool: rebels_agents_module.InformationOfficer(
-                agent_id=agent_id, rebellion=reb, shared_pool=pool
-            ),
-            validate_types=(
-                rebels_agents_module.OrdinaryRebel,
-                rebels_agents_module.RebelLeader,
-                rebels_agents_module.InformationOfficer,
-            ),
-        )
-        simulator_kwargs["rebels_agents"] = rebels_agents
-
-    # 创建影响管理器
-    influence_manager = InfluenceManager(logger=logging.getLogger("influences"))
-    simulator_kwargs["influence_manager"] = influence_manager
-
-    runner_logger.info(f"正在构建 {simulator_class.__name__} 实例...")
-    simulator = simulator_class(**simulator_kwargs)
 
     return simulator
 

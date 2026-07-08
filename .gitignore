@@ -183,3 +183,18 @@ cython_debug/
 
 # history folder
 history/
+
+# AI-generated per-project files
+projects/
+
+# AI-generated plugins (keep the package marker)
+plugins/generated/*
+!plugins/generated/__init__.py
+
+# Test files
+tests/
+scripts/
+
+# RAG runtime artifacts (generated at runtime)
+experiment_dataset/jel_embeddings.json
+experiment_dataset/.rag_cache.json

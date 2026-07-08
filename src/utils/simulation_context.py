@@ -9,6 +9,11 @@ class SimulationContext:
     _base_history_dir = os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')), 'history')
     
     @classmethod
+    def set_base_history_dir(cls, base_dir: str):
+        """设置历史输出根目录（用于按项目隔离实验结果）。"""
+        cls._base_history_dir = os.path.abspath(base_dir)
+
+    @classmethod
     def set_simulation_type(cls, simulation_type: str):
         """设置当前模拟类型（如 info_propagation）"""
         cls._current_simulation = simulation_type

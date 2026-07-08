@@ -161,11 +161,12 @@ class LinearInfluence(IInfluenceFunction):
         constant: float = 0.0,
         target_attr: Optional[str] = None,
         mode: str = 'set',
-        description: str = ""
+        description: str = "",
+        placeholder: bool = False,
     ):
         """
         初始化线性影响函数
-        
+
         Args:
             source: 影响源模块名称
             target: 目标模块名称
@@ -176,10 +177,12 @@ class LinearInfluence(IInfluenceFunction):
             target_attr: 目标属性名（可选，如不指定则只返回计算结果）
             mode: 影响模式 - 'set'(设置), 'add'(累加), 'multiply'(乘以)
             description: 影响描述（可选）
+            placeholder: 是否为占位影响（不执行）
         """
         super().__init__(
             source, target, name,
-            description or f"线性影响: {coefficient}*{variable}+{constant}"
+            description or f"线性影响: {coefficient}*{variable}+{constant}",
+            placeholder=placeholder,
         )
         self.variable = variable
         self.coefficient = coefficient
@@ -221,22 +224,25 @@ class LinearInfluence(IInfluenceFunction):
     def apply(self, target_obj, context: dict) -> Optional[float]:
         """
         应用线性影响
-        
+
         Args:
             target_obj: 目标模块对象
             context: 上下文字典
-        
+
         Returns:
             计算得到的影响值，如果无法计算则返回None
         """
+        if self.placeholder:
+            return None
+
         # 获取变量值
         var_value = self._get_variable_value(context)
         if var_value is None:
             return None
-        
+
         # 线性计算
         result = self.coefficient * var_value + self.constant
-        
+
         # 如果指定了目标属性，则修改它
         if self.target_attr:
             if self.mode == 'set':
@@ -247,7 +253,7 @@ class LinearInfluence(IInfluenceFunction):
             elif self.mode == 'multiply':
                 current = getattr(target_obj, self.target_attr, 1)
                 setattr(target_obj, self.target_attr, current * result)
-        
+
         return result
     
     def __repr__(self) -> str:
@@ -363,11 +369,12 @@ result = max(0.0, base - unemployment_penalty)
         result_var: str = 'result',
         variables: Optional[Dict[str, Any]] = None,
         inputs: Optional[Dict[str, Any]] = None,
-        description: str = ""
+        description: str = "",
+        placeholder: bool = False,
     ):
         """
         初始化代码影响函数
-        
+
         Args:
             source: 影响源模块名称
             target: 目标模块名称
@@ -376,26 +383,34 @@ result = max(0.0, base - unemployment_penalty)
             target_attr: 目标属性名（可选，如果指定则将结果设置到该属性）
             result_var: 代码执行后读取结果的变量名（默认'result'）
             description: 影响描述（可选）
-        
+            placeholder: 是否为占位影响（不执行）
+
         Raises:
             ValueError: 如果代码包含非法语法
         """
         super().__init__(
             source, target, name,
-            description or f"代码影响: {code[:50]}..."
+            description or f"代码影响: {code[:50]}...",
+            placeholder=placeholder,
         )
         self.code = code
         self.target_attr = target_attr
         self.result_var = result_var
         self.variables: Dict[str, Any] = dict(variables or {})
         self.inputs = inputs or {}
-        
+
         # 验证代码语法
         try:
             compile(code, '<string>', 'exec')
         except SyntaxError as e:
             raise ValueError(f"代码语法错误: {e}")
-    
+
+        # 调试用开关：设为 True 时 apply 捕获的异常会重新抛出，便于外部检测
+        self._raise_on_error: bool = False
+
+    def set_raise_on_error(self, enabled: bool = True) -> None:
+        self._raise_on_error = bool(enabled)
+
     def _prepare_namespace(self, target_obj, context: dict) -> dict:
         """
         准备代码执行的命名空间
@@ -434,38 +449,43 @@ result = max(0.0, base - unemployment_penalty)
     def apply(self, target_obj, context: dict) -> Any:
         """
         应用代码影响
-        
+
         Args:
             target_obj: 目标模块对象
             context: 上下文字典
-        
+
         Returns:
             代码执行的结果（从result_var变量读取），如果失败则返回None
-        
+
         Raises:
             执行错误会被捕获并打印，返回None
         """
+        if self.placeholder:
+            return None
+
         # 准备命名空间
         namespace = self._prepare_namespace(target_obj, context)
-        
+
         try:
             # 在受限环境中执行代码
             exec(self.code, namespace, namespace)
-            
+
             # 获取结果
             result = namespace.get(self.result_var)
-            
+
             # 如果指定了目标属性，设置它
             if self.target_attr and result is not None:
                 setattr(target_obj, self.target_attr, result)
-            
+
             return result
-            
+
         except Exception as e:
             # 执行失败，打印错误并返回None
             print(f"代码影响执行失败 ({self.source}->{self.target}:{self.name}): {e}")
+            if getattr(self, '_raise_on_error', False):
+                raise
             return None
-    
+
     def __repr__(self) -> str:
         code_preview = self.code.replace('\n', ' ')[:50]
         return f"CodeInfluence({self.source}->{self.target}:{self.name}, code='{code_preview}...')"
@@ -621,6 +641,12 @@ class ExprInfluence(IInfluenceFunction):
         except SyntaxError as e:
             raise ValueError(f"表达式语法错误: {e}")
 
+        # 调试用开关：设为 True 时 apply 捕获的异常会重新抛出，便于外部检测
+        self._raise_on_error: bool = False
+
+    def set_raise_on_error(self, enabled: bool = True) -> None:
+        self._raise_on_error = bool(enabled)
+
     def apply(self, target_obj: Any, context: dict) -> Any:
         if self.placeholder:
             return None
@@ -665,6 +691,8 @@ class ExprInfluence(IInfluenceFunction):
             return result
         except Exception as e:
             print(f"表达式影响执行失败 ({self.source}->{self.target}:{self.name}): {e}")
+            if getattr(self, '_raise_on_error', False):
+                raise
             return None
 
 
@@ -724,7 +752,8 @@ def create_linear_influence(config: dict) -> LinearInfluence:
         constant=params.get('constant', 0.0),
         target_attr=params.get('target_attr'),
         mode=params.get('mode', 'set'),
-        description=config.get('description', '')
+        description=config.get('description', ''),
+        placeholder=params.get('placeholder', False),
     )
 
 
@@ -757,7 +786,8 @@ def create_code_influence(config: dict) -> CodeInfluence:
         result_var=params.get('result_var', 'result'),
         variables=params.get('variables'),
         inputs=params.get('inputs'),
-        description=config.get('description', '')
+        description=config.get('description', ''),
+        placeholder=params.get('placeholder', False),
     )
 
 

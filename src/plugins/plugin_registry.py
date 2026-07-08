@@ -351,14 +351,22 @@ class PluginRegistry:
                 self._log_debug(f"Plugin already registered: {plugin_name}")
                 return 0
             
-            # 构建完整模块路径
-            plugin_package = plugin_dir.name
+            # 构建完整模块路径：从 'plugins' 包开始拼 dotted 路径，
+            # 兼容顶层插件（plugins/map）与嵌套插件（plugins/generated/xxx）。
+            # 旧写法 plugin_dir.parent.name 对嵌套目录会得到 'generated.xxx'，导致 ImportError。
+            parts = plugin_dir.parts
+            if 'plugins' in parts:
+                pkg_parts = parts[parts.index('plugins'):]
+            else:
+                # 兜底：保持旧行为
+                pkg_parts = (plugin_dir.parent.name, plugin_dir.name)
+            base_module_path = '.'.join(pkg_parts)
             if module_name:
                 # 使用指定的模块名
-                full_module_path = f"{plugin_dir.parent.name}.{plugin_package}.{module_name}"
+                full_module_path = f"{base_module_path}.{module_name}"
             else:
                 # 尝试从 __init__.py 导入
-                full_module_path = f"{plugin_dir.parent.name}.{plugin_package}"
+                full_module_path = base_module_path
             
             # 导入模块并获取插件类
             try:

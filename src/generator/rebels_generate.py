@@ -95,8 +95,11 @@ def generate_rebel_data(n, profile_config=None):
 
     Args:
         n: 生成数量
-        profile_config: agent_profile 中的属性定义（含 attributes, constraints, extra）。
-                        为 None 时使用旧版硬编码逻辑。
+        profile_config: agent_profile 中的属性定义。支持两种结构：
+            1. ranks 结构（推荐）：{ranks: [{rank, count, attributes}, ...], extra}
+            2. 单 attributes 结构（向后兼容）：{attributes, constraints, extra}
+               自动注入 rank（第一个为叛军头子，其余为普通叛军）。
+            为 None 时使用旧版硬编码逻辑。
 
     Returns:
         list[dict]: 叛军画像数据列表
@@ -109,6 +112,12 @@ def generate_rebel_data(n, profile_config=None):
 
     profile_config = dict(profile_config)
 
+    # ---- 优先：ranks 结构 ----
+    ranks_cfg = profile_config.get("ranks")
+    if ranks_cfg:
+        return _generate_by_ranks(ranks_cfg, profile_config.get("extra", {}))
+
+    # ---- 回退：单 attributes 结构（自动注入 rank） ----
     # 确保至少有一名头子（leader）
     rebel_data = []
 
@@ -126,6 +135,30 @@ def generate_rebel_data(n, profile_config=None):
 
     print(f"已生成 {len(rebel_data)} 个叛军数据（配置驱动）")
     return rebel_data
+
+
+def _generate_by_ranks(ranks_cfg, extra=None):
+    """按 ranks 结构生成画像列表。
+
+    每个 rank 项格式：{rank: <名称>, count: <数量>, attributes: [...], constraints: [...]}
+    """
+    extra = extra or {}
+    data = []
+    for rank_item in ranks_cfg:
+        if not isinstance(rank_item, dict):
+            continue
+        rank_value = rank_item.get("rank")
+        count = int(rank_item.get("count", 1))
+        attrs = _inject_rank(rank_item.get("attributes", {}), rank_value)
+        profile_cfg = {
+            "attributes": attrs,
+            "constraints": rank_item.get("constraints", []),
+            "extra": {**extra, **rank_item.get("extra", {})},
+        }
+        for _ in range(count):
+            data.append(generate_resident_profile(profile_cfg))
+    print(f"已生成 {len(data)} 个叛军数据（ranks 配置驱动）")
+    return data
 
 
 def _inject_rank(attributes, rank_value):

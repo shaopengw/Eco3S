@@ -181,6 +181,7 @@ class DefaultResidentsPlugin(BasePlugin):
 
         if use_generic_generator:
             # 新版：使用 agent_generator.generate_agents，支持基于 config_dir 的自动探测
+            group_counts = sim_cfg.get("group_counts")
             self._residents = await generate_agents(
                 map=self._map_param,
                 initial_population=int(initial_population),
@@ -192,6 +193,7 @@ class DefaultResidentsPlugin(BasePlugin):
                 window_size=int(window_size),
                 influence_registry=self._influence_registry_param,
                 config_dir=config_dir,
+                group_counts=group_counts,
             )
 
         # 缓存辅助对象

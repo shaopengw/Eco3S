@@ -2,6 +2,7 @@
 
 from src.utils.custom_logger import CustomLogger
 
+from src.utils.ai_system_config import get_agent_model
 from .shared_imports import *
 import re
 
@@ -10,8 +11,9 @@ class SimArchitectAgent(BaseAgent):
 	模拟设计师Agent，继承BaseAgent，负责通过大模型分析需求、选择模块、生成设计文档和配置。
 	"""
 	def __init__(self, agent_id, output_dir, docs_dir, config_dir, simulation_type):
+		_api, _model = get_agent_model('sim_architect')
 		super().__init__(agent_id, group_type='sim_architect', window_size=3,
-		                 model_api_name='DEEPSEEK', model_type_name='deepseek-v4-flash')
+		                 model_api_name=_api, model_type_name=_model)
 		self.output_dir = output_dir
 		self.docs_dir = docs_dir
 		self.config_dir = config_dir

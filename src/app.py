@@ -804,20 +804,18 @@ def apply_optimization():
         
         session = ai_system_sessions[session_id]
         
-        # 检查是否有诊断结果
+        # 检查是否有待确认的优化
         evaluation_results = session.get('results', {}).get('evaluation_results', {})
-        diagnosis_path = evaluation_results.get('diagnosis_path')
-        
-        if not diagnosis_path:
-            return jsonify({'error': '没有找到诊断结果'}), 400
-        
+        if not evaluation_results.get('waiting_user_confirmation'):
+            return jsonify({'error': '当前没有等待确认的优化'}), 400
+
         session['status'] = 'applying_optimization'
-        
+
         # 在后台线程中应用优化
         thread = threading.Thread(target=run_ai_system_apply_optimization, args=(session_id,))
         thread.daemon = True
         thread.start()
-        
+
         return jsonify({
             'session_id': session_id,
             'status': 'applying_optimization',
@@ -1197,14 +1195,66 @@ def run_ai_system_full_simulation(session_id):
     try:
         output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 开始运行模拟...')
         output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 正在初始化异步事件循环...')
-        
+
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        
+
         test_type = session.get('test_type', 'small')
         output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 测试类型: {"小规模测试" if test_type == "small" else "大规模测试"}')
+
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        config_path = os.path.join(
+            project_root, 'projects',
+            project_master.current_simulation_name,
+            'config', 'simulation_config.yaml'
+        )
+
+        # 大规模测试前，先以最小规模 p=5, y=2 做冒烟测试
+        if test_type == 'large':
+            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 大规模测试前执行冒烟测试（p=5, y=2）...')
+            original_scale = project_master._get_simulation_scale(config_path)
+            if original_scale.get('population') is None or original_scale.get('years') is None:
+                error_detail = original_scale.get('error') or '未知原因'
+                output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ⚠️ 无法读取原始设定规模，跳过冒烟测试。原因: {error_detail}')
+            else:
+                smoke_set = project_master._set_simulation_scale(
+                    config_path,
+                    project_master.SMOKE_TEST_POPULATION,
+                    project_master.SMOKE_TEST_YEARS
+                )
+                if smoke_set:
+                    smoke_result = loop.run_until_complete(
+                        project_master.run_simulation(
+                            session['results']['coding_results'],
+                            max_fix_attempts=3
+                        )
+                    )
+                    if smoke_result != 'small_scale_completed' and not smoke_result:
+                        output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ❌ 冒烟测试失败，终止大规模测试')
+                        session['results']['simulation_results'] = smoke_result
+                        session['status'] = 'error'
+                        return
+                    output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✅ 冒烟测试通过，恢复设定规模...')
+                    project_master._set_simulation_scale(
+                        config_path,
+                        original_scale.get('population'),
+                        original_scale.get('years'),
+                        time_key=original_scale.get('time_key')
+                    )
+                else:
+                    output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ❌ 无法设置冒烟测试规模')
+                    session['status'] = 'error'
+                    return
+        elif test_type == 'small':
+            # 小规模测试强制使用 p=5, y=2
+            project_master._set_simulation_scale(
+                config_path,
+                project_master.SMOKE_TEST_POPULATION,
+                project_master.SMOKE_TEST_YEARS
+            )
+
         output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 正在执行模拟...')
-        
+
         # 运行模拟
         simulation_results = loop.run_until_complete(
             project_master.run_simulation(
@@ -1212,12 +1262,12 @@ def run_ai_system_full_simulation(session_id):
                 max_fix_attempts=3
             )
         )
-        
+
         output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 模拟执行完成，检查结果...')
-        
+
         session['results']['simulation_results'] = simulation_results
         session['results']['test_type'] = test_type
-        
+
         # 根据test_type判断是否是小规模测试完成
         if simulation_results and test_type == 'small':
             session['status'] = 'small_scale_completed'
@@ -1258,27 +1308,25 @@ def run_ai_system_full_simulation(session_id):
                     # 显示是否需要调整
                     if evaluation_results.get('needs_adjustment'):
                         output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ⚠️  检测到需要调整配置')
-                        
-                        # 如果有诊断结果，显示
-                        if 'diagnosis_result' in evaluation_results:
-                            diagnosis = evaluation_results['diagnosis_result']
-                            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 📝 诊断建议：')
-                            if 'files_to_modify' in diagnosis:
-                                for file_info in diagnosis['files_to_modify'][:3]:  # 只显示前3个
-                                    output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}]   - {file_info.get("file_name", "未知文件")}: {file_info.get("reason", "")[:80]}...')
-                        
+
+                        # 显示 CodeFixer 的诊断/计划（如果已生成）
+                        session_result = evaluation_results.get('optimization_session_result')
+                        if session_result:
+                            diagnosis = session_result.get('diagnosis', '')
+                            if diagnosis:
+                                output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 📝 诊断：{diagnosis[:200]}')
+                            mods = session_result.get('modification_results', [])
+                            if mods:
+                                output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✓ 已修改 {len(mods)} 个文件')
+
                         # 如果等待用户确认
                         if evaluation_results.get('waiting_user_confirmation'):
                             output_queue.put(f'\n[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ⏸️  等待用户决定是否应用优化调整...')
                             session['status'] = 'evaluation_waiting_confirm'
+                        elif evaluation_results.get('optimization_completed'):
+                            output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✅ 优化已完成并通过验证')
+                            session['status'] = 'completed'
                         else:
-                            # 已经应用了修改
-                            if 'modification_results' in evaluation_results:
-                                mods = evaluation_results['modification_results']
-                                if mods:
-                                    output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✓ 已自动修改 {len(mods)} 个文件')
-                                elif mods is None:
-                                    output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ℹ️  跳过了配置修改')
                             session['status'] = 'completed'
                     else:
                         output_queue.put(f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] ✅ 结果符合预期，无需调整')
@@ -1428,18 +1476,18 @@ def run_ai_system_apply_optimization(session_id):
         asyncio.set_event_loop(loop)
         
         evaluation_results = session.get('results', {}).get('evaluation_results', {})
-        diagnosis_path = evaluation_results.get('diagnosis_path')
-        
-        # 获取设计文档
-        design_doc = None
-        if 'design_results' in session.get('results', {}):
-            design_results = session['results']['design_results']
-            if 'description_content' in design_results:
-                design_doc = design_results['description_content']
-        
+
+        # 获取设计文档（优先用 session 中待处理的）
+        design_doc = session.get('pending_design_doc')
+        if not design_doc:
+            desc_path = os.path.join(project_master.current_config_dir, 'description.md')
+            if os.path.exists(desc_path):
+                with open(desc_path, 'r', encoding='utf-8') as f:
+                    design_doc = f.read()
+
         # 应用优化
         result = loop.run_until_complete(
-            project_master.apply_optimization_adjustments(diagnosis_path, design_doc)
+            project_master.apply_optimization_adjustments(None, design_doc)
         )
         
         if result.get('success'):

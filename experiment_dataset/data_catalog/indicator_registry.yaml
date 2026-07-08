@@ -1,0 +1,140 @@
+# 真实数据指标注册表
+# 供阶段 3.45 的 LLM 映射使用：LLM 根据 (module, param) 的描述语义，
+# 从本注册表中选择最匹配的真实数据指标。
+
+indicators:
+  # ========== WDI 世界银行宏观指标 ==========
+  - code: "NY_GDP_MKTP_CD"
+    name: "GDP (current US$)"
+    description: "现价美元计GDP，反映经济规模"
+
+  - code: "NY_GDP_MKTP_KD_ZG"
+    name: "GDP growth (annual %)"
+    description: "年GDP增长率，反映经济扩张或收缩速度"
+
+  - code: "NY_GDP_PCAP_CD"
+    name: "GDP per capita (current US$)"
+    description: "人均GDP，反映经济发展水平"
+
+  - code: "NE_TRD_GNFS_ZS"
+    name: "Trade (% of GDP)"
+    description: "进出口总额占GDP比重，反映经济开放程度"
+
+  - code: "NE_EXP_GNFS_ZS"
+    name: "Exports of goods and services (% of GDP)"
+    description: "出口占GDP比重"
+
+  - code: "NE_IMP_GNFS_ZS"
+    name: "Imports of goods and services (% of GDP)"
+    description: "进口占GDP比重"
+
+  - code: "BN_KLT_DINV_GD_ZS"
+    name: "FDI net inflows (% of GDP)"
+    description: "外国直接投资净流入占GDP比重"
+
+  - code: "FP_CPI_TOTL_ZG"
+    name: "Inflation consumer prices (annual %)"
+    description: "CPI年变化率，反映通货膨胀水平"
+
+  - code: "SL_UEM_TOTL_ZS"
+    name: "Unemployment total (% of labor force)"
+    description: "总失业率，反映劳动市场状况"
+
+  - code: "SP_POP_TOTL"
+    name: "Population total"
+    description: "总人口"
+
+  - code: "SP_URB_TOTL_IN_ZS"
+    name: "Urban population (% of total)"
+    description: "城镇化率，城镇人口占总人口比例"
+
+  # ========== WTO 产品级贸易指标（按HS2聚合）==========
+  # code 格式: WTO_{HS2}_{EXPORT|IMPORT}
+  # 例如 WTO_72_EXPORT = HS72(钢铁)出口总额
+  - code: "WTO_01_EXPORT"
+    name: "HS01 Live animals export value"
+    description: "HS01活动物出口总额（美元）"
+
+  - code: "WTO_01_IMPORT"
+    name: "HS01 Live animals import value"
+    description: "HS01活动物进口总额"
+
+  - code: "WTO_02_EXPORT"
+    name: "HS02 Meat export value"
+    description: "HS02肉及食用杂碎出口总额"
+
+  - code: "WTO_02_IMPORT"
+    name: "HS02 Meat import value"
+    description: "HS02肉及食用杂碎进口总额"
+
+  - code: "WTO_03_EXPORT"
+    name: "HS03 Fish export value"
+    description: "HS03鱼类等出口总额"
+
+  - code: "WTO_03_IMPORT"
+    name: "HS03 Fish import value"
+    description: "HS03鱼类等进口总额"
+
+  - code: "WTO_27_EXPORT"
+    name: "HS27 Mineral fuels export value"
+    description: "HS27矿物燃料、矿物油等出口总额"
+
+  - code: "WTO_27_IMPORT"
+    name: "HS27 Mineral fuels import value"
+    description: "HS27矿物燃料、矿物油等进口总额"
+
+  - code: "WTO_28_EXPORT"
+    name: "HS28 Inorganic chemicals export value"
+    description: "HS28无机化学品出口总额"
+
+  - code: "WTO_28_IMPORT"
+    name: "HS28 Inorganic chemicals import value"
+    description: "HS28无机化学品进口总额"
+
+  - code: "WTO_29_EXPORT"
+    name: "HS29 Organic chemicals export value"
+    description: "HS29有机化学品出口总额"
+
+  - code: "WTO_29_IMPORT"
+    name: "HS29 Organic chemicals import value"
+    description: "HS29有机化学品进口总额"
+
+  - code: "WTO_38_EXPORT"
+    name: "HS38 Misc chemical products export value"
+    description: "HS38杂项化工品出口总额"
+
+  - code: "WTO_38_IMPORT"
+    name: "HS38 Misc chemical products import value"
+    description: "HS38杂项化工品进口总额"
+
+  - code: "WTO_39_EXPORT"
+    name: "HS39 Plastics export value"
+    description: "HS39塑料及制品出口总额"
+
+  - code: "WTO_39_IMPORT"
+    name: "HS39 Plastics import value"
+    description: "HS39塑料及制品进口总额"
+
+  - code: "WTO_40_EXPORT"
+    name: "HS40 Rubber export value"
+    description: "HS40橡胶及制品出口总额"
+
+  - code: "WTO_40_IMPORT"
+    name: "HS40 Rubber import value"
+    description: "HS40橡胶及制品进口总额"
+
+  - code: "WTO_72_EXPORT"
+    name: "HS72 Iron and steel export value"
+    description: "HS72钢铁出口总额"
+
+  - code: "WTO_72_IMPORT"
+    name: "HS72 Iron and steel import value"
+    description: "HS72钢铁进口总额"
+
+  - code: "WTO_73_EXPORT"
+    name: "HS73 Articles of iron or steel export value"
+    description: "HS73钢铁制品出口总额"
+
+  - code: "WTO_73_IMPORT"
+    name: "HS73 Articles of iron or steel import value"
+    description: "HS73钢铁制品进口总额"

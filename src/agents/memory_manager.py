@@ -100,7 +100,7 @@ class PersonalMemory:
                 # self.chat_history.clear()  # 清空历史记录
 
 class MemoryManager:
-    def __init__(self, agent_id, model_type, group_type='default', window_size=5, summary_interval=5):
+    def __init__(self, agent_id, model_type, group_type='default', window_size=5, summary_interval=5, token_limit=4096):
         """
         初始化代理记忆管理器
         :param agent_id: 代理ID
@@ -108,26 +108,27 @@ class MemoryManager:
         :param group_type: 群体类型，'government' 或 'rebellion'
         :param window_size: 最近对话窗口大小
         :param summary_interval: 多少条记录后进行一次总结
+        :param token_limit: 记忆上下文 token 预算
         """
         self.agent_id = agent_id
-        
+
         # 如果是字符串类型的自定义模型，使用默认的token counter
         if isinstance(model_type, str):
             from camel.types import ModelType
             self.token_counter = OpenAITokenCounter(ModelType.GPT_4O_MINI)
         else:
             self.token_counter = OpenAITokenCounter(model_type)
-            
+
         self.context_creator = ScoreBasedContextCreator(
             token_counter=self.token_counter,
-            token_limit=4096
+            token_limit=token_limit
         )
-        
+
         # 使用群体特定的共享向量数据库（暂时保留但不使用）
         self.shared_memory = SharedVectorDB(group_type)
         # 初始化个人记忆系统
-        self.personal_memory = PersonalMemory(window_size, summary_interval,group_type)
-        
+        self.personal_memory = PersonalMemory(window_size, summary_interval, group_type)
+
         self.window_size = window_size
         self.agent = None  # 存储对应的agent引用
     
@@ -175,12 +176,12 @@ class MemoryManager:
             pass
     async def get_context_messages(self):
         """获取上下文消息"""
-        # 获取短期记忆（最近的记录）
+        # 获取短期记忆（最近的记录），使用 window_size 控制长度
         try:
-            recent_context = self.personal_memory.retrieve(limit=3)
+            recent_context = self.personal_memory.retrieve(limit=self.window_size)
         except:
             recent_context = []
-            
+
         # 获取长期记忆（总结）
         longterm_memory = self.personal_memory.get_longterm_memory()
         

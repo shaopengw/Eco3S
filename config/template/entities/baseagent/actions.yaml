@@ -1,0 +1,79 @@
+# BaseAgent 行为配置模板 (actions.yaml)
+#
+# 本文件定义了模拟中 baseagent 智能体可以执行的各种行为及其对应的函数和参数。
+# 不同的模拟角色可以定义不同的行为集。
+#
+# 行为执行机制：
+#   - 优先使用 effects 配置（声明式）：定义 profile 属性的变化规则，无需编写代码
+#   - 回退使用 function 配置（命令式）：指向 Python 可调用对象
+#
+# effects 配置格式：
+#   effects:
+#     - target: "profile.属性名"    # 要修改的属性（支持 profile.xxx / self.xxx）
+#       mode: "set" | "add" | "mul"  # 设置/增加/乘以
+#       value: 数值或{模板变量}       # 新值
+#     - target: "influence.影响函数ID"
+#       mode: "trigger"
+#       params: {参数字典}
+#
+# 提示：以下为通用模板示例，实际角色应根据业务逻辑替换 action ID、名称、
+# 描述、函数路径/effect 定义和参数。
+# -----------------------------------------------------------------------------
+
+actions:
+  # 行为ID 1: 示例行为1
+  # 描述: 角色的主要决策行为
+  1:
+    name: "example_action_1"
+    description: "示例行为1：对当前形势做出常规响应"
+    # 方式A：使用 effects 声明式定义
+    effects:
+      - target: "profile.some_attribute"
+        mode: "add"
+        value: 1
+    # 方式B：或者使用 function 指向可调用对象（二选一）
+    # function: "module_path.function_name"  # 也支持 self 上的方法名
+    # is_async: false
+    parameters:
+      - name: "parameter_name"
+        type: "string"
+        required: true
+        description: "参数说明"
+
+  # 行为ID 2: 示例行为2
+  # 描述: 角色的可选辅助行为
+  2:
+    name: "example_action_2"
+    description: "示例行为2：在特定条件下触发的备选行为"
+    effects:
+      - target: "profile.another_attribute"
+        mode: "set"
+        value: 0
+    parameters:
+      - name: "optional_param"
+        type: "number"
+        required: false
+        default: 0
+        description: "可选参数说明"
+
+  # 行为ID 3: 示例行为3（复杂行为）
+  # 描述: 角色的复杂决策行为，涉及多参数
+  3:
+    name: "example_action_3"
+    description: "示例行为3：需要多参数配合的复杂行为"
+    function: "target_method_name"
+    is_async: true
+    parameters:
+      - name: "param_a"
+        type: "string"
+        required: true
+        description: "参数A说明"
+      - name: "param_b"
+        type: "number"
+        required: true
+        description: "参数B说明"
+      - name: "param_c"
+        type: "boolean"
+        required: false
+        default: false
+        description: "参数C说明（可选）"

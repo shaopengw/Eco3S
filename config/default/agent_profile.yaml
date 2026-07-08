@@ -114,6 +114,64 @@ agents:
     extra:
       description: "清代运河沿线居民"
 
+  - name: government
+    entity_type: government
+    ranks:
+      - rank: 高级官员
+        count: 1
+        attributes:
+          - name: personality
+            type: composite
+            words: [严谨, 果断, 沉稳, 多疑, 老练, 圆滑, 刚正, 务实, 谨慎, 强势]
+            count: 2
+            separator: "、"
+      - rank: 普通官员
+        count: 2
+        attributes:
+          - name: personality
+            type: composite
+            words: [温和, 果断, 精明, 保守, 激进, 谄媚, 耿直, 世故, 勤勉, 贪婪]
+            count: 2
+            separator: "、"
+          - name: function
+            type: choice
+            choices: ['漕运', '行政', '军事', '经济管理']
+            weights: [0.25, 0.25, 0.25, 0.25]
+          - name: faction
+            type: choice
+            choices: ['河运派', '海运派', '中立派']
+            weights: [0.3, 0.3, 0.4]
+    constraints: []
+    extra:
+      description: "清代漕运官僚集团"
+
+  - name: rebels
+    entity_type: rebels
+    ranks:
+      - rank: 叛军头子
+        count: 1
+        attributes:
+          - name: personality
+            type: composite
+            words: [激进, 狡猾, 凶狠, 多疑, 果敢, 残暴, 野心, 阴鸷, 魅力, 偏执]
+            count: 2
+            separator: "、"
+      - rank: 普通叛军
+        count: 1
+        attributes:
+          - name: personality
+            type: composite
+            words: [冲动, 凶悍, 鲁莽, 忠勇, 狡黠, 暴躁, 贪婪, 莽撞, 机警, 顽固]
+            count: 2
+            separator: "、"
+          - name: role
+            type: choice
+            choices: ['军事', '行政', '情报', '后勤']
+            weights: [0.25, 0.25, 0.25, 0.25]
+    constraints: []
+    extra:
+      description: "清代运河沿线叛军势力"
+
 computed_descriptions:
   health_conditions:
     - ""  # 索引0占位（health_index从1开始）

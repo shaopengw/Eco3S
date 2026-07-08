@@ -325,13 +325,14 @@ class Resident(BaseAgent, IResident):
         }
 
         return {
+            **legacy_vars,
+            **self.profile,
             'identity': identity,
             'work_condition': work_condition,
             'economic_status_description': economic_status_description,
             'health_condition': health_condition,
             'satisfaction_description': satisfaction_description,
             'profile_vars_doc': profile_vars_doc,
-            **legacy_vars,
             **kwargs
         }
 
@@ -492,20 +493,16 @@ class Resident(BaseAgent, IResident):
                 if key not in format_kwargs:
                     format_kwargs[key] = value
 
+        # 从 BaseAgent 继承 action 变量注入（action_N_name/desc/params_str + available_actions_section）
+        base_vars = super()._get_system_message_vars(**kwargs)
+        format_kwargs.update(base_vars)
+
         employed = self.employed
 
         # 安全 format：缺键时不抛 KeyError，而是填充占位提示，便于排查
         class _SafeDict(dict):
             def __missing__(self, key):
                 return f"[未提供:{key}]"
-
-        # 自动注入 actions 中的选项名称和描述（供模板使用 {action_1_name} 等）
-        actions_cfg = self.actions_config.get('actions', {}) if self.actions_config else {}
-        for i in range(1, 10):
-            act = actions_cfg.get(i) or actions_cfg.get(str(i))
-            if act:
-                format_kwargs[f'action_{i}_name'] = act['name']
-                format_kwargs[f'action_{i}_desc'] = act.get('description', '')
 
         safe_kwargs = _SafeDict(format_kwargs)
 
@@ -575,6 +572,14 @@ class Resident(BaseAgent, IResident):
         speech = decision_data.get("speech", "")
         desired_job = decision_data.get("desired_job")
         min_salary = decision_data.get("min_salary")
+        quantity = decision_data.get("quantity", 0)
+        price = decision_data.get("price", 0)
+
+        # 将交易细节等附加决策字段存入 meta，供 simulator/execute_action 读取
+        meta = getattr(self, '_last_decision_meta', {})
+        meta['quantity'] = quantity
+        meta['price'] = price
+        self._last_decision_meta = meta
 
         # ★ 通用化：自动应用所有 *_change 字段到对应 profile 属性
         for key, value in decision_data.items():

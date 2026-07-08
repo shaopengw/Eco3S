@@ -21,7 +21,15 @@ class BaseSimulator:
     子类只需覆写业务相关方法（update_state、execute_actions、calculate_xxx）。
     """
 
-    def __init__(self, plugin_registry: Any, residents: Dict[int, Any], config: Dict, influence_manager=None, **_unused):
+    def __init__(
+        self,
+        plugin_registry: Any,
+        residents: Dict[int, Any],
+        config: Dict,
+        influence_manager=None,
+        group_agents: Optional[Dict[str, Dict[int, Any]]] = None,
+        **_unused,
+    ):
         self.logger = LogManager.get_logger("simulator", console_output=True)
         self.plugin_registry = plugin_registry
         self.residents = residents or {}
@@ -33,6 +41,28 @@ class BaseSimulator:
         self.influence_manager = influence_manager
         self._last_saved_count = 0
         self._csv_fieldnames: Optional[List[str]] = None
+
+        # 外生变量数据提供者（可选）：按时间步从预编排好的数据文件读取
+        # 「只作为 cause、从不作为 effect」的根驱动参数，注入到 influence context。
+        # 文件不存在时为 None，不影响无外生变量的旧场景。
+        self.exogenous_provider = None
+        exogenous_path = (self.config.get("data") or {}).get("exogenous_data_path")
+        if exogenous_path and os.path.exists(exogenous_path):
+            try:
+                from src.environment.exogenous import ExogenousDataProvider
+                self.exogenous_provider = ExogenousDataProvider(exogenous_path)
+                self.logger.info(
+                    f"✓ 已加载外生变量数据: {exogenous_path}"
+                    f"（变量: {self.exogenous_provider.keys}）"
+                )
+            except Exception as e:
+                self.logger.warning(f"加载外生变量数据失败，将忽略: {e}")
+                self.exogenous_provider = None
+
+
+        # 插件托管的群体 agent（government / rebels / 未来任意插件群体）。
+        # key 为群体类型，value 为 {agent_id: agent}。由 DI 构建器注入。
+        self.group_agents: Dict[str, Dict[int, Any]] = group_agents or {}
 
         # 通用核心模块（所有决策型模拟器均依赖）
         self.map = require_module(self.plugin_registry, "map")
@@ -49,6 +79,27 @@ class BaseSimulator:
     # ------------------------------------------------------------------
     # 通用计算方法（子类可直接复用，也可覆写）
     # ------------------------------------------------------------------
+    def _inject_exogenous_variables(self, simulator_state: Dict[str, Any], current_step: int) -> Dict[str, Any]:
+        """把当前时间步的外生变量取值注入 simulator_state。
+
+        注入后，influences.yaml 的影响函数可通过 path: context.exogenous.<key> 读取。
+        provider 为 None（无外生数据文件）时不做任何修改，保持旧行为。
+
+        Args:
+            simulator_state: 即将传给 influence_manager 的状态字典。
+            current_step: 当前时间步索引（从 0 开始）。
+
+        Returns:
+            注入后的 simulator_state（原地修改并返回）。
+        """
+        if self.exogenous_provider is None or simulator_state is None:
+            return simulator_state
+        try:
+            simulator_state["exogenous"] = self.exogenous_provider.get_current_values(current_step)
+        except Exception as e:
+            self.logger.warning(f"注入外生变量失败（step={current_step}）: {e}")
+        return simulator_state
+
     def _sum_resident_attr(self, attr: str, default=0) -> float:
         """对所有居民的指定属性求和。"""
         if not self.residents:
@@ -438,6 +489,7 @@ class BaseSimulator:
             self._print_time_step()
             await self.update_state()
             await self.execute_actions()
+            await self.execute_group_agent_actions()
             self.collect_results()
             self.save_results(result_file)
             self.time.step()
@@ -517,6 +569,104 @@ class BaseSimulator:
     async def execute_actions(self) -> None:
         """执行居民行为。子类必须实现。"""
         raise NotImplementedError
+
+    async def execute_group_agent_actions(self) -> None:
+        """通用：驱动所有插件群体（government / rebels / 未来任意插件群体）执行一轮 LLM 决策并作用于世界。
+
+        默认实现遍历 self.group_agents，优先调用插件 service 上的 ``execute_group_turn(agents)``；
+        若未实现，则回退到 ``orchestrate_group_decision`` + ``apply_decision`` 组合。
+        子类一般无需覆写；特殊项目可覆写以定制决策→作用映射。
+        """
+        if not self.group_agents:
+            return
+
+        for group_type, group_data in self.group_agents.items():
+            agents = group_data.get("agents") if isinstance(group_data, dict) else group_data
+            if not agents:
+                continue
+
+            try:
+                plugin = require_module(self.plugin_registry, group_type)
+            except Exception as e:
+                self.logger.warning(f"群体 {group_type} 无法加载对应插件: {e}")
+                continue
+
+            group_obj = getattr(plugin, "service", None) or plugin
+
+            # 首选：插件自己实现完整的一轮决策+执行
+            if hasattr(group_obj, "execute_group_turn"):
+                try:
+                    await group_obj.execute_group_turn(agents, simulator_context=self)
+                    continue
+                except Exception as e:
+                    self.logger.error(f"群体 {group_type} execute_group_turn 执行失败: {e}")
+                    continue
+
+            # 回退：orchestrate_group_decision + apply_decision
+            if hasattr(group_obj, "orchestrate_group_decision") and hasattr(group_obj, "apply_decision"):
+                try:
+                    decision = await self._orchestrate_group_decision_for_type(
+                        group_type, group_data, group_obj
+                    )
+                    if decision:
+                        group_obj.apply_decision(decision, simulator_context=self)
+                except Exception as e:
+                    self.logger.error(f"群体 {group_type} 决策执行失败: {e}")
+                continue
+
+            self.logger.warning(
+                f"群体 {group_type} 未实现 execute_group_turn 或 (orchestrate_group_decision + apply_decision)，跳过"
+            )
+
+    def _resolve_group_decision_config(self, group_type: str, group_data: Any) -> Optional[Dict[str, Any]]:
+        """从 group_data 中解析群体决策所需配置（类型、参数等）。
+
+        group_data 支持两种形式：
+        - Dict[int, BaseAgent]：仅成员，无配置（返回 None，需子类覆写）
+        - Dict[str, Any]：包含 agents / ordinary_type / leader_type / info_officer_types / group_param
+        """
+        if not isinstance(group_data, dict):
+            return None
+        if "agents" not in group_data:
+            return None
+        return {
+            "agents": group_data.get("agents"),
+            "ordinary_type": group_data.get("ordinary_type"),
+            "leader_type": group_data.get("leader_type"),
+            "info_officer_types": group_data.get("info_officer_types", ()),
+            "group_param": group_data.get("group_param"),
+            "use_towns_stats": group_data.get("use_towns_stats", False),
+        }
+
+    async def _orchestrate_group_decision_for_type(
+        self, group_type: str, group_data: Any, group_obj: Any
+    ) -> Optional[str]:
+        """为指定群体调用其 orchestrate_group_decision，处理配置解析与类型缺省。"""
+        cfg = self._resolve_group_decision_config(group_type, group_data)
+        if not cfg:
+            return None
+
+        agents = cfg["agents"]
+        ordinary_type = cfg.get("ordinary_type")
+        leader_type = cfg.get("leader_type")
+        info_officer_types = cfg.get("info_officer_types") or ()
+        group_param = cfg.get("group_param")
+        use_towns_stats = cfg.get("use_towns_stats", False)
+
+        # 若未提供类型，尝试从 agents 中推断（第一个非信息官的子类）
+        if ordinary_type is None or leader_type is None:
+            self.logger.warning(f"群体 {group_type} 缺少决策类型配置，跳过 orchestrate_group_decision")
+            return None
+
+        return await self._orchestrate_group_decision(
+            agents=agents,
+            ordinary_type=ordinary_type,
+            leader_type=leader_type,
+            info_officer_types=tuple(info_officer_types),
+            group_param=group_param,
+            group_type=group_type,
+            use_towns_stats=use_towns_stats,
+        )
 
     def calculate_gdp(self) -> float:
         """计算 GDP。子类必须实现。"""

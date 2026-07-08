@@ -20,6 +20,12 @@ simulation:
       enabled: 0
       max_rounds: 2
   
+  # 插件管理群体（government / rebels 等）的成员数量。
+  # 优先级：agent_profile 中的 ranks/count > 此处 group_counts > 按 initial_population 平摊。
+  group_counts:
+    government: 2
+    rebels: 0
+
   # 行为参数
   response_probability: 0.5  # 响应概率
   max_retry_attempts: 3  # 最大重试次数

@@ -102,8 +102,12 @@ def generate_official_data(n, profile_config=None):
 
     Args:
         n: 生成数量
-        profile_config: agent_profile 中的属性定义（含 attributes, constraints, extra）。
-                        为 None 时使用旧版硬编码逻辑。
+        profile_config: agent_profile 中的属性定义。支持两种结构：
+            1. ranks 结构（推荐）：{ranks: [{rank, count, attributes}, ...], extra}
+               按 rank 分组，各 rank 拥有独立的属性集和数量。
+            2. 单 attributes 结构（向后兼容）：{attributes, constraints, extra}
+               自动注入 rank（第一个为高级官员，其余为普通官员）。
+            为 None 时使用旧版硬编码逻辑。
 
     Returns:
         list[dict]: 官员画像数据列表
@@ -114,9 +118,16 @@ def generate_official_data(n, profile_config=None):
     if generate_resident_profile is None:
         raise ImportError("需要 resident_generate.generate_resident_profile 的支持")
 
+    profile_config = dict(profile_config)  # 不污染原始配置
+
+    # ---- 优先：ranks 结构 ----
+    ranks_cfg = profile_config.get("ranks")
+    if ranks_cfg:
+        return _generate_by_ranks(ranks_cfg, profile_config.get("extra", {}))
+
+    # ---- 回退：单 attributes 结构（自动注入 rank） ----
     # 确保至少有一名高级官员（leader）
     official_data = []
-    profile_config = dict(profile_config)  # 不污染原始配置
 
     # 注入 rank 固定值：第一个为高级官员
     first_attrs = _inject_rank(profile_config.get("attributes", {}), "高级官员")
@@ -133,6 +144,31 @@ def generate_official_data(n, profile_config=None):
 
     print(f"已生成 {len(official_data)} 个官员数据（配置驱动）")
     return official_data
+
+
+def _generate_by_ranks(ranks_cfg, extra=None):
+    """按 ranks 结构生成画像列表。
+
+    每个 rank 项格式：{rank: <名称>, count: <数量>, attributes: [...], constraints: [...]}
+    为每个 rank 固定注入其 rank 名称，并按 count 调用 generate_resident_profile。
+    """
+    extra = extra or {}
+    data = []
+    for rank_item in ranks_cfg:
+        if not isinstance(rank_item, dict):
+            continue
+        rank_value = rank_item.get("rank")
+        count = int(rank_item.get("count", 1))
+        attrs = _inject_rank(rank_item.get("attributes", {}), rank_value)
+        profile_cfg = {
+            "attributes": attrs,
+            "constraints": rank_item.get("constraints", []),
+            "extra": {**extra, **rank_item.get("extra", {})},
+        }
+        for _ in range(count):
+            data.append(generate_resident_profile(profile_cfg))
+    print(f"已生成 {len(data)} 个官员数据（ranks 配置驱动）")
+    return data
 
 
 def _inject_rank(attributes, rank_value):

@@ -7,6 +7,7 @@ class YourSimulator(BaseSimulator):
     #   collect_results()        — 基础结果收集（years/population/unemployment_rate/gdp）
     #   save_results(filename)   — csv.DictWriter 追加保存
     #   integrate_new_residents(new_residents) — 接入居民并同步到 towns/social_network
+    #     ⚠️ 若覆写本方法，必须调用 super().integrate_new_residents()。
     #   _get_population_count()  — 兼容多种 population 插件的人口计数
     #   _calculate_gdp_growth_rate() — 基于 results["gdp"] 计算增长率
     #   _refresh_influence_observables(ctx) — 刷新 influences 覆盖的指标
@@ -25,8 +26,10 @@ class YourSimulator(BaseSimulator):
     #   display_total_simulation_time()     — 显示总模拟时间
     # 如需扩展 collect_results，请先调用 super().collect_results()，再 append 自定义字段。
 
-    def __init__(self, plugin_registry: Any, residents: Dict[int, IResident], config: Dict, influence_manager=None, **_unused):
-        super().__init__(plugin_registry, residents, config, influence_manager)
+    def __init__(self, plugin_registry: Any, residents: Dict[int, IResident], config: Dict, influence_manager=None, group_agents=None, **_unused):
+        # 必须显式接收并透传 group_agents，否则 government/rebels 等插件群体成员会被 **_unused 吞掉。
+        # 详见 docs/ai_group_agent_integration_guide.md。
+        super().__init__(plugin_registry, residents, config, influence_manager, group_agents=group_agents)
 
         # 可按设计文档扩展额外模块
         # self.government = require_module(self.plugin_registry, "government")
@@ -100,8 +103,18 @@ class YourSimulator(BaseSimulator):
             "gdp_growth_rate": self._calculate_gdp_growth_rate(),
         }
 
+        # 注入外生变量（若配置了 exogenous_data_path）：按预编排序列逐步驱动下游因果链，
+        # 影响函数通过 context.exogenous.<key> 读取。未配置时不做任何修改。
+        current_step = self.time.get_elapsed_time_steps() if hasattr(self.time, "get_elapsed_time_steps") else 0
+        self._inject_exogenous_variables(simulator_state, current_step)
+
         if hasattr(self.influence_manager, "apply_all_influences"):
-            global_context = self.influence_manager.apply_all_influences(simulator_state)
+            # target_root=self 必传：influences.yaml 中以 simulator 标量属性为 target
+            # 的影响函数（如 gdp、house_price_index）需要写回到 simulator 实例上，
+            # 漏传会导致影响结果无法写回，指标恒定不变。
+            global_context = self.influence_manager.apply_all_influences(
+                simulator_state, target_root=self
+            )
         elif hasattr(self.influence_manager, "build_global_context"):
             global_context = self.influence_manager.build_global_context(simulator_state)
         else:
@@ -168,7 +181,8 @@ class YourSimulator(BaseSimulator):
             self.integrate_new_residents(new_residents)
             self.logger.info(f"新加入{new_count}名居民")
 
-        # 居民决策并发执行，保留模板作为“行为编排骨架”的角色。
+        # 居民决策并发执行。
+        # 前提：integrate_new_residents 已将 model_backend 注入各居民（否则全返回 None）。
         tasks = []
         residents_list = list(self.residents.values())
         for resident in residents_list:

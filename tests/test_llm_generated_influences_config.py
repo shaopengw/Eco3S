@@ -19,7 +19,8 @@ if PROJECT_ROOT not in sys.path:
 
 from src.agents.code_architect import CodeArchitectAgent
 
-SIM_DIR = os.path.join(PROJECT_ROOT, "config", "silk_economy_market_sim")
+# 测试项目名
+SIM_DIR = os.path.join(PROJECT_ROOT, "projects", "cross_border_production_simulation", "config")
 TEMPLATE_DIR = os.path.join(PROJECT_ROOT, "config", "template")
 OUT_DIR = os.path.join(PROJECT_ROOT, "tests", "_generated")
 
@@ -28,6 +29,17 @@ def main():
     print("=" * 60)
     print("测试：generate_influences_config_file（含 LLM + RAG）")
     print("=" * 60)
+
+    # 本测试需要调用外部 LLM 与 OpenAI Embedding，缺少密钥时直接跳过
+    missing = []
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        missing.append("ANTHROPIC_API_KEY")
+    if not os.environ.get("OPENAI_API_KEY"):
+        missing.append("OPENAI_API_KEY")
+    if missing:
+        print(f"⚠️  缺少环境变量 {missing}，跳过完整链路测试。")
+        print("   在真实密钥环境中运行即可验证 generate_influences_config_file。")
+        return 0
 
     # 读取已有配置
     with open(os.path.join(SIM_DIR, "description.md"), "r", encoding="utf-8") as f:
@@ -40,12 +52,13 @@ def main():
         agent_id="test_code_architect",
         simulator_output_dir=os.path.join(PROJECT_ROOT, "src", "simulation"),
         main_output_dir=os.path.join(PROJECT_ROOT, "entrypoints"),
-        docs_dir=os.path.join(PROJECT_ROOT, "config"),
+        docs_dir=str(SIM_DIR),
         config_dir=str(OUT_DIR),
         config_template_dir=str(TEMPLATE_DIR),
-        simulation_name="climate_migration_sim",
+        simulation_name="cross_border_production_sim",
         simulation_type="decision",
         session=None,
+        auto_mode=False,
     )
     # 跳过交互确认
     agent._check_file_exists_and_ask = lambda *_args, **_kwargs: True  # type: ignore[assignment]

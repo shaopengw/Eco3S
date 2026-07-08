@@ -38,6 +38,12 @@ AGENT_CLASS_MAP = {
         "prompts_file": "prompts.yaml",
         "actions_file": "actions.yaml",
     },
+    "baseagent": {
+    "class_path": "src.agents.base_agent.BaseAgent",
+    "default_prompts_dir": "config/template/entities/baseagent",
+    "prompts_file": "prompts.yaml",
+    "actions_file": "actions.yaml",
+    },
 }
 
 
@@ -58,6 +64,78 @@ def get_plugin_profile(entity_type: str) -> Optional[Dict[str, Any]]:
 def clear_plugin_profiles() -> None:
 	"""清理缓存，用于测试/重置。"""
 	_plugin_profiles.clear()
+
+
+def find_group_agent_def(agent_profile: Optional[Dict[str, Any]], entity_type: str) -> Optional[Dict[str, Any]]:
+	"""在 agent_profile 中查找指定 entity_type（government/rebels）的定义。
+
+	支持两种格式：
+	  - 标准：agent_profile['agents'] 为列表，逐项匹配 entity_type
+	  - 简写：agent_profile 顶层直接是单实体定义（entity_type + attributes/ranks）
+	未找到返回 None。
+	"""
+	if not isinstance(agent_profile, dict):
+		return None
+
+	agents_def = agent_profile.get("agents", [])
+	if not agents_def and agent_profile.get("entity_type") == entity_type:
+		agents_def = [agent_profile]
+
+	for agent_def in agents_def:
+		if isinstance(agent_def, dict) and agent_def.get("entity_type") == entity_type:
+			return agent_def
+	return None
+
+
+def generate_group_profiles(
+	entity_type: str,
+	agent_def: Dict[str, Any],
+	fallback_count: int = 0,
+) -> List[Dict[str, Any]]:
+	"""根据 agent_profile 中的群体定义生成成员画像列表（内存桥接，不落盘）。
+
+	供 entrypoint 在构建 government/rebellion 成员前调用，
+	返回与静态 info JSON 同构的画像 list（每项含 rank 字段）。
+
+	Args:
+		entity_type: "government" 或 "rebels"
+		agent_def: agent_profile 中该实体的定义（含 ranks 或 attributes）
+		fallback_count: 当定义中无 ranks 且需要按总数生成时的数量
+
+	Returns:
+		list[dict]: 成员画像列表
+	"""
+	profile_cfg = {
+		"ranks": agent_def.get("ranks"),
+		"attributes": agent_def.get("attributes", {}),
+		"constraints": agent_def.get("constraints", []),
+		"extra": agent_def.get("extra", {}),
+	}
+
+	# 计算总数：ranks 模式下为各 rank count 之和；否则用 count/fallback
+	count = _count_from_agent_def(agent_def, fallback_count)
+
+	if entity_type == "government":
+		from src.generator.government_generate import generate_official_data
+		return generate_official_data(count, profile_config=profile_cfg)
+	elif entity_type == "rebels":
+		from src.generator.rebels_generate import generate_rebel_data
+		return generate_rebel_data(count, profile_config=profile_cfg)
+	raise ValueError(f"generate_group_profiles 不支持 entity_type={entity_type}")
+
+
+def _count_from_agent_def(agent_def: Dict[str, Any], fallback: int = 0) -> int:
+	"""从群体定义推导成员总数。
+
+	优先级：ranks 各 count 之和 > 显式 count > fallback。
+	"""
+	ranks_cfg = agent_def.get("ranks")
+	if ranks_cfg:
+		return sum(int(r.get("count", 1)) for r in ranks_cfg if isinstance(r, dict))
+	explicit = agent_def.get("count")
+	if isinstance(explicit, int) and explicit > 0:
+		return explicit
+	return fallback
 
 # =============================================================================
 # 动态注册工具
@@ -137,11 +215,20 @@ def _compute_agent_counts(agents_def: List[dict], total_population: int) -> Dict
     counts = {}
     assigned = 0
     unspecified_indices = []
+    fixed_names = set()  # ranks 结构：固定数量，不参与 total_population 平摊/补齐
 
     for i, agent_def in enumerate(agents_def):
         name = agent_def.get("name", f"agent_{i}")
         explicit_count = agent_def.get("count")
         ratio = agent_def.get("population_ratio")
+        ranks_cfg = agent_def.get("ranks")
+
+        # ranks 结构：成员总数 = 各 rank count 之和，且不参与 initial_population 平摊
+        if ranks_cfg:
+            cnt = sum(int(r.get("count", 1)) for r in ranks_cfg if isinstance(r, dict))
+            counts[name] = cnt
+            fixed_names.add(name)
+            continue
 
         if isinstance(explicit_count, int):
             counts[name] = explicit_count
@@ -166,10 +253,13 @@ def _compute_agent_counts(agents_def: List[dict], total_population: int) -> Dict
             first_name = agents_def[unspecified_indices[0]].get("name", f"agent_{unspecified_indices[0]}")
             counts[first_name] += remaining
 
-    # 如果所有都指定了且总数不足 total，补齐到第一个
-    if sum(counts.values()) < total_population and counts:
-        first_name = next(iter(counts))
-        counts[first_name] += total_population - sum(counts.values())
+    # 如果所有都指定了且总数不足 total，补齐到第一个非固定 agent
+    # （ranks 固定数量的群体不计入 total_population，也不接受补齐）
+    spread_total = sum(c for n, c in counts.items() if n not in fixed_names)
+    if spread_total < total_population:
+        first_spread = next((n for n in counts if n not in fixed_names), None)
+        if first_spread is not None:
+            counts[first_spread] += total_population - spread_total
 
     return counts
 
@@ -240,6 +330,7 @@ async def generate_agents(
     window_size: int = 3,
     influence_registry: Optional['InfluenceRegistry'] = None,
     config_dir: Optional[str] = None,
+    group_counts: Optional[Dict[str, int]] = None,
     **kwargs
 ) -> Dict[int, Any]:
     """根据 agent_profile.yaml 动态生成任意类型的 Agent。
@@ -255,6 +346,8 @@ async def generate_agents(
         window_size: 记忆窗口大小
         influence_registry: 影响函数注册表
         config_dir: 配置目录，用于自动查找 prompts/actions 文件
+        group_counts: 插件管理群体（government/rebels 等）的显式数量配置。
+            若提供，会从 initial_population 中扣除这些群体的数量后再分配居民。
         **kwargs: 额外参数，透传给 Agent 构造函数
 
     Returns:
@@ -300,8 +393,32 @@ async def generate_agents(
     # 提取全局 computed_descriptions（如 health_conditions、satisfaction_levels 等）
     computed_descriptions = agent_profile.get("computed_descriptions", {})
 
-    counts = _compute_agent_counts(agents_def, initial_population)
-    print(f"[agent_generator] 生成计划: {counts}")
+    group_counts = group_counts or {}
+
+    # 若提供了 group_counts，插件管理类型（government/rebels）的数量从总名额中扣除，
+    # 剩余名额再分配给居民类型。这样可保证 initial_population = 居民 + 插件群体。
+    plugin_managed_total = 0
+    plugin_managed_counts: Dict[str, int] = {}
+    resident_agents_def = []
+    for agent_def in agents_def:
+        name = agent_def.get("name", "")
+        entity_type = agent_def.get("entity_type", "resident")
+        if entity_type in PLUGIN_MANAGED_TYPES:
+            cnt = group_counts.get(name)
+            if cnt is None:
+                cnt = group_counts.get(entity_type)
+            if cnt is None:
+                cnt = _count_from_agent_def(agent_def, 0)
+            if cnt > 0:
+                plugin_managed_counts[name] = cnt
+                plugin_managed_total += cnt
+        else:
+            resident_agents_def.append(agent_def)
+
+    resident_population = max(0, initial_population - plugin_managed_total)
+    counts = _compute_agent_counts(resident_agents_def, resident_population)
+    counts.update(plugin_managed_counts)
+    print(f"[agent_generator] 生成计划: {counts} (居民名额 {resident_population}, 插件群体 {plugin_managed_total})")
 
     # 预加载共享 pool（若未提供）
     if shared_pool is None:
@@ -334,7 +451,7 @@ async def generate_agents(
                 from src.generator.rebels_generate import generate_rebel_data
                 profiles = generate_rebel_data(population, profile_config=profile_cfg)
             _store_plugin_profile(entity_type, name, {"profiles": profiles, "population": population})
-            print(f"[agent_generator] ✓ {entity_type}「{name}」{len(profiles)} 个画像已生成（由插件系统管理）")
+            print(f"[agent_generator] [OK] {entity_type}「{name}」{len(profiles)} 个画像已生成（由插件系统管理）")
             continue
 
         agent_class = _resolve_agent_class(entity_type)
@@ -388,6 +505,8 @@ async def generate_agents(
                 lightweight=True,
                 influence_registry=influence_registry,
             )
+            # 兼容轻量/非轻量初始化：显式保留 group_type，便于 simulator 按角色筛选
+            agent.group_type = entity_type
 
             # 通用位置和城镇属性（如果类支持）
             if hasattr(agent, 'town'):

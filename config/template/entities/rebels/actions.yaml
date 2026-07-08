@@ -1,0 +1,44 @@
+# 叛军行为配置模板 (actions.yaml)
+#
+# 本文件定义了叛军智能体可以执行的各种行为及其对应的函数和参数。
+
+actions:
+  1:
+    name: "attack_town"
+    description: "进攻城镇"
+    function: "launch_attack"
+    is_async: true
+    parameters:
+      - name: "target_town"
+        type: "string"
+        required: true
+        description: "进攻的目标城镇"
+
+  2:
+    name: "recruit_members"
+    description: "招募新成员"
+    function: "recruit"
+    is_async: false
+    parameters:
+      - name: "amount"
+        type: "number"
+        required: true
+        description: "招募人数"
+
+  3:
+    name: "gather_resources"
+    description: "筹集资源"
+    function: "gather"
+    is_async: false
+    parameters:
+      - name: "method"
+        type: "string"
+        required: true
+        description: "筹资方式（劫掠/征税/贸易）"
+
+  4:
+    name: "maintain_status"
+    description: "维持现状，休养生息"
+    function: "maintain_status"
+    is_async: false
+    parameters: []

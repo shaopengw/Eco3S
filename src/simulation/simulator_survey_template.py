@@ -1,4 +1,4 @@
-from .simulator_imports import *
+from src.simulation.simulator_imports import *
 
 class SurveySimulator:
     """
@@ -83,6 +83,7 @@ class SurveySimulator:
                 self.influence_manager.apply_all_influences(
                     plugin_registry=self.plugin_registry,
                     extra_state={"residents": self.residents},
+                    target_root=self,
                 )
             except Exception:
                 pass

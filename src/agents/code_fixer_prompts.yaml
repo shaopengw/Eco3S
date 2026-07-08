@@ -1,0 +1,484 @@
+# 代码修复与优化 Agent 的提示词配置文件
+
+system_message: "你是Python代码调试与优化专家，擅长分析运行时错误、追踪调用链与数据流、修复代码缺陷、验证配置一致性。只做最小必要修改，优先解决根因。严禁编造不存在的方法名、属性名、配置项；在修改 simulator.py 或调用插件/模块前，必须先读取对应源码/接口确认方法签名与参数，不得臆造插件内部数据对象的业务方法。"
+
+tool_system_message: |
+  诊断时可调用工具。每次只输出一个 <tool> 块，无工具时直接返回最终答案。
+
+  <tool name="read_file"><arg name="file_path">项目内相对路径，如 simulator.py、config/simulation_config.yaml</arg></tool>
+  <tool name="search_project"><arg name="pattern">正则</arg><arg name="glob">可选通配符，默认 **/*.py</arg></tool>
+
+  调用示例：
+  <tool name="read_file"><arg name="file_path">simulator.py</arg></tool>
+
+  我会把结果追加到上下文，你可以继续调用工具。
+
+analyze_error_modules_prompt: |
+  分析以下错误信息，判断可能需要参考哪些接口文件或配置文件。
+
+  错误堆栈：
+  {error_traceback}
+
+  可用的模块接口文件映射：
+  {module_mapping}
+
+  配置文件和提示词文件列表：
+  {config_files_list}
+
+  【任务】
+  根据错误信息，判断需要参考哪些文档来修复问题，尽可能只找最相关的一个文件：
+  1. 接口文件：模块接口和方法定义（.py文件）
+  2. 配置文件：可能与错误相关的配置或提示词文件（.yaml/.json文件）
+
+  【输出格式】
+  返回JSON对象，包含两个数组：
+  {{
+    "api_docs": ["iclimate.py", "itime.py"],
+    "config_files": ["simulation_config.yaml", "residents_prompts.yaml"]
+  }}
+
+  注意：如果某类文件没有相关的，对应数组为空。只返回JSON对象，不要其他解释。
+
+fix_runtime_errors_prompt: |
+  程序运行出错，请修复。
+
+  错误信息：
+  {error_traceback}
+
+  Main文件（{main_file_path}）：
+  ```python
+  {main_content}
+  ```
+
+  Simulator文件（{simulator_file_path}）：
+  ```python
+  {simulator_content}
+  ```
+
+  相关配置文件内容：
+  {config_files_str}
+
+  相关模块接口：
+  {module_interface_docs}
+
+  【任务】
+  1. 分析错误堆栈，定位问题所在的文件和函数/方法
+  2. 参考接口文件和配置文件，确保使用正确的方法名、参数和配置
+  3. 尽可能以最小改动修复问题，可以修改代码、配置文件或提示词
+  4. 只有当接口中没有可用的方法，且该功能必须实现，才尝试自己编写函数/方法
+  5. 修复错误时优先解决根因，禁止通过添加裸 except Exception 掩盖错误；若必须使用 try/except，应捕获具体异常类型。
+  6. 严禁使用不存在的方法名/属性名/配置项。调用 `self.<对象>.<方法>()` 前，必须确认该方法在对应源码/接口中真实存在且参数签名匹配；若接口中没有所需方法，应优先给对应模块新增方法，而不是在调用处编造。
+
+  【输出格式】
+  根据需要修改的文件类型，返回对应的JSON块。Main文件用 # === MAIN FILE ===，Simulator文件用 # === SIMULATOR FILE ===，配置文件和提示词文件用 # === CONFIG FILES ===。
+
+  ```json
+  # === MAIN FILE ===
+  {{
+    "functions": [
+      {{
+        "function_name": "函数名（纯函数名，不含def等）",
+        "function_code": "完整的函数代码（从def开始）",
+        "description": "修改说明"
+      }}
+    ],
+    "delete_functions": ["不需要的函数名1", "不需要的函数名2"]
+  }}
+  ```
+  
+  ```json
+  # === SIMULATOR FILE ===
+  {{
+    "methods": [
+      {{
+        "method_name": "方法名（纯方法名，不含def等）",
+        "method_code": "完整的方法代码（从def/async def开始）",
+        "description": "修改说明"
+      }}
+    ],
+    "delete_methods": ["不需要的方法名1", "不需要的方法名2"]
+  }}
+  ```
+
+  ```json
+  # === CONFIG FILES ===
+  {{
+    "config_files": [
+      {{
+        "file_name": "需要修改的配置文件名（例如：simulation_config.yaml）",
+        "modifications": [
+          {{
+            "parameter": "参数名",
+            "value": "新值"
+          }}
+        ]
+      }}
+    ]
+  }}
+  ```
+
+  【特殊场景：配置文件语法错误】
+  如果错误是 YAML/JSON 语法错误（如 ScannerError、YAMLError、JSONDecodeError），
+  参数级增量修改无法工作（因为文件本身已无法解析）。此时请直接返回修正后的完整文件内容：
+
+  ```yaml
+  # === REWRITE FILE: jobs_config.yaml ===
+  jobs_info:
+    品牌商高管:
+      base_salary: 150
+  ```
+
+  或对于JSON文件：
+
+  ```json
+  # === REWRITE FILE: towns_data.json ===
+  {{
+    "towns": [{{"name": "Town1"}}]
+  }}
+  ```
+
+  注意：
+  - delete_methods/delete_functions 是可选字段。
+  - 只返回需要修改的文件的严格的JSON块或重写块，不要分析和说明。
+  - 若错误在 src/agents/ 核心文件中且是 KeyError，优先通过修改 CONFIG FILES（提示词模板）移除不兼容占位符，不要反复修改 SIMULATOR。
+  - 对于配置文件**语法错误**（如包含反引号、Markdown标记导致解析失败），必须使用 REWRITE FILE 模式返回完整修正内容，禁止使用 CONFIG FILES 增量修改模式。
+
+# 生成配置修改方案
+generate_config_modifications_prompt: |
+  根据诊断结果，生成具体的配置修改方案：
+
+  诊断结果：
+  {diagnosis_result}
+
+  当前文件内容：
+  {current_config}
+
+  设计文档：
+  {design_doc}
+
+  请只返回需要修改的参数和新值，格式如下：
+  ```json
+  {{
+    "modifications": [
+      {{
+        "parameter": "参数名",
+        "value": "新值"
+      }}
+    ]
+  }}
+  ```
+
+  注意：
+  1. 只返回确实需要修改的参数
+  2. parameter必须是文件中存在的确切参数名
+
+# 生成模拟器代码修改方案
+generate_simulator_modifications_prompt: |
+  根据诊断结果，为 simulator.py 文件生成增量代码修改方案。
+
+  【诊断结果】
+  {diagnosis_result}
+
+  【当前代码】
+  {current_code}
+
+  【设计文档】
+  {design_doc}
+
+  【修改要求】
+  1.  根据诊断结果中的 'modification' 描述，理解需要进行的修改。
+  2.  分析当前代码，定位需要修改的具体方法或函数。
+  3.  生成增量修改，只包含需要变动的部分。
+  4.  如果需要添加新方法，请提供完整的方法代码。
+  5.  保持代码风格和缩进与现有代码一致。
+  6.  严禁使用不存在的方法名/属性名/配置项。若需调用插件/模块方法，必须先读取对应源码确认真实方法名与参数签名；若接口中不存在所需方法，应优先在对应模块新增方法，而不是在 simulator.py 中编造。
+
+  【输出格式】
+  返回JSON格式，包含需要修改的内容：
+
+  ```json
+  {{
+    "methods": [
+      {{
+        "method_name": "要修改或新增的方法名(不包含def/async def或括号)",
+        "method_code": "完整的方法代码(从def/async def开始)",
+        "description": "修改说明"
+      }}
+    ]
+  }}
+  ```
+
+# 应用用户调整需求（增量修改版）
+apply_user_adjustment_prompt: |
+  根据用户的调整需求，对代码或配置文件进行增量修改。
+  
+  【用户调整需求】
+  {requirements_text}
+  
+  【当前代码文件】
+  {code_files}
+  
+  【当前配置文件】
+  {config_files}
+  
+  【任务】
+  根据用户的调整需求，生成增量修改方案。
+  
+  调整需求包含：
+  - description: 用户需求的描述
+  - target_files: 需要修改的文件列表
+  - changes: 具体的修改项列表（参考，但以description为准）
+  - explanation: 对用户的影响说明
+  
+  【修改要求】
+  1. 对于Python代码文件（.py），使用增量修改：只返回需要修改或新增的函数/方法
+  2. 对于配置文件（.yaml/.json），只返回需要修改的参数和新值
+  3. 尽可能做最小改动，保持代码风格和结构一致
+  4. 确保修改后的代码/配置语法正确
+  
+  【输出格式】
+  根据需要修改的文件类型，返回对应的JSON块。Main文件用 # === MAIN FILE ===，Simulator文件用 # === SIMULATOR FILE ===，配置文件用 # === CONFIG FILES ===。
+
+  ```json
+  # === MAIN FILE ===
+  {{
+    "functions": [
+      {{
+        "function_name": "函数名（纯函数名，不含def等）",
+        "function_code": "完整的函数代码（从def开始）",
+        "description": "修改说明"
+      }}
+    ],
+    "delete_functions": ["不需要的函数名1", "不需要的函数名2"]
+  }}
+  ```
+  
+  ```json
+  # === SIMULATOR FILE ===
+  {{
+    "methods": [
+      {{
+        "method_name": "方法名（纯方法名，不含def等）",
+        "method_code": "完整的方法代码（从def/async def开始）",
+        "description": "修改说明"
+      }}
+    ],
+    "delete_methods": ["不需要的方法名1", "不需要的方法名2"]
+  }}
+  ```
+
+  ```json
+  # === CONFIG FILES ===
+  {{
+    "config_files": [
+      {{
+        "file_name": "需要修改的配置文件名（例如：simulation_config.yaml）",
+        "modifications": [
+          {{
+            "parameter": "参数名或嵌套路径（如simulation.initial_population）",
+            "value": "新值"
+          }}
+        ]
+      }}
+    ]
+  }}
+  ```
+
+  注意：
+  - delete_methods/delete_functions 是可选字段
+  - 只返回需要修改的文件的JSON块，不要分析和说明
+  - 确保JSON格式严格正确
+
+# 专门修复语法错误的提示词（不传入设计文档等冗余内容）
+
+fix_syntax_error_prompt: |
+  以下 Python 文件存在语法错误，请只修复语法错误，不要改变任何功能逻辑。
+
+  【语法错误信息】
+  错误类型: {exc_type}
+  出错行号: {error_line}
+  出错行内容: {error_text}
+  错误详情: {compile_error}
+
+  【出错位置上下文】
+  ```python
+  {error_context}
+  ```
+
+  【出错方法】
+  {error_method}
+
+  【任务】
+  1. 只修复上述语法错误，不要修改功能逻辑、变量名、方法签名等
+  2. 优先检查以下常见问题：
+     - 缩进不一致（def/class/if/for 后的代码块缩进）
+     - 括号未闭合（圆括号、方括号、花括号）
+     - 引号未闭合（字符串引号不匹配）
+     - 转义字符问题（如字面 \n 未被正确处理）
+     - 多余空行导致的 unexpected EOF
+  3. 如果错误不在最近修改的方法中，请检查文件末尾是否被截断
+
+  【输出格式】
+  返回 JSON 格式的增量修改，只包含需要修改的方法/函数：
+  ```json
+  {{
+    "methods": [
+      {{
+        "method_name": "方法名（纯方法名，不含def/async def）",
+        "method_code": "完整的方法代码（从def/async def开始）",
+        "description": "修复说明"
+      }}
+    ]
+  }}
+  ```
+
+  注意：
+  - 如果没有语法错误（或无法定位），只返回：OK
+  - 只修改有语法错误的方法/函数，不要动其他正确的代码
+  - main 文件请将 "methods" 替换为 "functions"，"method_name" 替换为 "function_name"
+
+# 从报错现象出发，沿调用链与数据流反向追踪根因
+trace_issue_backwards_prompt: |
+  你是一个代码调试专家。请根据以下运行时错误堆栈，从现象出发，沿调用链和数据流反向追踪，定位“约定”与“实现”不一致的根因。
+
+  【错误堆栈】
+  {error_traceback}
+
+  【Simulator 代码（节选）】
+  ```python
+  {simulator_content}
+  ```
+
+  【Main 文件代码（节选）】
+  ```python
+  {main_content}
+  ```
+
+  【相关模块接口】
+  {module_interface_docs}
+
+  【相关配置文件】
+  {config_files_str}
+
+  【任务】
+  1. 识别错误发生的直接位置（文件、方法、行号）。
+  2. 从该位置沿调用链向上回溯，找出数据/控制流的来源。
+  3. 检查配置（YAML/JSON）与代码约定是否一致：
+     - 配置中引用的字段名是否在代码中真实存在？
+     - 代码中使用的参数是否有配置支持？
+     - 接口约定的方法签名是否与调用处一致？
+  4. 检查 LLM 输入/输出格式问题：
+     - 提示词模板变量是否被正确定义和填充？
+     - LLM 返回的 JSON/YAML 是否被正确解析？
+  5. 给出最可能的根因与需要检查/修改的文件清单。
+
+  【输出格式】
+  返回 JSON 对象：
+  ```json
+  {
+    "root_cause": "根因描述",
+    "files_to_check": ["file1.py", "config.yaml"],
+    "suspected_mismatches": [
+      {"location": "simulator.py:execute_actions", "expected": "self.towns 为 Towns 对象", "actual": "self.towns 为 dict"}
+    ],
+    "recommended_fixes": ["修改点1", "修改点2"]
+  }
+  ```
+
+# 检查配置文件是否与设计文档/接口约定一致
+validate_config_alignment_prompt: |
+  请检查以下配置文件是否与设计文档及模块接口约定保持一致。
+
+  【配置文件: {config_file_name}】
+  ```yaml
+  {config_content}
+  ```
+
+  【设计文档（节选）】
+  {design_doc}
+
+  【任务】
+  1. 检查配置文件中引用的字段名、方法名、模块名是否与设计文档一致。
+  2. 检查配置中的数值/结构是否符合设计文档的语义约定。
+  3. 检查配置是否引用了代码/接口中不存在的参数。
+  4. 返回发现的不一致项列表；若一致，返回空列表。
+
+  【输出格式】
+  返回 JSON 数组：
+  ```json
+  [
+    "不一致项描述1",
+    "不一致项描述2"
+  ]
+  ```
+
+# 将评估报告中的问题匹配到诊断路由表中的 skill 文件
+route_report_to_skills_prompt: |
+  你是 CodeFixer 的诊断路由器。下面给你一份模拟结果的【评估报告】和一份【诊断路由表】。
+  请阅读评估报告中描述的问题，对照诊断路由表的"症状 → Skill"映射，
+  判断本次应当参考哪一个或哪几个 skill 文件来修复。
+
+  你可以使用 read_file / search_project 工具读取项目文件或搜索代码，拿不准就先查文件再下结论。
+
+  【评估报告】
+  {evaluation_report}
+
+  【诊断路由表】
+  {diagnostic_router}
+
+  【任务】
+  1. 只根据报告中真实出现的问题做匹配，不要臆造问题。
+  2. 可以匹配多个 skill（按相关性从高到低排列）；若报告未暴露任何明确问题，返回空数组。
+  3. 路径必须是诊断路由表中给出的 skill 文件相对路径（形如 docs/code_fixer_skills/skill_xxx.md）。
+
+  【输出格式】
+  只返回一个 JSON 数组，不要任何额外文字：
+  ```json
+  [
+    "docs/code_fixer_skills/skill_xxx.md"
+  ]
+  ```
+
+# 据选定 skill 的必查步骤，诊断出需要修改的文件
+skill_guided_diagnosis_prompt: |
+  你是 CodeFixer 的诊断器。请依据下面【选定 Skill】中的"必查步骤/常见修复"指引，
+  结合【问题上下文】定位本次需要修改的文件，并说明每个文件要改什么。
+
+  你可以使用 read_file / search_project 工具读取项目文件或搜索代码，拿不准就先查文件再下结论。
+
+  【问题上下文】
+  {problem_context}
+
+  【选定 Skill（必查步骤与修复指引）】
+  {skill_text}
+
+  【设计文档（节选，用于核对语义约定）】
+  {design_doc}
+
+  【项目文件地图（可能为空）】
+  {file_descriptions}
+
+  【任务】
+  1. 严格按 skill 的必查步骤，确定要改哪些文件（simulator.py、actions/*.yaml、prompts/*.yaml、各类配置等）。
+  2. 每个待改文件给出：file_name（确切文件名/相对路径）、file_type（simulator 或 config）、
+     modification（要改什么、为什么）、param_or_method（涉及的关键参数或方法名，可空）。
+  3. 若【项目文件地图】为空、而你需要它来确定确切文件位置，请把 need_file_descriptions 置为 true 并先不要给出文件清单。
+  4. 不要臆造不存在的方法名/属性名/配置项；拿不准的目标在 modification 中标注为"待核对"。
+     涉及插件/模块调用的，必须先读取源码确认真实方法名与参数签名，严禁编造。
+
+  【输出格式】
+  只返回一个 JSON 对象，不要任何额外文字：
+  ```json
+  {{
+    "need_file_descriptions": false,
+    "files_to_modify": [
+      {{
+        "file_name": "simulator.py",
+        "file_type": "simulator",
+        "modification": "在 execute_actions() 中补充对居民群体的遍历调用",
+        "param_or_method": "execute_actions"
+      }}
+    ]
+  }}
+  ```
+

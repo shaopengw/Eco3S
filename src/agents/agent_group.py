@@ -48,6 +48,49 @@ class AgentGroup(IAgentGroup):
         返回： (agent_graph, id_mapping, shared_pool)
         """
 
+        with open(info_path, "r", encoding=encoding, errors="ignore") as file:
+            info_list = json.load(file)
+        if not isinstance(info_list, list):
+            raise TypeError("信息文件 JSON 顶层必须是 list")
+
+        return await AgentGroup.generate_agents_from_info_list(
+            info_list,
+            group_obj=group_obj,
+            rank_factories=rank_factories,
+            shared_pool=shared_pool,
+            shared_pool_factory=shared_pool_factory,
+            agent_graph=agent_graph,
+            id_mapping=id_mapping,
+            init_agent=init_agent,
+            add_info_officer=add_info_officer,
+            validate_types=validate_types,
+            rank_field=rank_field,
+        )
+
+    @staticmethod
+    async def generate_agents_from_info_list(
+        info_list: List[Dict[str, Any]],
+        *,
+        group_obj: Any,
+        rank_factories: Dict[str, Callable[[int, Any, Any], Any]],
+        shared_pool: Optional[Any] = None,
+        shared_pool_factory: Optional[Callable[[], Any]] = None,
+        agent_graph: Optional[Dict[int, Any]] = None,
+        id_mapping: Optional[Dict[int, int]] = None,
+        init_agent: Optional[Callable[[Any, Dict[str, Any]], None]] = None,
+        add_info_officer: Optional[Callable[[int, Any, Any], Any]] = None,
+        validate_types: Optional[Tuple[type, ...]] = None,
+        rank_field: str = "rank",
+    ) -> tuple[Dict[int, Any], Dict[int, int], Any]:
+        """从内存中的画像 list 批量生成 agent 图谱（通用版）。
+
+        与 generate_agents_from_info_json 共享同一处理流程，区别仅在于数据来源：
+        本方法直接接受已在内存中的画像列表（如由 agent_profile 配置驱动生成），
+        避免强制将画像落盘为 JSON 文件。
+
+        返回： (agent_graph, id_mapping, shared_pool)
+        """
+
         if agent_graph is None:
             agent_graph = {}
         if id_mapping is None:
@@ -58,10 +101,8 @@ class AgentGroup(IAgentGroup):
                 raise ValueError("shared_pool 为空且 shared_pool_factory 未提供")
             shared_pool = shared_pool_factory()
 
-        with open(info_path, "r", encoding=encoding, errors="ignore") as file:
-            info_list = json.load(file)
         if not isinstance(info_list, list):
-            raise TypeError("信息文件 JSON 顶层必须是 list")
+            raise TypeError("info_list 必须是 list")
 
         base_id = max(agent_graph.keys(), default=0)
 

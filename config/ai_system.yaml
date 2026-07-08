@@ -1,0 +1,69 @@
+# AI 系统元配置：控制多智能体"构建层"自身行为，与具体模拟实验无关。
+# 区别于 config/<type>/simulation_config.yaml（运行期"实验跑什么"）。
+# 纯全局：本文件是唯一真源，不读取任何项目内的同名配置。
+
+code_audit:               # 改代码前的审计（三关）
+  enabled: true
+  threshold: 3            # 改动数达到才审（动 simulator 必审）
+  max_rounds: 2           # 被驳回后当轮最多重生成几次
+  semantic_review: true   # 第二关 LLM 语义审查
+  attr_check: true        # 第一关·属性快检（未初始化属性 → AttributeError）
+
+agents:                   # 构建层各 Agent 用什么模型（居民/政府 Agent 不在此，仍随机选）
+  code_fixer:       { api: CLAUDE,   model: claude-sonnet-4-5-20250929 }
+  auditor:          { api: CLAUDE,   model: claude-sonnet-4-5-20250929 }
+  code_architect:   { api: CLAUDE,   model: claude-sonnet-4-5-20250929 }
+  sim_architect:    { api: DEEPSEEK, model: deepseek-v4-flash }
+  research_analyst: { api: DEEPSEEK, model: deepseek-v4-flash }
+
+retries:                  # 各阶段自动修复/重试轮数
+  regeneration: 3
+  influence_preflight: 3
+  smoke_test: 5
+  full_run: 10
+  runtime_fix: 3
+  audit_internal: 5
+
+rag:                        # generate_influences 的因果证据检索（分层漏斗 + 层级排序）
+  funnel_enabled: true      # 总开关：true=新漏斗 / false=旧 2a/2b/2c 回退
+  embed_model: text-embedding-3-large
+  db_path: experiment_dataset/chroma_db
+  graph_path: experiment_dataset/causal_graph.gpickle
+  jel_table_path: experiment_dataset/jel_embeddings.json
+  l0_graph_discovery:         # 步骤0初始候选：图拓扑路径发现（取代纯语义论文检索为主来源）
+    enabled: true
+    max_concepts: 5           # LLM 抽取英文可量化变量概念上限
+    hops: 4                   # all_simple_paths cutoff（保留 2-4 跳路径）
+    max_paths_per_pair: 20    # 每对 anchor 节点最大路径数，防组合爆炸
+    top_k_chains: 5           # 最终输出的候选传导链条数
+    fallback_min_chains: 3    # 图链条少于此数才回退论文库补充
+    fallback_anchor_threshold: 0.45  # fallback 到 causal_claims 时，仅使用 cos_sim >= 此阈值的节点
+    anchor_semantic_top_k: 3  # 精确匹配失败时，语义锚定每概念召回 claim 数
+    causal_methods: [RCT, DID, IV, RDD]  # 路径打分加成的因果识别方法
+  l1_jel:
+    enabled: true
+    top_n: 2                # 锁定 Top-N 个 JEL 领域
+  l2_graph:
+    hops: 2                 # 闭合路径跳数（A→M→B）
+    max_expand: 8           # 图扩展召回上限（多样性采样，非硬截断）
+    per_node_cap: 1         # 每个中介/混杂节点最多保留几条最优边（多样性）
+    include_confounders: true  # 是否召回上游混杂因子（C→A,C→B）
+  retrieval:
+    top_k_semantic: 5       # L1 语义召回条数
+    max_distance: 1.0
+  budget:
+    max_chars: 2500         # 证据预算（贪心填充阈值）
+  priority_weights:         # 层级阻断式排序（tier 主导，附加分仅 tie-break）
+    tier_causal_direct: 3   # method∈{RCT,DID,IV,RDD,TWFE,Event Study} 且 rel_type 含 direct
+    tier_exogenous: 2       # exogenous_var 非空（外生识别干净）
+    tier_significant: 1     # sig_level 含 p<0.01 且 certainty=certain
+    tier_other: 0           # 其余
+    bonus_exogenous: 1      # 同 tier 内 tie-break 加分
+    bonus_significant: 1    # 同 tier 内 tie-break 加分
+    hard_drop_methods: []           # 硬门槛
+    hard_drop_rel_types: ['null result', 'spurious', 'collider']
+    hard_drop_tentative: true # certainty=tentative → 排除
+  cache:
+    enabled: true
+    file_path: experiment_dataset/.rag_cache.json
+

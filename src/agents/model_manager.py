@@ -25,6 +25,13 @@ class ModelManager:
                 "api_key":os.getenv('ANTHROPIC_API_KEY'),
                 "allow_random": False  # 仅供指定使用，不参与随机选择
             },
+            # "KIMI": {
+            #     "model_types": ["kimi-k2-0905-preview"],
+            #     "model_platform": ModelPlatformType.OPENAI_COMPATIBLE_MODEL,
+            #     "url": os.getenv('KIMI_API_BASE_URL'),
+            #     "api_key": os.getenv('KIMI_API_KEY'),
+            #     "allow_random": False  # 仅供指定使用，不参与随机选择
+            # },
             # "OPENAI": {
             #     "model_types": ["gpt-4o"],
             #     "model_platform": ModelPlatformType.OPENAI,

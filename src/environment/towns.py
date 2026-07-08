@@ -77,32 +77,33 @@ class Towns(ITowns):
         # 第一步：按城镇分组居民
         town_residents = {}
         for resident_id, resident in residents.items():
-            if resident.town:
-                town_name = resident.town
-                
-                if town_name:
-                    # 检查城镇是否存在且已正确初始化
-                    if town_name not in self.towns or 'info' not in self.towns[town_name] or not self.towns[town_name]['info']:
-                        # 为居民分配最近的有效城镇
-                        if hasattr(resident, 'location') and resident.location:
-                            new_town_name = self.get_nearest_town(resident.location)
-                        else:
-                            # 如果没有location属性，则随机分配一个城镇
-                            new_town_name = random.choice(list(self.towns.keys())) if self.towns else None
-                        if new_town_name:
-                            print(f"警告: 城镇 {town_name} 未初始化或不存在，居民 {resident_id} 重新分配到城镇 {new_town_name}")
-                            resident.set_town(new_town_name, self)
-                            town_name = new_town_name
-                        else:
-                            print(f"警告: 无法为居民 {resident_id} 分配有效城镇，跳过")
-                            continue
-                    
-                    # 将居民添加到对应城镇的列表
-                    if town_name not in town_residents:
-                        town_residents[town_name] = []
-                    town_residents[town_name].append(resident)
+            town_name = getattr(resident, 'town', None)
+            if not town_name:
+                # 非空间型实体（如 representative_resident/enterprise）无需加入城镇
+                continue
+
+            # 检查城镇是否存在且已正确初始化
+            if town_name not in self.towns or 'info' not in self.towns[town_name] or not self.towns[town_name]['info']:
+                # 为居民分配最近的有效城镇
+                location = getattr(resident, 'location', None)
+                if location:
+                    new_town_name = self.get_nearest_town(location)
                 else:
-                    print(f"警告: 无法找到居民 {resident_id} 所在的城镇 {resident.town}")
+                    # 如果没有location属性，则随机分配一个城镇
+                    new_town_name = random.choice(list(self.towns.keys())) if self.towns else None
+                if new_town_name:
+                    print(f"警告: 城镇 {town_name} 未初始化或不存在，居民 {resident_id} 重新分配到城镇 {new_town_name}")
+                    if hasattr(resident, 'set_town'):
+                        resident.set_town(new_town_name, self)
+                    town_name = new_town_name
+                else:
+                    print(f"警告: 无法为居民 {resident_id} 分配有效城镇，跳过")
+                    continue
+
+            # 将居民添加到对应城镇的列表
+            if town_name not in town_residents:
+                town_residents[town_name] = []
+            town_residents[town_name].append(resident)
         
         # 第二步：批量处理每个城镇的居民
         for town_name, town_resident_list in town_residents.items():
@@ -138,7 +139,8 @@ class Towns(ITowns):
         for resident in residents_list:
             self.towns[town_name]['residents'][resident.resident_id] = resident
             resident_group.add_resident(resident)
-            resident.set_town(town_name, self)
+            if hasattr(resident, 'set_town'):
+                resident.set_town(town_name, self)
 
     def get_nearest_town(self, location):
         """获取最近的城镇名称"""

@@ -3,6 +3,7 @@
 作为用户和系统之间的中介，帮助非技术用户理解和调整模拟机制
 """
 from src.utils.custom_logger import CustomLogger
+from src.utils import plugin_generator as pg
 from .shared_imports import *
 
 
@@ -47,9 +48,27 @@ class MechanismInterpreterAgent(BaseAgent):
         # 加载文件目录描述（字符串格式）
         self.file_catalog = self._load_file_catalog()
     
+    def _resolve_file_catalog_path(self):
+        """解析 file_descriptions.yaml 的真实路径。
+
+        目录结构调整后，文件地图统一位于仓库根目录的 docs/ 下。
+        按优先级尝试候选路径，兼容旧结构（config/template/ 及项目目录同级的 template/）。
+        """
+        candidates = []
+        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        candidates.append(os.path.join(repo_root, 'docs', 'file_descriptions.yaml'))
+        candidates.append(os.path.join(repo_root, 'config', 'template', 'file_descriptions.yaml'))
+        candidates.append(os.path.join(os.path.dirname(self.config_dir), 'template', 'file_descriptions.yaml'))
+
+        for path in candidates:
+            norm = os.path.normpath(path)
+            if os.path.exists(norm):
+                return norm
+        return os.path.normpath(candidates[0])
+
     def _load_file_catalog(self):
         """加载文件目录描述"""
-        catalog_path = os.path.join(os.path.dirname(self.config_dir), 'template', 'file_descriptions.yaml')
+        catalog_path = self._resolve_file_catalog_path()
         self.logger.info(f"加载文件目录: {catalog_path}")
         
         if os.path.exists(catalog_path):
@@ -206,7 +225,7 @@ class MechanismInterpreterAgent(BaseAgent):
                     self.logger.error(f"读取文件失败 {filename}: {e}")
             else:
                 # 尝试在src/interfaces目录中查找接口文件
-                project_root = os.path.dirname(os.path.dirname(os.path.abspath(self.config_dir)))
+                project_root = pg.project_root_from(self.config_dir)
                 interfaces_dir = os.path.join(project_root, 'src', 'interfaces')
 
                 stem = os.path.splitext(filename)[0]

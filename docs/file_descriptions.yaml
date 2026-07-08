@@ -1,0 +1,72 @@
+# 项目地图：供优化 Agent 快速定位文件与修改优先级
+# 原则：每条描述控制在 30 字以内，只保留关键语义
+#
+# 【<sim> 占位符说明 — 务必正确替换】
+#   所有路径中出现的 <sim>，必须替换为“本次模拟的确切项目名称”。
+#   该名称在运行时确定，并已注入优化 Agent 的系统提示词（见“当前任务上下文”一节）。
+#   例：当 <sim> = federal_housing_policy_impact 时，
+#       projects/<sim>/simulator.py 即 projects/federal_housing_policy_impact/simulator.py。
+#   切勿凭空猜测项目名，一律以系统提示词中给出的确切名称与绝对路径为准。
+
+project_overview:
+  root_dir: "仓库根目录"
+  key_directories:
+    "config/template/": "模板配置，供新建项目复制"
+    "config/<sim>/": "旧版配置目录，现逐步迁移到 projects/<sim>/config/"
+    "projects/<sim>/": "项目产物：simulator.py、main.py、config/、history/"
+    "src/agents/": "Agent 定义与修复 Agent"
+    "src/simulation/": "模拟器模板与运行时"
+    "src/interfaces/": "模块接口约定"
+    "src/environment/": "环境模块实现"
+    "src/plugins/": "插件系统"
+    "entrypoints/": "各模拟专用入口"
+
+config_files_description:
+  "modules_config.yaml": "启用哪些模块"
+  "simulation_config.yaml": "人口、步数、数据路径等运行参数"
+  "agent_profile.yaml": "有哪些智能体角色"
+  "towns_data.json": "城镇位置"
+  "jobs_config.yaml": "职业、薪资、需求"
+  "influences.yaml": "模块间影响函数"
+  "influence_pairs.json": "因果对设计，评估阶段核对方向用"
+  "message_config.yaml": "信息传播参数"
+  "questionnaire.yaml": "问卷结构"
+
+prompt_files_description:
+  "entities/<role>/prompts.yaml": "角色提示词（新版）"
+  "entities/<role>/actions.yaml": "角色行为配置（新版）"
+  "residents_prompts.yaml": "居民提示词（旧版）"
+  "government_prompts.yaml": "政府提示词（旧版）"
+  "rebels_prompts.yaml": "叛军提示词（旧版）"
+
+code_files_description:
+  "projects/<sim>/simulator.py": "模拟器主代码：初始化、循环、结果收集"
+  "projects/<sim>/main.py": "可选自定义入口/钩子"
+  "src/simulation/base_simulator.py": "模拟器基类"
+  "src/simulation/simulator_imports.py": "模拟器共享导入"
+
+documentation_files_description:
+  "description.md": "设计文档：目标、机制、预期结果"
+
+interfaces_files_description:
+  "itime.py": "时间模块接口"
+  "imap.py": "地图模块接口"
+  "ipopulation.py": "人口模块接口"
+  "iresident.py": "居民模块接口"
+  "itowns.py": "城镇模块接口"
+  "ijob_market.py": "就业市场模块接口"
+  "itransport_economy.py": "运输经济模块接口"
+  "isocial_network.py": "社交网络模块接口"
+  "igovernment.py": "政府模块接口"
+  "irebels.py": "叛军模块接口"
+  "iclimate.py": "气候模块接口"
+
+optimization_guidance:
+  priority_order:
+    - "指标全为0/无效 → 先查 simulator.py 计算与 init_results"
+    - "趋势相反/不显著 → 先查配置参数，再查提示词"
+    - "Agent 行为异常 → 先查 prompts/actions，再查 simulator.py"
+  common_pitfalls:
+    - "simulation_config.yaml 的 data 路径要与实际文件一致"
+    - "prompt 中的模板变量名要与 simulator.py 传入的一致"
+    - "influence_pairs.json 只用于评估，不要直接修改它来修复问题"

@@ -6,6 +6,7 @@
 # Environment interfaces
 from .imap import IMap
 from .iclimate import IClimateSystem
+from .iexogenous import IExogenousDataProvider
 from .ijob_market import IJobMarket
 from .ipopulation import IPopulation
 from .isocial_network import IHeterogeneousGraph, IHypergraph, ISocialNetwork
@@ -39,6 +40,7 @@ __all__ = [
     # Environment interfaces
     'IMap',
     'IClimateSystem',
+    'IExogenousDataProvider',
     'IJobMarket',
     'IPopulation',
     'IHeterogeneousGraph',

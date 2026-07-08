@@ -51,20 +51,23 @@ def initialize_plugin_system(
     if isinstance(selected_modules, list) and selected_modules:
         # 轻量扫描：收集 name -> directory 映射（只读 YAML，不注册）
         name_to_dir: Dict[str, Path] = {}
-        plugins_path = Path("plugins")
-        if plugins_path.exists():
+        plugin_roots = [Path("plugins"), Path("plugins/generated")]
+        for plugins_path in plugin_roots:
+            if not plugins_path.exists():
+                continue
             for subdir in plugins_path.iterdir():
-                if subdir.is_dir() and not subdir.name.startswith("_"):
-                    yaml_file = subdir / "plugin.yaml"
-                    if yaml_file.exists():
-                        try:
-                            with open(yaml_file, "r", encoding="utf-8") as f:
-                                cfg = yaml.safe_load(f)
-                            pname = cfg.get("name") if isinstance(cfg, dict) else None
-                            if pname:
-                                name_to_dir[pname] = subdir
-                        except Exception:
-                            pass
+                if not subdir.is_dir() or subdir.name.startswith("_"):
+                    continue
+                yaml_file = subdir / "plugin.yaml"
+                if yaml_file.exists():
+                    try:
+                        with open(yaml_file, "r", encoding="utf-8") as f:
+                            cfg = yaml.safe_load(f)
+                        pname = cfg.get("name") if isinstance(cfg, dict) else None
+                        if pname:
+                            name_to_dir[pname] = subdir
+                    except Exception:
+                        pass
 
         # 定向发现 selected_modules + 递归依赖
         discovered: Set[str] = set()
@@ -88,8 +91,8 @@ def initialize_plugin_system(
 
         logger.info(f"定向发现 {len(registry.get_all())} 个插件（含依赖）")
     else:
-        # 约定：插件只存在于仓库根目录下的 plugins/ 目录。
-        count = registry.discover(["plugins/"])
+        # 约定：插件存在于 plugins/ 与 plugins/generated/ 目录。
+        count = registry.discover(["plugins/", "plugins/generated/"])
         logger.info(f"发现了 {count} 个插件")
 
     loaded_plugins: Dict[str, BasePlugin] = {}
