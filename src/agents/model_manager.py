@@ -1,9 +1,83 @@
 from .shared_imports import *
 import random
 import os
+from typing import Optional
 from dotenv import load_dotenv
 
 load_dotenv()
+
+try:
+    from sentence_transformers import SentenceTransformer
+    _HAS_SENTENCE_TRANSFORMERS = True
+except Exception:  # pragma: no cover
+    SentenceTransformer = None
+    _HAS_SENTENCE_TRANSFORMERS = False
+
+
+class LocalEmbeddingProvider:
+    """本地 SentenceTransformer Embedding 模型单例。
+
+    通过环境变量配置：
+      LOCAL_EMBEDDING_MODEL_PATH：模型目录绝对路径
+      LOCAL_EMBEDDING_DIM：输出维度，默认 1024
+      LOCAL_EMBEDDING_DEVICE：运行设备，默认自动选择 cuda/cpu
+    """
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._model = None
+            cls._instance._model_path = None
+        return cls._instance
+
+    @staticmethod
+    def get_model_path() -> Optional[str]:
+        path = os.getenv('LOCAL_EMBEDDING_MODEL_PATH', '').strip()
+        return path if path else None
+
+    @staticmethod
+    def get_dimensions() -> int:
+        try:
+            return int(os.getenv('LOCAL_EMBEDDING_DIM', '1024'))
+        except Exception:
+            return 1024
+
+    @staticmethod
+    def get_device() -> str:
+        device = os.getenv('LOCAL_EMBEDDING_DEVICE', '').strip()
+        if device:
+            return device
+        try:
+            import torch
+            return 'cuda' if torch.cuda.is_available() else 'cpu'
+        except Exception:
+            return 'cpu'
+
+    def is_available(self) -> bool:
+        path = self.get_model_path()
+        return _HAS_SENTENCE_TRANSFORMERS and path is not None and os.path.isdir(path)
+
+    def encode(self, text: str, dimensions: Optional[int] = None):
+        if not self.is_available():
+            return None
+        path = self.get_model_path()
+        if self._model is None or self._model_path != path:
+            self._model_path = path
+            self._model = SentenceTransformer(path, device=self.get_device())
+        vec = self._model.encode([text], show_progress_bar=False)[0]
+        return vec.tolist() if hasattr(vec, 'tolist') else list(vec)
+
+
+def get_local_embedding(text: str, dimensions: Optional[int] = None):
+    """若配置了本地模型且维度匹配，则返回本地 embedding；否则返回 None。"""
+    provider = LocalEmbeddingProvider()
+    if not provider.is_available():
+        return None
+    if dimensions is not None and dimensions != provider.get_dimensions():
+        return None
+    return provider.encode(text, dimensions=dimensions)
+
 
 class ModelManager:
     """统一的模型管理器，用于管理不同的模型 API"""

@@ -89,7 +89,182 @@ class CodeFixerAgent(CodeChangeMixin, BaseAgent):
 			name = name[idx + len(marker):]
 		return os.path.normpath(os.path.join(config_dir, name))
 
+	def _resolve_payload_file_path(self, file_name: str) -> Optional[str]:
+		"""Resolve a direct apply payload path to a writable project file."""
+		if not file_name:
+			return None
+		name = str(file_name).strip().replace('\\', '/')
+		candidates = []
+		if os.path.isabs(name):
+			candidates.append(os.path.abspath(name))
+		else:
+			project_root = os.path.abspath(self._rag_project_root)
+			project_name = os.path.basename(os.path.abspath(self.project_dir))
+			if name.startswith('projects/'):
+				candidates.append(os.path.abspath(os.path.join(project_root, name)))
+			if name.startswith(project_name + '/'):
+				candidates.append(os.path.abspath(os.path.join(os.path.dirname(self.project_dir), name)))
+			candidates.extend([
+				os.path.abspath(os.path.join(self.project_dir, name)),
+				os.path.abspath(os.path.join(project_root, name)),
+				os.path.abspath(os.path.join(self.config_dir, name)),
+			])
+
+		allowed_roots = [
+			os.path.abspath(self.project_dir),
+			os.path.abspath(self.config_dir),
+			os.path.abspath(os.path.join(self._rag_project_root, 'plugins', 'generated')),
+		]
+		for path in candidates:
+			if not any(path == root or path.startswith(root + os.sep) for root in allowed_roots):
+				continue
+			if os.path.exists(path):
+				return path
+		for path in candidates:
+			if any(path == root or path.startswith(root + os.sep) for root in allowed_roots):
+				return path
+		return None
+
+	@staticmethod
+	def _find_line_block(lines: List[str], block: List[str], start: int = 0) -> int:
+		if not block:
+			return -1
+		max_start = len(lines) - len(block)
+		for idx in range(start, max_start + 1):
+			if lines[idx:idx + len(block)] == block:
+				return idx
+		stripped_block = [line.strip() for line in block]
+		for idx in range(start, max_start + 1):
+			if [line.strip() for line in lines[idx:idx + len(block)]] == stripped_block:
+				return idx
+		# read_file_span displays lines as "<line_no>: <source>".  Accept a block
+		# copied verbatim from that tool, but only when every block line has the
+		# display prefix so ordinary source text is not altered.
+		numbered = [re.match(r'^\s*\d+:\s?(.*)$', line) for line in block]
+		if numbered and all(numbered):
+			unnumbered_block = [match.group(1) for match in numbered]
+			return CodeFixerAgent._find_line_block(lines, unnumbered_block, start)
+		return -1
+
+	def _apply_diff_lines_to_file(self, file_path: str, diff_lines: dict) -> bool:
+		"""Apply the compact diff_lines protocol emitted inside <apply_modifications>."""
+		if not file_path or not isinstance(diff_lines, dict) or not diff_lines or not os.path.exists(file_path):
+			return False
+		supported_fields = {
+			'replace_block', 'replace_with',
+			'append_after_block', 'delete_block',
+		}
+		unknown_fields = sorted(set(diff_lines) - supported_fields)
+		if unknown_fields:
+			self.logger.warning(f"diff_lines 包含不支持的字段: {unknown_fields}")
+			return False
+		try:
+			with open(file_path, 'r', encoding='utf-8') as f:
+				content = f.read()
+		except Exception as e:
+			self.logger.error(f"读取待修改文件失败: {file_path}, {e}")
+			return False
+
+		ends_with_newline = content.endswith('\n')
+		lines = content.splitlines()
+		changed = False
+		operation_count = 0
+
+		if isinstance(diff_lines.get('replace_block'), list):
+			operation_count += 1
+			old_block = [str(line) for line in diff_lines.get('replace_block', [])]
+			new_block = [str(line) for line in diff_lines.get('replace_with', [])]
+			idx = self._find_line_block(lines, old_block)
+			if idx == -1:
+				if self._find_line_block(lines, new_block) == -1:
+					self.logger.warning(
+						f"replace_block 未匹配: {file_path}; "
+						f"expected={old_block!r}"
+					)
+					return False
+			else:
+				lines[idx:idx + len(old_block)] = new_block
+				changed = True
+
+		append_after = diff_lines.get('append_after_block')
+		if isinstance(append_after, dict):
+			operation_count += 1
+			start_line = str(append_after.get('block_start', ''))
+			end_line = str(append_after.get('block_end', ''))
+			insert_lines = [str(line) for line in append_after.get('insert_lines', [])]
+			start_idx = self._find_line_block(lines, [start_line]) if start_line else -1
+			end_idx = self._find_line_block(lines, [end_line], start_idx if start_idx != -1 else 0) if end_line else -1
+			if start_idx == -1 or end_idx == -1 or end_idx < start_idx:
+				self.logger.warning(f"append_after_block 未匹配: {file_path}")
+				return False
+			if lines[end_idx + 1:end_idx + 1 + len(insert_lines)] != insert_lines:
+				lines[end_idx + 1:end_idx + 1] = insert_lines
+				changed = True
+
+		delete_block = diff_lines.get('delete_block')
+		if isinstance(delete_block, dict):
+			operation_count += 1
+			start_line = str(delete_block.get('block_start', ''))
+			end_line = str(delete_block.get('block_end', ''))
+			start_idx = self._find_line_block(lines, [start_line]) if start_line else -1
+			end_idx = self._find_line_block(lines, [end_line], start_idx if start_idx != -1 else 0) if end_line else -1
+			if start_idx != -1 and end_idx != -1 and end_idx >= start_idx:
+				del lines[start_idx:end_idx + 1]
+				changed = True
+
+		if operation_count == 0:
+			return False
+		if not changed:
+			return True
+
+		new_content = '\n'.join(lines)
+		if ends_with_newline:
+			new_content += '\n'
+		if file_path.lower().endswith('.py'):
+			try:
+				compile(new_content, file_path, 'exec')
+			except SyntaxError as e:
+				self.logger.error(
+					f"diff_lines 生成的 Python 代码语法无效，拒绝写盘: "
+					f"{file_path}:{e.lineno}:{e.offset} {e.msg}"
+				)
+				return False
+		try:
+			shutil.copy(file_path, file_path + '.backup')
+			with open(file_path, 'w', encoding='utf-8') as f:
+				f.write(new_content)
+			return True
+		except Exception as e:
+			self.logger.error(f"写入 diff_lines 修改失败: {file_path}, {e}")
+			return False
+
+	def _apply_direct_diff_payload(self, response: str) -> Optional[bool]:
+		"""Apply list-style direct payloads: [{file_name, diff_lines}, ...]."""
+		parsed = self._extract_json(response)
+		if not isinstance(parsed, list):
+			return None
+		items = [item for item in parsed if isinstance(item, dict) and item.get('diff_lines')]
+		if not items:
+			return None
+
+		applied = 0
+		for item in items:
+			file_path = self._resolve_payload_file_path(item.get('file_name', ''))
+			if not file_path:
+				self.logger.warning(f"无法解析直接修改目标文件: {item.get('file_name')}")
+				continue
+			if self._apply_diff_lines_to_file(file_path, item.get('diff_lines') or {}):
+				applied += 1
+				self.logger.info(f"✓ 已应用 diff_lines 修改: {file_path}")
+			else:
+				self.logger.warning(f"diff_lines 修改未应用: {file_path}")
+		return applied == len(items)
+
 	def _apply_runtime_fix(self, response, main_file_path, simulator_file_path):
+		direct_diff_result = self._apply_direct_diff_payload(response)
+		if direct_diff_result is not None:
+			return direct_diff_result
+
 		"""
 		应用运行时错误修复（仅支持增量修改）
 		
@@ -223,17 +398,15 @@ class CodeFixerAgent(CodeChangeMixin, BaseAgent):
 		self.logger.debug(f"LLM响应预览: {response[:500]}")
 		return False
 
-	async def fix_runtime_errors(self, error_message, error_traceback, main_file_path, simulator_file_path, config_path, max_attempts=None):
-		"""
-		运行时错误修复函数 - 使用增量修改方式
-		支持同时修复 main 和 simulator 文件
+	async def fix_runtime_errors(self, error_message, error_traceback, main_file_path=None, simulator_file_path=None, config_path=None, max_attempts=None):
+		"""运行时错误修复：多轮工具诊断 + 直接应用修改 + 冒烟验证。
 
 		Args:
-			error_message: 错误信息
+			error_message: 错误信息（用于 FileNotFoundError 快速判断）
 			error_traceback: 完整的错误堆栈
-			main_file_path: main文件路径，若为 None 则只修复 simulator
-			simulator_file_path: simulator文件路径
-			config_path: simulation_config.yaml 路径
+			main_file_path: main.py 路径（可选）
+			simulator_file_path: simulator.py 路径（传给 quick_verify_with_minimal_config）
+			config_path: simulation_config.yaml 路径（传给 quick_verify_with_minimal_config）
 			max_attempts: 最大修复尝试次数（None=读全局 retries.runtime_fix）
 
 		Returns:
@@ -243,60 +416,46 @@ class CodeFixerAgent(CodeChangeMixin, BaseAgent):
 			max_attempts = get_retries()['runtime_fix']
 		self.logger.info("🔧 开始修复运行时错误...")
 
-		# 首先检查是否是 FileNotFoundError
+		# 特殊处理 FileNotFoundError
 		if "FileNotFoundError" in error_message:
 			if await self._handle_file_not_found_error(error_traceback, config_path):
 				self.logger.info("✓ 已成功处理 FileNotFoundError 并生成了缺失文件。")
-				return True # 假设文件生成后问题就解决了，直接返回成功
+				return True
 
-
-		# 读取当前代码
-		main_content = ""
-		if main_file_path and os.path.exists(main_file_path):
-			with open(main_file_path, 'r', encoding='utf-8') as f:
-				main_content = f.read()
-		with open(simulator_file_path, 'r', encoding='utf-8') as f:
-			simulator_content = f.read()
-
-		# 从错误堆栈中提取相关模块的接口文件和配置文件（使用LLM智能分析）
-		module_interface_docs, config_files_dict = await self._extract_module_api_docs_from_error(error_traceback)
-
-		# config_files_str为所有相关配置文件的具体内容
-		config_files_str = ""
-		if config_files_dict:
-			config_files_str = "\n相关配置文件：\n"
-			for filename, content in config_files_dict.items():
-				config_files_str += f"\n{'='*60}\n"
-				config_files_str += f"配置文件: {filename}\n"
-				config_files_str += f"{'='*60}\n{content}\n"
+		prompt = self.prompts['fix_runtime_errors_prompt'].format(
+			error_traceback=error_traceback,
+		)
 
 		for attempt in range(1, max_attempts + 1):
 			self.logger.info(f"第 {attempt}/{max_attempts} 次修复尝试...")
 
-			# 提示词
-			prompt = self.prompts['fix_runtime_errors_prompt'].format(
-				error_traceback=error_traceback,
-				main_file_path=main_file_path or "（未提供 main 文件）",
-				main_content=main_content or "（未提供 main 文件内容）",
-				simulator_file_path=simulator_file_path,
-				simulator_content=simulator_content,
-				module_interface_docs=module_interface_docs,
-				config_files_str=config_files_str
-			)
-
-			response = await self.generate_llm_response(prompt)
+			# 两态协议：LLM 可多轮调用工具；最终只允许输出“应用修改”内容
+			response = await self._generate_with_tools(prompt, enforce_apply_protocol=True)
 			if not response:
-				self.logger.error("LLM未返回响应")
 				continue
 
-			# 尝试应用修复
-			if self._apply_runtime_fix(response, main_file_path, simulator_file_path):
-				self.logger.info(f"✓ 修复完成")
-				return True
-			else:
-				self.logger.warning(f"⚠️ 第 {attempt} 次修复失败")
+			# 解析 <apply_modifications> 包裹（严格两态协议）
+			apply_payload = self._extract_apply_payload(response)
+			if not apply_payload:
+				self.logger.warning("⚠️ 本轮输出未遵循两态协议（缺少 <apply_modifications>）")
+				continue
 
-		self.logger.error("❌ 修复失败")
+			# 直接应用本轮增量修改
+			if not self._apply_runtime_fix(apply_payload, main_file_path, simulator_file_path):
+				self.logger.warning("⚠️ 本轮修改应用失败")
+				continue
+
+			# 冒烟验证
+			verify_result = await self.quick_verify_with_minimal_config(simulator_file_path, config_path)
+			if verify_result.get('success'):
+				self.logger.info("✓ 修复通过冒烟验证")
+				return True
+
+			err_out = verify_result.get('error') or verify_result.get('output') or '冒烟验证失败'
+			self.logger.warning(f"⚠️ 第 {attempt} 次冒烟验证未通过")
+			prompt += f"\n\n【第 {attempt} 次修复后验证失败】\n标准输出：{verify_result.get('output', '')}\n标准错误：{err_out}"
+
+		self.logger.error("❌ 所有修复尝试均失败")
 		return False
 
 	async def modify_file_sequentially(self, diagnosis_path, config_dir, design_doc=""):
@@ -789,6 +948,9 @@ class CodeFixerAgent(CodeChangeMixin, BaseAgent):
 			skill_text=skill_text,
 			design_doc=design_doc,
 		)
+		if diagnosis.get('apply_payload'):
+			self.logger.info("✓ 诊断阶段已返回可直接应用修改，跳过 files_to_modify 流程")
+			return await self._apply_payload_and_verify(diagnosis.get('apply_payload', ''), diagnosis)
 
 		if not diagnosis.get('files_to_modify'):
 			self.logger.info("✓ 诊断完成，但未识别到需要修改的文件")
@@ -823,6 +985,9 @@ class CodeFixerAgent(CodeChangeMixin, BaseAgent):
 			skill_text=skill_text,
 			design_doc=design_doc,
 		)
+		if diagnosis.get('apply_payload'):
+			self.logger.info("✓ 技能驱动诊断已返回可直接应用修改，跳过 files_to_modify 流程")
+			return await self._apply_payload_and_verify(diagnosis.get('apply_payload', ''), diagnosis)
 		if not diagnosis.get('files_to_modify'):
 			self.logger.info("✓ 技能驱动诊断完成，但未识别到需要修改的文件")
 			return {
@@ -837,6 +1002,53 @@ class CodeFixerAgent(CodeChangeMixin, BaseAgent):
 		return await self._apply_and_verify(diagnosis, design_doc)
 
 	# ---------- 工具：读文件 / 搜索项目 ----------
+
+	def _resolve_read_path(self, file_path: str) -> Tuple[Optional[str], Optional[str]]:
+		"""Resolve a project-readable file path and keep access inside allowed roots."""
+		if not file_path:
+			return None, "[error: file_path is empty]"
+
+		allowed_roots = {
+			os.path.abspath(self._rag_project_root),
+			os.path.abspath(self.project_dir),
+			os.path.abspath(self.config_dir),
+			os.path.abspath(self.docs_dir),
+		}
+
+		candidates = []
+		if os.path.isabs(file_path):
+			candidates.append(os.path.abspath(file_path))
+		else:
+			candidates.extend([
+				os.path.abspath(os.path.join(self.project_dir, file_path)),
+				os.path.abspath(os.path.join(self.config_dir, file_path)),
+				os.path.abspath(os.path.join(self._rag_project_root, file_path)),
+				os.path.abspath(os.path.join(self.docs_dir, file_path)),
+			])
+
+		for path in candidates:
+			if not os.path.isfile(path):
+				continue
+			if not any(path.startswith(root + os.sep) or path == root for root in allowed_roots):
+				return None, f"[error: reading this path is not allowed: {file_path}]"
+			return path, None
+		return None, f"[file not found: {file_path}]"
+
+	def _read_text_file(self, path: str) -> Tuple[Optional[str], Optional[str]]:
+		"""Read a text file with the encodings used across generated projects."""
+		for enc in ('utf-8', 'gbk', 'gb2312', 'utf-8-sig'):
+			try:
+				with open(path, 'r', encoding=enc) as f:
+					return f.read(), None
+			except UnicodeDecodeError:
+				continue
+			except Exception as e:
+				return None, f"[read failed: {path}: {e}]"
+		return None, f"[read failed: unsupported encoding: {path}]"
+
+	@staticmethod
+	def _format_numbered_lines(lines: List[str], start_line: int) -> str:
+		return "\n".join(f"{idx}: {line}" for idx, line in enumerate(lines, start=start_line))
 
 	def read_file(self, file_path: str) -> str:
 		"""读取项目内的文本文件内容（多编码兜底）。
@@ -876,7 +1088,7 @@ class CodeFixerAgent(CodeChangeMixin, BaseAgent):
 					with open(path, 'r', encoding=enc) as f:
 						content = f.read()
 					# 对超大文件做截断，避免一次撑爆上下文
-					max_len = 15000
+					max_len = 8000
 					if len(content) > max_len:
 						content = content[:max_len] + f"\n\n[文件过长，已截断；原始长度 {len(content)} 字符]"
 					return content
@@ -885,6 +1097,70 @@ class CodeFixerAgent(CodeChangeMixin, BaseAgent):
 				except Exception as e:
 					return f"[读取文件失败 {file_path}: {e}]"
 		return f"[未找到文件: {file_path}]"
+
+	def read_file_span(self, file_path: str, start_line: Any = 1, end_line: Any = 160) -> str:
+		"""Read a bounded, line-numbered span from a project file."""
+		path, error = self._resolve_read_path(file_path)
+		if error:
+			return error
+		content, error = self._read_text_file(path)
+		if error:
+			return error
+		lines = content.splitlines()
+		try:
+			start = max(1, int(start_line))
+			end = max(start, int(end_line))
+		except (TypeError, ValueError):
+			return "[error: start_line/end_line must be integers]"
+
+		max_lines = 220
+		if end - start + 1 > max_lines:
+			end = start + max_lines - 1
+		start_idx = min(start - 1, len(lines))
+		end_idx = min(end, len(lines))
+		rel = os.path.relpath(path, self._rag_project_root)
+		body = self._format_numbered_lines(lines[start_idx:end_idx], start_idx + 1)
+		return f"[file: {rel}; lines: {start_idx + 1}-{end_idx}; total_lines: {len(lines)}]\n{body}"
+
+	def outline_file(self, file_path: str) -> str:
+		"""Return a compact outline of imports, classes, functions, and top-level config keys."""
+		path, error = self._resolve_read_path(file_path)
+		if error:
+			return error
+		content, error = self._read_text_file(path)
+		if error:
+			return error
+		rel = os.path.relpath(path, self._rag_project_root)
+		lines = content.splitlines()
+		outline = [f"[file: {rel}; total_lines: {len(lines)}]"]
+		ext = os.path.splitext(path)[1].lower()
+
+		if ext == '.py':
+			for i, line in enumerate(lines, start=1):
+				stripped = line.strip()
+				if (
+					stripped.startswith('class ')
+					or stripped.startswith('def ')
+					or stripped.startswith('async def ')
+					or (line.startswith(('import ', 'from ')) and len(outline) < 40)
+				):
+					outline.append(f"{i}: {line.rstrip()}")
+				if len(outline) >= 120:
+					outline.append("[outline truncated]")
+					break
+		elif ext in {'.yaml', '.yml', '.json'}:
+			for i, line in enumerate(lines, start=1):
+				if line and not line.startswith((' ', '\t', '#')):
+					outline.append(f"{i}: {line.rstrip()[:180]}")
+				if len(outline) >= 120:
+					outline.append("[outline truncated]")
+					break
+		else:
+			sample = lines[:80]
+			outline.append(self._format_numbered_lines(sample, 1))
+			if len(lines) > len(sample):
+				outline.append("[outline truncated]")
+		return "\n".join(outline)
 
 	def search_project(self, pattern: str, glob: str = "**/*.py", path: str = None) -> str:
 		"""在项目代码中按正则搜索内容，返回匹配文件路径与片段。"""
@@ -959,12 +1235,135 @@ class CodeFixerAgent(CodeChangeMixin, BaseAgent):
 			args[am.group(1)] = am.group(2).strip()
 		return {'name': name, 'args': args}
 
+	def _extract_apply_payload(self, text: str) -> Optional[str]:
+		"""提取 <apply_modifications> 包裹内容；未包裹返回 None。"""
+		if not text:
+			return None
+		m = re.search(r'<apply_modifications>\s*([\s\S]*?)\s*</apply_modifications>', text, re.DOTALL)
+		if m:
+			return m.group(1).strip()
+		return None
+
+	def _validate_apply_payload(self, payload: str) -> Optional[str]:
+		"""Return a protocol error before an apply payload leaves the LLM conversation."""
+		parsed = self._extract_json(payload)
+		if isinstance(parsed, list):
+			if not parsed:
+				return "JSON 数组不能为空"
+			allowed = {'replace_block', 'replace_with', 'append_after_block', 'delete_block'}
+			for index, item in enumerate(parsed, start=1):
+				if not isinstance(item, dict) or not item.get('file_name'):
+					return f"第 {index} 项缺少 file_name"
+				diff_lines = item.get('diff_lines')
+				if not isinstance(diff_lines, dict) or not diff_lines:
+					actual_type = type(diff_lines).__name__ if diff_lines is not None else "missing"
+					return f"第 {index} 项的 diff_lines 必须是非空对象，当前类型: {actual_type}"
+				unknown = sorted(set(diff_lines) - allowed)
+				if unknown:
+					return f"第 {index} 项含有不支持的 diff_lines 字段: {unknown}"
+				operation_count = sum(
+					key in diff_lines for key in ('replace_block', 'append_after_block', 'delete_block')
+				)
+				if operation_count == 0:
+					return f"第 {index} 项没有 replace/delete/append 操作"
+				if ('replace_block' in diff_lines) != ('replace_with' in diff_lines):
+					return f"第 {index} 项的 replace_block 和 replace_with 必须同时出现"
+				if 'replace_block' in diff_lines:
+					if not isinstance(diff_lines['replace_block'], list) or not isinstance(diff_lines['replace_with'], list):
+						return f"第 {index} 项的 replace_block/replace_with 必须是行数组"
+				for key in ('append_after_block', 'delete_block'):
+					if key in diff_lines and not isinstance(diff_lines[key], dict):
+						return f"第 {index} 项的 {key} 必须是对象"
+				if 'append_after_block' in diff_lines:
+					append = diff_lines['append_after_block']
+					if not append.get('block_start') or not append.get('block_end'):
+						return f"第 {index} 项的 append_after_block 缺少现有代码锚点"
+					if not isinstance(append.get('insert_lines'), list) or not append['insert_lines']:
+						return f"第 {index} 项的 insert_lines 必须是非空行数组"
+				if 'delete_block' in diff_lines:
+					delete = diff_lines['delete_block']
+					if not delete.get('block_start') or not delete.get('block_end'):
+						return f"第 {index} 项的 delete_block 缺少 block_start/block_end"
+			return None
+
+		if isinstance(parsed, dict):
+			if any(key in parsed for key in ('methods', 'functions', 'config_files')):
+				return None
+			return "JSON 对象不含 methods、functions 或 config_files"
+
+		if re.search(r'```ya?ml\s+[\s\S]+?```', payload, re.IGNORECASE):
+			return None
+		return "无法解析 apply_modifications 中的 JSON/YAML"
+
+	@staticmethod
+	def _normalize_import_lines(value) -> List[str]:
+		"""把 imports_to_add / delete_imports 规范化为逐行字符串列表。"""
+		if not value:
+			return []
+		if isinstance(value, str):
+			items = value.splitlines()
+		else:
+			items = list(value) if isinstance(value, (list, tuple, set)) else [str(value)]
+		return [str(item).strip() for item in items if str(item).strip()]
+
+	def _apply_python_import_changes(self, file_path: str, imports_to_add=None, delete_imports=None) -> bool:
+		"""在 Python 文件顶部追加/删除 import 语句。"""
+		imports_to_add = self._normalize_import_lines(imports_to_add)
+		delete_imports = self._normalize_import_lines(delete_imports)
+		if not imports_to_add and not delete_imports:
+			return True
+		if not file_path or not os.path.exists(file_path):
+			return False
+		try:
+			with open(file_path, 'r', encoding='utf-8') as f:
+				content = f.read()
+		except Exception as e:
+			self.logger.error(f"读取文件失败，无法修改 import: {file_path}, {e}")
+			return False
+
+		lines = content.splitlines()
+		original_lines = list(lines)
+		insert_idx = 0
+		seen_imports = set(line.strip() for line in lines)
+
+		for idx, line in enumerate(lines):
+			stripped = line.strip()
+			if stripped.startswith('import ') or stripped.startswith('from '):
+				insert_idx = idx + 1
+			elif stripped and not stripped.startswith('#'):
+				if insert_idx == 0:
+					insert_idx = idx
+					break
+
+		for import_line in delete_imports:
+			lines = [line for line in lines if line.strip() != import_line]
+
+		for import_line in imports_to_add:
+			if import_line not in seen_imports:
+				lines.insert(insert_idx, import_line)
+				insert_idx += 1
+				seen_imports.add(import_line)
+
+		if lines != original_lines:
+			with open(file_path, 'w', encoding='utf-8') as f:
+				f.write('\n'.join(lines) + '\n')
+			self.logger.info(f"✓ 已更新 Python 导入: {file_path}")
+		return True
+
 	async def _execute_tool(self, tool_call: dict) -> str:
 		"""执行一次工具调用并返回文本结果。"""
 		name = tool_call.get('name')
 		args = tool_call.get('args', {})
 		if name == 'read_file':
 			return self.read_file(args.get('file_path', ''))
+		if name == 'read_file_span':
+			return self.read_file_span(
+				args.get('file_path', ''),
+				args.get('start_line', 1),
+				args.get('end_line', 160)
+			)
+		if name == 'outline_file':
+			return self.outline_file(args.get('file_path', ''))
 		if name == 'search_project':
 			return self.search_project(
 				args.get('pattern', ''),
@@ -974,26 +1373,70 @@ class CodeFixerAgent(CodeChangeMixin, BaseAgent):
 		return f"[未知工具: {name}]"
 
 	async def _chat(self, messages: list) -> Optional[str]:
-		"""直接调用模型后端（不经过 BaseAgent 的 memory 拼接）。"""
+		"""直接调用模型后端（不经过 BaseAgent 的 memory 拼接）。
+
+		model_backend.run 不支持 {"role":"system"}，需提取 system 内容
+		注入到首条 user 消息中。
+		"""
+		# 分离 system 消息，拼入首条 user 消息
+		system_parts = []
+		chat_messages = []
+		for m in messages:
+			if m.get("role") == "system":
+				system_parts.append(m["content"])
+			else:
+				chat_messages.append(m)
+		if system_parts and chat_messages:
+			system_text = "\n\n".join(system_parts)
+			first_user = chat_messages[0]
+			if first_user.get("role") == "user":
+				chat_messages[0] = {
+					"role": "user",
+					"content": f"{system_text}\n\n{first_user['content']}"
+				}
+			else:
+				chat_messages.insert(0, {"role": "user", "content": system_text})
+
 		attempts = 0
 		while attempts < self.max_retry_attempts:
 			try:
+				sent_messages = chat_messages
 				extra_kwargs = getattr(self, '_extra_kwargs', None)
 				if extra_kwargs:
 					from openai import OpenAI
-					client = OpenAI(base_url=self._api_url, api_key=self._api_key)
-					response = await asyncio.to_thread(
-						client.chat.completions.create,
-						model=self.model_type,
-						messages=messages,
-						**extra_kwargs
+					client = OpenAI(base_url=self._api_url, api_key=self._api_key, timeout=self.api_timeout)
+					sent_messages = messages
+					response = await asyncio.wait_for(
+						asyncio.to_thread(
+							client.chat.completions.create,
+							model=self.model_type,
+							messages=messages,
+							timeout=self.api_timeout,
+							**extra_kwargs
+						),
+						timeout=120.0
 					)
+					print(f"[LLM {self.__class__.__name__}._chat] 使用 extra_kwargs 调用模型，返回: {response}")
 				else:
-					response = await asyncio.to_thread(self.model_backend.run, messages)
+					response = await asyncio.wait_for(
+						asyncio.to_thread(self.model_backend.run, chat_messages),
+						timeout=120.0
+					)
 				content = response.choices[0].message.content
 				if content is not None:
+					# DEBUG: 输出 LLM 原始返回
+					caller = self.__class__.__name__
+					try:
+						prompt_dump = json.dumps(sent_messages, ensure_ascii=False, indent=2)
+					except Exception:
+						prompt_dump = str(sent_messages)
+					# print(f"\n{'='*60}\n[LLM {caller}._chat] 完整提示词:\n{prompt_dump}\n{'='*60}\n")
+					print(f"\n{'='*60}\n[LLM {caller}._chat] 原始返回:\n{content}\n{'='*60}\n")
+					self.logger.debug(f"[LLM {caller}._chat] 原始返回:\n{content}")
 					return content
 				self.logger.warning(f"{self.__class__.__name__} 工具调用第 {attempts + 1} 次返回空，准备重试")
+			except asyncio.TimeoutError:
+				self.logger.error(f"{self.__class__.__name__} 工具调用第 {attempts + 1} 次超时（{self.api_timeout}s）")
 			except Exception as e:
 				self.logger.error(f"{self.__class__.__name__} 工具调用第 {attempts + 1} 次出错：{e}")
 			attempts += 1
@@ -1002,11 +1445,12 @@ class CodeFixerAgent(CodeChangeMixin, BaseAgent):
 		self.logger.error(f"{self.__class__.__name__} 工具调用在 {self.max_retry_attempts} 次尝试后失败")
 		return None
 
-	async def _generate_with_tools(self, prompt: str) -> Optional[str]:
+	async def _generate_with_tools(self, prompt: str, enforce_apply_protocol: bool = False) -> Optional[str]:
 		"""带 read_file / search_project 工具调用的 LLM 对话循环。
 
-		模型每次只输出一个 <tool> 调用时执行并把结果塞回上下文；
-		不再输出工具调用时返回最终文本。
+		当 enforce_apply_protocol=True 时启用两态输出协议：
+		1) 调用工具：输出一个 <tool ...>...</tool>
+		2) 应用修改：输出 <apply_modifications>...</apply_modifications>
 		"""
 		tool_instructions = self.prompts.get('tool_system_message', '')
 		system_content = (self.system_message or '')
@@ -1025,14 +1469,45 @@ class CodeFixerAgent(CodeChangeMixin, BaseAgent):
 				return None
 			tool_call = self._extract_tool_call(response)
 			if not tool_call:
-				return response
+				apply_payload = self._extract_apply_payload(response)
+				if apply_payload:
+					protocol_error = self._validate_apply_payload(apply_payload)
+					if not protocol_error:
+						return response
+					self.logger.warning(f"apply_modifications 协议校验失败: {protocol_error}")
+					messages.append({"role": "assistant", "content": response})
+					messages.append({
+						"role": "user",
+						"content": (
+							f"你的 apply_modifications 无法执行：{protocol_error}。\n"
+							"只重新输出完整补丁。结构必须是："
+							'<apply_modifications>[{"file_name":"路径","file_type":"config",'
+							'"diff_lines":{"replace_block":["原行"],"replace_with":["新行"]}}]'
+							"</apply_modifications>。每个 diff_lines 是对象且只含一个操作；"
+							"多个操作（包括同一文件）拆成多个顶层数组项。"
+						)
+					})
+					continue
+				if not enforce_apply_protocol:
+					return response
+				# 格式纠偏：仅允许两态输出
+				messages.append({"role": "assistant", "content": response})
+				messages.append({
+					"role": "user",
+					"content": (
+						"你的输出格式无效。只能二选一：\n"
+						"1) <tool name=\"search_project\">...</tool> / <tool name=\"outline_file\">...</tool> / <tool name=\"read_file_span\">...</tool> / <tool name=\"read_file\">...</tool>\n"
+						"2) <apply_modifications>...</apply_modifications>（其中放置可直接应用的 JSON/YAML 修改块）"
+					)
+				})
+				continue
 
 			round_no += 1
 			self.logger.info(f"🔧 工具调用 #{round_no}: {tool_call['name']}({tool_call['args']})")
 			result = await self._execute_tool(tool_call)
 			# 截断过长的工具结果，防止上下文爆炸
-			if len(result) > 12000:
-				result = result[:12000] + "\n\n[工具结果过长，已截断]"
+			if len(result) > 8000:
+				result = result[:8000] + "\n\n[tool result truncated; use outline_file/search_project/read_file_span for narrower context]"
 
 			messages.append({"role": "assistant", "content": response})
 			messages.append({
@@ -1045,7 +1520,8 @@ class CodeFixerAgent(CodeChangeMixin, BaseAgent):
 	def _load_doc(self, rel_path: str) -> str:
 		"""读取文档内容（rel_path 相对仓库根，如 'docs/code_fixer_skills/xxx.md'，
 		也兼容相对 docs/ 目录的路径、以及只给出 skill 裸文件名的情况）。失败返回 ''。"""
-		repo_root = os.path.dirname(self.docs_dir)
+		# 用 __file__ 定位仓库根，不依赖 self.docs_dir（外部可能传错）
+		repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 		base = os.path.basename(rel_path)
 		candidates = [
 			os.path.join(repo_root, rel_path),
@@ -1054,6 +1530,7 @@ class CodeFixerAgent(CodeChangeMixin, BaseAgent):
 		# 兜底：路由表里 skill 常以裸文件名出现（skill_xxx.md），按约定目录补全
 		if base.startswith('skill_') and base.endswith('.md'):
 			candidates.append(os.path.join(self.docs_dir, 'code_fixer_skills', base))
+			candidates.append(os.path.join(repo_root, 'docs', 'code_fixer_skills', base))
 		for path in candidates:
 			if os.path.isfile(path):
 				for enc in ('utf-8', 'gbk', 'gb2312', 'utf-8-sig'):
@@ -1065,8 +1542,20 @@ class CodeFixerAgent(CodeChangeMixin, BaseAgent):
 					except Exception as e:
 						self.logger.warning(f"读取文档失败 {path}: {e}")
 						return ''
+				# 文件存在但所有编码均无法解码，继续尝试下一个候选路径
+				self.logger.warning(f"文件存在但所有编码均无法解码: {path}")
 		self.logger.warning(f"未找到文档: {rel_path}")
 		return ''
+
+	@staticmethod
+	def _resolve_skill_path(path: str) -> str:
+		"""将裸 skill 文件名补全为相对路径，非裸文件名原样返回。"""
+		if not path:
+			return path
+		base = os.path.basename(path)
+		if base == path and base.startswith('skill_') and base.endswith('.md'):
+			return os.path.join('docs', 'code_fixer_skills', base)
+		return path
 
 	def _load_skill_files(self, paths: list) -> str:
 		"""读取并拼接选中的 skill 文件内容。"""
@@ -1074,6 +1563,7 @@ class CodeFixerAgent(CodeChangeMixin, BaseAgent):
 			return ''
 		blocks = []
 		for p in paths:
+			p = self._resolve_skill_path(p)
 			content = self._load_doc(p)
 			if content:
 				blocks.append(f"===== Skill 文件: {p} =====\n{content}")
@@ -1126,7 +1616,8 @@ class CodeFixerAgent(CodeChangeMixin, BaseAgent):
 		若 LLM 返回 need_file_descriptions=True，则补读 docs/file_descriptions.yaml 再问一次（懒加载）。"""
 		diagnosis = {'files_to_modify': []}
 		file_descriptions = ''
-		for attempt in range(2):
+		attempt = 0
+		while True:
 			prompt = self.prompts['skill_guided_diagnosis_prompt'].format(
 				problem_context=problem_context,
 				skill_text=skill_text or '（未匹配到具体 skill，请基于问题与通用规范判断）',
@@ -1134,13 +1625,23 @@ class CodeFixerAgent(CodeChangeMixin, BaseAgent):
 				file_descriptions=file_descriptions or '（暂未提供项目文件地图；如需定位文件，请在 need_file_descriptions 置 true 后重试）',
 			)
 			response = await self._generate_with_tools(prompt)
+			# 兼容两态协议：若直接返回可应用修改，优先透传给上层直接应用
+			apply_payload = self._extract_apply_payload(response or '')
+			if apply_payload:
+				diagnosis['apply_payload'] = apply_payload
+				return diagnosis
 			parsed = self._extract_json(response)
 			if not isinstance(parsed, dict):
-				self.logger.warning("技能驱动诊断未返回有效 JSON")
-				break
+				attempt += 1
+				continue
+			# 兼容非包裹直出：若返回的是修改 JSON（methods/functions/config_files），也当作直接应用
+			if any(k in parsed for k in ('methods', 'functions', 'config_files')):
+				diagnosis['apply_payload'] = f"```json\n{json.dumps(parsed, ensure_ascii=False)}\n```"
+				return diagnosis
 			if parsed.get('need_file_descriptions') and not file_descriptions and attempt == 0:
 				self.logger.info("诊断请求项目文件地图，补读 docs/file_descriptions.yaml 后重试")
 				file_descriptions = self._load_doc('docs/file_descriptions.yaml')
+				attempt += 1
 				continue
 			for loc in parsed.get('files_to_modify', []) or []:
 				if not isinstance(loc, dict):
@@ -1157,6 +1658,39 @@ class CodeFixerAgent(CodeChangeMixin, BaseAgent):
 				})
 			break
 		return diagnosis
+
+	async def _apply_payload_and_verify(self, apply_payload: str, diagnosis: Optional[dict] = None) -> dict:
+		"""直接应用 <apply_modifications> 负载并执行冒烟验证。"""
+		simulator_file_path = os.path.join(self.project_dir, 'simulator.py')
+		config_path = os.path.join(self.config_dir, 'simulation_config.yaml')
+		main_file_path = os.path.join(self.project_dir, 'main.py')
+		main_file_path = main_file_path if os.path.exists(main_file_path) else None
+
+		success = self._apply_runtime_fix(apply_payload or '', main_file_path, simulator_file_path)
+		modification_results = [
+			{'file_name': 'direct_apply_payload', 'result': 'success' if success else 'failed'}
+		] if apply_payload else []
+
+		verify_result = {'success': False, 'error': '未执行'}
+		if success and os.path.exists(simulator_file_path) and os.path.exists(config_path):
+			verify_result = await self.quick_verify_with_minimal_config(simulator_file_path, config_path)
+
+		optimization_passed = success and verify_result.get('success', False)
+		if optimization_passed:
+			solved = {'issues_addressed': 1, 'reason': '已直接应用修改并通过冒烟验证'}
+		elif success:
+			solved = {'issues_addressed': 1, 'reason': '已直接应用修改，但冒烟验证未通过'}
+		else:
+			solved = {'issues_addressed': 0, 'reason': '直接应用修改失败'}
+
+		return {
+			'diagnosis': diagnosis or {'files_to_modify': []},
+			'success': success,
+			'optimization_passed': optimization_passed,
+			'solved': solved,
+			'modification_results': modification_results,
+			'verify_result': verify_result
+		}
 
 	async def _apply_and_verify(self, diagnosis: dict, design_doc: str = "") -> dict:
 		"""写临时诊断 → 逐文件修改（含审计）→ 冒烟验证。两条优化路径共享。"""
@@ -1277,10 +1811,9 @@ class CodeFixerAgent(CodeChangeMixin, BaseAgent):
 			try:
 				return json.loads(json_match.group(1))
 			except json.JSONDecodeError as e:
-				self.logger.warning(f"解析诊断 JSON 失败: {e}")
+					self.logger.warning(f"解析诊断 JSON 失败: {e}")
 
 		return {'root_cause': response, 'files_to_check': []}
-
 	def _format_config_files_str(self, config_files: Dict[str, str]) -> str:
 		"""将配置文件字典格式化为文本。"""
 		if not config_files:

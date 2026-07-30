@@ -198,3 +198,6 @@ scripts/
 # RAG runtime artifacts (generated at runtime)
 experiment_dataset/jel_embeddings.json
 experiment_dataset/.rag_cache.json
+
+# Data files
+experiment_dataset/

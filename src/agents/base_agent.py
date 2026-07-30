@@ -92,6 +92,7 @@ class BaseAgent:
         # 初始化默认值
         self.max_retry_attempts = 3
         self.retry_delay = 1.0
+        self.api_timeout = 60.0   # LLM API 调用的超时秒数
         
         # 从 kwargs 中提取影响函数注册表（用于 effects 的 influence.xxx 触发）
         self.influence_registry = kwargs.get('influence_registry')
@@ -146,7 +147,7 @@ class BaseAgent:
             })
         messages.extend(prompt_messages)
 
-        # print("-------总提示信息-----------",messages)
+        print("-------总提示信息-----------",messages)
 
         attempts = 0
         while attempts < self.max_retry_attempts:
@@ -154,15 +155,22 @@ class BaseAgent:
                 extra_kwargs = getattr(self, '_extra_kwargs', None)
                 if extra_kwargs:
                     from openai import OpenAI
-                    client = OpenAI(base_url=self._api_url, api_key=self._api_key)
-                    response = await asyncio.to_thread(
-                        client.chat.completions.create,
-                        model=self.model_type,
-                        messages=messages,
-                        **extra_kwargs
+                    client = OpenAI(base_url=self._api_url, api_key=self._api_key, timeout=self.api_timeout)
+                    response = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            client.chat.completions.create,
+                            model=self.model_type,
+                            messages=messages,
+                            timeout=self.api_timeout,
+                            **extra_kwargs
+                        ),
+                        timeout=120.0
                     )
                 else:
-                    response = await asyncio.to_thread(self.model_backend.run, prompt_messages)
+                    response = await asyncio.wait_for(
+                        asyncio.to_thread(self.model_backend.run, prompt_messages),
+                        timeout=120.0
+                    )
                 content = response.choices[0].message.content
                 if content is not None:
                     return content
@@ -170,24 +178,34 @@ class BaseAgent:
                 # 如果返回None，记录日志并重试
                 logging.warning(f"{self.__class__.__name__} {self.agent_id} 第{attempts + 1}次尝试返回None，准备重试")
 
+            except asyncio.TimeoutError:
+                logging.error(f"{self.__class__.__name__} {self.agent_id} 第{attempts + 1}次尝试超时（{self.api_timeout}s）")
             except Exception as e:
                 logging.error(f"{self.__class__.__name__} {self.agent_id} 第{attempts + 1}次尝试出错：{e}")
 
             attempts += 1
             if attempts < self.max_retry_attempts:
                 await asyncio.sleep(self.retry_delay)  # 延迟一段时间后重试
-        
+
         logging.error(f"{self.__class__.__name__} {self.agent_id} 在{self.max_retry_attempts}次尝试后仍然失败")
         return None
 
     # ---------- 动态画像/属性系统 ----------
     def attr(self, key: str, default=None):
         """安全读取 profile 中的属性。子类可把任意场景-specific 字段放这里。"""
-        return self.profile.get(key, default)
+        aliases = self.profile.get("_profile_aliases", {}) if isinstance(self.profile, dict) else {}
+        runtime_key = aliases.get(key, key) if isinstance(aliases, dict) else key
+        return self.profile.get(runtime_key, default)
 
     def set_attr(self, key: str, value) -> None:
         """写入 profile 属性。"""
-        self.profile[key] = value
+        aliases = self.profile.get("_profile_aliases", {}) if isinstance(self.profile, dict) else {}
+        runtime_key = aliases.get(key, key) if isinstance(aliases, dict) else key
+        self.profile[runtime_key] = value
+        if isinstance(aliases, dict):
+            for display_name, canonical in aliases.items():
+                if canonical == runtime_key:
+                    self.profile[display_name] = value
 
     def _build_profile_vars_doc(self, **kwargs) -> str:
         """根据 self.profile 动态构建画像变量说明文本。

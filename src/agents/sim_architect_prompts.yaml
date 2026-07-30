@@ -4,8 +4,8 @@ system_message: |
   你是多智能体模拟系统的设计师，擅长分析需求、选择模块、生成设计文档和实验配置。输出格式严格遵守JSON或YAML规范。
 
 select_modules_prompt: |
-  根据需求，从插件清单中挑选需要的模块，同时评估是否需要新增插件模块：
-  - 如果需要新增：优先选择一个"最接近的可继承插件"(inherits_from)，并写明需要覆盖/扩展的点。
+  根据需求，从插件清单中挑选需要的模块。
+  仅当关键能力不可缺少、没有任何相关插件且上述方式均无法实现时，才允许 new_modules 非空；能找到 inherits_from 就必须复用，不得新增。
 
   项目描述：
   {description_md_text}
@@ -13,7 +13,8 @@ select_modules_prompt: |
   {plugins_catalog}
 
 select_modules_with_feedback_prompt: |
-  根据需求，从插件清单中挑选"额外需要增加"的模块，同时评估是否需要新增插件模块：
+  根据需求，从插件清单中挑选需要的模块。
+  仅当关键能力不可缺少、没有任何相关插件且上述方式均无法实现时，才允许 new_modules 非空；能找到 inherits_from 就必须复用，不得新增。
 
   项目描述：
   {description_md_text}
@@ -29,7 +30,7 @@ select_modules_with_feedback_prompt: |
   请根据用户反馈调整模块选择。
 
 select_modules_output_format: |
-  请返回以下JSON格式（严格遵守格式）：
+  只返回以下 JSON，不要解释：
   {{
     "selected_modules": [
       "模块/插件名1",
@@ -37,11 +38,11 @@ select_modules_output_format: |
     ],
     "new_modules": []
   }}
-  注：如果需要新增模块，请在new_modules列表中添加如下格式的条目：
+  selected_modules 只能填写清单中的准确名称；不满足新增条件时 new_modules 必须为 []。确需新增时：
   {{
     "name": "新模块名称",
-    "inherits_from": "最接近的可继承插件（如果没有则为null）",
-    "notes": "需要覆盖/扩展的关键点说明"
+    "inherits_from": null,
+    "notes": "缺失的关键运行时能力，以及现有插件和其他扩展方式为什么都无法实现"
   }}
 
 generate_description_prompt: |
@@ -97,6 +98,9 @@ generate_agent_profile_prompt: |
   === 模块配置 ===
   {modules_config_yaml}
 
+  === 运行时属性契约（从实体源码提取） ===
+  {runtime_profile_contract}
+
   请严格遵循以下最小模板结构生成 YAML 配置：
 
   ```yaml
@@ -105,6 +109,7 @@ generate_agent_profile_prompt: |
       entity_type: baseagent    # baseagent | resident | government | rebels
       attributes:
         - name: <属性名>
+          runtime_key: <稳定代码键，如 satisfaction；必须是 Python 标识符>
           type: choice          # choice：离散选择型
           choices: [<选项1>, <选项2>]
           weights: [<权重1>, <权重2>]
@@ -122,9 +127,10 @@ generate_agent_profile_prompt: |
           words: [<候选词1>, <候选词2>, <候选词3>, ...]
           count: <抽取词数量>
           separator: <分隔符，如 "、">
-      constraints:              # 属性间约束修正规则（可选）
+      constraints:              # 使用 runtime_key 编写结构化约束（可选）
         - condition: <条件表达式>
-          action: <修正动作>
+          adjustments:
+            <runtime_key>: {{set: <值>}}
       extra:                    # 静态属性，不参与随机生成
         role: <角色名>          # 用于 prompts/actions 文件命名
         # baseagent 如需自主决策并影响宏观状态，可配 decision_effectors
@@ -146,7 +152,7 @@ generate_agent_profile_prompt: |
      判断方法：如果角色描述中不包含 resident / government / rebels 的核心特征，一律使用 baseagent。
   2. 用 extra.role 区分具体角色名（如 consumer、enterprise、government_official 等）。
   3. composite 类型必须直接列出候选词（words），不要引用外部文件路径；候选词数量应不少于 count。
-  4. 所有属性名称、取值范围必须与设计文档一致。
+  4. 所有属性名称、取值范围必须与设计文档一致；每个属性必须同时声明唯一 runtime_key。name 可使用自然语言，代码、约束和 effects 只使用 runtime_key。
   5. baseagent 角色若需要 LLM 决策：在 extra 中声明 decision_effectors，字段名与 prompts/{{role}}.yaml 的 decision_json 返回字段一致；target 为画像属性名或 simulator.状态名；mode 可选 relative_percent / absolute_points / set / add；必要时用 scale 做单位转换。
   6. 直接输出严格 YAML 格式，不要加代码块标记或额外解释。
 
@@ -165,6 +171,9 @@ generate_agent_profile_with_feedback_prompt: |
   === 用户反馈意见 ===
   {user_feedback}
 
+  === 运行时属性契约（从实体源码提取） ===
+  {runtime_profile_contract}
+
   请严格遵循以下最小模板结构生成 YAML 配置：
 
   ```yaml
@@ -173,13 +182,15 @@ generate_agent_profile_with_feedback_prompt: |
       entity_type: baseagent    # baseagent | resident | government | rebels
       attributes:
         - name: <属性名>
+          runtime_key: <稳定代码键；必须是 Python 标识符>
           type: choice | range | composite
           # choice: choices + weights
           # range: distribution + min + max + dtype
           # composite: words + count + separator
       constraints:
         - condition: <条件表达式>
-          action: <修正动作>
+          adjustments:
+            <runtime_key>: {{set: <值>}}
       extra:
         role: <角色名>          # 用于 prompts/actions 文件命名
         # baseagent 如需自主决策并影响宏观状态，可配 decision_effectors
@@ -201,6 +212,6 @@ generate_agent_profile_with_feedback_prompt: |
   2. 利用 extra.role 区分具体角色名。
   3. composite 类型必须直接列出候选词（words），不要引用外部文件路径；候选词数量应不少于 count。
   4. 根据用户反馈对上一版本进行修正，保持其他部分不变。
-  5. 所有属性名称、取值范围必须与设计文档一致。
+  5. 所有属性名称、取值范围必须与设计文档一致；每个属性必须声明唯一 runtime_key，代码、约束和 effects 只使用 runtime_key。
   6. baseagent 角色若需要 LLM 决策：在 extra 中声明 decision_effectors，字段名与 prompts/{{role}}.yaml 的 decision_json 返回字段一致；target 为画像属性名或 simulator.状态名；mode 可选 relative_percent / absolute_points / set / add；必要时用 scale 做单位转换。
   7. 输出严格 YAML 格式，直接返回 YAML 内容，不要加 ```yaml 代码块标记或额外解释。

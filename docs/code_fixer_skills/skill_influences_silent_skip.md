@@ -1,4 +1,4 @@
-# Skill S2：`influences.yaml` 影响函数静默跳过
+# Skill S2：`influences.yaml` 执行与语义契约
 
 ## 何时使用
 
@@ -6,9 +6,10 @@
 
 1. `InfluenceManager` 执行日志或预检报告显示 `module_missing` / `silent_skip`。
 2. 或者你手动在 `src/influences/influence_manager.py:_apply_module_influence` 处加日志后，观察到某条 `execution_order` 记录被执行但对应的 `module` 在 `simulator_state` 中不存在。
-3. **不要**仅因为“指标恒定”就使用本 skill；指标恒定有至少 3 种不同根因，见下方“需要排除的相似症状”。
+3. 预检报告显示错写对象、重复调度、死输出或尺度坍缩。
+4. **不要**仅因为“指标恒定”就直接改公式；先检查 producer → owner → consumer。
 
-## 根因（已确认会发生的代码路径）
+## 根因
 
 `InfluenceManager._apply_module_influence()` 按 `execution_order` 在 `simulator_state` 中查找模块键：
 
@@ -19,6 +20,21 @@ if module is None:
 ```
 
 这段逻辑真实存在于 `src/influences/influence_manager.py:149-151`。只要 `module_name` 不在 `simulator_state`，对应的影响函数就不会执行。
+
+更隐蔽的是“执行成功但语义无效”：source 模块被误当成写入对象；同一 target 的多条 influence 因旧式调度被重复执行；target/target_attr/CSV 名称不一致；输出没有消费者；或 0–100 与 0–1 尺度混用。
+
+## 精确调度与状态所有者
+
+新生成配置必须让每条 influence 在 `execution_order` 中携带唯一名称：
+
+```yaml
+execution_order:
+  - module: __simulator__
+    target: navigability
+    influence: climate_to_navigability
+```
+
+逐条确认：name 全局唯一且恰好调度一次；`source.module` 只表示输入来源；`target == target_attr == simulator 状态属性`；输出至少有一个真实消费者。旧式二元顺序仍兼容，但同一 target 有多条 influence 时必须升级。
 
 ## 当前观察
 
@@ -106,9 +122,11 @@ self.influence_manager.apply_all_influences(simulator_state, target_root=self)
 
 - 不要只改 `target` 不改 `module`。
 - 不要看到指标恒定就直接改 `influences.yaml`，要先按“步骤 2”排除其他根因。
+- 不要用 `hasattr`、默认值或动态新增属性掩盖写错状态所有者。
+- 不要让同一业务效果同时由 LLM action handler 和 influence 自动执行。
 
 ## 验证
 
-1. 重新运行阶段 3.4 预检：`python -m src.utils.influence_test_runner --project <项目名> --preflight`，应不再报 `[静默跳过]`。
+1. 重新运行阶段 3.4 预检：`python -m src.utils.influence_test_runner --project <项目名> --preflight`，不得再报告静默跳过或语义契约错误。
 2. 或重新跑最小规模模拟，检查 CSV 中对应指标是否从恒定变为变化。
 3. 若仍恒定，回到“步骤 2”排查其他根因。

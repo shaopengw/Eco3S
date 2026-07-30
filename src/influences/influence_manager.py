@@ -10,11 +10,14 @@ InfluenceManager 是“影响函数编排器”，只做两件事：
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 import logging
 
 
-ExecutionStep = Tuple[str, str]  # (module_name, target_name)
+ExecutionStep = Union[
+    Tuple[str, str],
+    Tuple[str, str, str],
+]  # legacy: (module, target); precise: (module, target, influence_name)
 
 
 class InfluenceManager:
@@ -117,12 +120,59 @@ class InfluenceManager:
         if not order:
             return context
 
-        for module_name, target_name in order:
-            self._apply_module_influence(
-                module_name, target_name, context, simulator_state, target_root=target_root
-            )
+        for step in order:
+            if not isinstance(step, (list, tuple)) or len(step) not in (2, 3):
+                self._record("invalid_execution_step", step=repr(step))
+                self.logger.error(f"无效 influence execution_order 项: {step!r}")
+                continue
+            module_name, target_name = str(step[0]), str(step[1])
+            influence_name = str(step[2]) if len(step) == 3 and step[2] else None
+            if influence_name:
+                self._apply_precise_influence(
+                    module_name,
+                    target_name,
+                    influence_name,
+                    context,
+                    simulator_state,
+                    target_root=target_root,
+                )
+            else:
+                self._apply_module_influence(
+                    module_name, target_name, context, simulator_state, target_root=target_root
+                )
 
         return context
+
+    def _apply_precise_influence(
+        self,
+        module_name: str,
+        target_name: str,
+        influence_name: str,
+        context: Dict[str, Any],
+        simulator_state: Dict[str, Any],
+        target_root: Optional[Any] = None,
+    ) -> None:
+        """精确执行一条 influence，并统一把 simulator 作为生成配置的状态所有者。
+
+        ``module_name`` 在新配置中应为 ``__simulator__``。保留对真实模块名的
+        存在性检查只是为了兼容手写配置；它不再决定 ``target_obj``。
+        """
+        if module_name != "__simulator__" and (simulator_state or {}).get(module_name) is None:
+            self._record(
+                "module_missing",
+                module=module_name,
+                target=target_name,
+                name=influence_name,
+            )
+            return
+        self._apply_registry_influences(
+            target_name=target_name,
+            context=context,
+            simulator_state=simulator_state,
+            target_root=target_root,
+            influence_name=influence_name,
+            force_target_root=True,
+        )
 
     def _resolve_execution_order(self, simulator_state: Dict[str, Any]) -> List[ExecutionStep]:
         if self.execution_order:
@@ -209,6 +259,8 @@ class InfluenceManager:
         context: Dict[str, Any],
         simulator_state: Dict[str, Any],
         target_root: Optional[Any] = None,
+        influence_name: Optional[str] = None,
+        force_target_root: bool = False,
     ) -> None:
         """从全局 InfluenceRegistry 中查找 target_name 对应的影响函数并执行。
 
@@ -228,11 +280,17 @@ class InfluenceManager:
             return
 
         influences = registry.get_influences(target_name)
+        if influence_name:
+            influences = [inf for inf in influences if getattr(inf, "name", None) == influence_name]
         if not influences:
-            self._record("no_influences_for_target", target=target_name)
+            self._record(
+                "no_influences_for_target",
+                target=target_name,
+                name=influence_name,
+            )
             return
 
-        target_obj = simulator_state.get(target_name)
+        target_obj = target_root if force_target_root else simulator_state.get(target_name)
         # 如果 simulator_state 中该键对应的是标量（如 float 初始值），
         # 则不应把它当作目标对象，而是回退到 target_root 或 simulator_state 字典。
         if target_obj is None or isinstance(target_obj, (int, float, str, bool)):

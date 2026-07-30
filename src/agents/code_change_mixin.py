@@ -8,9 +8,12 @@ import time
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
-import chromadb
+from qdrant_client import QdrantClient
+from qdrant_client import models as qmodels
 import yaml
 from openai import OpenAI
+
+from .model_manager import get_local_embedding
 
 try:
     import networkx as nx
@@ -23,17 +26,173 @@ except Exception:  # pragma: no cover
     np = None
 
 
+class _QdrantCollectionProxy:
+	"""将 Qdrant 查询接口适配为与旧 ChromaDB query/get 近似的返回格式。
+
+	Qdrant 以 cosine *similarity* 作为 search score，这里统一转成
+	Chroma 风格的 cosine *distance*（0=最近，1=最远），保证 max_distance
+	阈值语义不变。
+	"""
+	def __init__(self, client: QdrantClient, name: str):
+		self._client = client
+		self._name = name
+
+	@staticmethod
+	def _build_filter(where: Optional[Dict[str, Any]]) -> Optional[Any]:
+		"""把 Chroma 风格的 where 条件转译为 Qdrant Filter。
+
+		当前支持：
+		  - {'field': {'$eq': value}}
+		  - {'field': {'$in': [value, ...]}}
+		  - {'$or': [condition, ...]}
+		  - {'$and': [condition, ...]}
+		"""
+		if not where:
+			return None
+
+		def _convert(cond):
+			if not isinstance(cond, dict):
+				return None
+			# 顶层操作符
+			if all(k.startswith('$') for k in cond.keys()):
+				op = next(iter(cond))
+				clauses = [c for c in (_convert(c) for c in cond[op]) if c is not None]
+				if not clauses:
+					return None
+				if op == '$or':
+					return qmodels.Filter(should=clauses)
+				if op == '$and':
+					return qmodels.Filter(must=clauses)
+				if op == '$not':
+					return qmodels.Filter(must_not=clauses)
+				return None
+			# 字段条件
+			conditions = []
+			for field, opdict in cond.items():
+				if not isinstance(opdict, dict):
+					continue
+				op, value = next(iter(opdict.items()))
+				if op == '$eq':
+					conditions.append(qmodels.FieldCondition(
+						key=field, match=qmodels.MatchValue(value=value)
+					))
+				elif op == '$in':
+					conditions.append(qmodels.FieldCondition(
+						key=field, match=qmodels.MatchAny(any=list(value))
+					))
+			if not conditions:
+				return None
+			return qmodels.Filter(must=conditions)
+
+		return _convert(where)
+
+	def query(
+		self,
+		query_embeddings: Optional[List[List[float]]] = None,
+		n_results: int = 10,
+		include: Optional[List[str]] = None,
+		where: Optional[Dict[str, Any]] = None,
+	) -> Dict[str, Any]:
+		"""语义检索，返回 {'documents': [[...]], 'metadatas': [[...]], 'distances': [[...]]}。"""
+		docs: List[str] = []
+		metas: List[Dict[str, Any]] = []
+		dists: List[float] = []
+		ids: List[Any] = []
+		if query_embeddings:
+			try:
+				results = self._client.search(
+					collection_name=self._name,
+					query_vector=query_embeddings[0],
+					query_filter=self._build_filter(where),
+					limit=n_results or 10,
+					with_payload=True,
+				)
+			except Exception:
+				results = []
+			for pt in results:
+				payload = pt.payload or {}
+				docs.append(payload.get('document', ''))
+				metas.append(payload)
+				dists.append(max(0.0, 1.0 - pt.score))
+				ids.append(pt.id)
+		out: Dict[str, Any] = {}
+		if include is None or 'documents' in include:
+			out['documents'] = [docs]
+		if include is None or 'metadatas' in include:
+			out['metadatas'] = [metas]
+		if include is None or 'distances' in include:
+			out['distances'] = [dists]
+		if include is not None and 'ids' in include:
+			out['ids'] = [ids]
+		return out
+
+	def get(
+		self,
+		ids: Optional[List[str]] = None,
+		where: Optional[Dict[str, Any]] = None,
+		limit: Optional[int] = None,
+		include: Optional[List[str]] = None,
+	) -> Dict[str, Any]:
+		"""精确检索（按 id 或按 where 过滤），返回 {'ids': [...], 'documents': [...], 'metadatas': [...]}。"""
+		points = []
+		qfilter = self._build_filter(where)
+		if ids is not None:
+			try:
+				points = self._client.retrieve(
+					collection_name=self._name, ids=ids, with_payload=True
+				)
+			except Exception:
+				points = []
+		else:
+			try:
+				points, _ = self._client.scroll(
+					collection_name=self._name,
+					scroll_filter=qfilter,
+					limit=limit or 1000,
+					with_payload=True,
+				)
+			except Exception:
+				points = []
+		docs: List[str] = []
+		metas: List[Dict[str, Any]] = []
+		ids_out: List[Any] = []
+		for pt in points:
+			payload = pt.payload or {}
+			docs.append(payload.get('document', ''))
+			metas.append(payload)
+			ids_out.append(pt.id)
+		out: Dict[str, Any] = {'ids': ids_out}
+		if include is None or 'documents' in include:
+			out['documents'] = docs
+		if include is None or 'metadatas' in include:
+			out['metadatas'] = metas
+		return out
+
+
 class CodeChangeMixin:
 	"""共享代码修改、验证、修复与接口读取工具方法。
 
 	该 Mixin 设计为与 BaseAgent 子类一起使用，提供 CodeArchitectAgent 和
 	CodeFixerAgent 都需要的基础代码/配置操作能力。
 	"""
-	def _get_chroma_client(self):
-		"""返回复用的 Chroma PersistentClient，避免并发检索时反复新建 client。"""
-		if getattr(self, '_chroma_client', None) is None:
-			self._chroma_client = chromadb.PersistentClient(path=self._rag_db_path)
-		return self._chroma_client
+	def _get_qdrant_client(self):
+		"""返回复用的本地 QdrantClient，避免并发检索时反复新建 client。"""
+		if getattr(self, '_qdrant_client', None) is None:
+			path = getattr(self, '_rag_qdrant_db_path', None)
+			if path is None:
+				root = getattr(self, '_rag_project_root', None)
+				if not root:
+					root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+				path = os.environ.get(
+					'CAUSAL_CLAIMS_DB_PATH',
+					os.path.join(root, 'experiment_dataset', 'qdrant_db')
+				)
+				self._rag_qdrant_db_path = path
+			self._qdrant_client = QdrantClient(path=path)
+		return self._qdrant_client
+
+	def _qdrant_collection(self, name: str) -> _QdrantCollectionProxy:
+		return _QdrantCollectionProxy(self._get_qdrant_client(), name)
 
 	def _apply_modifications(self, file_path, modifications, create_if_missing=False):
 		"""
@@ -433,8 +592,7 @@ class CodeChangeMixin:
 		if not query_text:
 			return []
 		try:
-			chroma_client = self._get_chroma_client()
-			collection = chroma_client.get_collection(name='papers')
+			collection = self._qdrant_collection('papers')
 		except Exception:
 			return []
 		client = OpenAI(api_key=self._rag_api_key, base_url=self._rag_base_url)
@@ -497,19 +655,82 @@ class CodeChangeMixin:
 		except Exception:
 			return node
 
+	def _rag_list_concepts_collections(self) -> List[str]:
+		"""列出所有 concepts 集合（Qdrant 中为单个 concepts 集合）。"""
+		client = self._get_qdrant_client()
+		return sorted([
+			c.name for c in client.get_collections().collections
+			if c.name.startswith('concepts')
+		])
+
+	def _rag_get_concept_collection_names(self, concept: str) -> List[str]:
+		"""确定要查询的 concepts 集合。
+
+		Qdrant 中仅有一个 concepts 集合，直接返回它；若不存在则 fallback 返回全部。
+		"""
+		all_collections = self._rag_list_concepts_collections()
+		if 'concepts' in all_collections:
+			return ['concepts']
+		return all_collections
+
 	def _rag_anchor_concepts(self, concepts: List[str], G, semantic_top_k: int = 3,
 								 collection_name: str = "concepts") -> Dict[str, Tuple[str, float]]:
 		"""把英文概念锚定到因果图节点：先精确/surface_form/label 匹配，
 		未命中则用指定集合语义召回。
-		- collection_name="concepts": 取 metadata.concept 单节点
+		- collection_name="concepts": 按 JEL 首字母查询对应的 concepts_X 分片集合
 		- collection_name="causal_claims": 取 cause/effect 双节点（旧逻辑，降级用）
 
 		返回 {node_key: (来源概念, cos_sim)}；每个输入概念最多贡献 2 个节点，避免锚点爆炸。
 		"""
 		anchors: Dict[str, Tuple[str, float]] = {}
-		collection = None
 		client = None
 		is_fallback = (collection_name == "causal_claims")
+		is_concepts = (collection_name == "concepts")
+
+		def _process_query_result(collection, emb):
+			"""对单个 collection 执行 query 并处理结果。"""
+			res = collection.query(
+				query_embeddings=[emb],
+				n_results=semantic_top_k,
+				include=['metadatas', 'distances'],
+			)
+			for idx, meta in enumerate((res.get('metadatas', [[]])[0] or [])):
+				distance = (res.get('distances', [[]])[0] or [None])[idx]
+				# ChromaDB cosine distance = 1 - cos_sim
+				cos_sim = max(0.0, 1.0 - distance) if distance is not None else None
+				if is_fallback:
+					# causal_claims: cause + effect both candidates
+					for role in ('cause', 'effect'):
+						txt = (meta or {}).get(role)
+						if not txt:
+							continue
+						n = self._rag_locate_node(txt, G)
+						if n and n not in [x[0] for x in nodes]:
+							nodes.append((n, cos_sim))
+							sim_str = f"{cos_sim:.4f}" if cos_sim is not None else "N/A"
+							self.logger.info(
+								f"[L0-anchor] 概念 {concept!r} 语义召回#{idx} "
+								f"{role}={txt!r} -> 锚定到节点 {n!r} "
+								f"(cos_sim={sim_str}, 降级补充)"
+							)
+				else:
+					# concepts: single concept field
+					matched = (meta or {}).get('concept', '').strip()
+					if not matched:
+						continue
+					n = self._rag_locate_node(matched, G)
+					if n and n not in [x[0] for x in nodes]:
+						nodes.append((n, cos_sim))
+						sim_str = f"{cos_sim:.4f}" if cos_sim is not None else "N/A"
+						self.logger.info(
+							f"[L0-anchor] 概念 {concept!r} 语义召回#{idx} "
+							f"concept={matched!r} -> 锚定到节点 {n!r} "
+							f"(cos_sim={sim_str})"
+						)
+				if len(nodes) >= 2:
+					return True
+			return False
+
 		for concept in concepts:
 			concept = (concept or "").strip()
 			if not concept:
@@ -520,54 +741,36 @@ class CodeChangeMixin:
 				nodes.append((node, 1.0))
 				self.logger.info(f"[L0-anchor] 概念 {concept!r} 精确匹配到图节点 {node!r} (cos_sim=1.000, 精确)")
 			else:
-				try:
-					if collection is None:
-						collection = self._get_chroma_client().get_collection(name=collection_name)
-						client = OpenAI(api_key=self._rag_api_key, base_url=self._rag_base_url)
-					emb = self._rag_embed(client, concept, dimensions=1024)
-					if emb:
-						res = collection.query(
-							query_embeddings=[emb],
-							n_results=semantic_top_k,
-							include=['metadatas', 'distances'],
-						)
-						for idx, meta in enumerate((res.get('metadatas', [[]])[0] or [])):
-							distance = (res.get('distances', [[]])[0] or [None])[idx]
-							# ChromaDB cosine distance = 1 - cos_sim
-							cos_sim = max(0.0, 1.0 - distance) if distance is not None else None
-							if is_fallback:
-								# causal_claims: cause + effect both candidates
-								for role in ('cause', 'effect'):
-									txt = (meta or {}).get(role)
-									if not txt:
-										continue
-									n = self._rag_locate_node(txt, G)
-									if n and n not in [x[0] for x in nodes]:
-										nodes.append((n, cos_sim))
-										sim_str = f"{cos_sim:.4f}" if cos_sim is not None else "N/A"
-										self.logger.info(
-											f"[L0-anchor] 概念 {concept!r} 语义召回#{idx} "
-											f"{role}={txt!r} -> 锚定到节点 {n!r} "
-											f"(cos_sim={sim_str}, 降级补充)"
-										)
-							else:
-								# concepts: single concept field
-								matched = (meta or {}).get('concept', '').strip()
-								if not matched:
-									continue
-								n = self._rag_locate_node(matched, G)
-								if n and n not in [x[0] for x in nodes]:
-									nodes.append((n, cos_sim))
-									sim_str = f"{cos_sim:.4f}" if cos_sim is not None else "N/A"
-									self.logger.info(
-										f"[L0-anchor] 概念 {concept!r} 语义召回#{idx} "
-										f"concept={matched!r} -> 锚定到节点 {n!r} "
-										f"(cos_sim={sim_str})"
-									)
-							if len(nodes) >= 2:
+				last_exc = None
+				for attempt in range(3):
+					try:
+						if client is None:
+							client = OpenAI(api_key=self._rag_api_key, base_url=self._rag_base_url)
+
+						if is_concepts:
+							collection_names = self._rag_get_concept_collection_names(concept)
+						else:
+							collection_names = [collection_name]
+
+						emb = self._rag_embed(client, concept, dimensions=1024)
+						if not emb:
+							break
+
+						for name in collection_names:
+							collection = self._qdrant_collection(name)
+							if _process_query_result(collection, emb):
 								break
-				except Exception as exc:
-					self.logger.info(f"[L0-anchor] 概念语义锚定失败 {concept!r}: {exc}")
+						break  # 成功，跳出重试循环
+					except Exception as exc:
+						last_exc = exc
+						self.logger.info(f"[L0-anchor] 概念 {concept!r} 语义锚定尝试#{attempt+1}/3 失败: {exc}")
+						# 仅对 HNSW/段读取类偶发错误重试
+						if attempt < 2 and ("hnsw" in str(exc).lower() or "compactor" in str(exc).lower() or "segment" in str(exc).lower() or "error executing plan" in str(exc).lower()):
+							time.sleep(1.0)
+							continue
+						break
+				if last_exc is not None:
+					self.logger.info(f"[L0-anchor] 概念语义锚定失败 {concept!r}: {last_exc}")
 			for n, sim in nodes[:2]:
 				anchors.setdefault(n, (concept, sim))
 		# ---- 锚定结构汇总 ----
@@ -580,7 +783,6 @@ class CodeChangeMixin:
 			self.logger.info(f"  {src!r} -> {nodes}")
 		self.logger.info(f"[L0-anchor] 锚定完成: {len(anchors)} 个节点{tag}")
 		return anchors
-
 	def _rag_edge_evidence_score(self, data: Dict[str, Any], causal_methods: set) -> float:
 		"""单条因果边的证据强度：因果识别方法 +2，certainty=certain +1。"""
 		score = 0.0
@@ -885,10 +1087,9 @@ class CodeChangeMixin:
 		if not query_text:
 			return []
 		try:
-			chroma_client = self._get_chroma_client()
-			collection = chroma_client.get_collection(name='causal_claims')
+			collection = self._qdrant_collection('causal_claims')
 		except Exception as exc:
-			self.logger.debug(f"RAG跳过：无法连接Chroma ({exc})")
+			self.logger.debug(f"RAG跳过：无法连接Qdrant ({exc})")
 			return []
 		client = OpenAI(api_key=self._rag_api_key, base_url=self._rag_base_url)
 		embedding = self._rag_embed(client, query_text, dimensions=1024)
@@ -1148,20 +1349,33 @@ class CodeChangeMixin:
 				item_name = item_info.get('method_name') or item_info.get('function_name')
 				item_code = item_info.get('method_code') or item_info.get('function_code')
 				description = item_info.get('description', '')
+				if not item_name or not item_code:
+					self.logger.warning("跳过缺少名称或代码的增量修改项")
+					continue
 
 				# 从可能包含完整签名的 item_name 中提取纯函数名
 				# 例如: "async def update_state(self):" -> "update_state"
 				# 或: "update_state" -> "update_state"
-				pure_name = item_name
-				if 'def ' in item_name:
+				pure_name = str(item_name).strip()
+				if 'def ' in pure_name:
 					# 匹配 def 或 async def 后面的函数名
-					name_match = re.search(r'def\s+(\w+)', item_name)
+					name_match = re.search(r'def\s+(\w+)', pure_name)
 					if name_match:
 						pure_name = name_match.group(1)
 
 				self.logger.info(f"{'修改' if file_type == 'simulator' else '处理'}{'方法' if file_type == 'simulator' else '函数'}: {pure_name} - {description}")
 
 				# 判断方法/函数是否已存在
+				if not re.fullmatch(r'[A-Za-z_]\w*', pure_name):
+					self.logger.error(f"拒绝非法方法/函数名: {pure_name}")
+					continue
+				code_header = re.match(r'\s*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(', str(item_code))
+				if not code_header:
+					self.logger.error(f"拒绝无效方法/函数代码头: {pure_name}")
+					continue
+				if code_header.group(1) != pure_name:
+					self.logger.error(f"拒绝方法名与代码定义不一致: {pure_name} != {code_header.group(1)}")
+					continue
 				header_pattern = rf"^(\s*)(?:async\s+)?def\s+{re.escape(pure_name)}\s*\("
 				header_match = re.search(header_pattern, modified_content, re.MULTILINE)
 
@@ -1293,11 +1507,12 @@ class CodeChangeMixin:
 			except py_compile.PyCompileError as e:
 				# 尝试修正后重试一次
 				self.logger.warning(f"⚠️ py_compile 语法错误: {e}，尝试硬性修正...")
-				with open(file_path, 'r', encoding='utf-8') as f:
-					raw = f.read()
-				fixed = self._fix_indentation_and_whitespace(raw)
-				with open(file_path, 'w', encoding='utf-8') as f:
-					f.write(fixed)
+				if not self._auto_fix_syntax_error(file_path, e):
+					with open(file_path, 'r', encoding='utf-8') as f:
+						raw = f.read()
+					fixed = self._fix_indentation_and_whitespace(raw)
+					with open(file_path, 'w', encoding='utf-8') as f:
+						f.write(fixed)
 				try:
 					py_compile.compile(file_path, doraise=True)
 					self.logger.info(f"✓ py_compile 语法检查通过（修正后）")
@@ -1357,8 +1572,7 @@ class CodeChangeMixin:
 		if not query:
 			return []
 		try:
-			chroma_client = self._get_chroma_client()
-			collection = chroma_client.get_collection(name='papers')
+			collection = self._qdrant_collection('papers')
 		except Exception:
 			return []
 		client = OpenAI(api_key=self._rag_api_key, base_url=self._rag_base_url)
@@ -1792,8 +2006,7 @@ class CodeChangeMixin:
 		if not cause and not effect:
 			return []
 		try:
-			chroma_client = self._get_chroma_client()
-			collection = chroma_client.get_collection(name='causal_claims')
+			collection = self._qdrant_collection('causal_claims')
 		except Exception:
 			return []
 		lines: List[Tuple[str, str]] = []
@@ -1992,11 +2205,22 @@ class CodeChangeMixin:
 		"""获取文本的 embedding 向量。
 
 		项目数据现状：
-		- ChromaDB collections（causal_claims / concepts / papers）均为 1024 维，
+		- Qdrant collections（causal_claims / concepts / papers）均为 1024 维，
 		  由 text-embedding-3-large 指定 dimensions=1024 构建。
 		- JEL 嵌入表（jel_embeddings.json）为 3072 维，未截断。
-		因此查询 Chroma 时传 dimensions=1024，JEL 门控时不传（保持 3072）。
+		因此查询 Qdrant 时传 dimensions=1024，JEL 门控时不传（保持 3072）。
+
+		若环境变量配置了本地模型（LOCAL_EMBEDDING_MODEL_PATH）且维度匹配，
+		优先使用本地模型，避免依赖网络并保证与数据库向量一致。
 		"""
+		# 优先尝试本地模型
+		try:
+			local_emb = get_local_embedding(text, dimensions=dimensions)
+			if local_emb is not None:
+				return local_emb
+		except Exception as exc:
+			self.logger.debug(f"本地 embedding 失败，回退 OpenAI: {exc}")
+
 		max_retries = 3
 		for attempt in range(max_retries):
 			try:
@@ -2184,8 +2408,7 @@ class CodeChangeMixin:
 		# 因此若启用门控，先语义召回再按首字母过滤；若为细码则保留原 where 逻辑。
 		coarse_jel = bool(jel_codes) and all(len(str(c)) == 1 for c in jel_codes)
 		try:
-			chroma_client = self._get_chroma_client()
-			collection = chroma_client.get_collection(name='causal_claims')
+			collection = self._qdrant_collection('causal_claims')
 			client = OpenAI(api_key=self._rag_api_key, base_url=self._rag_base_url)
 			embedding = self._rag_embed(client, (query or '').strip(), dimensions=1024)
 			where = None
@@ -2292,11 +2515,20 @@ class CodeChangeMixin:
 					batch_ids = [eid for eid, _, _ in l2_sample if eid not in seen_eids]
 					if batch_ids:
 						try:
-							chroma_client = self._get_chroma_client()
-							collection = chroma_client.get_collection(name='causal_claims')
-							res = collection.get(ids=batch_ids, include=['documents', 'metadatas'])
-							doc_map = {eid: doc for eid, doc in zip(res.get('ids', []), res.get('documents', []))}
-							meta_map = {eid: meta for eid, meta in zip(res.get('ids', []), res.get('metadatas', []))}
+							collection = self._qdrant_collection('causal_claims')
+							res = collection.get(
+								where={'paper_edge_id': {'$in': batch_ids}},
+								limit=len(batch_ids),
+								include=['documents', 'metadatas']
+							)
+							doc_map = {
+								(meta or {}).get('paper_edge_id'): doc
+								for doc, meta in zip(res.get('documents', []), res.get('metadatas', []))
+							}
+							meta_map = {
+								(meta or {}).get('paper_edge_id'): meta
+								for meta in res.get('metadatas', [])
+							}
 							for eid, data, role in l2_sample:
 								if eid in seen_eids:
 									continue

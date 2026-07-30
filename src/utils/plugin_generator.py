@@ -9,10 +9,12 @@
 from __future__ import annotations
 
 import ast
+import importlib
 import os
 import re
 import shutil
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
@@ -54,6 +56,15 @@ def plugin_manifest_path(project_root: str, name: str) -> str:
 
 def plugin_exists(project_root: str, name: str) -> bool:
     return os.path.exists(plugin_manifest_path(project_root, name))
+
+
+def find_plugin_manifest_path(project_root: str, name: str) -> Optional[str]:
+    """Resolve either a generated or built-in plugin manifest."""
+    candidates = [
+        plugin_manifest_path(project_root, name),
+        os.path.join(project_root, "plugins", name, "plugin.yaml"),
+    ]
+    return next((path for path in candidates if os.path.exists(path)), None)
 
 
 def read_yaml_file(path: str) -> Dict[str, Any]:
@@ -286,6 +297,73 @@ def _extract_class_method_names(tree: ast.AST, class_name: str) -> List[str]:
     return []
 
 
+def _plugin_context_method_names(project_root: str) -> set[str]:
+    """Read the framework's PluginContext API directly from its source AST."""
+    context_path = os.path.join(project_root, "src", "plugins", "plugin_context.py")
+    if not os.path.exists(context_path):
+        return set()
+    try:
+        with open(context_path, "r", encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+    except Exception:
+        return set()
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name == "PluginContext":
+            return {
+                item.name
+                for item in node.body
+                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and not item.name.startswith("_")
+            }
+    return set()
+
+
+def _unsupported_plugin_context_calls(tree: ast.AST, allowed: set[str]) -> List[str]:
+    """Find calls to methods that do not exist on PluginContext."""
+    unsupported: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        owner = node.func.value
+        is_context = isinstance(owner, ast.Name) and owner.id == "context"
+        is_saved_context = (
+            isinstance(owner, ast.Attribute)
+            and isinstance(owner.value, ast.Name)
+            and owner.value.id == "self"
+            and owner.attr in {"_context", "context"}
+        )
+        if (is_context or is_saved_context) and node.func.attr not in allowed:
+            unsupported.add(node.func.attr)
+    return sorted(unsupported)
+
+
+def _missing_time_advance_subscription(tree: ast.AST) -> bool:
+    """Require generated per-step hooks to be connected to the simulation clock."""
+    has_step_hook = any(
+        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name in {"step", "on_step", "on_tick"}
+        for node in ast.walk(tree)
+    )
+    if not has_step_hook:
+        return False
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Attribute) or node.func.attr != "subscribe_event":
+            continue
+        if not node.args:
+            continue
+        event = node.args[0]
+        if (
+            isinstance(event, ast.Attribute) and event.attr == "TIME_ADVANCED"
+        ) or (
+            isinstance(event, ast.Constant) and event.value == "time_advanced"
+        ):
+            return False
+    return True
+
+
 def validate_plugin_code(project_root: str, plugin_name: str, manifest: Dict[str, Any]) -> List[str]:
     errors: List[str] = []
     module = str(manifest.get("module") or f"{plugin_name}_plugin").strip()
@@ -321,6 +399,19 @@ def validate_plugin_code(project_root: str, plugin_name: str, manifest: Dict[str
                     f"接口契约校验失败: 插件类 {expected} 未实现 "
                     f"{os.path.basename(interface_path)} 要求的抽象方法: {missing}"
                 )
+    context_methods = _plugin_context_method_names(project_root)
+    if context_methods:
+        unsupported_calls = _unsupported_plugin_context_calls(tree, context_methods)
+        if unsupported_calls:
+            errors.append(
+                "PluginContext API 契约失败，不存在的方法调用: "
+                f"{unsupported_calls}；允许的方法: {sorted(context_methods)}"
+            )
+    if _missing_time_advance_subscription(tree):
+        errors.append(
+            "插件定义了 step/on_step/on_tick，但没有通过 "
+            "subscribe_event(PluginEvent.TIME_ADVANCED, callback) 接入模拟时钟"
+        )
     return errors
 
 
@@ -376,9 +467,48 @@ def validate_dependencies(project_root: str, manifest: Dict[str, Any], pending: 
         dep = dep.strip()
         if dep in pending:
             continue
-        if not plugin_exists(project_root, dep):
+        if find_plugin_manifest_path(project_root, dep) is None:
             errors.append(f"依赖插件不存在: '{dep}'")
     return errors
+
+
+def validate_selected_plugins(project_root: str, modules_config_path: str) -> Dict[str, List[str]]:
+    """Validate every selected plugin before simulation startup."""
+    modules_config = read_yaml_file(modules_config_path)
+    selected = modules_config.get("selected_modules")
+    if not isinstance(selected, list):
+        return {}
+    names = {
+        name.strip()
+        for name in selected
+        if isinstance(name, str) and name.strip()
+    }
+    failures: Dict[str, List[str]] = {}
+    for name in sorted(names):
+        manifest_path = find_plugin_manifest_path(project_root, name)
+        if manifest_path is None:
+            failures[name] = [f"selected plugin 不存在: {name}"]
+            continue
+        manifest = read_yaml_file(manifest_path)
+        errors = validate_manifest(manifest, name)
+        if manifest_path == plugin_manifest_path(project_root, name):
+            errors.extend(validate_plugin_code(project_root, name, manifest))
+        errors.extend(validate_dependencies(project_root, manifest, names))
+        module = str(manifest.get("module") or f"{name}_plugin").strip()
+        plugin_path = os.path.dirname(manifest_path)
+        relative_dir = os.path.relpath(plugin_path, project_root)
+        dotted_module = ".".join([*Path(relative_dir).parts, module])
+        try:
+            importlib.import_module(dotted_module)
+        except ModuleNotFoundError as exc:
+            errors.append(
+                f"运行环境缺少 Python 依赖: {exc.name!r}（导入 {dotted_module} 失败）"
+            )
+        except Exception as exc:
+            errors.append(f"插件模块导入失败 {dotted_module}: {type(exc).__name__}: {exc}")
+        if errors:
+            failures[name] = errors
+    return failures
 
 
 # =============================================================================

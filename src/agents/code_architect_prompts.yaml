@@ -18,12 +18,18 @@ customize_new_plugin_prompt: |
   【base插件代码】
   {base_code}
 
+  【上一轮契约校验错误】
+  {validation_feedback}
+
   【硬约束】
   - 先输出一行：DESCRIPTION: <准确详细的插件描述>
   - 然后输出一个 ```python 代码块，内容为“完整文件源码”
   - 类名必须为 {plugin_class}，与当前插件代码中的类名保持一致
   - 保持文件可导入、可运行；不要输出解释
   - 尽可能使用当前插件代码和 base 代码中已有的 import，严禁凭空捏造不存在的 import
+  - PluginContext 只允许 config/logger/event_bus/registry/metadata 属性，以及 get、set、get_config、set_config、log_info、log_warning、log_error、log_debug 方法
+  - 事件订阅/发布必须调用 BasePlugin 的 subscribe_event、unsubscribe_event、publish_event；禁止编造 context 方法
+  - 若定义 step/on_step/on_tick，必须在 on_load 中订阅 PluginEvent.TIME_ADVANCED，并在 on_unload 中调用 super().on_unload() 自动退订
 
 # 分析错误相关的模块和配置文件
 analyze_error_modules_prompt: |
@@ -365,12 +371,15 @@ generate_config_file_prompt: |
   接口参考：
   {interface_docs}
 
+  已生成配置（事实契约）：
+  {previous_configs_context}
+
   要求：
   1. 参考模板的结构和字段，但不要照搬
   2. 根据设计文档调整具体数值和内容
   3. 确保配置的完整性和一致性
-  4. 如果有已生成的配置，保持参数之间的关联性
-  5. 如果设计文档中包含 "Agent Profile 配置" 章节，请将其完整保留并嵌入到生成的 simulation_config.yaml 的 agent_profile 字段中，不要修改其结构
+  4. 已生成配置是项目事实契约。复用其中的实体名、职业名、枚举值、单位和路径；如与模板示例冲突，以已生成配置为准
+
 
 extract_key_metrics_prompt: |
   你将根据下面的设计文档，抽取该模拟环境中的“客观可量化状态变量”，用于在因果知识图谱中定位相关节点。
@@ -416,6 +425,9 @@ generate_influence_pairs_prompt: |
 
   【模块配置】
   {modules_config_yaml}
+
+  【现有项目配置契约】
+  {project_config_context}
 
   【因果图发现的候选传导链】
   {graph_candidate_chains}
@@ -502,10 +514,13 @@ generate_influence_block_prompt: |
   【influences.yaml 模板参考】
   {template_content}
 
+  【现有项目配置契约】
+  {project_config_context}
+
   任务：
   1. 结合当前 pair 的 cause/effect 信息和对应模块源码，生成这一条影响对应的单个 influence 块。
   2. 输出必须与 influences.yaml 的单条列表项结构兼容，至少包含 name/type/source/target/params。
-  3. source 优先使用 cause 模块名或模块对象写法，target 依据 effect 模块及该 pair 的语义选择合适的目标名。
+  3. source 仅表示数据来源；target/target_attr 必须是 simulator 中同一个可观测状态属性。不要把 source 模块对象当成写入目标。
   4. 如果无法确定字段名，优先保守生成可解析的 YAML 块，不要编造不存在的属性。
   5. expr 必须是可执行的定量表达式（数值、Python 算术表达式、或引用其他模块属性的简单公式），严禁纯定性词（如 moderate、slightly、high、low）。
   6. 若 effect 的参数属于 Agent 主观决策/选择类（如 job selection、migration decision、consumer choice 等），该 influence 为**占位声明**，必须在 `params` 中写 `placeholder: true`，并在 description 中简要说明。
@@ -538,12 +553,19 @@ generate_role_files_prompt: |
 
   {agent_profile_attrs_doc}
 
+  该角色的完整事实契约（含 choice、weights、constraints）：
+  {role_contract}
+
+  已生成项目配置（职业、城镇、影响等共享词表）：
+  {project_config_context}
+
   要求：
   1. 参照模板的结构与风格
   2. 提示词与动作配置需详细、具体，符合角色特征，基于实验背景与目标定制，确保引导合理决策
   3. 若提供动作模板参考，需同步生成对应的动作配置文件
   4. 仅保留代码所需的提示词模块，删除无关模块
   5. 只使用模板中已定义的变量（允许将Agent Profile属性作为{{属性名}}占位符），禁用未定义变量，并删除所有注释
+  6. 模板只提供结构与风格示例；实体名、职业名、枚举值以完整事实契约和已生成项目配置为准，禁止自行改名或翻译
 
   请生成完整的YAML格式文件，包括prompts/{role_type}.yaml，以及 actions/{role_type}.yaml 。
   两个文件内容需要相互对应，请使用以下格式分隔两个文件的内容：

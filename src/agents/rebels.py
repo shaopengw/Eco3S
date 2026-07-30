@@ -298,7 +298,6 @@ class Rebellion(AgentGroup, IRebellion):
             ordinary_type=OrdinaryRebel,
             leader_type=RebelLeader,
             info_officer_types=(InformationOfficer,),
-            use_towns_stats=True,
         )
 
         if decision:

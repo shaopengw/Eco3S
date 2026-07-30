@@ -285,17 +285,21 @@ class SimArchitectAgent(BaseAgent):
 		if not agent_behavior_section:
 			agent_behavior_section = f"（未找到独立的「智能体与行为」章节，以下是完整设计文档供参考）\n\n{description_md or ''}"
 
+		runtime_profile_contract = self._build_runtime_profile_contract()
+
 		if previous_agent_profile and user_feedback:
 			prompt = self.prompts['generate_agent_profile_with_feedback_prompt'].format(
 				agent_behavior_section=agent_behavior_section,
 				modules_config_yaml=modules_config_yaml or "（未提供模块配置）",
 				previous_agent_profile=previous_agent_profile,
-				user_feedback=user_feedback
+				user_feedback=user_feedback,
+				runtime_profile_contract=runtime_profile_contract,
 			)
 		else:
 			prompt = self.prompts['generate_agent_profile_prompt'].format(
 				agent_behavior_section=agent_behavior_section,
-				modules_config_yaml=modules_config_yaml or "（未提供模块配置）"
+				modules_config_yaml=modules_config_yaml or "（未提供模块配置）",
+				runtime_profile_contract=runtime_profile_contract,
 			)
 
 		response = await self.generate_llm_response(prompt)
@@ -340,6 +344,37 @@ class SimArchitectAgent(BaseAgent):
 			self.logger.warning(f"agent_profile YAML 校验失败: {e}，将直接保存原始内容")
 
 		return yaml_text
+
+	def _build_runtime_profile_contract(self) -> str:
+		"""从实体实现源码提取可复用 runtime keys，避免展示名与代码属性分裂。"""
+		import ast
+		repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+		files = {
+			"resident": os.path.join(repo_root, "src", "agents", "resident.py"),
+			"government": os.path.join(repo_root, "src", "agents", "government.py"),
+			"rebels": os.path.join(repo_root, "src", "agents", "rebels.py"),
+		}
+		lines = ["runtime_key 必须是稳定的 Python 标识符；name 仅用于面向人的显示。"]
+		for entity_type, path in files.items():
+			keys = set()
+			try:
+				with open(path, 'r', encoding='utf-8') as f:
+					tree = ast.parse(f.read())
+				for node in ast.walk(tree):
+					if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+						if any(isinstance(d, ast.Name) and d.id == 'property' for d in node.decorator_list):
+							keys.add(node.name)
+					if isinstance(node, ast.Assign):
+						if any(isinstance(t, ast.Name) and t.id == '_compat_defaults' for t in node.targets):
+							if isinstance(node.value, ast.Dict):
+								for key_node in node.value.keys:
+									if isinstance(key_node, ast.Constant) and isinstance(key_node.value, str):
+										keys.add(key_node.value)
+			except Exception:
+				continue
+			if keys:
+				lines.append(f"- {entity_type}: {', '.join(sorted(keys))}")
+		return "\n".join(lines)
 
 	async def generate_description_md(self, original_requirement, requirement_dict, previous_description=None, user_feedback=None):
 		"""

@@ -157,17 +157,31 @@ def generate_resident_profile(profile_config=None):
         attributes_cfg = {item["name"]: dict(item) for item in attributes_cfg}
 
     profile = {}
+    aliases = {}
 
     # 第一轮：按配置生成各属性
     for attr_name, rule in attributes_cfg.items():
-        profile[attr_name] = _generate_attribute(attr_name, rule)
+        runtime_key = str(rule.get("runtime_key") or attr_name)
+        value = _generate_attribute(attr_name, rule)
+        profile[runtime_key] = value
+        if runtime_key != attr_name:
+            profile[attr_name] = value
+            aliases[attr_name] = runtime_key
+
+    if aliases:
+        profile["_profile_aliases"] = aliases
 
     # 第二轮：应用约束修正
     for constraint in profile_config.get("constraints", []):
         if _eval_condition(constraint.get("condition", ""), profile):
             for attr_name, adj in constraint.get("adjustments", {}).items():
-                if attr_name in profile:
-                    profile[attr_name] = _apply_adjustment(profile[attr_name], adj)
+                runtime_key = aliases.get(attr_name, attr_name)
+                if runtime_key in profile:
+                    new_value = _apply_adjustment(profile[runtime_key], adj)
+                    profile[runtime_key] = new_value
+                    for display_name, canonical in aliases.items():
+                        if canonical == runtime_key:
+                            profile[display_name] = new_value
 
     # 第三轮：注入 extra 静态属性
     profile.update(profile_config.get("extra", {}))
@@ -287,6 +301,9 @@ def _eval_condition(condition: str, profile: dict) -> bool:
 
 def _apply_adjustment(current_value, adjustment: dict):
     """对单个属性值应用修正。"""
+    if "set" in adjustment:
+        return adjustment["set"]
+
     # 如果 adjustment 指定了新的 choices/weights，则重新抽样
     if "choices" in adjustment:
         choices = adjustment["choices"]

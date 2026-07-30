@@ -214,8 +214,10 @@ class Resident(BaseAgent, IResident):
         """当赋值的目标属性已存在于 profile 中时，自动写入 profile 而非创建新实例属性。"""
         if not name.startswith("_") and "profile" in self.__dict__:
             profile = self.__dict__["profile"]
-            if isinstance(profile, dict) and name in profile:
-                profile[name] = value
+            aliases = profile.get("_profile_aliases", {}) if isinstance(profile, dict) else {}
+            runtime_key = aliases.get(name, name) if isinstance(aliases, dict) else name
+            if isinstance(profile, dict) and runtime_key in profile:
+                self.set_attr(runtime_key, value)
                 return
         super().__setattr__(name, value)
 
@@ -229,8 +231,11 @@ class Resident(BaseAgent, IResident):
             raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
         # 如果 profile 已初始化且包含该字段，返回之
         profile = object.__getattribute__(self, "profile")
-        if isinstance(profile, dict) and name in profile:
-            return profile[name]
+        if isinstance(profile, dict):
+            aliases = profile.get("_profile_aliases", {})
+            runtime_key = aliases.get(name, name) if isinstance(aliases, dict) else name
+            if runtime_key in profile:
+                return profile[runtime_key]
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
     def get_social_network(self):

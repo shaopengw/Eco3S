@@ -28,6 +28,7 @@
 
 from typing import List, Dict, Optional, Type, Callable, Any
 import logging
+import copy
 from collections import defaultdict
 
 from .iinfluence import IInfluenceFunction
@@ -61,7 +62,9 @@ class InfluenceRegistry:
         self._by_name: Dict[str, IInfluenceFunction] = {}
         self._factories: Dict[str, Callable] = {}
 
-        self.execution_order: List[tuple[str, str]] = []
+        # 旧配置使用 (module, target)；新配置使用
+        # (module, target, influence_name)，从而能精确执行同一 target 下的某一条影响。
+        self.execution_order: List[tuple] = []
         self.logger = logger or logging.getLogger(__name__)
         
         # 注册内置的影响函数工厂
@@ -259,7 +262,9 @@ class InfluenceRegistry:
 
         for idx, inf_config in enumerate(influences_config):
             try:
-                self._load_single_influence(inf_config)
+                # _load_single_influence 会把声明式 source 归一成字符串；必须在深拷贝
+                # 上处理，不能破坏预检和后续生成步骤仍需读取的 inputs 元数据。
+                self._load_single_influence(copy.deepcopy(inf_config))
                 loaded_count += 1
             except Exception as e:
                 self.logger.error(
@@ -275,12 +280,14 @@ class InfluenceRegistry:
         )
         return loaded_count
 
-    def _parse_execution_order(self, raw: Any) -> List[tuple[str, str]]:
+    def _parse_execution_order(self, raw: Any) -> List[tuple]:
         """解析 influences.yaml 中的 execution_order。
 
-        支持两种写法：
+        支持以下写法：
         - [{'module': 'map', 'target': 'canal_decay'}, ...]
+        - [{'module': '__simulator__', 'target': 'canal_decay', 'influence': 'climate_decay'}, ...]
         - [['map', 'canal_decay'], ...]
+        - ['climate_decay', ...]（按 influence name 精确定位）
         """
 
         if raw is None:
@@ -289,20 +296,27 @@ class InfluenceRegistry:
         if not isinstance(raw, list):
             raise ValueError("execution_order must be a list")
 
-        parsed: List[tuple[str, str]] = []
+        parsed: List[tuple] = []
         for item in raw:
+            influence_name = None
             if isinstance(item, dict):
                 module_name = item.get('module')
                 target_name = item.get('target')
+                influence_name = item.get('influence') or item.get('name')
             elif isinstance(item, (list, tuple)) and len(item) == 2:
                 module_name, target_name = item[0], item[1]
+            elif isinstance(item, (list, tuple)) and len(item) == 3:
+                module_name, target_name, influence_name = item[0], item[1], item[2]
             elif isinstance(item, str):
                 # 按 influence name 查找对应的 (source_module, target)
                 found = False
                 for inf in self._influences:
                     if inf.name == item:
-                        module_name = inf.source
+                        # 名称式顺序采用 simulator 根状态作为唯一写入所有者；
+                        # source 仍只负责描述数据来源，不再被误当成 target_obj。
+                        module_name = '__simulator__'
                         target_name = inf.target
+                        influence_name = inf.name
                         found = True
                         break
                 if not found:
@@ -311,13 +325,16 @@ class InfluenceRegistry:
                     )
             else:
                 raise ValueError(
-                    "execution_order item must be {'module': ..., 'target': ...} or [module, target]"
+                    "execution_order item must contain module/target, optionally influence name"
                 )
 
             if not module_name or not target_name:
                 raise ValueError("execution_order item missing module/target")
 
-            parsed.append((str(module_name), str(target_name)))
+            if influence_name:
+                parsed.append((str(module_name), str(target_name), str(influence_name)))
+            else:
+                parsed.append((str(module_name), str(target_name)))
 
         return parsed
     

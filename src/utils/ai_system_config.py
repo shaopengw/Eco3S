@@ -30,6 +30,9 @@ DEFAULTS = {
         'regeneration': 3, 'influence_preflight': 3, 'smoke_test': 5,
         'full_run': 10, 'runtime_fix': 3, 'audit_internal': 5,
     },
+    'workflow': {
+        'max_optimization_iterations': 0,
+    },
     'rag': {
         'funnel_enabled': True,
         'embed_model': 'text-embedding-3-large',
@@ -108,6 +111,10 @@ def get_agent_model(role):
 
 def get_retries():
     return dict(load_ai_system_config()['retries'])
+
+
+def get_workflow():
+    return dict(load_ai_system_config()['workflow'])
 
 
 def get_rag():

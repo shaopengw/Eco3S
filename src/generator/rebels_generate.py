@@ -171,12 +171,18 @@ def _inject_rank(attributes, rank_value):
         found = False
         for item in attributes:
             if isinstance(item, dict) and item.get("name") == "rank":
-                result.append({"name": "rank", "type": "choice", "choices": [rank_value], "weights": [1.0]})
+                result.append({
+                    **item,
+                    "runtime_key": item.get("runtime_key", "rank"),
+                    "type": "choice",
+                    "choices": [rank_value],
+                    "weights": [1.0],
+                })
                 found = True
             else:
                 result.append(dict(item))
         if not found:
-            result.insert(0, {"name": "rank", "type": "choice", "choices": [rank_value], "weights": [1.0]})
+            result.insert(0, {"name": "rank", "runtime_key": "rank", "type": "choice", "choices": [rank_value], "weights": [1.0]})
         return result
     elif isinstance(attributes, dict):
         result = dict(attributes)

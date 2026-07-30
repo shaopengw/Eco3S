@@ -6,7 +6,12 @@ simulation:
   total_years: 5  # 模拟总年数
   initial_population: 5  # 初始人口数量
   birth_rate: 0.05  # 出生率
-  
+
+  # 时间粒度配置
+  time:
+    frequency: annual  # annual | quarterly | monthly
+    total_steps: 5  # 可选，覆盖 total_years
+
   # 地图设置
   map_width: 100
   map_height: 150

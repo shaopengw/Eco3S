@@ -81,6 +81,15 @@ class PluginContext:
                 return default
         
         return value
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Dictionary-style alias for :meth:`get_config`.
+
+        Generated plugins commonly treat their context as a configuration
+        mapping.  Keeping this alias in the public contract avoids two competing
+        access conventions while preserving dotted-key lookup.
+        """
+        return self.get_config(key, default)
     
     def set_config(self, key: str, value: Any) -> None:
         """
@@ -106,6 +115,10 @@ class PluginContext:
         
         # 设置值
         config[keys[-1]] = value
+
+    def set(self, key: str, value: Any) -> None:
+        """Dictionary-style alias for :meth:`set_config`."""
+        self.set_config(key, value)
     
     def log_info(self, message: str) -> None:
         """便捷方法：记录 INFO 级别日志"""

@@ -10,3 +10,5 @@ hypernetx
 fastjsonschema
 qdrant_client
 anthropic
+statsmodels
+scipy

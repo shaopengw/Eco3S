@@ -29,6 +29,9 @@ simulation:
   retry_delay: 1
   simulation_name: ""
   start_year: 1650
+  time:
+    frequency: annual
+    total_steps: 2
   total_years: 2
 
 # 可视化配置：控制自动绘图的行为

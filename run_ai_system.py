@@ -112,8 +112,7 @@ async def main():
             print()
             
             results = await project_master.run_full_workflow(
-                requirement_text=requirement_text,
-                max_iterations=2  # 最多2轮迭代优化
+                requirement_text=requirement_text
             )
             
             # 显示自动模式结果

@@ -148,25 +148,30 @@ def initialize_plugin_system(
             plugin_name = plugin_name.strip()
             if plugin_name in seen:
                 continue
-            if registry.has_plugin(plugin_name):
-                plugins.append(plugin_name)
-                seen.add(plugin_name)
+            # selected_modules 是硬契约。即使发现/导入失败也保留名称，
+            # 让加载阶段显式报错，而不是静默把模块从运行集合中删除。
+            plugins.append(plugin_name)
+            seen.add(plugin_name)
         return plugins
 
     selected_plugins = _extract_selected_plugins(modules_config)
     if selected_plugins:
         logger.info(f"开始加载 {len(selected_plugins)} 个选择的插件（来自 selected_modules）...")
         seen: Set[str] = set()
+        load_errors: List[str] = []
         for name in selected_plugins:
             try:
                 _load_with_dependencies(name, seen)
                 logger.info(f"✓ 已加载插件: {name}")
             except Exception as e:
                 logger.error(f"✗ 加载插件 {name} 失败: {e}")
+                load_errors.append(f"{name}: {e}")
                 import traceback
 
                 traceback.print_exc()
         logger.info(f"插件加载完成: {len(loaded_plugins)}/{len(selected_plugins)} 成功")
+        if load_errors:
+            raise RuntimeError("selected plugins failed to load: " + "; ".join(load_errors))
         return registry
 
     # 未提供 modules_config.yaml 时：回退加载所有已发现的插件。

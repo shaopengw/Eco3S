@@ -3,15 +3,44 @@
 system_message: "你是Python代码调试与优化专家，擅长分析运行时错误、追踪调用链与数据流、修复代码缺陷、验证配置一致性。只做最小必要修改，优先解决根因。严禁编造不存在的方法名、属性名、配置项；在修改 simulator.py 或调用插件/模块前，必须先读取对应源码/接口确认方法签名与参数，不得臆造插件内部数据对象的业务方法。"
 
 tool_system_message: |
-  诊断时可调用工具。每次只输出一个 <tool> 块，无工具时直接返回最终答案。
+  你在本会话中的输出必须严格遵循“两态协议”，只能二选一：
+  1) 调用工具：输出且仅输出一个 <tool>...</tool>
+  2) 应用修改：输出且仅输出一个 <apply_modifications>...</apply_modifications>
 
-  <tool name="read_file"><arg name="file_path">项目内相对路径，如 simulator.py、config/simulation_config.yaml</arg></tool>
+  严禁输出分析文字、结论说明、计划步骤、或其他自由文本。
+
+  <tool name="outline_file"><arg name="file_path">项目内相对路径；返回文件结构/顶层键，优先用于了解文件</arg></tool>
+  <tool name="read_file_span"><arg name="file_path">项目内相对路径</arg><arg name="start_line">起始行</arg><arg name="end_line">结束行，最多约220行</arg></tool>
+  <tool name="read_file"><arg name="file_path">兜底整文件读取；仅当文件很短或无法定位片段时使用</arg></tool>
   <tool name="search_project"><arg name="pattern">正则</arg><arg name="glob">可选通配符，默认 **/*.py</arg></tool>
 
-  调用示例：
-  <tool name="read_file"><arg name="file_path">simulator.py</arg></tool>
+  轻量读取规则：
+  - 优先 search_project / outline_file 定位，再用 read_file_span 读取必要片段。
+  - 不要一上来读取 simulator.py 或大型配置的整文件。
+  - 每次读取只围绕一个待验证假设，确认足够后立即输出 apply。
 
-  我会把结果追加到上下文，你可以继续调用工具。
+  调用示例：
+  <tool name="outline_file"><arg name="file_path">simulator.py</arg></tool>
+
+  应用修改示例（内容仅示意）：
+  <apply_modifications>
+  ```json
+  # === SIMULATOR FILE ===
+  {{
+    "imports_to_add": ["from collections import defaultdict"],
+    "delete_imports": ["from old_module import legacy"],
+    "methods": [
+      {{
+        "method_name": "step",
+        "method_code": "def step(self): ...",
+        "description": "修复属性访问错误"
+      }}
+    ]
+  }}
+  ```
+  </apply_modifications>
+
+  我会把工具结果追加到上下文；你可以继续输出下一次工具调用。确认信息充分后，直接输出 apply 包裹结束本轮。
 
 analyze_error_modules_prompt: |
   分析以下错误信息，判断可能需要参考哪些接口文件或配置文件。
@@ -40,63 +69,48 @@ analyze_error_modules_prompt: |
   注意：如果某类文件没有相关的，对应数组为空。只返回JSON对象，不要其他解释。
 
 fix_runtime_errors_prompt: |
-  程序运行出错，请修复。
+  程序运行出错，请诊断并修复。
 
-  错误信息：
+  【错误堆栈】
   {error_traceback}
 
-  Main文件（{main_file_path}）：
-  ```python
-  {main_content}
-  ```
-
-  Simulator文件（{simulator_file_path}）：
-  ```python
-  {simulator_content}
-  ```
-
-  相关配置文件内容：
-  {config_files_str}
-
-  相关模块接口：
-  {module_interface_docs}
-
   【任务】
-  1. 分析错误堆栈，定位问题所在的文件和函数/方法
-  2. 参考接口文件和配置文件，确保使用正确的方法名、参数和配置
-  3. 尽可能以最小改动修复问题，可以修改代码、配置文件或提示词
-  4. 只有当接口中没有可用的方法，且该功能必须实现，才尝试自己编写函数/方法
-  5. 修复错误时优先解决根因，禁止通过添加裸 except Exception 掩盖错误；若必须使用 try/except，应捕获具体异常类型。
-  6. 严禁使用不存在的方法名/属性名/配置项。调用 `self.<对象>.<方法>()` 前，必须确认该方法在对应源码/接口中真实存在且参数签名匹配；若接口中没有所需方法，应优先给对应模块新增方法，而不是在调用处编造。
+  1. 先使用 search_project / outline_file 定位，再用 read_file_span 读取相关片段；严禁臆断。
+  2. 只在确认根因后给出可直接应用的增量修改。
+  3. 遵守两态协议：要么调用工具，要么输出 apply 包裹的修改内容。
 
   【输出格式】
-  根据需要修改的文件类型，返回对应的JSON块。Main文件用 # === MAIN FILE ===，Simulator文件用 # === SIMULATOR FILE ===，配置文件和提示词文件用 # === CONFIG FILES ===。
+  - 调工具时：只输出一个 <tool>...</tool>
+  - 应用修改时：只输出一个 <apply_modifications>...</apply_modifications>
+    其中可包含以下任意可应用块（按需提供）：
 
   ```json
   # === MAIN FILE ===
   {{
+    "imports_to_add": ["from collections import defaultdict"],
+    "delete_imports": ["from old_module import legacy"],
     "functions": [
       {{
-        "function_name": "函数名（纯函数名，不含def等）",
-        "function_code": "完整的函数代码（从def开始）",
+        "function_name": "函数名",
+        "function_code": "完整函数代码",
         "description": "修改说明"
       }}
     ],
-    "delete_functions": ["不需要的函数名1", "不需要的函数名2"]
+    "delete_functions": ["可选删除函数"]
   }}
   ```
-  
+
   ```json
   # === SIMULATOR FILE ===
   {{
     "methods": [
       {{
-        "method_name": "方法名（纯方法名，不含def等）",
-        "method_code": "完整的方法代码（从def/async def开始）",
+        "method_name": "方法名",
+        "method_code": "完整方法代码",
         "description": "修改说明"
       }}
     ],
-    "delete_methods": ["不需要的方法名1", "不需要的方法名2"]
+    "delete_methods": ["可选删除方法"]
   }}
   ```
 
@@ -105,10 +119,10 @@ fix_runtime_errors_prompt: |
   {{
     "config_files": [
       {{
-        "file_name": "需要修改的配置文件名（例如：simulation_config.yaml）",
+        "file_name": "配置文件名",
         "modifications": [
           {{
-            "parameter": "参数名",
+            "parameter": "参数或路径",
             "value": "新值"
           }}
         ]
@@ -117,31 +131,22 @@ fix_runtime_errors_prompt: |
   }}
   ```
 
-  【特殊场景：配置文件语法错误】
-  如果错误是 YAML/JSON 语法错误（如 ScannerError、YAMLError、JSONDecodeError），
-  参数级增量修改无法工作（因为文件本身已无法解析）。此时请直接返回修正后的完整文件内容：
-
   ```yaml
-  # === REWRITE FILE: jobs_config.yaml ===
-  jobs_info:
-    品牌商高管:
-      base_salary: 150
+  # === REWRITE FILE: config/xxx.yaml ===
+  # 当且仅当需要整体重写修复语法结构时使用
+  key: value
   ```
 
-  或对于JSON文件：
-
-  ```json
-  # === REWRITE FILE: towns_data.json ===
-  {{
-    "towns": [{{"name": "Town1"}}]
-  }}
-  ```
-
-  注意：
-  - delete_methods/delete_functions 是可选字段。
-  - 只返回需要修改的文件的严格的JSON块或重写块，不要分析和说明。
-  - 若错误在 src/agents/ 核心文件中且是 KeyError，优先通过修改 CONFIG FILES（提示词模板）移除不兼容占位符，不要反复修改 SIMULATOR。
-  - 对于配置文件**语法错误**（如包含反引号、Markdown标记导致解析失败），必须使用 REWRITE FILE 模式返回完整修正内容，禁止使用 CONFIG FILES 增量修改模式。
+  【规则】
+  - 除 <tool> 或 <apply_modifications> 外，不得输出任何文本。
+  - 每次只输出一个工具调用块；不要一次调用多个工具。
+  - apply 包裹中只放可直接应用的修改，不要放解释性段落。
+  - 局部修改使用 JSON 顶层数组；每个数组项只含一个 diff_lines 对象。多个操作（即使修改同一文件）必须拆成多个数组项。
+  - replace_block 必须复制目标文件中连续的完整原文；用相邻行组成唯一锚点，不要只锚定重复出现的单行。
+  - 严格照此结构输出：[{{"file_name":"projects/name/config/influences.yaml","file_type":"config","diff_lines":{{"replace_block":["- module: __simulator__","  target: old_target","  influence: effect_a"],"replace_with":["- module: __simulator__","  target: new_target","  influence: effect_a"]}}}}]
+  - diff_lines 只能是对象，且只能使用 replace_block+replace_with、delete_block 或 append_after_block；不得使用其他字段。
+  - 只有确实需要替换完整方法时才使用 methods/method_code；方法名必须是 Python 真实标识符，如 "__init__"，禁止写成 Markdown 强调形式 "**init**"。
+  - 严禁编造不存在的方法名、属性名、配置项。拿不准的先读文件确认。
 
 # 生成配置修改方案
 generate_config_modifications_prompt: |
@@ -375,14 +380,14 @@ trace_issue_backwards_prompt: |
   【输出格式】
   返回 JSON 对象：
   ```json
-  {
+  {{
     "root_cause": "根因描述",
     "files_to_check": ["file1.py", "config.yaml"],
     "suspected_mismatches": [
-      {"location": "simulator.py:execute_actions", "expected": "self.towns 为 Towns 对象", "actual": "self.towns 为 dict"}
+      {{"location": "simulator.py:execute_actions", "expected": "self.towns 为 Towns 对象", "actual": "self.towns 为 dict"}}
     ],
     "recommended_fixes": ["修改点1", "修改点2"]
-  }
+  }}
   ```
 
 # 检查配置文件是否与设计文档/接口约定一致
@@ -414,11 +419,11 @@ validate_config_alignment_prompt: |
 
 # 将评估报告中的问题匹配到诊断路由表中的 skill 文件
 route_report_to_skills_prompt: |
-  你是 CodeFixer 的诊断路由器。下面给你一份模拟结果的【评估报告】和一份【诊断路由表】。
+  下面给你一份模拟结果的【评估报告】和一份【诊断路由表】。
   请阅读评估报告中描述的问题，对照诊断路由表的"症状 → Skill"映射，
   判断本次应当参考哪一个或哪几个 skill 文件来修复。
 
-  你可以使用 read_file / search_project 工具读取项目文件或搜索代码，拿不准就先查文件再下结论。
+  你可以使用 search_project / outline_file / read_file_span 工具读取项目文件或搜索代码，拿不准就先查文件再下结论。
 
   【评估报告】
   {evaluation_report}
@@ -429,56 +434,65 @@ route_report_to_skills_prompt: |
   【任务】
   1. 只根据报告中真实出现的问题做匹配，不要臆造问题。
   2. 可以匹配多个 skill（按相关性从高到低排列）；若报告未暴露任何明确问题，返回空数组。
-  3. 路径必须是诊断路由表中给出的 skill 文件相对路径（形如 docs/code_fixer_skills/skill_xxx.md）。
+  3. 返回要访问的 skill 文件名（如 skill_xxx.md）。
 
   【输出格式】
   只返回一个 JSON 数组，不要任何额外文字：
   ```json
   [
-    "docs/code_fixer_skills/skill_xxx.md"
+    "skill_xxx.md"
   ]
   ```
 
 # 据选定 skill 的必查步骤，诊断出需要修改的文件
 skill_guided_diagnosis_prompt: |
-  你是 CodeFixer 的诊断器。请依据下面【选定 Skill】中的"必查步骤/常见修复"指引，
-  结合【问题上下文】定位本次需要修改的文件，并说明每个文件要改什么。
-
-  你可以使用 read_file / search_project 工具读取项目文件或搜索代码，拿不准就先查文件再下结论。
-
   【问题上下文】
   {problem_context}
 
-  【选定 Skill（必查步骤与修复指引）】
+  【选定 Skill】
   {skill_text}
 
-  【设计文档（节选，用于核对语义约定）】
-  {design_doc}
-
-  【项目文件地图（可能为空）】
+  【项目文件地图】
   {file_descriptions}
 
-  【任务】
-  1. 严格按 skill 的必查步骤，确定要改哪些文件（simulator.py、actions/*.yaml、prompts/*.yaml、各类配置等）。
-  2. 每个待改文件给出：file_name（确切文件名/相对路径）、file_type（simulator 或 config）、
-     modification（要改什么、为什么）、param_or_method（涉及的关键参数或方法名，可空）。
-  3. 若【项目文件地图】为空、而你需要它来确定确切文件位置，请把 need_file_descriptions 置为 true 并先不要给出文件清单。
-  4. 不要臆造不存在的方法名/属性名/配置项；拿不准的目标在 modification 中标注为"待核对"。
-     涉及插件/模块调用的，必须先读取源码确认真实方法名与参数签名，严禁编造。
-
-  【输出格式】
-  只返回一个 JSON 对象，不要任何额外文字：
+  按 Skill 检查；未确认原文时继续调用工具，确认后只照下面的结构输出。replace_block 必须是文件中连续的完整原文，并用相邻行唯一定位；每个 diff_lines 只表示一个操作：
+  <apply_modifications>
   ```json
-  {{
-    "need_file_descriptions": false,
-    "files_to_modify": [
-      {{
-        "file_name": "simulator.py",
-        "file_type": "simulator",
-        "modification": "在 execute_actions() 中补充对居民群体的遍历调用",
-        "param_or_method": "execute_actions"
+  [
+    {{
+      "file_name": "projects/name/config/influences.yaml",
+      "file_type": "config",
+      "diff_lines": {{
+        "replace_block": [
+          "- module: __simulator__",
+          "  target: old_a",
+          "  influence: effect_a"
+        ],
+        "replace_with": [
+          "- module: __simulator__",
+          "  target: new_a",
+          "  influence: effect_a"
+        ]
       }}
-    ]
-  }}
+    }},
+    {{
+      "file_name": "projects/name/config/influences.yaml",
+      "file_type": "config",
+      "diff_lines": {{
+        "replace_block": [
+          "- module: __simulator__",
+          "  target: old_b",
+          "  influence: effect_b"
+        ],
+        "replace_with": [
+          "- module: __simulator__",
+          "  target: new_b",
+          "  influence: effect_b"
+        ]
+      }}
+    }}
+  ]
   ```
+  </apply_modifications>
+
 

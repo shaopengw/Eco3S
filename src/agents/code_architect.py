@@ -4,10 +4,10 @@ from typing import Dict, List, Optional, Tuple
 
 from src.utils.custom_logger import CustomLogger
 from src.utils.ai_system_config import get_agent_model
+from src.utils.influence_test_runner import normalize_influence_contracts
 from .shared_imports import *
 from .code_change_mixin import CodeChangeMixin
 
-import chromadb
 from openai import OpenAI
 
 
@@ -243,6 +243,7 @@ class CodeArchitectAgent(CodeChangeMixin, BaseAgent):
 		description_md: str,
 		plugin_py_path: str,
 		plugin_class: str,
+		validation_feedback: str = "",
 	) -> tuple[str, bool]:
 		"""让 LLM 基于 notes 对新插件做一次整文件生成，同时返回 description 和代码。
 
@@ -280,6 +281,7 @@ class CodeArchitectAgent(CodeChangeMixin, BaseAgent):
 			description_md=_truncate(description_md, 2000),
 			current_code=_truncate(current_code, 2600),
 			base_code=_truncate(base_code, 2600),
+			validation_feedback=_truncate(validation_feedback, 1600) or "（首次生成，无）",
 		)
 
 		self.logger.info(f"开始 LLM 生成新插件: plugin={plugin_name}, inherits_from={inherits_from or 'null'}")
@@ -363,40 +365,51 @@ class CodeArchitectAgent(CodeChangeMixin, BaseAgent):
 				failed.append((plugin_name, base_name))
 				continue
 
-			# 2) LLM 生成 description + 代码（一次调用）
-			try:
-				plugin_py_path = pg.plugin_module_py_path(project_root, plugin_name, manifest)
-				description, ok = await self._llm_customize_new_plugin(
-					plugin_name=plugin_name,
-					inherits_from=base_name,
-					notes=notes_str,
-					description_md=description_md,
-					plugin_py_path=plugin_py_path,
-					plugin_class=manifest.get("plugin_class", ""),
-				)
-				if not ok:
-					self.logger.error(f"LLM 生成失败: {plugin_name}")
-					failed.append((plugin_name, base_name))
-					continue
-				if description:
-					manifest["description"] = description
-					pg.write_yaml_file(pg.plugin_manifest_path(project_root, plugin_name), manifest)
+			# 2-3) 生成后立即做契约验证；把精确错误反馈给同一插件重生成。
+			validation_feedback = ""
+			generation_succeeded = False
+			for generation_attempt in range(1, 4):
+				try:
+					plugin_py_path = pg.plugin_module_py_path(project_root, plugin_name, manifest)
+					description, ok = await self._llm_customize_new_plugin(
+						plugin_name=plugin_name,
+						inherits_from=base_name,
+						notes=notes_str,
+						description_md=description_md,
+						plugin_py_path=plugin_py_path,
+						plugin_class=manifest.get("plugin_class", ""),
+						validation_feedback=validation_feedback,
+					)
+					if not ok:
+						validation_feedback = "输出缺少可用的完整 Python 类"
+						continue
+					if description:
+						manifest["description"] = description
+						pg.write_yaml_file(pg.plugin_manifest_path(project_root, plugin_name), manifest)
 
-				# LLM 可能未严格遵循 plugin_class 约束，硬性同步 __init__.py 与 manifest
-				manifest = pg.sync_plugin_exports(project_root, plugin_name, manifest)
-			except Exception as e:
-				self.logger.error(f"LLM 生成异常: {plugin_name}, {e}")
-				failed.append((plugin_name, base_name))
-				continue
+					manifest = pg.sync_plugin_exports(project_root, plugin_name, manifest)
+					errors = pg.validate_manifest(manifest, plugin_name)
+					errors.extend(pg.validate_plugin_code(project_root, plugin_name, manifest))
+					pending = {s.name for s in specs}
+					errors.extend(pg.validate_dependencies(project_root, manifest, pending))
+					if not errors:
+						generation_succeeded = True
+						break
+					validation_feedback = "\n".join(f"- {error}" for error in errors)
+					self.logger.warning(
+						f"插件 '{plugin_name}' 第 {generation_attempt}/3 次生成未通过契约:\n"
+						f"{validation_feedback}"
+					)
+				except Exception as e:
+					validation_feedback = f"生成或验证异常: {e}"
+					self.logger.warning(
+						f"插件 '{plugin_name}' 第 {generation_attempt}/3 次生成异常: {e}"
+					)
 
-			# 3) 验证（description 准确详细，代码语法正确，依赖存在）
-			errors = pg.validate_manifest(manifest, plugin_name)
-			errors.extend(pg.validate_plugin_code(project_root, plugin_name, manifest))
-			pending = {s.name for s in specs}
-			errors.extend(pg.validate_dependencies(project_root, manifest, pending))
-			if errors:
+			if not generation_succeeded:
 				self.logger.error(
-					f"插件 '{plugin_name}' 验证失败，未注册:\n" + "\n".join(f"  - {e}" for e in errors)
+					f"插件 '{plugin_name}' 连续 3 次未通过生成契约，未注册:\n"
+					f"{validation_feedback}"
 				)
 				failed.append((plugin_name, base_name))
 				continue
@@ -1088,6 +1101,9 @@ class CodeArchitectAgent(CodeChangeMixin, BaseAgent):
 		config_filename = 'influences.yaml'
 		self.logger.info(f"开始生成配置文件: {config_filename}")
 
+		# 确保输出目录存在，避免写入 influence_pairs.json 等中间文件失败
+		os.makedirs(self.config_dir, exist_ok=True)
+
 		fpath = os.path.join(self.config_dir, config_filename)
 		if not self._check_file_exists_and_ask(fpath, f"配置文件 ({config_filename})"):
 			return fpath if os.path.exists(fpath) else None
@@ -1101,6 +1117,7 @@ class CodeArchitectAgent(CodeChangeMixin, BaseAgent):
 			self.logger.warning(f"模板文件不存在: {template_path}")
 
 		interface_docs = self._read_relevant_api_docs(config_filename)
+		project_config_context = self._format_previous_configs(previous_configs)
 		structured_pairs: List[dict] = []
 		pairs_path = os.path.join(self.config_dir, 'influence_pairs.json')
 
@@ -1211,6 +1228,7 @@ class CodeArchitectAgent(CodeChangeMixin, BaseAgent):
 				modules_config_yaml=modules_config_yaml,
 				graph_candidate_chains=graph_candidate_chains,
 				paper_candidates_context=paper_candidates_context,
+				project_config_context=project_config_context,
 			))
 			# print(f"[generate_influences] 影响对原始响应: {response}")
 			parsed = parse_json_array(response)
@@ -1523,6 +1541,7 @@ class CodeArchitectAgent(CodeChangeMixin, BaseAgent):
 					cause_module_code=cause_code,
 					effect_module_code=effect_code,
 					template_content=template_content,
+					project_config_context=project_config_context,
 				)
 			)
 			yaml_text = None
@@ -1593,6 +1612,10 @@ class CodeArchitectAgent(CodeChangeMixin, BaseAgent):
 				continue
 
 			block_data = result['block_data']
+			normalize_influence_contracts({
+				'influences': [block_data],
+				'execution_order': [],
+			})
 			name = str(block_data.get('name') or '').strip()
 			target = str(block_data.get('target') or '').strip()
 			source = block_data.get('source') or {}
@@ -1634,7 +1657,13 @@ class CodeArchitectAgent(CodeChangeMixin, BaseAgent):
 			written_blocks += 1
 			success_pairs += 1
 			ordered_names.append(name)
-			ordered_steps.append({'module': source_module, 'target': target})
+			# 生成配置统一由 simulator 持有可观测状态；source_module 只表示数据来源。
+			# influence 名称进入 execution_order，避免同一 target 下的多条影响被重复执行。
+			ordered_steps.append({
+				'module': '__simulator__',
+				'target': target,
+				'influence': name,
+			})
 			self.logger.info(f"✓ 已写入 pair_id={pair_id} 的 influence 块到 {fpath}")
 
 		if ordered_steps:
@@ -1655,6 +1684,27 @@ class CodeArchitectAgent(CodeChangeMixin, BaseAgent):
 		return fpath
 
 
+
+	def _format_previous_configs(self, previous_configs, max_total_chars: int = 16000) -> str:
+		"""把已生成配置整理为后续 LLM 可见的事实契约。
+
+		调用方过去虽然传入 ``previous_configs``，但 prompt 未使用它，导致每个文件
+		实际上独立生成。这里保留原文并做总长度限制，不从中推导硬编码业务规则。
+		"""
+		if not isinstance(previous_configs, dict) or not previous_configs:
+			return "（暂无已生成配置）"
+		parts = []
+		remaining = max(0, int(max_total_chars))
+		for filename, content in previous_configs.items():
+			if remaining <= 0:
+				break
+			text = content if isinstance(content, str) else yaml.safe_dump(
+				content, allow_unicode=True, sort_keys=False
+			)
+			chunk = text[:remaining]
+			parts.append(f"### {filename}\n```\n{chunk}\n```")
+			remaining -= len(chunk)
+		return "\n\n".join(parts) or "（暂无已生成配置）"
 
 	async def generate_config_file(self, config_filename, description_md, modules_config_yaml, previous_configs=None):
 		"""
@@ -1708,7 +1758,8 @@ class CodeArchitectAgent(CodeChangeMixin, BaseAgent):
 			modules=modules_config_yaml,
 			template_content=template_content,
 			interface_docs=interface_docs,
-			file_format=file_format
+			file_format=file_format,
+			previous_configs_context=self._format_previous_configs(previous_configs),
 		)
 		
 		
@@ -1948,7 +1999,7 @@ class CodeArchitectAgent(CodeChangeMixin, BaseAgent):
 		except Exception as exc:
 			self.logger.warning(f"写回 simulation_config.yaml 失败: {exc}")
 
-		# 6. 确保 agent_profile 已嵌入（fallback）
+		# 6. 确保 agent_profile 使用独立文件路径（fallback）
 		self._ensure_agent_profile_in_simulation_config()
 
 	def _extract_role_definitions_from_agent_profile(self, agent_profile_path: str) -> List[dict]:
@@ -2076,6 +2127,22 @@ class CodeArchitectAgent(CodeChangeMixin, BaseAgent):
 					+ "\n请在提示词和动作模板中按需使用 {属性名} 作为占位符，不要编造未定义的属性。\n"
 				)
 
+			# 属性名不足以约束 choice 枚举、constraints 与跨文件词表；把完整角色定义
+			# 及已经生成的项目配置作为事实契约交给 LLM。
+			role_contract = yaml.safe_dump(
+				role_def.get('agent_def', {}), allow_unicode=True, sort_keys=False
+			)
+			shared_configs = {}
+			for config_item in config_files or []:
+				if not isinstance(config_item, str) or not os.path.isfile(config_item):
+					continue
+				try:
+					with open(config_item, 'r', encoding='utf-8') as f:
+						shared_configs[os.path.basename(config_item)] = f.read()
+				except Exception:
+					continue
+			project_config_context = self._format_previous_configs(shared_configs, max_total_chars=12000)
+
 			role_prompt = self.prompts.get('generate_role_files_prompt')
 			prompt = role_prompt.format(
 				role_name=role_name,
@@ -2087,6 +2154,8 @@ class CodeArchitectAgent(CodeChangeMixin, BaseAgent):
 				template_content=prompt_template_content,
 				template_content_action=action_template_content,
 				agent_profile_attrs_doc=agent_profile_attrs_doc,
+				role_contract=role_contract,
+				project_config_context=project_config_context,
 			)
 
 			response = await self.generate_llm_response(prompt)

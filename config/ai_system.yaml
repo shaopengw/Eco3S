@@ -10,6 +10,9 @@ code_audit:               # 改代码前的审计（三关）
   attr_check: true        # 第一关·属性快检（未初始化属性 → AttributeError）
 
 agents:                   # 构建层各 Agent 用什么模型（居民/政府 Agent 不在此，仍随机选）
+  # code_fixer:       { api: DEEPSEEK, model: deepseek-v4-flash }
+  # auditor:          { api: DEEPSEEK, model: deepseek-v4-flash }
+  # code_architect:   { api: DEEPSEEK, model: deepseek-v4-flash }
   code_fixer:       { api: CLAUDE,   model: claude-sonnet-4-5-20250929 }
   auditor:          { api: CLAUDE,   model: claude-sonnet-4-5-20250929 }
   code_architect:   { api: CLAUDE,   model: claude-sonnet-4-5-20250929 }
@@ -24,6 +27,9 @@ retries:                  # 各阶段自动修复/重试轮数
   runtime_fix: 3
   audit_internal: 5
 
+workflow:
+  max_optimization_iterations: 0       # 0=不设置优化总轮次上限
+
 rag:                        # generate_influences 的因果证据检索（分层漏斗 + 层级排序）
   funnel_enabled: true      # 总开关：true=新漏斗 / false=旧 2a/2b/2c 回退
   embed_model: text-embedding-3-large
@@ -31,7 +37,7 @@ rag:                        # generate_influences 的因果证据检索（分层
   graph_path: experiment_dataset/causal_graph.gpickle
   jel_table_path: experiment_dataset/jel_embeddings.json
   l0_graph_discovery:         # 步骤0初始候选：图拓扑路径发现（取代纯语义论文检索为主来源）
-    enabled: true
+    enabled: true             # 恢复启用 L0 图发现语义锚定
     max_concepts: 5           # LLM 抽取英文可量化变量概念上限
     hops: 4                   # all_simple_paths cutoff（保留 2-4 跳路径）
     max_paths_per_pair: 20    # 每对 anchor 节点最大路径数，防组合爆炸
