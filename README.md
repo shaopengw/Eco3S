@@ -152,6 +152,19 @@ Eco3S/
 
 For underlying algorithms, AI orchestration, time/space complexity, and head-to-head comparisons with baselines (e.g., System Dynamics / YuLan-OneSim / GenSim), see **[Appendix.pdf](./Appendix.pdf)** in the project root.
 
+## 📚 Citation
+
+If you use Eco3S in your research, please cite the paper as follows:
+
+```bibtex
+@article{wei2026eco3s,
+    title={Eco3S: Complex Socio-Economic System Simulation via Agent-Based Models},
+    author={Wei, Shaopeng and Cheng, Yufei and Sun, Wenxi and Ding, Yepeng and Zhao, Yu and Kou, Gang},
+    journal={arXiv preprint arXiv:2607.26588},
+    year={2026}
+}
+```
+
 ---
 
 ## ❓ FAQ

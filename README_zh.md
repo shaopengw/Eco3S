@@ -152,6 +152,19 @@ Eco3S/
 
 如果你对 Eco3S 的底层算法、AI 编排架构、时间/空间复杂度分析，以及与其他基线模型（如 System Dynamics / YuLan-OneSim / GenSim）的 Head-to-Head 对比感兴趣，请务必查阅项目根目录下的 **[Appendix.pdf](./Appendix.pdf)**。
 
+## 📚 引用
+
+如果你在研究中使用了 Eco3S，请按如下格式引用：
+
+```bibtex
+@article{wei2026eco3s,
+    title={Eco3S: Complex Socio-Economic System Simulation via Agent-Based Models},
+    author={Wei, Shaopeng and Cheng, Yufei and Sun, Wenxi and Ding, Yepeng and Zhao, Yu and Kou, Gang},
+    journal={arXiv preprint arXiv:2607.26588},
+    year={2026}
+}
+```
+
 ---
 
 ## ❓ 常见问题 (FAQ)
